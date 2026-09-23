@@ -1,0 +1,22 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Build and tool output
+dist/
+.vite/
+
+# Runtime files
+uploads/
+*.log
+
+# Windows reserved/accidental files
+nul
+
+# Local scratch files
+_check*.html
+tmp_*.js
