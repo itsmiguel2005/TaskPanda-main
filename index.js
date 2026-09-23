@@ -12,6 +12,7 @@ const PasswordReset = require("./models/PasswordReset");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const authAttempts = new Map();
+const loginAttempts = new Map();
 const smtpUser = String(process.env.SMTP_USER || "").replace(/\s+/g, "").trim();
 const smtpPassword = String(process.env.SMTP_PASSWORD || "").replace(/\s+/g, "").trim();
 const mailFrom = String(process.env.MAIL_FROM || smtpUser || "").replace(/\s+/g, "").trim();
@@ -72,6 +73,48 @@ function limitAuthAttempts(req, res, next) {
   attempts.push(now);
   authAttempts.set(key, attempts);
   return next();
+}
+
+function getLoginLock(identifier) {
+  const attempt = loginAttempts.get(identifier);
+  if (!attempt || !attempt.lockedUntil || attempt.lockedUntil === Infinity) return attempt;
+
+  if (Date.now() >= attempt.lockedUntil) {
+    attempt.lockedUntil = 0;
+  }
+
+  return attempt;
+}
+
+function recordFailedLogin(identifier) {
+  const attempt = loginAttempts.get(identifier) || { failures: 0, lockedUntil: 0 };
+  attempt.failures += 1;
+
+  if (attempt.failures === 3) {
+    attempt.lockedUntil = Date.now() + 60 * 1000;
+  } else if (attempt.failures === 4) {
+    attempt.lockedUntil = Date.now() + 3 * 60 * 1000;
+  } else if (attempt.failures >= 5) {
+    attempt.lockedUntil = Infinity;
+  }
+
+  loginAttempts.set(identifier, attempt);
+  return attempt;
+}
+
+function loginLockResponse(res, attempt) {
+  if (attempt.failures >= 5) {
+    return res.status(423).json({
+      message: "This account has reached the maximum login attempts. Please use Forgot password to regain access.",
+      requiresPasswordReset: true,
+    });
+  }
+
+  const waitMinutes = attempt.failures >= 4 ? 3 : 1;
+  return res.status(429).json({
+    message: `Too many failed login attempts. Please wait ${waitMinutes} minute${waitMinutes === 1 ? "" : "s"} before trying again.`,
+    retryAfterSeconds: waitMinutes * 60,
+  });
 }
 
 app.use(express.static(path.join(__dirname, "dist")));
@@ -185,6 +228,15 @@ async function handleLogin(req, res) {
       return res.status(400).json({ message: "Email or username and password are required." });
     }
 
+    const normalizedIdentifier = identifier.toLowerCase();
+    const currentAttempt = getLoginLock(normalizedIdentifier);
+    if (currentAttempt?.lockedUntil === Infinity) {
+      return loginLockResponse(res, currentAttempt);
+    }
+    if (currentAttempt?.lockedUntil > Date.now()) {
+      return loginLockResponse(res, currentAttempt);
+    }
+
     const adminEmail = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
     const adminPassword = String(process.env.ADMIN_PASSWORD || "");
     if (
@@ -193,6 +245,7 @@ async function handleLogin(req, res) {
       identifier.toLowerCase() === adminEmail &&
       password === adminPassword
     ) {
+      loginAttempts.delete(normalizedIdentifier);
       return res.json({
         message: "Login successful.",
         token: null,
@@ -201,19 +254,23 @@ async function handleLogin(req, res) {
       });
     }
 
-    const normalizedIdentifier = identifier.toLowerCase();
     const user = await User.findOne({
       $or: [{ email: normalizedIdentifier }, { username: identifier }],
     });
 
     if (!user) {
+      const attempt = recordFailedLogin(normalizedIdentifier);
+      if (attempt.lockedUntil) return loginLockResponse(res, attempt);
       return res.status(404).json({ message: "No account found with that email or username." });
     }
 
     if (!(await bcrypt.compare(password, user.passwordHash))) {
-      return res.status(401).json({ message: "Invalid email/username or password." });
+      const attempt = recordFailedLogin(normalizedIdentifier);
+      if (attempt.lockedUntil) return loginLockResponse(res, attempt);
+      return res.status(401).json({ message: "Incorrect password. Please try again." });
     }
 
+    loginAttempts.delete(normalizedIdentifier);
     return res.json({
       message: "Login successful.",
       token: null,
@@ -311,6 +368,7 @@ async function handleResetPassword(req, res) {
 
     await User.updateOne({ email }, { $set: { passwordHash: await bcrypt.hash(password, 10) } });
     await PasswordReset.deleteOne({ _id: reset._id });
+    loginAttempts.delete(email);
     return res.json({ message: "Password reset successfully." });
   } catch (error) {
     console.error("Reset password error:", error);
@@ -333,8 +391,8 @@ app.get("/api/health", async (req, res) => {
 
 app.post("/api/auth/register", limitAuthAttempts, handleRegister);
 app.post("/register", limitAuthAttempts, handleRegister);
-app.post("/api/auth/login", limitAuthAttempts, handleLogin);
-app.post("/login", limitAuthAttempts, handleLogin);
+app.post("/api/auth/login", handleLogin);
+app.post("/login", handleLogin);
 app.post("/api/auth/forgot-password", limitAuthAttempts, handleForgotPassword);
 app.post("/api/auth/reset-password", limitAuthAttempts, handleResetPassword);
 

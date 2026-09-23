@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState("");
+  const [requiresPasswordReset, setRequiresPasswordReset] = useState(false);
   const [touched, setTouched] = useState({});
   const [showRegistrationSuccess, setShowRegistrationSuccess] = useState(false);
   const [isRegistrationToastFading, setIsRegistrationToastFading] = useState(false);
@@ -78,6 +79,7 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setServerError("");
+    setRequiresPasswordReset(false);
     setTouched({ email: true, password: true });
     if (errors.email || errors.password) return;
     setIsSubmitting(true);
@@ -103,6 +105,7 @@ export default function LoginPage() {
         navigate(destination);
       } else {
         setServerError(data.message || "Invalid email or password. Please try again.");
+        setRequiresPasswordReset(Boolean(data.requiresPasswordReset));
       }
     } catch {
       setServerError("Network error. Please check your connection and try again.");
@@ -118,6 +121,7 @@ export default function LoginPage() {
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setServerError("");
+    setRequiresPasswordReset(false);
     setFormData((prev) => ({
       ...prev,
       [name]: type === "checkbox" ? checked : value,
@@ -160,11 +164,6 @@ export default function LoginPage() {
                 />
                 {showError("email") && (
                   <p className="text-xs text-red-600">{errors.email}</p>
-                )}
-                {serverError && !errors.email && !errors.password && (
-                  <p className="text-xs text-red-600" role="alert">
-                    {serverError}
-                  </p>
                 )}
               </div>
 
@@ -224,6 +223,20 @@ export default function LoginPage() {
                   </div>
                   {showError("password") && (
                     <p className="text-xs text-red-600 leading-5">{errors.password}</p>
+                  )}
+                  {serverError && !errors.email && !errors.password && (
+                    <div className="space-y-1" role="alert">
+                      <p className="text-xs text-red-600">{serverError}</p>
+                      {requiresPasswordReset && (
+                        <button
+                          type="button"
+                          onClick={() => navigate("/forgot-password")}
+                          className="text-xs font-semibold text-primary-600 hover:text-primary-800"
+                        >
+                          Forgot password? Reset it here.
+                        </button>
+                      )}
+                    </div>
                   )}
                   <div className="flex justify-end">
                     <button
