@@ -37,6 +37,8 @@ export default function ClientRegisterPage() {
   const errors = {
     username: !formData.username.trim()
       ? "Username is required"
+      : /\s/.test(formData.username)
+      ? "Username cannot contain spaces"
       : emailValid(formData.username.trim())
       ? "Username cannot be an email address"
       : formData.username.trim().length < 3

@@ -193,6 +193,9 @@ async function handleRegister(req, res) {
       return res.status(400).json({ message: "Username is required for providers." });
     }
 
+    if (/\s/.test(username)) {
+      return res.status(400).json({ message: "Username cannot contain spaces." });
+    }
     if (/^\S+@\S+\.\S+$/.test(username)) {
       return res.status(400).json({ message: "Username cannot be an email address." });
     }
@@ -262,6 +265,9 @@ async function handleRegistrationAvailability(req, res) {
   const username = String(req.body.username || "").trim();
   const filters = [];
 
+  if (/\s/.test(username)) {
+    return res.status(400).json({ field: "username", message: "Username cannot contain spaces." });
+  }
   if (/^\S+@\S+\.\S+$/.test(username)) {
     return res.status(400).json({ field: "username", message: "Username cannot be an email address." });
   }
