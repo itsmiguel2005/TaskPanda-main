@@ -466,7 +466,7 @@ app.get("/api/health", async (req, res) => {
 });
 
 app.post("/api/auth/register", limitAuthAttempts, handleRegister);
-app.post("/api/auth/check-registration", limitAuthAttempts, handleRegistrationAvailability);
+app.post("/api/auth/check-registration", handleRegistrationAvailability);
 app.post("/register", limitAuthAttempts, handleRegister);
 app.post("/api/auth/login", handleLogin);
 app.post("/login", handleLogin);
