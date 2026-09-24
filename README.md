@@ -27,6 +27,8 @@ mongodb+srv://<username>:<password>@<cluster>.mongodb.net/taskpanda?retryWrites=
 
 In Atlas, create a database user, add the IP addresses that need access under Network Access, and replace the placeholders with that user's credentials. URL-encode special characters in the username or password.
 
+Use a separate Atlas database for development, such as `taskpanda-dev`, so test accounts and reset codes never mix with production data. Keep the production `taskpanda` URI only in Vercel's Production environment.
+
 Start the backend in one terminal:
 
 ```bash
@@ -40,6 +42,14 @@ npm run dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173) in a browser. The Vite server proxies `/api` requests to the backend at `http://localhost:3000`.
+
+Confirm the backend and Atlas connection before testing the UI:
+
+```bash
+npm run check:health
+```
+
+The expected response contains `200` and `"mongo":"connected"`.
 
 ## Environment Variables
 
@@ -102,10 +112,55 @@ Then open [http://localhost:3000](http://localhost:3000).
 | `npm run dev` | Start the Vite development server on port 5173 |
 | `npm start` | Start the Express backend on port 3000 |
 | `npm run build` | Build the frontend into `dist/` |
+| `npm run check:health` | Verify the local API and MongoDB connection |
 | `npm run preview` | Preview the Vite production build |
 | `npm run watch:css` | Watch and rebuild Tailwind CSS |
 
 ## Troubleshooting
+
+### Returning to the project later
+
+1. Open the folder containing `package.json`.
+2. Run `git pull` to get the latest code.
+3. Confirm `.env` exists locally and points to the development Atlas database.
+4. Run `npm install` if dependencies changed.
+5. Start the backend with `npm start`.
+6. Run `npm run check:health`.
+7. Start the frontend with `npm run dev`.
+8. Test the changed workflow locally.
+9. Run `npm run build`.
+10. Commit and push the change:
+
+```bash
+git add .
+git commit -m "Describe the change"
+git push origin main
+```
+
+Vercel automatically deploys pushes to `main`. Environment-variable changes require a redeploy from Vercel. Never stage `.env`.
+
+To check the deployed API without changing code:
+
+```bash
+API_URL=https://task-panda-main.vercel.app npm run check:health
+```
+
+On Windows PowerShell, use:
+
+```powershell
+$env:API_URL = "https://task-panda-main.vercel.app"; npm run check:health
+```
+
+### Preview before production
+
+For larger changes, create a branch and push it first:
+
+```bash
+git checkout -b feature/my-change
+git push -u origin feature/my-change
+```
+
+Vercel creates a Preview deployment for the branch. Test that preview, then merge the branch into `main` when it is ready for Production.
 
 ### MongoDB connection error
 
