@@ -5,7 +5,7 @@ import Layout from "../components/Layout.jsx";
 function passwordError(password) {
   if (!password) return "Password is required";
   const missing = [];
-  if (password.length < 6) missing.push("at least 6 characters");
+  if (password.length < 8) missing.push("at least 8 characters");
   if (password.length > 15) missing.push("no more than 15 characters");
   if (!/[A-Z]/.test(password)) missing.push("one uppercase letter");
   if (!/[^A-Za-z0-9]/.test(password)) missing.push("one special character");

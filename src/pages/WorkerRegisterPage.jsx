@@ -29,7 +29,7 @@ export default function WorkerRegisterPage() {
     if (!password) return "Password is required";
     const missing = [];
     if (/\s/.test(password)) missing.push("no spaces");
-    if (password.length < 6) missing.push("at least 6 characters");
+    if (password.length < 8) missing.push("at least 8 characters");
     if (password.length > 15) missing.push("no more than 15 characters");
     if (!/[A-Z]/.test(password)) missing.push("one uppercase letter");
     if (!/[^A-Za-z0-9]/.test(password)) missing.push("one special character");
@@ -223,7 +223,7 @@ export default function WorkerRegisterPage() {
                 {showFieldError("username") && (
                   <p className="text-xs text-red-600">{errors.username}</p>
                 )}
-                {availability.field === "username" && (
+                {availability.field === "username" && !showFieldError("username") && (
                   <p className="text-xs text-red-600" role="alert">{availability.message}</p>
                 )}
               </div>
@@ -250,7 +250,7 @@ export default function WorkerRegisterPage() {
                 {showFieldError("email") && (
                   <p className="text-xs text-red-600">{errors.email}</p>
                 )}
-                {availability.field === "email" && (
+                {availability.field === "email" && !showFieldError("email") && (
                   <p className="text-xs text-red-600" role="alert">{availability.message}</p>
                 )}
               </div>

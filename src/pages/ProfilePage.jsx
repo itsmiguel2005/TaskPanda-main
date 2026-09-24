@@ -44,7 +44,7 @@ function ChangePasswordModal({ onClose }) {
     const e = {};
     if (!currentPassword) e.currentPassword = "Current password is required";
     if (!newPassword) e.newPassword = "New password is required";
-    else if (newPassword.length < 6) e.newPassword = "Minimum 6 characters";
+    else if (newPassword.length < 8) e.newPassword = "Minimum 8 characters";
     if (!confirmPassword) e.confirmPassword = "Please confirm your password";
     else if (confirmPassword !== newPassword) e.confirmPassword = "Passwords do not match";
     setErrors(e);

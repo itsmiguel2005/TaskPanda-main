@@ -175,7 +175,7 @@ async function handleRegister(req, res) {
     const passwordRequirements = [];
     if (!password) passwordRequirements.push("a password");
     if (/\s/.test(password)) passwordRequirements.push("no spaces");
-    if (password.length < 6) passwordRequirements.push("at least 6 characters");
+    if (password.length < 8) passwordRequirements.push("at least 8 characters");
     if (password.length > 15) passwordRequirements.push("no more than 15 characters");
     if (!/[A-Z]/.test(password)) passwordRequirements.push("one uppercase letter");
     if (!/[^A-Za-z0-9]/.test(password)) passwordRequirements.push("one special character");
@@ -441,7 +441,7 @@ async function handleResetPassword(req, res) {
       return res.status(400).json({ message: "Your new password must be different from your previous password." });
     }
     const passwordRequirements = [];
-    if (password.length < 6) passwordRequirements.push("at least 6 characters");
+    if (password.length < 8) passwordRequirements.push("at least 8 characters");
     if (password.length > 15) passwordRequirements.push("no more than 15 characters");
     if (!/[A-Z]/.test(password)) passwordRequirements.push("one uppercase letter");
     if (!/[^A-Za-z0-9]/.test(password)) passwordRequirements.push("one special character");
