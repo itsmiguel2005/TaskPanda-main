@@ -256,17 +256,15 @@ async function handleRegister(req, res) {
 async function handleRegistrationAvailability(req, res) {
   const email = String(req.body.email || "").trim().toLowerCase();
   const username = String(req.body.username || "").trim();
+  const filters = [];
 
-  if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
-    return res.status(400).json({ message: "A valid email is required." });
-  }
-  if (!username) {
-    return res.status(400).json({ message: "A username is required." });
-  }
+  if (email && /^\S+@\S+\.\S+$/.test(email)) filters.push({ email });
+  if (username.length >= 3) filters.push({ username });
+  if (!filters.length) return res.status(400).json({ message: "Enter a valid email or username." });
 
-  const existingUser = await User.findOne({ $or: [{ email }, { username }] }).select("email username");
+  const existingUser = await User.findOne({ $or: filters }).select("email username");
   if (existingUser) {
-    const emailUsed = existingUser.email === email;
+    const emailUsed = Boolean(email && existingUser.email === email);
     return res.status(409).json({
       field: emailUsed ? "email" : "username",
       message: emailUsed ? "An account with this email already exists." : "This username is already taken.",

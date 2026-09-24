@@ -73,7 +73,7 @@ export default function WorkerRegisterPage() {
     const email = formData.email.trim();
     const username = formData.username.trim();
     setAvailability({ field: "", message: "", checking: false });
-    if (!emailValid(email) || username.length < 3) return undefined;
+    if (!emailValid(email) && username.length < 3) return undefined;
 
     const controller = new AbortController();
     const timer = setTimeout(async () => {
@@ -92,7 +92,7 @@ export default function WorkerRegisterPage() {
       } catch (error) {
         if (error.name !== "AbortError") setAvailability({ field: "", message: "", checking: false });
       }
-    }, 450);
+    }, 250);
 
     return () => {
       clearTimeout(timer);
