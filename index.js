@@ -13,8 +13,13 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const authAttempts = new Map();
 const loginAttempts = new Map();
+const parseBoolean = (value) =>
+  ["1", "true", "yes", "on"].includes(String(value ?? "").trim().toLowerCase());
 const smtpUser = String(process.env.SMTP_USER || "").replace(/\s+/g, "").trim();
 const smtpPassword = String(process.env.SMTP_PASSWORD || "").replace(/\s+/g, "").trim();
+const smtpHost = String(process.env.SMTP_HOST || "smtp.gmail.com").trim();
+const smtpPort = Number(process.env.SMTP_PORT || 587);
+const smtpSecure = parseBoolean(process.env.SMTP_SECURE);
 const mailFrom = String(process.env.MAIL_FROM || smtpUser || "").replace(/\s+/g, "").trim();
 const hasValidSmtpCredentials =
   smtpUser.length > 0 &&
@@ -23,9 +28,9 @@ const hasValidSmtpCredentials =
   !/(yourgmail|example|app_password|replace)/i.test(smtpPassword);
 
 const mailTransport = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || "smtp.gmail.com",
-  port: Number(process.env.SMTP_PORT || 587),
-  secure: String(process.env.SMTP_SECURE || "false") === "true",
+  host: smtpHost,
+  port: smtpPort,
+  secure: smtpSecure,
   requireTLS: true,
   connectionTimeout: 10000,
   greetingTimeout: 10000,
@@ -37,6 +42,16 @@ const mailTransport = nodemailer.createTransport({
       }
     : undefined,
 });
+
+if (process.env.VERCEL) {
+  console.log("SMTP status:", {
+    host: smtpHost,
+    port: smtpPort,
+    secure: smtpSecure,
+    configured: hasValidSmtpCredentials,
+    from: mailFrom || "missing",
+  });
+}
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -318,6 +333,7 @@ async function handleForgotPassword(req, res) {
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const codeHash = await bcrypt.hash(code, 10);
     const smtpConfigured = hasValidSmtpCredentials;
+    const allowLocalDebugCode = !process.env.VERCEL && process.env.NODE_ENV !== "production";
 
     let sentMail = false;
     if (smtpConfigured) {
@@ -332,13 +348,19 @@ async function handleForgotPassword(req, res) {
         const mailTimeout = new Promise((_, reject) => {
           setTimeout(() => reject(new Error("SMTP request timed out")), 10000);
         });
-        await Promise.race([mailPromise, mailTimeout]);
+        const mailResult = await Promise.race([mailPromise, mailTimeout]);
+        console.log("Password reset email accepted by SMTP:", {
+          messageId: mailResult.messageId,
+          accepted: mailResult.accepted,
+          rejected: mailResult.rejected,
+          response: mailResult.response,
+        });
         sentMail = true;
       } catch (mailError) {
-        console.warn("SMTP send failed; falling back to development reset code.", mailError.message);
+        console.warn("SMTP send failed. The request will now fail clearly instead of returning a hidden debug code.", mailError.message);
       }
     } else {
-      console.warn("SMTP credentials are not configured. Returning a development reset code in the response.");
+      console.warn("SMTP credentials are not configured for this environment.");
     }
 
     await PasswordReset.findOneAndUpdate(
@@ -347,9 +369,15 @@ async function handleForgotPassword(req, res) {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
+    if (!sentMail && !allowLocalDebugCode) {
+      return res.status(500).json({
+        message: "Password reset email delivery is not configured for this deployment. Set SMTP_USER and SMTP_PASSWORD in Vercel, then redeploy.",
+      });
+    }
+
     return res.json({
       ...genericResponse,
-      ...(sentMail ? {} : { debugCode: code }),
+      ...(sentMail || !allowLocalDebugCode ? {} : { debugCode: code }),
     });
   } catch (error) {
     console.error("Forgot password error:", error);
@@ -371,6 +399,10 @@ async function handleResetPassword(req, res) {
       return res.status(400).json({ message: "The reset code is incorrect." });
     }
 
+    const user = await User.findOne({ email });
+    if (!user || (await bcrypt.compare(password, user.passwordHash))) {
+      return res.status(400).json({ message: "Your new password must be different from your previous password." });
+    }
     const passwordRequirements = [];
     if (password.length < 6) passwordRequirements.push("at least 6 characters");
     if (password.length > 15) passwordRequirements.push("no more than 15 characters");
