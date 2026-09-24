@@ -240,6 +240,9 @@ async function handleRegister(req, res) {
     });
   } catch (err) {
     console.error("Registration error:", err);
+    if (err?.code === 11000 && err?.keyPattern?.email) {
+      return res.status(409).json({ message: "An account with this email already exists." });
+    }
     return res.status(500).json({ message: err.message || "Registration failed." });
   }
 }
