@@ -2,16 +2,16 @@
   "name": "taskpanda",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "backend/server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "vite",
     "build": "vite build",
     "check:health": "node scripts/check-health.js",
     "preview": "vite preview",
-    "build:css": "tailwindcss -i ./src/input.css -o ./dist/output.css --minify",
-    "watch:css": "tailwindcss -i ./src/input.css -o ./dist/output.css --watch",
-    "start": "node index.js"
+    "build:css": "tailwindcss -i ./frontend/src/input.css -o ./dist/output.css --minify",
+    "watch:css": "tailwindcss -i ./frontend/src/input.css -o ./dist/output.css --watch",
+    "start": "node backend/server.js"
   },
   "keywords": [],
   "author": "",

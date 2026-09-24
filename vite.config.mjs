@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
+  root: "frontend",
   plugins: [react()],
   server: {
     port: 5173,
@@ -10,13 +11,13 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: "dist",
+    outDir: "../dist",
     emptyOutDir: true,
     sourcemap: true,
     minify: false,
     rollupOptions: {
       input: {
-        main: "./index.html",
+        main: "./frontend/index.html",
       },
     },
   },
