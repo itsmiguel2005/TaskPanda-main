@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 
@@ -24,6 +24,15 @@ export default function ForgotPasswordPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return undefined;
+    const timer = setInterval(() => {
+      setResendCooldown((remaining) => Math.max(remaining - 1, 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
 
   const submitEmail = async (event) => {
     event.preventDefault();
@@ -53,6 +62,37 @@ export default function ForgotPasswordPage() {
       );
       setError("");
       setStep(2);
+      setResendCooldown(60);
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const resendCode = async () => {
+    if (resendCooldown > 0 || isSubmitting) return;
+    setError("");
+    setMessage("");
+    setIsSubmitting(true);
+    try {
+      const response = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(data.message || "Unable to resend the reset code.");
+        return;
+      }
+      setMessage(
+        data.debugCode
+          ? `${data.message} Use this code for testing: ${data.debugCode}`
+          : data.message
+      );
+      setCode("");
+      setResendCooldown(60);
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -129,6 +169,9 @@ export default function ForgotPasswordPage() {
                 <div className="space-y-2">
                   <label htmlFor="resetCode" className="block text-sm font-medium text-gray-700">Reset Code</label>
                   <input id="resetCode" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="Enter 6-digit code" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} className="block w-full rounded-lg border border-primary-200 bg-primary-50/50 px-4 py-2.5 text-center text-lg tracking-[0.35em] text-gray-800 placeholder-gray-400/70 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30" />
+                  <button type="button" onClick={resendCode} disabled={resendCooldown > 0 || isSubmitting} className="text-sm font-medium text-primary-700 hover:text-primary-900 disabled:cursor-not-allowed disabled:text-gray-400">
+                    {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Resend code"}
+                  </button>
                 </div>
                 <div className="space-y-2">
                   <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700">New Password</label>
