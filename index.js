@@ -376,7 +376,10 @@ async function handleForgotPassword(req, res) {
     if (smtpConfigured) {
       try {
         const mailPromise = mailTransport.sendMail({
-          from: mailFrom || smtpUser,
+          from: {
+            name: "TaskPanda",
+            address: mailFrom || smtpUser,
+          },
           to: email,
           subject: "Reset your TaskPanda password",
           text: `Your TaskPanda password reset code is ${code}. It expires in 10 minutes.`,
