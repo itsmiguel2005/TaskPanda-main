@@ -174,6 +174,7 @@ async function handleRegister(req, res) {
 
     const passwordRequirements = [];
     if (!password) passwordRequirements.push("a password");
+    if (/\s/.test(password)) passwordRequirements.push("no spaces");
     if (password.length < 6) passwordRequirements.push("at least 6 characters");
     if (password.length > 15) passwordRequirements.push("no more than 15 characters");
     if (!/[A-Z]/.test(password)) passwordRequirements.push("one uppercase letter");
@@ -206,9 +207,12 @@ async function handleRegister(req, res) {
       }
     }
 
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
     if (existingUser) {
-      return res.status(409).json({ message: "An account with this email already exists." });
+      const message = existingUser.email === email
+        ? "An account with this email already exists."
+        : "This username is already taken.";
+      return res.status(409).json({ message });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -240,11 +244,35 @@ async function handleRegister(req, res) {
     });
   } catch (err) {
     console.error("Registration error:", err);
-    if (err?.code === 11000 && err?.keyPattern?.email) {
-      return res.status(409).json({ message: "An account with this email already exists." });
+    if (err?.code === 11000 && (err?.keyPattern?.email || err?.keyPattern?.username)) {
+      return res.status(409).json({
+        message: err.keyPattern.username ? "This username is already taken." : "An account with this email already exists.",
+      });
     }
     return res.status(500).json({ message: err.message || "Registration failed." });
   }
+}
+
+async function handleRegistrationAvailability(req, res) {
+  const email = String(req.body.email || "").trim().toLowerCase();
+  const username = String(req.body.username || "").trim();
+
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+    return res.status(400).json({ message: "A valid email is required." });
+  }
+  if (!username) {
+    return res.status(400).json({ message: "A username is required." });
+  }
+
+  const existingUser = await User.findOne({ $or: [{ email }, { username }] }).select("email username");
+  if (existingUser) {
+    const message = existingUser.email === email
+      ? "An account with this email already exists."
+      : "This username is already taken.";
+    return res.status(409).json({ message });
+  }
+
+  return res.json({ available: true });
 }
 
 async function handleLogin(req, res) {
@@ -439,6 +467,7 @@ app.get("/api/health", async (req, res) => {
 });
 
 app.post("/api/auth/register", limitAuthAttempts, handleRegister);
+app.post("/api/auth/check-registration", limitAuthAttempts, handleRegistrationAvailability);
 app.post("/register", limitAuthAttempts, handleRegister);
 app.post("/api/auth/login", handleLogin);
 app.post("/login", handleLogin);

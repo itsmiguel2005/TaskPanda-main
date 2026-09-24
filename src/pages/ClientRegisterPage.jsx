@@ -18,12 +18,14 @@ export default function ClientRegisterPage() {
   const [touched, setTouched] = useState({});
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
 
   const emailValid = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   const passwordError = (password) => {
     if (!password) return "Password is required";
     const missing = [];
+    if (/\s/.test(password)) missing.push("no spaces");
     if (password.length < 6) missing.push("at least 6 characters");
     if (password.length > 15) missing.push("no more than 15 characters");
     if (!/[A-Z]/.test(password)) missing.push("one uppercase letter");
@@ -61,7 +63,7 @@ export default function ClientRegisterPage() {
     setTouched((prev) => ({ ...prev, [field]: true }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setTouched({
@@ -75,6 +77,25 @@ export default function ClientRegisterPage() {
     if (!agreedToTerms) {
       setError("You must agree to the Terms of Service and Privacy Policy");
       return;
+    }
+
+    setIsChecking(true);
+    try {
+      const response = await fetch("/api/auth/check-registration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "client", email: formData.email, username: formData.username }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(data.message || "That email or username is already in use.");
+        return;
+      }
+    } catch {
+      setError("Unable to check account availability. Please try again.");
+      return;
+    } finally {
+      setIsChecking(false);
     }
 
     const step1 = {
@@ -318,10 +339,10 @@ export default function ClientRegisterPage() {
 
               <button
                 type="submit"
-                disabled={!agreedToTerms}
+                disabled={!agreedToTerms || isChecking}
                 className={`w-full rounded-lg bg-gradient-to-r ${a.button} px-4 py-2.5 font-semibold text-white transition-opacity hover:brightness-110 focus:outline-none focus:ring-2 ${a.buttonHover} focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 lg:col-span-2`}
               >
-                Next
+                {isChecking ? "Checking..." : "Next"}
               </button>
             </form>
 
