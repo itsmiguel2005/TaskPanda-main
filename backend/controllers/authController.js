@@ -81,13 +81,14 @@ async function handleRegister(req, res) {
       });
     }
 
+    const profileFullName = fullName || [firstName, middleName, lastName].filter(Boolean).join(" ");
     const user = await User.create({
       role,
-      fullName: role === "client" ? fullName : undefined,
+      fullName: profileFullName,
       username,
-      firstName: role === "client" ? firstName : undefined,
-      middleName: role === "client" ? middleName : undefined,
-      lastName: role === "client" ? lastName : undefined,
+      firstName,
+      middleName,
+      lastName,
       mobileNumber,
       email,
       passwordHash: await bcrypt.hash(password, 10),
