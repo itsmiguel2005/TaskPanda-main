@@ -37,6 +37,8 @@ export default function ClientRegisterPage() {
   const errors = {
     username: !formData.username.trim()
       ? "Username is required"
+      : emailValid(formData.username.trim())
+      ? "Username cannot be an email address"
       : formData.username.trim().length < 3
       ? "Username must be at least 3 characters"
       : "",

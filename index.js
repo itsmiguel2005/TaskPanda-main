@@ -193,6 +193,10 @@ async function handleRegister(req, res) {
       return res.status(400).json({ message: "Username is required for providers." });
     }
 
+    if (/^\S+@\S+\.\S+$/.test(username)) {
+      return res.status(400).json({ message: "Username cannot be an email address." });
+    }
+
     if (role === "provider") {
       const birthDate = new Date(`${dateOfBirth}T00:00:00.000Z`);
       const today = new Date();
@@ -258,6 +262,9 @@ async function handleRegistrationAvailability(req, res) {
   const username = String(req.body.username || "").trim();
   const filters = [];
 
+  if (/^\S+@\S+\.\S+$/.test(username)) {
+    return res.status(400).json({ field: "username", message: "Username cannot be an email address." });
+  }
   if (email && /^\S+@\S+\.\S+$/.test(email)) filters.push({ email });
   if (username.length >= 3) filters.push({ username });
   if (!filters.length) return res.status(400).json({ message: "Enter a valid email or username." });
