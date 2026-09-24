@@ -266,10 +266,11 @@ async function handleRegistrationAvailability(req, res) {
 
   const existingUser = await User.findOne({ $or: [{ email }, { username }] }).select("email username");
   if (existingUser) {
-    const message = existingUser.email === email
-      ? "An account with this email already exists."
-      : "This username is already taken.";
-    return res.status(409).json({ message });
+    const emailUsed = existingUser.email === email;
+    return res.status(409).json({
+      field: emailUsed ? "email" : "username",
+      message: emailUsed ? "An account with this email already exists." : "This username is already taken.",
+    });
   }
 
   return res.json({ available: true });

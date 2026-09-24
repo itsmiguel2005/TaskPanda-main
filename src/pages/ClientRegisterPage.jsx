@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import TermsModal from "../components/TermsModal.jsx";
@@ -19,6 +19,7 @@ export default function ClientRegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
+  const [availability, setAvailability] = useState({ field: "", message: "", checking: false });
 
   const emailValid = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -62,6 +63,37 @@ export default function ClientRegisterPage() {
   const handleBlur = (field) => {
     setTouched((prev) => ({ ...prev, [field]: true }));
   };
+
+  useEffect(() => {
+    const email = formData.email.trim();
+    const username = formData.username.trim();
+    setAvailability({ field: "", message: "", checking: false });
+    if (!emailValid(email) || username.length < 3) return undefined;
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setAvailability({ field: "", message: "", checking: true });
+      try {
+        const response = await fetch("/api/auth/check-registration", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: "client", email, username }),
+          signal: controller.signal,
+        });
+        const data = await response.json().catch(() => ({}));
+        setAvailability(response.ok
+          ? { field: "", message: "", checking: false }
+          : { field: data.field || "email", message: data.message || "That email or username is already in use.", checking: false });
+      } catch (error) {
+        if (error.name !== "AbortError") setAvailability({ field: "", message: "", checking: false });
+      }
+    }, 450);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [formData.email, formData.username]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -183,6 +215,9 @@ export default function ClientRegisterPage() {
                 {showFieldError("username") && (
                   <p className="text-xs text-red-600">{errors.username}</p>
                 )}
+                {availability.field === "username" && (
+                  <p className="text-xs text-red-600" role="alert">{availability.message}</p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -206,6 +241,9 @@ export default function ClientRegisterPage() {
                 />
                 {showFieldError("email") && (
                   <p className="text-xs text-red-600">{errors.email}</p>
+                )}
+                {availability.field === "email" && (
+                  <p className="text-xs text-red-600" role="alert">{availability.message}</p>
                 )}
               </div>
 
