@@ -6,7 +6,7 @@ TaskPanda is a React frontend with a Vite development server and an Express/Mong
 
 - Node.js 18 or newer
 - npm
-- MongoDB running locally, or a MongoDB connection string
+- A MongoDB Atlas cluster and connection string
 
 ## Run Locally
 
@@ -19,11 +19,13 @@ npm install
 
 If you are already in the folder containing `package.json`, skip the `cd` command.
 
-Make sure MongoDB is running. The default database connection is:
+For local development, set `MONGO_URI` in `.env` to your MongoDB Atlas connection string:
 
 ```text
-mongodb://localhost:27017/taskpanda
+mongodb+srv://<username>:<password>@<cluster>.mongodb.net/taskpanda?retryWrites=true&w=majority
 ```
+
+In Atlas, create a database user, add the IP addresses that need access under Network Access, and replace the placeholders with that user's credentials. URL-encode special characters in the username or password.
 
 Start the backend in one terminal:
 
@@ -44,7 +46,7 @@ Open [http://localhost:5173](http://localhost:5173) in a browser. The Vite serve
 Create a `.env` file in the project root when you need to change the database, ports, admin account, or password-reset email settings:
 
 ```env
-MONGO_URI=mongodb://localhost:27017/taskpanda
+MONGO_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/taskpanda?retryWrites=true&w=majority
 PORT=3000
 
 # Optional admin login
@@ -61,6 +63,26 @@ MAIL_FROM=your-email@example.com
 ```
 
 Do not commit `.env` or real passwords to source control. For Gmail, use an app password rather than your normal account password.
+
+## Vercel Deployment
+
+Import this repository into Vercel with the project root set to the folder containing `package.json`. Vercel will run `npm run build` for the frontend and deploy `api/index.js` as the Express API function. The included rewrite serves the React app for client-side routes; `/api/*` is handled by the function automatically.
+
+Add these Environment Variables in the Vercel project settings for every environment you use:
+
+```text
+MONGO_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/taskpanda?retryWrites=true&w=majority
+ADMIN_EMAIL=your-admin-email
+ADMIN_PASSWORD=your-strong-admin-password
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-email@example.com
+SMTP_PASSWORD=your-gmail-app-password
+MAIL_FROM=your-email@example.com
+```
+
+In Atlas Network Access, allow Vercel's connections. For an initial deployment this is commonly `0.0.0.0/0`, but use a private networking strategy or a narrower policy when your infrastructure supports it. Never commit the Atlas URI or other secrets.
 
 ## Production Build
 
@@ -87,7 +109,7 @@ Then open [http://localhost:3000](http://localhost:3000).
 
 ### MongoDB connection error
 
-Start MongoDB or set `MONGO_URI` in `.env` to a reachable MongoDB instance. The backend exits if it cannot connect.
+Set `MONGO_URI` in `.env` or Vercel project settings to a reachable MongoDB Atlas cluster. Confirm the database user password is URL-encoded and that the deployment's network access is allowed in Atlas.
 
 ### Port already in use
 

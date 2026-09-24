@@ -27,6 +27,9 @@ const mailTransport = nodemailer.createTransport({
   port: Number(process.env.SMTP_PORT || 587),
   secure: String(process.env.SMTP_SECURE || "false") === "true",
   requireTLS: true,
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 10000,
   auth: hasValidSmtpCredentials
     ? {
         user: smtpUser,
@@ -34,8 +37,6 @@ const mailTransport = nodemailer.createTransport({
       }
     : undefined,
 });
-
-connectDB();
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -59,6 +60,15 @@ const upload = multer({
 
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 app.use(express.json({ limit: "100kb" }));
+
+app.use("/api", async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    res.status(503).json({ message: "Database is unavailable.", error: error.message });
+  }
+});
 
 function limitAuthAttempts(req, res, next) {
   const key = `${req.ip}:${req.path}`;
@@ -312,13 +322,17 @@ async function handleForgotPassword(req, res) {
     let sentMail = false;
     if (smtpConfigured) {
       try {
-        await mailTransport.sendMail({
+        const mailPromise = mailTransport.sendMail({
           from: mailFrom || smtpUser,
           to: email,
           subject: "Reset your TaskPanda password",
           text: `Your TaskPanda password reset code is ${code}. It expires in 10 minutes.`,
           html: `<p>Your TaskPanda password reset code is:</p><p style="font-size: 24px; font-weight: 700; letter-spacing: 4px">${code}</p><p>This code expires in 10 minutes.</p>`,
         });
+        const mailTimeout = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error("SMTP request timed out")), 10000);
+        });
+        await Promise.race([mailPromise, mailTimeout]);
         sentMail = true;
       } catch (mailError) {
         console.warn("SMTP send failed; falling back to development reset code.", mailError.message);
@@ -431,9 +445,15 @@ app.use((req, res) => {
 });
 
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`TaskPanda server running at http://localhost:${PORT}`);
-  });
+  connectDB()
+    .then(() => {
+      app.listen(PORT, () => {
+        console.log(`TaskPanda server running at http://localhost:${PORT}`);
+      });
+    })
+    .catch(() => {
+      process.exitCode = 1;
+    });
 }
 
 module.exports = app;

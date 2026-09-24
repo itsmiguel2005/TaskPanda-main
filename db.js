@@ -3,15 +3,29 @@ const mongoose = require("mongoose");
 mongoose.set("sanitizeFilter", true);
 mongoose.set("strictQuery", true);
 
+let connectionPromise;
+
 async function connectDB() {
-  const mongoUri = process.env.MONGO_URI || "mongodb://localhost:27017/taskpanda";
+  if (mongoose.connection.readyState === 1) return mongoose.connection;
+
+  const mongoUri = process.env.MONGO_URI;
+  if (!mongoUri) {
+    throw new Error("MONGO_URI is not configured.");
+  }
+
+  if (!connectionPromise) {
+    connectionPromise = mongoose.connect(mongoUri).then(() => {
+      console.log("MongoDB connected successfully");
+      return mongoose.connection;
+    });
+  }
 
   try {
-    await mongoose.connect(mongoUri);
-    console.log("MongoDB connected successfully");
+    return await connectionPromise;
   } catch (error) {
     console.error("MongoDB connection error:", error.message);
-    process.exit(1);
+    connectionPromise = undefined;
+    throw error;
   }
 }
 

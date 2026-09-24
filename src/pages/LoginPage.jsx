@@ -4,6 +4,12 @@ import Layout from "../components/Layout.jsx";
 import SocialButton from "../components/SocialButton.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 
+function formatWaitTime(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -13,6 +19,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState("");
   const [requiresPasswordReset, setRequiresPasswordReset] = useState(false);
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
   const [touched, setTouched] = useState({});
   const [showRegistrationSuccess, setShowRegistrationSuccess] = useState(false);
   const [isRegistrationToastFading, setIsRegistrationToastFading] = useState(false);
@@ -61,6 +68,22 @@ export default function LoginPage() {
     };
   }, [showPasswordResetSuccess]);
 
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return undefined;
+
+    const countdownTimer = window.setInterval(() => {
+      setLockoutSeconds((remaining) => {
+        if (remaining <= 1) {
+          setServerError("");
+          return 0;
+        }
+        return remaining - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(countdownTimer);
+  }, [lockoutSeconds]);
+
   const errors = {
     email:
       !formData.email.trim()
@@ -106,6 +129,7 @@ export default function LoginPage() {
       } else {
         setServerError(data.message || "Invalid email or password. Please try again.");
         setRequiresPasswordReset(Boolean(data.requiresPasswordReset));
+        setLockoutSeconds(Number(data.retryAfterSeconds) || 0);
       }
     } catch {
       setServerError("Network error. Please check your connection and try again.");
@@ -122,6 +146,7 @@ export default function LoginPage() {
     const { name, value, type, checked } = e.target;
     setServerError("");
     setRequiresPasswordReset(false);
+    setLockoutSeconds(0);
     setFormData((prev) => ({
       ...prev,
       [name]: type === "checkbox" ? checked : value,
@@ -226,7 +251,11 @@ export default function LoginPage() {
                   )}
                   {serverError && !errors.email && !errors.password && (
                     <div className="space-y-1" role="alert">
-                      <p className="text-xs text-red-600">{serverError}</p>
+                      <p className="text-xs text-red-600">
+                        {lockoutSeconds > 0
+                          ? `Too many failed login attempts. Please wait ${formatWaitTime(lockoutSeconds)} before trying again.`
+                          : serverError}
+                      </p>
                       {requiresPasswordReset && (
                         <button
                           type="button"
@@ -266,7 +295,7 @@ export default function LoginPage() {
 
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || lockoutSeconds > 0}
                 className={`w-full rounded-lg bg-gradient-to-r ${a.button} py-2.5 px-4 font-semibold text-white transition-opacity hover:brightness-110 focus:outline-none focus:ring-2 ${a.buttonHover} focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50`}
               >
                 {isSubmitting ? "Signing in..." : "Login"}
