@@ -177,10 +177,9 @@ Uploaded images are stored in the `uploads/` directory and are limited to 5 MB. 
 ## Project Structure
 
 ```text
-src/       React application and components
-models/    Mongoose models
-index.js   Express backend and API routes
-db.js      MongoDB connection
-public/    Public frontend assets
+frontend/  React application, Vite entry, and public assets
+backend/   Express app, controllers, routes, middleware, services, models, and database
+api/       Vercel serverless entry point
+scripts/   Health, CSS, and upload verification utilities
 dist/      Generated production frontend build
 ```
