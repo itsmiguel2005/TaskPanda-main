@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const { mongoUri } = require("./config/env");
+const { mongoUri, mongoDbName } = require("./config/env");
 
 mongoose.set("sanitizeFilter", true);
 mongoose.set("strictQuery", true);
@@ -16,7 +16,7 @@ async function connectDB() {
   }
 
   if (!connectionPromise) {
-    connectionPromise = mongoose.connect(mongoUri).then(() => {
+    connectionPromise = mongoose.connect(mongoUri, { dbName: mongoDbName }).then(() => {
       console.log("MongoDB connected successfully");
       return mongoose.connection;
     });

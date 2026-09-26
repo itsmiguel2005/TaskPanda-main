@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
+import { useBookings } from "../context/BookingContext.jsx";
 
 const initialRequests = [
   {
@@ -50,7 +51,7 @@ const initialBookings = [
   },
 ];
 
-const tabs = ["All", "Incoming Requests", "My Bookings"];
+const tabs = ["All", "Incoming Requests", "Active", "Cancellation Requests", "Completed", "Cancelled"];
 
 function parseDate(dateStr) {
   const months = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
@@ -70,6 +71,8 @@ function StatusBadge({ status }) {
     Confirmed: "bg-green-100 text-green-700 border-green-200",
     Completed: "bg-blue-100 text-blue-700 border-blue-200",
     Cancelled: "bg-red-100 text-red-700 border-red-200",
+    Declined: "bg-red-100 text-red-700 border-red-200",
+    "Cancellation Requested": "bg-amber-100 text-amber-700 border-amber-200",
     "In Progress": "bg-purple-100 text-purple-700 border-purple-200",
   };
   return (
@@ -89,6 +92,8 @@ function StatusDot({ status }) {
     Confirmed: "bg-green-500",
     Completed: "bg-blue-500",
     Cancelled: "bg-red-500",
+    Declined: "bg-red-500",
+    "Cancellation Requested": "bg-amber-500",
     "In Progress": "bg-purple-500",
   };
   return (
@@ -103,19 +108,31 @@ function StatusDot({ status }) {
 export default function ProviderBookingsPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("All");
-  const [requests, setRequests] = useState(initialRequests);
-  const [bookings, setBookings] = useState(initialBookings);
+  const { bookings, isLoading, error, updateBookingStatus, requestCancellation } = useBookings();
   const [sortBy, setSortBy] = useState("date");
+  const [acceptingId, setAcceptingId] = useState(null);
   const [rejectingId, setRejectingId] = useState(null);
   const [cancelingId, setCancelingId] = useState(null);
+  const [cancellationReason, setCancellationReason] = useState("");
   const [detailId, setDetailId] = useState(null);
+
+  const requests = bookings.filter((booking) => booking.status === "Pending Request");
+  const managedBookings = bookings.filter((booking) => booking.status !== "Pending Request");
+  const filteredManagedBookings = managedBookings.filter((booking) => {
+    if (activeTab === "All") return true;
+    if (activeTab === "Active") return booking.status === "Confirmed";
+    if (activeTab === "Cancellation Requests") return booking.status === "Cancellation Requested";
+    if (activeTab === "Completed") return booking.status === "Completed";
+    if (activeTab === "Cancelled") return ["Cancelled", "Declined"].includes(booking.status);
+    return false;
+  });
 
   const sortedRequests = useMemo(() => {
     return [...requests].sort((a, b) => parseDate(a.date) - parseDate(b.date));
   }, [requests]);
 
   const sortedBookings = useMemo(() => {
-    let result = [...bookings];
+    let result = [...filteredManagedBookings];
     if (sortBy === "date") {
       result.sort((a, b) => parseDate(b.date) - parseDate(a.date));
     } else if (sortBy === "price") {
@@ -125,53 +142,71 @@ export default function ProviderBookingsPage() {
       result.sort((a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99));
     }
     return result;
-  }, [bookings, sortBy]);
+  }, [filteredManagedBookings, sortBy]);
 
   const stats = useMemo(() => ({
     incoming: requests.length,
-    active: bookings.filter((b) => b.status !== "Completed" && b.status !== "Cancelled").length,
-    completed: bookings.filter((b) => b.status === "Completed").length,
-    cancelled: bookings.filter((b) => b.status === "Cancelled").length,
-    earnings: bookings
+    active: managedBookings.filter((b) => b.status !== "Completed" && b.status !== "Cancelled").length,
+    completed: managedBookings.filter((b) => b.status === "Completed").length,
+    cancelled: managedBookings.filter((b) => b.status === "Cancelled").length,
+    earnings: managedBookings
       .filter((b) => b.status === "Completed")
       .reduce((sum, b) => sum + parsePrice(b.price), 0),
-  }), [requests, bookings]);
+  }), [requests, managedBookings]);
 
   const showIncoming = activeTab === "All" || activeTab === "Incoming Requests";
-  const showBookings = activeTab === "All" || activeTab === "My Bookings";
+  const showBookings = activeTab !== "Incoming Requests";
+  const visibleBookingCount = (showIncoming ? requests.length : 0) + (showBookings ? filteredManagedBookings.length : 0);
 
-  const rejectBooking = bookings.find((b) => b.id === cancelingId);
+  const rejectBooking = managedBookings.find((b) => b.id === cancelingId);
   const detailItem = useMemo(() => {
     if (!detailId) return null;
     return (
       requests.find((r) => r.id === detailId) ||
-      bookings.find((b) => b.id === detailId) ||
+      managedBookings.find((b) => b.id === detailId) ||
       null
     );
-  }, [detailId, requests, bookings]);
+  }, [detailId, requests, managedBookings]);
 
   function acceptRequest(id) {
     const req = requests.find((r) => r.id === id);
     if (!req) return;
-    if (!window.confirm(`Accept request from ${req.client} for "${req.task}"?`)) return;
-    setRequests((prev) => prev.filter((r) => r.id !== id));
-    setBookings((prev) => [
-      ...prev,
-      { ...req, status: "Pending Request" },
-    ]);
+    setAcceptingId(id);
+  }
+
+  async function confirmAcceptRequest() {
+    if (!acceptingId) return;
+    try {
+      await updateBookingStatus(acceptingId, "Confirmed");
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      setAcceptingId(null);
+    }
   }
 
   function rejectRequest(id) {
-    setRequests((prev) => prev.filter((r) => r.id !== id));
+    updateBookingStatus(id, "Declined").catch((error) => window.alert(error.message));
     setRejectingId(null);
   }
 
-  function handleCancelBooking() {
+  async function handleCancelBooking() {
     if (!cancelingId) return;
-    setBookings((prev) =>
-      prev.map((b) => (b.id === cancelingId ? { ...b, status: "Cancelled" } : b))
-    );
-    setCancelingId(null);
+    try {
+      await requestCancellation(cancelingId, "request", cancellationReason);
+      setCancelingId(null);
+      setCancellationReason("");
+    } catch (error) {
+      window.alert(error.message);
+    }
+  }
+
+  async function handleCancellationResponse(id, action) {
+    try {
+      await requestCancellation(id, action);
+    } catch (error) {
+      window.alert(error.message);
+    }
   }
 
   return (
@@ -197,6 +232,8 @@ export default function ProviderBookingsPage() {
             View incoming requests and manage your jobs
           </p>
         </div>
+        {error && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+        {isLoading && <p className="mb-4 text-sm text-gray-500">Loading bookings...</p>}
 
         {/* Stats */}
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -219,10 +256,16 @@ export default function ProviderBookingsPage() {
           {tabs.map((tab) => {
             const count =
               tab === "All"
-                ? requests.length + bookings.length
+                ? requests.length + managedBookings.length
                 : tab === "Incoming Requests"
                 ? requests.length
-                : bookings.length;
+                : tab === "Active"
+                ? managedBookings.filter((booking) => booking.status === "Confirmed").length
+                : tab === "Cancellation Requests"
+                ? managedBookings.filter((booking) => booking.status === "Cancellation Requested").length
+                : tab === "Completed"
+                ? managedBookings.filter((booking) => booking.status === "Completed").length
+                : managedBookings.filter((booking) => ["Cancelled", "Declined"].includes(booking.status)).length;
             return (
               <button
                 key={tab}
@@ -249,7 +292,7 @@ export default function ProviderBookingsPage() {
         </div>
 
         {/* Sort */}
-        {showBookings && bookings.length > 0 && (
+        {showBookings && filteredManagedBookings.length > 0 && (
           <div className="mb-4 flex justify-end">
             <select
               value={sortBy}
@@ -305,6 +348,11 @@ export default function ProviderBookingsPage() {
                           <p className="mt-1 text-sm leading-relaxed text-gray-500">
                             {req.description}
                           </p>
+                          {req.photoUrls?.length > 0 && (
+                            <div className="mt-3 flex gap-2">
+                              {req.photoUrls.map((url) => <img key={url} src={url} alt="Repair item" className="h-16 w-16 rounded-lg object-cover" />)}
+                            </div>
+                          )}
                         </div>
 
                         <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-600">
@@ -354,22 +402,14 @@ export default function ProviderBookingsPage() {
                   ))}
                 </div>
               </>
-            ) : (
-              activeTab !== "My Bookings" && (
-                <div className="rounded-xl border border-dashed border-gray-300 bg-white py-12 text-center">
-                  <p className="text-4xl mb-3">📭</p>
-                  <p className="text-base font-semibold text-gray-700">No incoming requests</p>
-                  <p className="mt-1 text-sm text-gray-500">New requests will appear here</p>
-                </div>
-              )
-            )}
+            ) : null}
           </div>
         )}
 
         {/* My Bookings */}
         {showBookings && (
           <div>
-            {bookings.length > 0 ? (
+            {filteredManagedBookings.length > 0 ? (
               <>
                 <h2 className="mb-4 text-lg font-semibold text-gray-900">
                   My Bookings
@@ -406,6 +446,11 @@ export default function ProviderBookingsPage() {
                           <p className="mt-1 text-sm leading-relaxed text-gray-500">
                             {booking.description}
                           </p>
+                          {booking.photoUrls?.length > 0 && (
+                            <div className="mt-3 flex gap-2">
+                              {booking.photoUrls.map((url) => <img key={url} src={url} alt="Repair item" className="h-16 w-16 rounded-lg object-cover" />)}
+                            </div>
+                          )}
                         </div>
 
                         <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-600">
@@ -450,6 +495,22 @@ export default function ProviderBookingsPage() {
                                 Cancel
                               </button>
                             )}
+                            {booking.status === "Cancellation Requested" && booking.cancellationRequestedBy === "client" && (
+                              <>
+                                <button
+                                  onClick={() => handleCancellationResponse(booking.id, "reject")}
+                                  className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+                                >
+                                  Reject Cancellation
+                                </button>
+                                <button
+                                  onClick={() => handleCancellationResponse(booking.id, "approve")}
+                                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+                                >
+                                  Approve Cancellation
+                                </button>
+                              </>
+                            )}
                             {booking.status === "Completed" && (
                               <button
                                 onClick={() => navigate("/explore")}
@@ -465,36 +526,77 @@ export default function ProviderBookingsPage() {
                   ))}
                 </div>
               </>
-            ) : (
-              <div className="rounded-xl border border-dashed border-gray-300 bg-white py-16 text-center">
-                <p className="text-4xl mb-3">📋</p>
-                <p className="text-base font-semibold text-gray-700">No bookings found</p>
-                <p className="mt-1 text-sm text-gray-500">
-                  {activeTab !== "All"
-                    ? `You have no ${activeTab.toLowerCase()}`
-                    : "Accept requests to create bookings"}
-                </p>
-                {activeTab !== "All" && (
-                  <button
-                    onClick={() => setActiveTab("All")}
-                    className="mt-4 rounded-lg bg-purple-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-purple-700"
-                  >
-                    View All
-                  </button>
-                )}
-              </div>
-            )}
+            ) : null}
           </div>
         )}
 
-        {showIncoming && requests.length === 0 && showBookings && bookings.length === 0 && (
+        {visibleBookingCount === 0 && !isLoading && (
           <div className="rounded-xl border border-dashed border-gray-300 bg-white py-16 text-center">
-            <p className="text-4xl mb-3">📭</p>
-            <p className="text-base font-semibold text-gray-700">No bookings yet</p>
-            <p className="mt-1 text-sm text-gray-500">Accept incoming requests to get started</p>
+            <p className="text-4xl mb-3">📋</p>
+            <p className="text-base font-semibold text-gray-700">No bookings found</p>
+            <p className="mt-1 text-sm text-gray-500">
+              {activeTab === "Incoming Requests"
+                ? "New client requests will appear here."
+                : activeTab === "Active"
+                ? "Confirmed active jobs will appear here."
+                : activeTab === "Cancellation Requests"
+                ? "Pending cancellation requests will appear here."
+                : activeTab === "Completed"
+                ? "Completed jobs will appear here."
+                : activeTab === "Cancelled"
+                ? "Canceled or declined bookings will appear here."
+                : "No requests or bookings are available yet."}
+            </p>
+            {activeTab !== "All" && (
+              <button
+                onClick={() => setActiveTab("All")}
+                className="mt-4 rounded-lg bg-purple-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-purple-700"
+              >
+                View All
+              </button>
+            )}
           </div>
         )}
       </div>
+
+      {/* Accept Confirmation Modal */}
+      {acceptingId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setAcceptingId(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="p-6">
+              <h3 className="text-lg font-bold text-gray-900">Accept Request?</h3>
+              <p className="mt-2 text-sm text-gray-500">
+                {(() => {
+                  const request = requests.find((item) => item.id === acceptingId);
+                  return request ? `Accept ${request.client}'s request for "${request.task}"?` : "Accept this booking request?";
+                })()}
+              </p>
+              <div className="mt-6 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAcceptingId(null)}
+                  className="flex-1 rounded-lg border border-gray-200 bg-white py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                >
+                  Keep Request
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmAcceptRequest}
+                  className="flex-1 rounded-lg bg-primary-600 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-700"
+                >
+                  Accept
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Reject Confirmation Modal */}
       {rejectingId && (
@@ -545,6 +647,25 @@ export default function ProviderBookingsPage() {
               <p className="mt-2 text-sm text-gray-500">
                 Are you sure you want to cancel this booking? This action cannot be undone.
               </p>
+              {cancelingId && (() => {
+                const booking = managedBookings.find((item) => item.id === cancelingId);
+                return booking && Date.now() - new Date(booking.createdAt).getTime() > 10 * 60 * 1000 ? (
+                  <div className="mt-4">
+                    <label htmlFor="provider-cancellation-reason" className="mb-1.5 block text-sm font-medium text-gray-700">
+                      Reason for cancellation
+                    </label>
+                    <textarea
+                      id="provider-cancellation-reason"
+                      value={cancellationReason}
+                      onChange={(event) => setCancellationReason(event.target.value)}
+                      rows={3}
+                      placeholder="Tell the client why you need to cancel"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">A cancellation request will be sent to the client for approval.</p>
+                  </div>
+                ) : null;
+              })()}
               <div className="mt-6 flex gap-3">
                 <button
                   onClick={() => setCancelingId(null)}

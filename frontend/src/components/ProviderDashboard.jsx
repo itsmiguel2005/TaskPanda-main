@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { useBookings } from "../context/BookingContext.jsx";
 import Header from "../components/Header.jsx";
 
 const initialJobs = [
@@ -84,10 +85,15 @@ function StatusBadge({ status }) {
 export default function ProviderDashboard() {
   const navigate = useNavigate();
   const { isLoggedIn, role } = useAuth();
-  const [jobs, setJobs] = useState(initialJobs);
-  const [requests, setRequests] = useState(initialRequests);
+  const { bookings, isLoading, error, updateBookingStatus, requestCancellation } = useBookings();
   const [activeTab, setActiveTab] = useState("All");
   const [expandedJob, setExpandedJob] = useState(null);
+  const [acceptingId, setAcceptingId] = useState(null);
+  const [cancelingId, setCancelingId] = useState(null);
+  const [cancellationReason, setCancellationReason] = useState("");
+
+  const requests = bookings.filter((booking) => booking.status === "Pending Request");
+  const jobs = bookings.filter((booking) => booking.status !== "Pending Request");
 
   const sortedRequests = useMemo(() => {
     return [...requests].sort((a, b) => parseDate(b.date) - parseDate(a.date));
@@ -132,16 +138,37 @@ export default function ProviderDashboard() {
   function acceptRequest(id) {
     const req = requests.find((r) => r.id === id);
     if (!req) return;
-    if (!window.confirm(`Accept request from ${req.client} for "${req.task}"?`)) return;
-    setRequests((prev) => prev.filter((r) => r.id !== id));
-    setJobs((prev) => [
-      ...prev,
-      { ...req, status: "Pending Request" },
-    ]);
+    setAcceptingId(id);
   }
 
-  function rejectRequest(id) {
-    setRequests((prev) => prev.filter((r) => r.id !== id));
+  async function confirmAcceptRequest() {
+    if (!acceptingId) return;
+    try {
+      await updateBookingStatus(acceptingId, "Confirmed");
+    } catch (requestError) {
+      window.alert(requestError.message);
+    } finally {
+      setAcceptingId(null);
+    }
+  }
+
+  async function rejectRequest(id) {
+    try {
+      await updateBookingStatus(id, "Declined");
+    } catch (requestError) {
+      window.alert(requestError.message);
+    }
+  }
+
+  async function handleCancelJob() {
+    if (!cancelingId) return;
+    try {
+      await requestCancellation(cancelingId, "request", cancellationReason);
+      setCancelingId(null);
+      setCancellationReason("");
+    } catch (requestError) {
+      window.alert(requestError.message);
+    }
   }
 
   return (
@@ -156,6 +183,8 @@ export default function ProviderDashboard() {
             Manage your jobs, requests, and earnings
           </p>
         </div>
+        {error && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+        {isLoading && <p className="mb-4 text-sm text-gray-500">Loading bookings...</p>}
 
         {/* Stats */}
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -312,12 +341,22 @@ export default function ProviderDashboard() {
                           <p className="mt-1 text-sm font-medium text-gray-700">
                             {job.task}
                           </p>
-                          <button
-                            onClick={() => setExpandedJob(expandedJob === job.id ? null : job.id)}
-                            className="mt-1 text-xs font-medium text-primary-600 transition hover:text-primary-800"
-                          >
-                            {expandedJob === job.id ? "Hide details" : "View details"}
-                          </button>
+                          <div className="mt-1 flex items-center gap-3">
+                            <button
+                              onClick={() => setExpandedJob(expandedJob === job.id ? null : job.id)}
+                              className="text-xs font-medium text-primary-600 transition hover:text-primary-800"
+                            >
+                              {expandedJob === job.id ? "Hide details" : "View details"}
+                            </button>
+                            {(job.status === "Pending Request" || job.status === "Confirmed") && (
+                              <button
+                                onClick={() => setCancelingId(job.id)}
+                                className="text-xs font-medium text-red-600 transition hover:text-red-800"
+                              >
+                                Cancel
+                              </button>
+                            )}
+                          </div>
                           {expandedJob === job.id && (
                             <div className="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-500">
                               <p>{job.description}</p>
@@ -388,6 +427,73 @@ export default function ProviderDashboard() {
           </div>
         </div>
       </div>
+
+      {acceptingId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setAcceptingId(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="p-6">
+              <h3 className="text-lg font-bold text-gray-900">Accept Request?</h3>
+              <p className="mt-2 text-sm text-gray-500">
+                {(() => {
+                  const request = requests.find((item) => item.id === acceptingId);
+                  return request ? `Accept ${request.client}'s request for "${request.task}"?` : "Accept this booking request?";
+                })()}
+              </p>
+              <div className="mt-6 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAcceptingId(null)}
+                  className="flex-1 rounded-lg border border-gray-200 bg-white py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                >
+                  Keep Request
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmAcceptRequest}
+                  className="flex-1 rounded-lg bg-primary-600 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-700"
+                >
+                  Accept
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cancelingId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setCancelingId(null)}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="p-6">
+              <h3 className="text-lg font-bold text-gray-900">Cancel Booking?</h3>
+              <p className="mt-2 text-sm text-gray-500">The client may need to approve this cancellation request.</p>
+              <div className="mt-4">
+                <label htmlFor="dashboard-cancellation-reason" className="mb-1.5 block text-sm font-medium text-gray-700">Reason</label>
+                <textarea
+                  id="dashboard-cancellation-reason"
+                  value={cancellationReason}
+                  onChange={(event) => setCancellationReason(event.target.value)}
+                  rows={3}
+                  placeholder="Why do you need to cancel?"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30"
+                />
+              </div>
+              <div className="mt-6 flex gap-3">
+                <button type="button" onClick={() => setCancelingId(null)} className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-semibold text-gray-700">Keep Booking</button>
+                <button type="button" onClick={handleCancelJob} className="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white">Request Cancellation</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

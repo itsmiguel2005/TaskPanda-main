@@ -57,6 +57,7 @@ Create a `.env` file in the project root when you need to change the database, p
 
 ```env
 MONGO_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/taskpanda?retryWrites=true&w=majority
+MONGO_DB_NAME=taskpanda
 PORT=3000
 
 # Optional admin login
@@ -84,6 +85,7 @@ Add these Environment Variables in the Vercel project settings for every environ
 
 ```text
 MONGO_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/taskpanda?retryWrites=true&w=majority
+MONGO_DB_NAME=taskpanda
 ADMIN_EMAIL=your-admin-email
 ADMIN_PASSWORD=your-strong-admin-password
 SMTP_HOST=smtp.gmail.com

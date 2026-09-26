@@ -8,7 +8,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   const [notifOpen, setNotifOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const { isLoggedIn, role: authRole, firstName } = useAuth();
+  const { isLoggedIn, role: authRole, firstName, logout } = useAuth();
   const notifRef = useRef(null);
 
   useEffect(() => {
@@ -188,6 +188,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                   <button
                     onClick={() => {
                       setDropdownOpen(false);
+                      logout();
                       navigate("/");
                     }}
                     className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"

@@ -6,6 +6,7 @@ const parseBoolean = (value) =>
 
 module.exports = {
   mongoUri: String(process.env.MONGO_URI || "").trim(),
+  mongoDbName: String(process.env.MONGO_DB_NAME || "taskpanda").trim(),
   port: process.env.PORT || 3000,
   smtpUser: String(process.env.SMTP_USER || "").replace(/\s+/g, "").trim(),
   smtpPassword: String(process.env.SMTP_PASSWORD || "").replace(/\s+/g, "").trim(),

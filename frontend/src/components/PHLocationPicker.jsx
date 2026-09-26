@@ -190,13 +190,7 @@ export default function PHLocationPicker({ formData, setFormData, accent = "prim
         </select>
       </div>
 
-      <div className="space-y-1">
-        <button type="button" onClick={captureLocation} className={`rounded-lg border ${borderClass} ${bgClass} px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white`}>
-          {formData.geoLocation?.coordinates ? "Fallback location saved" : "Use current location as fallback"}
-        </button>
-        <p className="text-xs text-gray-500">Your selected barangay is used for distance matching. Current location is only a fallback.</p>
-        {geoError && <p role="alert" className="text-xs text-red-600">{geoError}</p>}
-      </div>
+      {geoError && <p role="alert" className="text-xs text-red-600">{geoError}</p>}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
+import { useBookings } from "../context/BookingContext.jsx";
 
 const initialBookings = [
   {
@@ -45,7 +46,7 @@ const initialBookings = [
   },
 ];
 
-const tabs = ["All", "Pending Request", "Confirmed", "Completed", "Cancelled"];
+const tabs = ["All", "Pending Request", "Confirmed", "Cancellation Requested", "Completed", "Cancelled", "Declined"];
 
 function StatusBadge({ status }) {
   const colors = {
@@ -53,6 +54,8 @@ function StatusBadge({ status }) {
     Confirmed: "bg-green-100 text-green-700 border-green-200",
     Completed: "bg-blue-100 text-blue-700 border-blue-200",
     Cancelled: "bg-red-100 text-red-700 border-red-200",
+    Declined: "bg-red-100 text-red-700 border-red-200",
+    "Cancellation Requested": "bg-amber-100 text-amber-700 border-amber-200",
   };
   return (
     <span
@@ -71,6 +74,8 @@ function StatusDot({ status }) {
     Confirmed: "bg-green-500",
     Completed: "bg-blue-500",
     Cancelled: "bg-red-500",
+    Declined: "bg-red-500",
+    "Cancellation Requested": "bg-amber-500",
   };
   return (
     <span
@@ -85,9 +90,10 @@ export default function BookingsPage() {
   const navigate = useNavigate();
   const { isLoggedIn } = useAuth();
   const [activeTab, setActiveTab] = useState("All");
-  const [bookings, setBookings] = useState(initialBookings);
+  const { bookings, isLoading, error, requestCancellation } = useBookings();
   const [sortBy, setSortBy] = useState("date");
   const [cancelingId, setCancelingId] = useState(null);
+  const [cancellationReason, setCancellationReason] = useState("");
   const [detailId, setDetailId] = useState(null);
 
   const stats = useMemo(() => {
@@ -96,7 +102,8 @@ export default function BookingsPage() {
     const confirmed = bookings.filter((b) => b.status === "Confirmed").length;
     const completed = bookings.filter((b) => b.status === "Completed").length;
     const cancelled = bookings.filter((b) => b.status === "Cancelled").length;
-    return { total, pending, confirmed, completed, cancelled };
+    const declined = bookings.filter((b) => b.status === "Declined").length;
+    return { total, pending, confirmed, completed, cancelled, declined };
   }, [bookings]);
 
   const filteredBookings = useMemo(() => {
@@ -121,6 +128,8 @@ export default function BookingsPage() {
         Confirmed: 1,
         Completed: 2,
         Cancelled: 3,
+        Declined: 4,
+        "Cancellation Requested": 5,
       };
       sorted.sort((a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99));
     }
@@ -130,14 +139,23 @@ export default function BookingsPage() {
   const detailBooking = bookings.find((b) => b.id === detailId) || null;
   const cancelBooking = bookings.find((b) => b.id === cancelingId);
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
     if (!cancelingId) return;
-    setBookings((prev) =>
-      prev.map((b) =>
-        b.id === cancelingId ? { ...b, status: "Cancelled" } : b
-      )
-    );
+    try {
+      await requestCancellation(cancelingId, "request", cancellationReason);
+    } catch (requestError) {
+      window.alert(requestError.message);
+    }
     setCancelingId(null);
+    setCancellationReason("");
+  };
+
+  const handleCancellationResponse = async (id, action) => {
+    try {
+      await requestCancellation(id, action);
+    } catch (requestError) {
+      window.alert(requestError.message);
+    }
   };
 
   return (
@@ -150,6 +168,8 @@ export default function BookingsPage() {
             View and manage your service bookings
           </p>
         </div>
+        {error && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+        {isLoading && <p className="mb-4 text-sm text-gray-500">Loading bookings...</p>}
 
         {/* Summary Stats */}
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -249,6 +269,11 @@ export default function BookingsPage() {
                     <p className="mt-1 text-sm leading-relaxed text-gray-500">
                       {booking.description}
                     </p>
+                    {booking.photoUrls?.length > 0 && (
+                      <div className="mt-3 flex gap-2">
+                        {booking.photoUrls.map((url) => <img key={url} src={url} alt="Repair item" className="h-16 w-16 rounded-lg object-cover" />)}
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-600">
@@ -314,6 +339,22 @@ export default function BookingsPage() {
                           Book Again
                         </button>
                       )}
+                      {booking.status === "Cancellation Requested" && booking.cancellationRequestedBy === "provider" && (
+                        <>
+                          <button
+                            onClick={() => handleCancellationResponse(booking.id, "reject")}
+                            className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+                          >
+                            Reject Cancellation
+                          </button>
+                          <button
+                            onClick={() => handleCancellationResponse(booking.id, "approve")}
+                            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+                          >
+                            Approve Cancellation
+                          </button>
+                        </>
+                      )}
                       {(booking.status === "Pending Request" ||
                         booking.status === "Confirmed") && (
                         <button
@@ -373,6 +414,22 @@ export default function BookingsPage() {
                 </span>{" "}
                 with {cancelBooking.worker}? This action cannot be undone.
               </p>
+              {Date.now() - new Date(cancelBooking.createdAt).getTime() > 10 * 60 * 1000 && (
+                <div className="mt-4">
+                  <label htmlFor="client-cancellation-reason" className="mb-1.5 block text-sm font-medium text-gray-700">
+                    Reason for cancellation
+                  </label>
+                  <textarea
+                    id="client-cancellation-reason"
+                    value={cancellationReason}
+                    onChange={(event) => setCancellationReason(event.target.value)}
+                    rows={3}
+                    placeholder="Tell the provider why you need to cancel"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">A cancellation request will be sent to the provider for approval.</p>
+                </div>
+              )}
               <div className="mt-6 flex gap-3">
                 <button
                   onClick={() => setCancelingId(null)}

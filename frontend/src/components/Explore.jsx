@@ -2,7 +2,9 @@ import { useState, useMemo, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import Header from "./Header.jsx";
 import ProviderModal from "./ProviderModal.jsx";
+import RequestBookingModal from "./RequestBookingModal.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
+import { useBookings } from "../context/BookingContext.jsx";
 
 const filterCategories = [
   { name: "Air Conditioning Technician" },
@@ -52,7 +54,9 @@ function CheckBox({ label, count, checked, onChange }) {
 export default function Explore() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, refreshProfile } = useAuth();
+  const { createBooking } = useBookings();
   const [viewingProvider, setViewingProvider] = useState(null);
+  const [bookingProvider, setBookingProvider] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
   const [searchCoordinates, setSearchCoordinates] = useState(null);
@@ -452,6 +456,22 @@ export default function Explore() {
                   key={provider._id}
                   className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:shadow-md"
                 >
+                  <div className="h-40 overflow-hidden bg-slate-200">
+                    {provider.profileImage ? (
+                      <img
+                        src={provider.profileImage}
+                        alt={`${provider.fullName || provider.username || "Provider"} profile`}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full items-end justify-center text-white" aria-label="No profile photo">
+                        <svg viewBox="0 0 120 120" role="img" aria-hidden="true" className="h-36 w-36 text-white">
+                          <circle cx="60" cy="35" r="23" fill="currentColor" />
+                          <path d="M18 116c2-30 19-48 42-48s40 18 42 48" fill="currentColor" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
                   <div className="px-4 py-4">
                     <div className="flex items-start justify-between">
                       <div>
@@ -472,13 +492,20 @@ export default function Explore() {
                     <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-gray-500">
                       {provider.bio || "This provider has not added an introduction yet."}
                     </p>
-                    <div className="mt-3 flex justify-end">
+                    <div className="mt-3 flex justify-end gap-2">
                       <button
                         type="button"
                         onClick={() => setViewingProvider(provider)}
                         className="rounded-lg bg-purple-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-purple-700"
                       >
                         View Profile
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBookingProvider(provider)}
+                        className="rounded-lg border border-purple-200 px-4 py-1.5 text-xs font-semibold text-purple-700 transition hover:bg-purple-50"
+                      >
+                        Book
                       </button>
                     </div>
                   </div>
@@ -506,6 +533,11 @@ export default function Explore() {
           )}
         </div>
         <ProviderModal provider={viewingProvider} onClose={() => setViewingProvider(null)} />
+        <RequestBookingModal
+          provider={bookingProvider}
+          onClose={() => setBookingProvider(null)}
+          onSubmit={createBooking}
+        />
       </div>
     </div>
   );

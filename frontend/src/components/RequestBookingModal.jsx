@@ -6,6 +6,7 @@ const MONTHS = [
 ];
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const TIME_SLOTS = ["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"];
 
 function CalendarPicker({ selectedDate, onSelect, onClose }) {
   const [viewDate, setViewDate] = useState(selectedDate ? new Date(selectedDate) : new Date());
@@ -64,14 +65,19 @@ function CalendarPicker({ selectedDate, onSelect, onClose }) {
           if (d === null) return <div key={`empty-${i}`} />;
           const dateObj = new Date(year, month, d);
           const isToday = dateObj.getTime() === today.getTime();
+          const isPast = dateObj < today;
           const isSelected = selectedDate && dateObj.getTime() === new Date(selectedDate).setHours(0,0,0,0);
           return (
             <button
               key={d}
+              type="button"
+              disabled={isPast}
               onClick={() => { onSelect(dateObj.toISOString().split("T")[0]); onClose(); }}
               className={`rounded-full py-1 text-sm transition ${
                 isSelected
                   ? "bg-gray-900 text-white font-semibold"
+                  : isPast
+                  ? "cursor-not-allowed text-gray-300"
                   : isToday
                   ? "bg-gray-100 text-gray-900 font-semibold"
                   : "text-gray-700 hover:bg-gray-50"
@@ -86,18 +92,39 @@ function CalendarPicker({ selectedDate, onSelect, onClose }) {
   );
 }
 
-export default function RequestBookingModal({ provider, onClose }) {
+export default function RequestBookingModal({ provider, onClose, onSubmit }) {
   const [taskDescription, setTaskDescription] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
+  const [selectedTime, setSelectedTime] = useState("");
+  const [urgency, setUrgency] = useState("Flexible");
+  const [offer, setOffer] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [isSubmitted, setIsSubmitted] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
+  const [photoPreviews, setPhotoPreviews] = useState([]);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    const nextPreviews = selectedFiles.map((file) => URL.createObjectURL(file));
+    setPhotoPreviews(nextPreviews);
+    return () => nextPreviews.forEach((preview) => URL.revokeObjectURL(preview));
+  }, [selectedFiles]);
+
+  useEffect(() => {
+    if (!provider) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [provider, onClose]);
 
   if (!provider) return null;
 
-  const initials = provider.initials || "SP";
-  const name = provider.name || "Sweetie Palm";
-  const trade = provider.trade || "Carpentry Services";
+  const name = provider.fullName || provider.username || provider.name || "Provider";
+  const trade = provider.professions?.join(" · ") || provider.trade || "Service provider";
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files);
@@ -116,10 +143,38 @@ export default function RequestBookingModal({ provider, onClose }) {
     return `${MONTHS[parseInt(m) - 1]} ${parseInt(d)}, ${y}`;
   };
 
+  const handleSubmit = async () => {
+    const offerAmount = Number(offer);
+    if (!taskDescription.trim()) return setFormError("Please describe the item or issue you want repaired.");
+    if (!selectedDate) return setFormError("Please select a service date.");
+    if (!selectedTime) return setFormError("Please select an available time.");
+    if (!Number.isFinite(offerAmount) || offerAmount < 100) return setFormError("Your offer must be at least PHP 100.");
+    if (!termsAccepted) return setFormError("Please agree to the terms and cancellation policy.");
+    setFormError("");
+    try {
+      await onSubmit?.({
+        providerId: provider._id,
+        worker: name,
+        cred: trade,
+        task: taskDescription.trim(),
+        description: taskDescription.trim(),
+        date: formatDate(selectedDate),
+        time: selectedTime,
+        offer: offerAmount,
+        urgency,
+        photos: selectedFiles,
+        address: [provider.barangay, provider.city, provider.province].filter(Boolean).join(", "),
+        termsAccepted: true,
+      });
+      setIsSubmitted(true);
+    } catch (error) {
+      setFormError(error.message || "Could not submit the booking.");
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
     >
       <div
         className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl"
@@ -142,7 +197,7 @@ export default function RequestBookingModal({ provider, onClose }) {
         {/* Provider Summary Card */}
         <div className="mx-6 mb-5 flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-800 text-sm font-bold text-white">
-            {initials}
+            {name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}
           </div>
           <div>
             <p className="text-sm font-semibold text-gray-900">{name}</p>
@@ -152,6 +207,28 @@ export default function RequestBookingModal({ provider, onClose }) {
 
         {/* Form */}
         <div className="px-6 pb-6 space-y-5">
+          {isSubmitted ? (
+            <div className="py-8 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-100 text-green-700">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-7 w-7">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="mt-4 text-xl font-bold text-gray-900">Offer Submitted</h3>
+              <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                Your offer of PHP {Number(offer).toLocaleString()} has been sent to the provider. They have to accept or counter.
+              </p>
+              <div className="mt-6 flex gap-3">
+                <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-gray-300 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50">
+                  Return Home
+                </button>
+                <button type="button" onClick={onClose} className="flex-1 rounded-lg bg-gray-900 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800">
+                  View Booking Status
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
           {/* Task Description */}
           <div>
             <label htmlFor="task" className="mb-1.5 block text-sm font-medium text-gray-700">
@@ -191,19 +268,21 @@ export default function RequestBookingModal({ provider, onClose }) {
               />
             </div>
             {selectedFiles.length > 0 && (
-              <div className="mt-2 space-y-1.5">
+              <div className="mt-2 grid grid-cols-3 gap-2">
                 {selectedFiles.map((file, i) => (
-                  <div key={i} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
-                    <span className="truncate text-xs font-medium text-gray-700">{file.name}</span>
+                  <div key={`${file.name}-${i}`} className="relative overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                    {photoPreviews[i] && <img src={photoPreviews[i]} alt={file.name} className="h-20 w-full object-cover" />}
                     <button
+                      type="button"
                       onClick={() => removeFile(i)}
-                      className="ml-2 text-gray-400 hover:text-red-500"
+                      className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
                       aria-label={`Remove ${file.name}`}
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-4 w-4">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-3.5 w-3.5">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     </button>
+                    <p className="truncate px-1.5 py-1 text-[10px] text-gray-600">{file.name}</p>
                   </div>
                 ))}
               </div>
@@ -241,6 +320,71 @@ export default function RequestBookingModal({ provider, onClose }) {
             )}
           </div>
 
+          {/* Urgency */}
+          <div>
+            <label htmlFor="urgency" className="mb-1.5 block text-sm font-medium text-gray-700">
+              Service urgency
+            </label>
+            <select
+              id="urgency"
+              value={urgency}
+              onChange={(e) => setUrgency(e.target.value)}
+              className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-800 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
+            >
+              <option>Flexible</option>
+              <option>Emergency</option>
+            </select>
+          </div>
+
+          {/* Time Selection */}
+          <div>
+            <p className="mb-2 text-sm font-medium text-gray-700">Available time</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {TIME_SLOTS.map((time) => (
+                <button
+                  key={time}
+                  type="button"
+                  onClick={() => setSelectedTime(time)}
+                  className={`rounded-lg border px-2 py-2 text-xs font-medium transition ${selectedTime === time ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-700 hover:border-gray-400"}`}
+                >
+                  {time}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Offer */}
+          <div>
+            <label htmlFor="offer" className="mb-1.5 block text-sm font-medium text-gray-700">
+              Your offer
+            </label>
+            <div className="flex items-center rounded-lg border border-gray-300 focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-500/30">
+              <span className="px-3 text-sm text-gray-500">PHP</span>
+              <input
+                id="offer"
+                type="number"
+                min="100"
+                value={offer}
+                onChange={(e) => setOffer(e.target.value)}
+                placeholder="Minimum 100"
+                className="w-full rounded-lg border-0 px-2 py-2.5 text-sm text-gray-800 outline-none"
+              />
+            </div>
+            <p className="mt-1 text-xs text-gray-500">Offer-based pricing, not hourly.</p>
+          </div>
+
+          <label className="flex items-start gap-2 text-xs leading-relaxed text-gray-600">
+            <input
+              type="checkbox"
+              checked={termsAccepted}
+              onChange={(e) => setTermsAccepted(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <span>I agree to the platform&apos;s terms and the provider&apos;s cancellation policy.</span>
+          </label>
+
+          {formError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>}
+
           {/* Footer Buttons */}
           <div className="flex gap-3 pt-2">
             <button
@@ -252,11 +396,14 @@ export default function RequestBookingModal({ provider, onClose }) {
             </button>
             <button
               type="button"
+              onClick={handleSubmit}
               className="flex-1 rounded-lg bg-gray-900 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800"
             >
               Request Booking -&gt;
             </button>
           </div>
+            </>
+          )}
         </div>
       </div>
     </div>

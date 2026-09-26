@@ -79,6 +79,7 @@ async function handleDiscoverProviders(req, res) {
                 _id: 1,
                 fullName: 1,
                 username: 1,
+                profileImage: 1,
                 professions: 1,
                 bio: 1,
                 province: 1,

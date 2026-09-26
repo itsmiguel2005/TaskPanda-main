@@ -33,6 +33,7 @@ import PrivacyPolicyPage from "./pages/PrivacyPolicyPage.jsx";
 import ContactUsPage from "./pages/ContactUsPage.jsx";
 import VerificationPage from "./pages/VerificationPage.jsx";
 import { AuthProvider } from "./context/AuthContext.jsx";
+import { BookingProvider } from "./context/BookingContext.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
 import Footer from "./components/Footer.jsx";
 
@@ -102,8 +103,9 @@ export default function App() {
   const showFooter = !authRoutes.includes(location.pathname);
   return (
     <AuthProvider>
-      <ErrorBoundary>
-        <Routes>
+      <BookingProvider>
+        <ErrorBoundary>
+          <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -136,9 +138,10 @@ export default function App() {
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/blog" element={<BlogPage />} />
         <Route path="/profile/verify" element={<ProtectedRoute roles={["client", "provider"]}><VerificationPage /></ProtectedRoute>} />
-      </Routes>
-      </ErrorBoundary>
-      {showFooter && <Footer />}
+          </Routes>
+        </ErrorBoundary>
+        {showFooter && <Footer />}
+      </BookingProvider>
     </AuthProvider>
   );
 }
