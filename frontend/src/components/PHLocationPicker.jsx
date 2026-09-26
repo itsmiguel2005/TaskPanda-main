@@ -2,10 +2,26 @@ import { useState, useEffect, useCallback } from "react";
 
 export default function PHLocationPicker({ formData, setFormData, accent = "primary" }) {
   const [ph, setPh] = useState(null);
-  const [provinces, setProvinces] = useState([]);
-  const [cities, setCities] = useState([]);
-  const [barangays, setBarangays] = useState([]);
-  const [loading, setLoading] = useState({ province: false, city: false, barangay: false });
+  const [geoError, setGeoError] = useState("");
+
+  const normalizeName = (name) => String(name || "")
+    .replace(/^city of\s+/i, "")
+    .replace(/\s+city$/i, "")
+    .replace(/[^a-z0-9]/gi, "")
+    .toLowerCase();
+  const provinces = ph ? ph.getProvinces().sort((a, b) => a.name.localeCompare(b.name)) : [];
+  const province = provinces.find((item) => item.code === formData.provinceCode)
+    || provinces.find((item) => normalizeName(item.name) === normalizeName(formData.province));
+  const cities = ph && province
+    ? ph.getCities(province.code).sort((a, b) => a.name.localeCompare(b.name))
+    : [];
+  const city = cities.find((item) => item.code === formData.cityCode)
+    || cities.find((item) => normalizeName(item.name) === normalizeName(formData.city));
+  const barangays = ph && city
+    ? ph.getBarangays(city.code).sort((a, b) => a.name.localeCompare(b.name))
+    : [];
+  const barangay = barangays.find((item) => item.code === formData.barangayCode)
+    || barangays.find((item) => normalizeName(item.name) === normalizeName(formData.barangay));
 
   const borderClass = accent === "green" ? "border-green-200" : "border-primary-200";
   const bgClass = accent === "green" ? "bg-green-50/50" : "bg-primary-50/50";
@@ -29,15 +45,8 @@ export default function PHLocationPicker({ formData, setFormData, accent = "prim
       city: "",
       barangayCode: "",
       barangay: "",
+      geoLocation: null,
     }));
-    setCities([]);
-    setBarangays([]);
-    if (provinceCode && ph) {
-      setLoading((prev) => ({ ...prev, city: true }));
-      const data = ph.getCities(provinceCode).sort((a, b) => a.name.localeCompare(b.name));
-      setCities(data);
-      setLoading((prev) => ({ ...prev, city: false }));
-    }
   }, [ph, setFormData]);
 
   const handleCityChange = useCallback((e) => {
@@ -49,29 +58,67 @@ export default function PHLocationPicker({ formData, setFormData, accent = "prim
       city: cityName,
       barangayCode: "",
       barangay: "",
+      geoLocation: null,
     }));
-    setBarangays([]);
-    if (cityCode && ph) {
-      setLoading((prev) => ({ ...prev, barangay: true }));
-      const data = ph.getBarangays(cityCode).sort((a, b) => a.name.localeCompare(b.name));
-      setBarangays(data);
-      setLoading((prev) => ({ ...prev, barangay: false }));
-    }
   }, [ph, setFormData]);
 
   const handleBarangayChange = useCallback((e) => {
     const barangayCode = e.target.value;
     const barangayName = e.target.options[e.target.selectedIndex]?.text || "";
-    setFormData((prev) => ({ ...prev, barangayCode, barangay: barangayName }));
+    setFormData((prev) => ({ ...prev, barangayCode, barangay: barangayName, geoLocation: null }));
   }, [setFormData]);
 
-  useEffect(() => {
-    if (!ph) return;
-    setLoading((prev) => ({ ...prev, province: true }));
-    const data = ph.getProvinces().sort((a, b) => a.name.localeCompare(b.name));
-    setProvinces(data);
-    setLoading((prev) => ({ ...prev, province: false }));
-  }, [ph]);
+  const captureLocation = () => {
+    setGeoError("");
+    if (!navigator.geolocation) {
+      setGeoError("Location is not available in this browser.");
+      return;
+    }
+
+    let bestPosition = null;
+    let attempts = 0;
+
+    const tryCapture = () => {
+      navigator.geolocation.getCurrentPosition(
+        ({ coords }) => {
+          const candidate = {
+            longitude: Number(coords.longitude.toFixed(6)),
+            latitude: Number(coords.latitude.toFixed(6)),
+            accuracy: Number(coords.accuracy || 0),
+          };
+
+          if (!bestPosition || candidate.accuracy < bestPosition.accuracy) {
+            bestPosition = candidate;
+          }
+
+          if (candidate.accuracy <= 50 || attempts >= 2) {
+            setFormData((prev) => ({
+              ...prev,
+              geoLocation: {
+                type: "Point",
+                coordinates: [bestPosition.longitude, bestPosition.latitude],
+              },
+            }));
+            return;
+          }
+
+          attempts += 1;
+          tryCapture();
+        },
+        () => {
+          if (attempts >= 2) {
+            setGeoError("Unable to get a precise location. Try again or enter a nearby-search pin manually.");
+            return;
+          }
+          attempts += 1;
+          tryCapture();
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    };
+
+    tryCapture();
+  };
 
   const selectClass = `block w-full rounded-lg ${borderClass} ${bgClass} px-4 py-2.5 text-sm text-gray-800 ${focusClass} transition-colors`;
 
@@ -84,9 +131,9 @@ export default function PHLocationPicker({ formData, setFormData, accent = "prim
         <select
           id="province"
           name="province"
-          value={formData.provinceCode || ""}
+          value={province?.code || ""}
           onChange={handleProvinceChange}
-          disabled={loading.province || !ph}
+          disabled={!ph}
           required
           className={`${selectClass} disabled:cursor-not-allowed disabled:opacity-50`}
         >
@@ -106,9 +153,9 @@ export default function PHLocationPicker({ formData, setFormData, accent = "prim
         <select
           id="city"
           name="city"
-          value={formData.cityCode || ""}
+          value={city?.code || ""}
           onChange={handleCityChange}
-          disabled={!formData.provinceCode || loading.city || !ph}
+          disabled={!province || !ph}
           required
           className={`${selectClass} disabled:cursor-not-allowed disabled:opacity-50`}
         >
@@ -128,9 +175,9 @@ export default function PHLocationPicker({ formData, setFormData, accent = "prim
         <select
           id="barangay"
           name="barangay"
-          value={formData.barangayCode || ""}
+          value={barangay?.code || ""}
           onChange={handleBarangayChange}
-          disabled={!formData.cityCode || loading.barangay || !ph}
+          disabled={!city || !ph}
           required
           className={`${selectClass} disabled:cursor-not-allowed disabled:opacity-50`}
         >
@@ -141,6 +188,14 @@ export default function PHLocationPicker({ formData, setFormData, accent = "prim
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="space-y-1">
+        <button type="button" onClick={captureLocation} className={`rounded-lg border ${borderClass} ${bgClass} px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white`}>
+          {formData.geoLocation?.coordinates ? "Fallback location saved" : "Use current location as fallback"}
+        </button>
+        <p className="text-xs text-gray-500">Your selected barangay is used for distance matching. Current location is only a fallback.</p>
+        {geoError && <p role="alert" className="text-xs text-red-600">{geoError}</p>}
       </div>
     </div>
   );

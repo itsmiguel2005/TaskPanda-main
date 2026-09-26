@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const User = require("../models/User");
 const PasswordReset = require("../models/PasswordReset");
 const config = require("../config/env");
+const { geocodeAddress } = require("../services/geocoder");
 const {
   hasValidSmtpCredentials,
   sendPasswordResetEmail,
@@ -24,6 +25,16 @@ function formatAddress(street, barangay, city, province) {
     .map((part) => String(part || "").trim())
     .filter(Boolean)
     .join(", ");
+}
+
+function normalizeGeoLocation(value) {
+  if (!value || value.type !== "Point" || !Array.isArray(value.coordinates) || value.coordinates.length !== 2) return null;
+  const [longitude, latitude] = value.coordinates.map(Number);
+  if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180 || !Number.isFinite(latitude) || latitude < -90 || latitude > 90) return null;
+  return {
+    type: "Point",
+    coordinates: [Number(longitude.toFixed(6)), Number(latitude.toFixed(6))],
+  };
 }
 
 function setRegistrationSessionCookie(res, token) {
@@ -519,6 +530,11 @@ async function handleCompleteRegistration(req, res) {
   const city = String(req.body.city || "").trim();
   const barangay = String(req.body.barangay || "").trim();
   const address = formatAddress(req.body.address, barangay, city, province);
+  let geoLocation = address ? await geocodeAddress(address, { barangay, city, province }) : null;
+  geoLocation ||= normalizeGeoLocation(req.body.geoLocation);
+  if (req.body.geoLocation != null && !normalizeGeoLocation(req.body.geoLocation) && !geoLocation) {
+    return res.status(400).json({ message: "Choose a valid map location." });
+  }
   const dateOfBirth = String(req.body.dateOfBirth || "").trim();
   if (!fullName) return res.status(400).json({ message: "Your full name is required." });
   if (!/^09\d{9}$/.test(mobileNumber)) {
@@ -527,6 +543,9 @@ async function handleCompleteRegistration(req, res) {
 
   let parsedDateOfBirth;
   if (user.role === "provider") {
+    if (!geoLocation || !Array.isArray(geoLocation.coordinates) || geoLocation.coordinates.length !== 2) {
+      return res.status(400).json({ message: "Use your current location so nearby clients can find your profile." });
+    }
     parsedDateOfBirth = new Date(`${dateOfBirth}T00:00:00.000Z`);
     const today = new Date();
     const age = today.getUTCFullYear() - parsedDateOfBirth.getUTCFullYear() - (
@@ -561,6 +580,7 @@ async function handleCompleteRegistration(req, res) {
         city,
         barangay,
         address,
+        ...(geoLocation ? { geoLocation } : {}),
         registrationComplete: true,
         ...(user.role === "provider" ? { dateOfBirth: parsedDateOfBirth } : {}),
       },
@@ -603,6 +623,7 @@ async function handleCompleteRegistration(req, res) {
       city: updatedUser.city,
       barangay: updatedUser.barangay,
       address: updatedUser.address,
+      geoLocation: updatedUser.geoLocation,
       mobileNumber: updatedUser.mobileNumber,
       firstName: updatedUser.firstName,
       middleName: updatedUser.middleName,
@@ -714,6 +735,7 @@ async function handleLogin(req, res) {
         city: user.city,
         barangay: user.barangay,
         address: user.address,
+        geoLocation: user.geoLocation,
         professions: user.professions,
         bio: user.bio,
         createdAt: user.createdAt,

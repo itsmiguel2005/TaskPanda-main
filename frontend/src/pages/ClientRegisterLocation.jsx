@@ -100,22 +100,6 @@ export default function ClientRegisterLocation() {
                 accent="primary"
               />
 
-              <div className="space-y-2">
-                <label htmlFor="address" className="block text-sm font-medium text-gray-700">
-                  Street Address
-                </label>
-                <input
-                  type="text"
-                  id="address"
-                  name="address"
-                  autoComplete="street-address"
-                  placeholder="Block, Lot, Unit (optional)"
-                  value={formData.address}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, address: e.target.value }))}
-                  className="block w-full rounded-lg border border-primary-200 bg-primary-50/50 px-4 py-2.5 text-sm text-gray-800 placeholder-gray-400/70 transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
-                />
-              </div>
-
               {error && (
                 <p className="text-sm text-red-600" role="alert">
                   {error}

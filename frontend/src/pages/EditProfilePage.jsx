@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
+import PHLocationPicker from "../components/PHLocationPicker.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 
 const getFormFromUser = (user = {}) => ({
@@ -8,10 +9,18 @@ const getFormFromUser = (user = {}) => ({
   username: user.username || "",
   email: user.email || "",
   phone: user.mobileNumber || "",
-  location: user.address || [user.barangay, user.city, user.province].filter(Boolean).join(", "),
+  province: user.province || "",
+  city: user.city || "",
+  barangay: user.barangay || "",
+  provinceCode: "",
+  cityCode: "",
+  barangayCode: "",
+  geoLocation: user.geoLocation || null,
   bio: user.bio || "",
   professions: (user.professions || []).join(", "),
 });
+
+const comparableForm = ({ provinceCode, cityCode, barangayCode, ...values }) => values;
 
 function validateForm(form) {
   const errors = {};
@@ -21,7 +30,7 @@ function validateForm(form) {
   if (!form.email.trim()) errors.email = "Email is required";
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errors.email = "Invalid email format";
     if (form.phone && !/^09\d{9}$/.test(form.phone)) errors.phone = "Enter an 11-digit number starting with 09";
-  if (!form.location.trim()) errors.location = "Location is required";
+  if (!form.province || !form.city || !form.barangay) errors.location = "Select your province, city, and barangay";
   if (form.bio.length > 500) errors.bio = "Maximum 500 characters";
   return errors;
 }
@@ -33,6 +42,7 @@ export default function EditProfilePage() {
   const [saved, setSaved] = useState(false);
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState("");
+  const [locationError, setLocationError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const initialFormRef = useRef(JSON.stringify(getFormFromUser()));
@@ -45,8 +55,12 @@ export default function EditProfilePage() {
     if (isAuthLoading) return;
     const currentForm = getFormFromUser(user);
     setForm(currentForm);
-    initialFormRef.current = JSON.stringify(currentForm);
+    initialFormRef.current = JSON.stringify(comparableForm(currentForm));
   }, [isAuthLoading, user]);
+
+  useEffect(() => {
+    setDirty(JSON.stringify(comparableForm(form)) !== initialFormRef.current);
+  }, [form]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -63,7 +77,7 @@ export default function EditProfilePage() {
     const { name, value } = e.target;
     const nextForm = { ...form, [name]: value };
     setForm(nextForm);
-    setDirty(JSON.stringify(nextForm) !== initialFormRef.current);
+    setDirty(JSON.stringify(comparableForm(nextForm)) !== initialFormRef.current);
     setServerError("");
     if (errors[name]) {
       setErrors((prev) => {
@@ -72,6 +86,60 @@ export default function EditProfilePage() {
         return next;
       });
     }
+  };
+
+  const handleCaptureLocation = () => {
+    setLocationError("");
+    if (!navigator.geolocation) {
+      setLocationError("Location is not available in this browser.");
+      return;
+    }
+
+    let bestPosition = null;
+    let attempts = 0;
+
+    const tryCapture = () => {
+      navigator.geolocation.getCurrentPosition(
+        ({ coords }) => {
+          const candidate = {
+            longitude: Number(coords.longitude.toFixed(6)),
+            latitude: Number(coords.latitude.toFixed(6)),
+            accuracy: Number(coords.accuracy || 0),
+          };
+
+          if (!bestPosition || candidate.accuracy < bestPosition.accuracy) {
+            bestPosition = candidate;
+          }
+
+          if (candidate.accuracy <= 50 || attempts >= 2) {
+            const nextForm = {
+              ...form,
+              geoLocation: {
+                type: "Point",
+                coordinates: [bestPosition.longitude, bestPosition.latitude],
+              },
+            };
+            setForm(nextForm);
+            setDirty(JSON.stringify(comparableForm(nextForm)) !== initialFormRef.current);
+            return;
+          }
+
+          attempts += 1;
+          tryCapture();
+        },
+        () => {
+          if (attempts >= 2) {
+            setLocationError("Unable to get a precise location. Try again or set a nearby-search pin manually.");
+            return;
+          }
+          attempts += 1;
+          tryCapture();
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    };
+
+    tryCapture();
   };
 
   const handleSubmit = async (e) => {
@@ -97,7 +165,11 @@ export default function EditProfilePage() {
           fullName: form.fullName,
           username: form.username,
           mobileNumber: form.phone,
-          address: form.location,
+          address: [form.barangay, form.city, form.province].filter(Boolean).join(", "),
+          province: form.province,
+          city: form.city,
+          barangay: form.barangay,
+          geoLocation: form.geoLocation || undefined,
           bio: form.bio,
           professions: form.professions.split(",").map((profession) => profession.trim()).filter(Boolean),
         }),
@@ -110,9 +182,10 @@ export default function EditProfilePage() {
       }
 
       updateUser(data.user);
+      setLocationError(data.locationWarning || "");
       const savedForm = getFormFromUser(data.user);
       setForm(savedForm);
-      initialFormRef.current = JSON.stringify(savedForm);
+      initialFormRef.current = JSON.stringify(comparableForm(savedForm));
       setDirty(false);
       setSaved(true);
       window.setTimeout(() => setSaved(false), 3000);
@@ -242,19 +315,16 @@ export default function EditProfilePage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <p className="mb-2 block text-sm font-medium text-gray-700">
               Location <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              name="location"
-              value={form.location}
-              onChange={handleChange}
-              className="mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-              style={{ borderColor: errors.location ? "#ef4444" : "#e5e7eb" }}
-              required
-            />
+            </p>
+            <PHLocationPicker formData={form} setFormData={setForm} />
             {errors.location && <p className="mt-1 text-xs text-red-500">{errors.location}</p>}
+            <button type="button" onClick={handleCaptureLocation} className="mt-2 text-sm font-medium text-primary-700 hover:text-primary-900">
+              {form.geoLocation?.coordinates ? "Update nearby-search pin" : "Set nearby-search pin"}
+            </button>
+            <p className="mt-1 text-xs text-gray-500">Your precise pin is used only for nearby matching and isn’t shown publicly.</p>
+            {locationError && <p className="mt-1 text-xs text-red-600" role="alert">{locationError}</p>}
           </div>
 
           <div>

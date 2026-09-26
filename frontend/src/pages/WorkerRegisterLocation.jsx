@@ -25,7 +25,6 @@ export default function WorkerRegisterLocation() {
       setError("Please select your complete location.");
       return;
     }
-
     const step1Raw = sessionStorage.getItem("workerStep1") || localStorage.getItem("workerStep1");
     if (!step1Raw) {
       setError("Session expired. Please start registration again.");
@@ -44,12 +43,14 @@ export default function WorkerRegisterLocation() {
       city: formData.city,
       barangay: formData.barangay,
       address: formData.address,
+      geoLocation: formData.geoLocation,
     }));
     localStorage.setItem("workerLocationStep", JSON.stringify({
       province: formData.province,
       city: formData.city,
       barangay: formData.barangay,
       address: formData.address,
+      geoLocation: formData.geoLocation,
     }));
     navigate("/worker-register/dob");
   };
@@ -111,22 +112,6 @@ export default function WorkerRegisterLocation() {
                 accent="green"
               />
 
-              <div className="space-y-2">
-                <label htmlFor="address" className="block text-sm font-medium text-gray-700">
-                  Street Address
-                </label>
-                <input
-                  type="text"
-                  id="address"
-                  name="address"
-                  autoComplete="street-address"
-                  placeholder="Block, Lot, Unit (optional)"
-                  value={formData.address}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, address: e.target.value }))}
-                  className="block w-full rounded-lg border border-green-200 bg-green-50/50 px-4 py-2.5 text-sm text-gray-800 placeholder-gray-400/70 transition-colors focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/30"
-                />
-              </div>
-
               {error && (
                 <p className="text-sm text-red-600">{error}</p>
               )}
@@ -135,7 +120,7 @@ export default function WorkerRegisterLocation() {
                 type="submit"
                 className={`w-full rounded-lg bg-gradient-to-r ${a.button} py-2.5 px-4 font-semibold text-white transition-opacity hover:brightness-110 focus:outline-none focus:ring-2 ${a.buttonHover} focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50`}
               >
-                Complete Sign up
+                Next
               </button>
             </form>
 

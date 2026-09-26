@@ -1,7 +1,7 @@
-import { useState } from "react";
-
-export default function ProviderModal({ provider, onClose, onBookNow }) {
+export default function ProviderModal({ provider, onClose }) {
   if (!provider) return null;
+  const name = provider.fullName || provider.username || "Provider";
+  const location = [provider.barangay, provider.city, provider.province].filter(Boolean).join(", ");
 
   return (
     <div
@@ -13,10 +13,10 @@ export default function ProviderModal({ provider, onClose, onBookNow }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="relative">
-          <div className={`relative h-28 bg-gradient-to-r ${provider.banner}`}>
+          <div className="relative h-28 bg-gradient-to-r from-teal-700 to-emerald-600">
             <div className="absolute -bottom-10 left-6">
-              <div className={`flex h-20 w-20 items-center justify-center rounded-full border-4 border-white text-2xl font-bold ${provider.color}`}>
-                {provider.name.charAt(0)}
+              <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-teal-100 text-2xl font-bold text-teal-800">
+                {name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}
               </div>
             </div>
           </div>
@@ -32,34 +32,24 @@ export default function ProviderModal({ provider, onClose, onBookNow }) {
         </div>
 
         <div className="px-6 pt-12 pb-6">
-          <h2 className="text-xl font-bold text-gray-900">{provider.name}</h2>
-          <p className="text-sm text-gray-500">{provider.trade}</p>
-          <div className="mt-1.5 flex items-center gap-1.5">
-            <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
-              {provider.cred}
-            </span>
-          </div>
+          <h2 className="text-xl font-bold text-gray-900">{name}</h2>
+          <p className="text-sm text-gray-500">{provider.professions?.join(" · ") || "Service provider"}</p>
+          {location && <p className="mt-2 text-sm text-gray-600">{location} · {provider.distanceKm} km away</p>}
+          <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-gray-600">{provider.bio || "This provider has not added an introduction yet."}</p>
 
-          <div className="mt-3 flex items-center gap-1">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-yellow-500">
-              <path d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.006z" />
-            </svg>
-            <span className="text-sm font-semibold text-gray-800">{provider.rating}</span>
-            <span className="text-xs text-gray-400">({provider.reviews} reviews)</span>
+          <div className="mt-5">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">TESDA certification</h3>
+            {provider.tesdaCertificates?.length ? (
+              <ul className="mt-2 space-y-1 text-sm text-gray-700">
+                {provider.tesdaCertificates.map((certificate) => <li key={certificate.trade}>Approved TESDA certificate · {certificate.trade}</li>)}
+              </ul>
+            ) : <p className="mt-2 text-sm text-gray-500">No approved TESDA certificates listed.</p>}
           </div>
-
-          <p className="mt-4 text-sm leading-relaxed text-gray-600">{provider.bio}</p>
 
           <div className="mt-5 flex gap-2">
             <button
-              onClick={onBookNow}
-              className="flex-1 rounded-lg bg-gray-900 py-2 text-sm font-semibold text-white transition hover:bg-gray-800"
-            >
-              Book Now
-            </button>
-            <button
               onClick={onClose}
-              className="flex-1 rounded-lg border border-gray-300 bg-white py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+              className="w-full rounded-lg border border-gray-300 bg-white py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
             >
               Close
             </button>

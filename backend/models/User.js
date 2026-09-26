@@ -125,11 +125,31 @@ const userSchema = new mongoose.Schema(
     city: String,
     barangay: String,
     address: String,
+    geoLocation: {
+      type: {
+        type: String,
+        enum: ["Point"],
+      },
+      coordinates: {
+        type: [Number],
+        default: undefined,
+      },
+    },
+    tesdaCertificates: {
+      type: [{
+        trade: { type: String, trim: true },
+        status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
+        submittedAt: { type: Date, default: Date.now },
+      }],
+      default: [],
+    },
     dateOfBirth: {
       type: Date,
     },
   },
   { timestamps: true }
 );
+
+userSchema.index({ geoLocation: "2dsphere" });
 
 module.exports = mongoose.model("User", userSchema);

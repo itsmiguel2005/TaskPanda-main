@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import Header from "./Header.jsx";
 import ProviderModal from "./ProviderModal.jsx";
-import RequestBookingModal from "./RequestBookingModal.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 
 const filterCategories = [
   { name: "Air Conditioning Technician" },
@@ -17,153 +17,18 @@ const filterCategories = [
   { name: "Dryer Vent Cleaning" },
   { name: "Door Repair" },
   { name: "Electrician" },
-  { name: "EV Charger Installation" },
   { name: "Furniture Assembly" },
-  { name: "Furniture Repair" },
-  { name: "Glass Installer" },
-  { name: "Garage Door Repair" },
-  { name: "Gutter Cleaning" },
   { name: "Handyman" },
-  { name: "Hauling & Junk Removal" },
-  { name: "Insulation" },
   { name: "Landscaper" },
   { name: "Locksmith" },
   { name: "Mason" },
-  { name: "Moving Helper" },
   { name: "Painter" },
-  { name: "Pest Control" },
   { name: "Plumber" },
-  { name: "Pressure Washing" },
-  { name: "Pool Cleaner" },
   { name: "Roofer" },
-  { name: "Smart Home Installation" },
-  { name: "Water Heater" },
-];
-
-const providers = [
-  {
-    name: "Sweetie Palm",
-    trade: "Carpenter",
-    cred: "TESDA NC II Carpentry",
-    bio: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
-    rating: 4.8,
-    reviews: 12,
-    location: "Dagupan City",
-    verified: true,
-    tesda: true,
-    availability: ["today", "tomorrow"],
-    color: "bg-emerald-100 text-emerald-700",
-    banner: "from-emerald-400 to-emerald-600",
-  },
-  {
-    name: "Pedro Cruz",
-    trade: "Plumber",
-    cred: "TESDA NC II Plumbing",
-    bio: "Experienced plumber with 10+ years serving Dagupan households for all pipe and water needs.",
-    rating: 4.6,
-    reviews: 28,
-    location: "Dagupan City",
-    verified: true,
-    tesda: true,
-    availability: ["today", "this-week"],
-    color: "bg-blue-100 text-blue-700",
-    banner: "from-blue-400 to-blue-600",
-  },
-  {
-    name: "Maria Santos",
-    trade: "Electrician",
-    cred: "TESDA NC II Electrical",
-    bio: "Certified electrician specializing in residential wiring, panel upgrades, and circuit troubleshooting.",
-    rating: 4.9,
-    reviews: 35,
-    location: "Dagupan City",
-    verified: true,
-    tesda: true,
-    availability: ["today", "tomorrow", "weekends"],
-    color: "bg-amber-100 text-amber-700",
-    banner: "from-amber-400 to-amber-600",
-  },
-  {
-    name: "Juan Dela Cruz",
-    trade: "Air Conditioning Technician",
-    cred: "TESDA NC II AC Technician",
-    bio: "AC maintenance and repair specialist. Quick response and honest pricing for all brands.",
-    rating: 4.5,
-    reviews: 19,
-    location: "Manila",
-    verified: true,
-    tesda: true,
-    availability: ["tomorrow", "this-week"],
-    color: "bg-cyan-100 text-cyan-700",
-    banner: "from-cyan-400 to-cyan-600",
-  },
-  {
-    name: "Ana Reyes",
-    trade: "Painter",
-    cred: "Professional Painter",
-    bio: "Interior and exterior painting services. Clean finish, on-time delivery, competitive rates.",
-    rating: 4.7,
-    reviews: 14,
-    location: "Dagupan City",
-    verified: false,
-    tesda: false,
-    availability: ["this-week", "weekends"],
-    color: "bg-rose-100 text-rose-700",
-    banner: "from-rose-400 to-rose-600",
-  },
-  {
-    name: "Ricky Padilla",
-    trade: "Landscaper",
-    cred: "Licensed Landscaper",
-    bio: "Lawn care, garden design, tree trimming, and hardscaping for homes and businesses.",
-    rating: 4.3,
-    reviews: 9,
-    location: "Manila",
-    verified: true,
-    tesda: false,
-    availability: ["today", "weekends"],
-    color: "bg-green-100 text-green-700",
-    banner: "from-green-400 to-green-600",
-  },
-];
-
-function StarIcon({ filled }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill={filled ? "currentColor" : "none"}
-      stroke="currentColor"
-      strokeWidth={1.5}
-      className="h-3.5 w-3.5"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.562.562 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"
-      />
-    </svg>
-  );
-}
-
-const availabilityOptions = [
-  { key: "today", label: "Available Today" },
-  { key: "tomorrow", label: "Available Tomorrow" },
-  { key: "this-week", label: "This week" },
-  { key: "weekends", label: "Weekends only" },
-];
-
-const ratingOptions = [
-  { label: "5 stars & up", min: 5 },
-  { label: "4 stars & up", min: 4 },
-  { label: "3 stars & up", min: 3 },
-  { label: "2 stars & up", min: 2 },
 ];
 
 const sortOptions = [
-  { value: "relevance", label: "Relevance" },
-  { value: "rating", label: "Highest Rated" },
-  { value: "reviews", label: "Most Reviews" },
+  { value: "distance", label: "Nearest" },
   { value: "name", label: "Name A–Z" },
 ];
 
@@ -186,27 +51,82 @@ function CheckBox({ label, count, checked, onChange }) {
 
 export default function Explore() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { user, refreshProfile } = useAuth();
   const [viewingProvider, setViewingProvider] = useState(null);
-  const [showBooking, setShowBooking] = useState(false);
-  const [searchService, setSearchService] = useState("");
-  const [searchLocation, setSearchLocation] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [appliedQuery, setAppliedQuery] = useState("");
+  const [searchCoordinates, setSearchCoordinates] = useState(null);
+  const [locationError, setLocationError] = useState("");
   const [showAllCats, setShowAllCats] = useState(false);
-  const [sortBy, setSortBy] = useState("relevance");
-  const [appliedSearch, setAppliedSearch] = useState({ service: "", location: "" });
-
+  const [sortBy, setSortBy] = useState("distance");
   const [selectedCategories, setSelectedCategories] = useState(new Set());
-  const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [tesdaOnly, setTesdaOnly] = useState(false);
-  const [availabilityFilter, setAvailabilityFilter] = useState(new Set());
-  const [ratingMin, setRatingMin] = useState(null);
+  const [minKm] = useState(0);
+  const [maxKm, setMaxKm] = useState(25);
+  const [providers, setProviders] = useState([]);
+  const [totalProviders, setTotalProviders] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
+
+  useEffect(() => {
+    refreshProfile();
+  }, [refreshProfile]);
+
+  useEffect(() => {
+    const coordinates = user?.geoLocation?.coordinates;
+    if (coordinates?.length === 2) setSearchCoordinates({ type: "Point", coordinates });
+  }, [user]);
 
   useEffect(() => {
     const service = searchParams.get("service");
     if (service) {
       setSelectedCategories(new Set([service]));
-      setAppliedSearch((prev) => ({ ...prev, service }));
+      setSearchQuery(service);
+      setAppliedQuery(service);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!searchCoordinates?.coordinates) {
+      setProviders([]);
+      setTotalProviders(0);
+      setLoading(false);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      setLoading(true);
+      setSearchError("");
+      const [longitude, latitude] = searchCoordinates.coordinates;
+      const params = new URLSearchParams({
+        longitude: String(longitude),
+        latitude: String(latitude),
+        minKm: String(minKm),
+        maxKm: String(maxKm),
+      });
+      if (appliedQuery) params.set("q", appliedQuery);
+      if (selectedCategories.size) params.set("categories", [...selectedCategories].join(","));
+      if (tesdaOnly) params.set("credential", "tesda");
+
+      try {
+        const response = await fetch(`/api/providers?${params}`, { signal: controller.signal });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || "Could not search nearby providers.");
+        setProviders(data.providers || []);
+        setTotalProviders(data.total || 0);
+      } catch (error) {
+        if (error.name !== "AbortError") setSearchError(error.message || "Could not search nearby providers.");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }, 200);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [searchCoordinates, appliedQuery, selectedCategories, tesdaOnly, minKm, maxKm]);
 
   const visibleCats = showAllCats ? filterCategories : filterCategories.slice(0, 4);
 
@@ -219,29 +139,66 @@ export default function Explore() {
     });
   };
 
-  const toggleAvailability = (key) => {
-    setAvailabilityFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  const handleSearch = () => {
+    setAppliedQuery(searchQuery.trim());
   };
 
-  const handleSearch = () => {
-    setAppliedSearch({ service: searchService, location: searchLocation });
+  const handleUseCurrentLocation = () => {
+    setLocationError("");
+    if (!navigator.geolocation) {
+      setLocationError("Location is not available in this browser.");
+      return;
+    }
+
+    let bestPosition = null;
+    let attempts = 0;
+
+    const tryCapture = () => {
+      navigator.geolocation.getCurrentPosition(
+        ({ coords }) => {
+          const candidate = {
+            longitude: Number(coords.longitude.toFixed(6)),
+            latitude: Number(coords.latitude.toFixed(6)),
+            accuracy: Number(coords.accuracy || 0),
+          };
+
+          if (!bestPosition || candidate.accuracy < bestPosition.accuracy) {
+            bestPosition = candidate;
+          }
+
+          if (candidate.accuracy <= 50 || attempts >= 2) {
+            setSearchCoordinates({
+              type: "Point",
+              coordinates: [bestPosition.longitude, bestPosition.latitude],
+            });
+            return;
+          }
+
+          attempts += 1;
+          tryCapture();
+        },
+        () => {
+          if (attempts >= 2) {
+            setLocationError("Unable to get a precise location. Set a nearby-search pin in your profile instead.");
+            return;
+          }
+          attempts += 1;
+          tryCapture();
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    };
+
+    tryCapture();
   };
 
   const clearFilters = () => {
     setSelectedCategories(new Set());
-    setVerifiedOnly(false);
     setTesdaOnly(false);
-    setAvailabilityFilter(new Set());
-    setRatingMin(null);
-    setSearchService("");
-    setSearchLocation("");
-    setAppliedSearch({ service: "", location: "" });
-    setSortBy("relevance");
+    setMaxKm(25);
+    setSearchQuery("");
+    setAppliedQuery("");
+    setSortBy("distance");
     setSearchParams({});
   };
 
@@ -252,122 +209,33 @@ export default function Explore() {
         next.delete(value);
         return next;
       });
-    } else if (type === "availability") {
-      setAvailabilityFilter((prev) => {
-        const next = new Set(prev);
-        next.delete(value);
-        return next;
-      });
-    } else if (type === "rating") {
-      setRatingMin(null);
-    } else if (type === "verified") {
-      setVerifiedOnly(false);
     } else if (type === "tesda") {
       setTesdaOnly(false);
-    } else if (type === "service") {
-      setAppliedSearch((prev) => ({ ...prev, service: "" }));
-    } else if (type === "location") {
-      setAppliedSearch((prev) => ({ ...prev, location: "" }));
-      setSearchLocation("");
+    } else if (type === "search") {
+      setAppliedQuery("");
+      setSearchQuery("");
     }
   };
 
   const filteredProviders = useMemo(() => {
-    let result = providers;
-
-    if (appliedSearch.service) {
-      const q = appliedSearch.service.toLowerCase();
-      result = result.filter(
-        (p) =>
-          p.trade.toLowerCase().includes(q) ||
-          p.name.toLowerCase().includes(q) ||
-          p.cred.toLowerCase().includes(q)
-      );
-    }
-
-    if (appliedSearch.location) {
-      const q = appliedSearch.location.toLowerCase();
-      result = result.filter((p) =>
-        p.location.toLowerCase().includes(q)
-      );
-    }
-
-    if (selectedCategories.size > 0) {
-      result = result.filter((p) => selectedCategories.has(p.trade));
-    }
-
-    if (verifiedOnly) {
-      result = result.filter((p) => p.verified);
-    }
-
-    if (tesdaOnly) {
-      result = result.filter((p) => p.tesda);
-    }
-
-    if (availabilityFilter.size > 0) {
-      result = result.filter((p) =>
-        [...availabilityFilter].some((a) => p.availability.includes(a))
-      );
-    }
-
-    if (ratingMin !== null) {
-      result = result.filter((p) => p.rating >= ratingMin);
-    }
-
-    if (sortBy === "rating") {
-      result = [...result].sort((a, b) => b.rating - a.rating);
-    } else if (sortBy === "reviews") {
-      result = [...result].sort((a, b) => b.reviews - a.reviews);
-    } else if (sortBy === "name") {
-      result = [...result].sort((a, b) => a.name.localeCompare(b.name));
-    }
-
-    return result;
-  }, [
-    appliedSearch,
-    selectedCategories,
-    verifiedOnly,
-    tesdaOnly,
-    availabilityFilter,
-    ratingMin,
-    sortBy,
-  ]);
+    return sortBy === "name"
+      ? [...providers].sort((a, b) => (a.fullName || a.username || "").localeCompare(b.fullName || b.username || ""))
+      : providers;
+  }, [providers, sortBy]);
 
   const activeFilters = [];
-  if (appliedSearch.service) {
-    activeFilters.push({ type: "service", label: `Service: ${appliedSearch.service}`, value: appliedSearch.service });
-  }
-  if (appliedSearch.location) {
-    activeFilters.push({ type: "location", label: `Location: ${appliedSearch.location}`, value: appliedSearch.location });
+  if (appliedQuery) {
+    activeFilters.push({ type: "search", label: `Search: ${appliedQuery}`, value: appliedQuery });
   }
   selectedCategories.forEach((cat) => {
     activeFilters.push({ type: "category", label: cat, value: cat });
   });
-  if (verifiedOnly) {
-    activeFilters.push({ type: "verified", label: "ID Verified", value: "verified" });
-  }
   if (tesdaOnly) {
     activeFilters.push({ type: "tesda", label: "TESDA Certified", value: "tesda" });
   }
-  availabilityFilter.forEach((a) => {
-    const opt = availabilityOptions.find((o) => o.key === a);
-    if (opt) {
-      activeFilters.push({ type: "availability", label: opt.label, value: a });
-    }
-  });
-  if (ratingMin !== null) {
-    const opt = ratingOptions.find((o) => o.min === ratingMin);
-    if (opt) {
-      activeFilters.push({ type: "rating", label: opt.label, value: ratingMin });
-    }
-  }
 
   const resultsSubtitle = () => {
-    const parts = [];
-    if (appliedSearch.service) parts.push(`'${appliedSearch.service}'`);
-    if (appliedSearch.location) parts.push(`in ${appliedSearch.location}`);
-    if (selectedCategories.size === 1) parts.push(`category: ${[...selectedCategories][0]}`);
-    return parts.length ? `Showing results for ${parts.join(" ")}` : "Showing all professionals";
+    return `Showing providers ${minKm}–${maxKm} km away${appliedQuery ? ` matching “${appliedQuery}”` : ""}`;
   };
 
   return (
@@ -392,47 +260,41 @@ export default function Explore() {
               Discover Local Professionals
             </h1>
             <p className="mt-3 text-base leading-relaxed text-teal-100/80">
-              Find trusted experts for carpentry, plumbing, cleaning, and
-              more.
+              Find nearby professionals by name, trade, or location.
             </p>
 
             <div className="mt-6 flex items-center overflow-hidden rounded-xl bg-white shadow-lg">
               <input
                 type="text"
-                value={searchService}
-                onChange={(e) => setSearchService(e.target.value)}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleSearch();
                 }}
-                placeholder="What services do you need?"
+                placeholder="Name, service (e.g. IT repair), or location"
                 className="flex-1 px-4 py-3 text-sm text-gray-800 placeholder-gray-400 outline-none"
               />
-              <div className="h-8 w-px bg-gray-200" />
-              <input
-                type="text"
-                value={searchLocation}
-                onChange={(e) => setSearchLocation(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearch();
-                }}
-                placeholder="Dagupan City"
-                className="w-24 px-4 py-3 text-sm text-gray-800 placeholder-gray-400 outline-none sm:w-36 md:w-44"
-              />
               <button
+                type="button"
                 onClick={handleSearch}
                 className="shrink-0 bg-purple-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-purple-700"
               >
                 Search
               </button>
             </div>
+            <button type="button" onClick={handleUseCurrentLocation} className="mt-3 text-sm font-semibold text-white underline underline-offset-4">
+              {searchCoordinates ? "Update search location" : "Use my current location"}
+            </button>
+            {locationError && <p className="mt-2 text-sm text-amber-100" role="alert">{locationError}</p>}
+            {!searchCoordinates && <p className="mt-1 text-xs text-teal-100/80">Set a nearby-search pin in your profile or use your current location.</p>}
           </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="mx-auto mt-6 flex max-w-5xl gap-6 px-4 pb-10 sm:px-6 lg:px-8">
+      <div className="mx-auto mt-6 flex max-w-5xl flex-col gap-6 px-4 pb-10 sm:px-6 lg:flex-row lg:px-8">
         {/* Left Sidebar */}
-        <aside className="hidden w-64 shrink-0 lg:block">
+        <aside className="w-full shrink-0 lg:w-64">
           <div className="sticky top-20 rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
             <div className="mb-5 flex items-center justify-between">
               <h2 className="text-base font-bold text-gray-900">
@@ -446,21 +308,16 @@ export default function Explore() {
               </button>
             </div>
 
-            {/* Verification */}
+            {/* Qualification */}
             <div className="mb-5">
               <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Verification
+                Qualification
               </h3>
               <div className="space-y-2.5">
                 <CheckBox
-                  label="TESDA CERTIFIED ONLY"
+                  label="Approved TESDA certificate"
                   checked={tesdaOnly}
-                  onChange={() => setTesdaOnly((v) => !v)}
-                />
-                <CheckBox
-                  label="ID VERIFIED PROFESSIONALS"
-                  checked={verifiedOnly}
-                  onChange={() => setVerifiedOnly((v) => !v)}
+                  onChange={() => setTesdaOnly((value) => !value)}
                 />
               </div>
             </div>
@@ -492,40 +349,29 @@ export default function Explore() {
               )}
             </div>
 
-            {/* Availability */}
+            {/* Distance range */}
             <div className="mb-5">
               <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Availability
+                Distance range
               </h3>
-              <div className="space-y-2.5">
-                {availabilityOptions.map((opt) => (
-                  <CheckBox
-                    key={opt.key}
-                    label={opt.label}
-                    checked={availabilityFilter.has(opt.key)}
-                    onChange={() => toggleAvailability(opt.key)}
-                  />
-                ))}
+              <p className="mb-3 text-sm font-semibold text-gray-800">0–{Number(maxKm).toFixed(1)} km</p>
+              <div className="relative mx-2 h-8">
+                <div className="absolute left-0 right-0 top-3 h-1 rounded bg-gray-200" />
+                <div className="absolute top-3 h-1 rounded bg-primary-600" style={{ left: '0%', right: `${100 - (maxKm / 100) * 100}%` }} />
+                <label className="sr-only" htmlFor="max-distance">Maximum distance</label>
+                <input
+                  id="max-distance"
+                  type="range"
+                  min="0.5"
+                  max="100"
+                  step="0.5"
+                  value={maxKm}
+                  onChange={(event) => setMaxKm(Math.max(0.5, Number(event.target.value)))}
+                  className="absolute inset-0 z-10 h-7 w-full appearance-none bg-transparent accent-primary-700 pointer-events-auto"
+                  style={{ pointerEvents: "auto" }}
+                />
               </div>
-            </div>
-
-            {/* Rating */}
-            <div>
-              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Rating
-              </h3>
-              <div className="space-y-2.5">
-                {ratingOptions.map((opt) => (
-                  <CheckBox
-                    key={opt.min}
-                    label={opt.label}
-                    checked={ratingMin === opt.min}
-                    onChange={() =>
-                      setRatingMin((prev) => (prev === opt.min ? null : opt.min))
-                    }
-                  />
-                ))}
-              </div>
+              <div className="mt-1 flex justify-between text-xs text-gray-400"><span>Min 0 km</span><span>Max {Number(maxKm).toFixed(1)} km</span></div>
             </div>
           </div>
         </aside>
@@ -536,8 +382,8 @@ export default function Explore() {
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <p className="text-lg font-bold text-gray-900">
-                {filteredProviders.length}{" "}
-                {filteredProviders.length === 1 ? "Professional" : "Professionals"}{" "}
+                {totalProviders}{" "}
+                {totalProviders === 1 ? "Professional" : "Professionals"}{" "}
                 Found
               </p>
               <p className="text-sm text-gray-500">{resultsSubtitle()}</p>
@@ -589,53 +435,44 @@ export default function Explore() {
             </div>
           )}
 
+          {searchError && <p className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{searchError}</p>}
+
           {/* Provider Grid */}
-          {filteredProviders.length > 0 ? (
+          {!searchCoordinates ? (
+            <div className="rounded-xl border border-dashed border-gray-300 bg-white py-12 text-center">
+              <p className="text-base font-semibold text-gray-800">Set a search location to see nearby professionals</p>
+              <p className="mt-1 text-sm text-gray-500">Use current location or save a nearby-search pin in your profile.</p>
+            </div>
+          ) : loading && filteredProviders.length === 0 ? (
+            <div className="rounded-xl border border-gray-100 bg-white py-12 text-center text-sm text-gray-500">Searching nearby professionals...</div>
+          ) : filteredProviders.length > 0 ? (
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
               {filteredProviders.map((provider) => (
                 <div
-                  key={provider.name}
+                  key={provider._id}
                   className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:shadow-md"
                 >
-                  <div className={`relative h-28 bg-gradient-to-r ${provider.banner}`}>
-                    <div className="absolute -bottom-6 left-4">
-                      <div className={`flex h-14 w-14 items-center justify-center rounded-full border-4 border-white text-lg font-bold ${provider.color}`}>
-                        {provider.name.charAt(0)}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="px-4 pb-4 pt-8">
+                  <div className="px-4 py-4">
                     <div className="flex items-start justify-between">
                       <div>
                         <h3 className="text-sm font-bold text-gray-900">
-                          {provider.name}
+                          {provider.fullName || provider.username || "Provider"}
                         </h3>
-                        <p className="text-xs text-gray-500">{provider.trade}</p>
+                        <p className="text-xs text-gray-500">{provider.professions?.join(" · ") || "Service provider"}</p>
                       </div>
                     </div>
                     <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                      {(provider.tesdaCertificates || []).map((certificate) => (
+                        <span key={`${provider._id}-${certificate.trade}`} className="inline-flex items-center rounded border border-green-200 bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-800">TESDA · {certificate.trade}</span>
+                      ))}
                       <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
-                        {provider.cred}
+                        {[provider.barangay, provider.city, provider.province].filter(Boolean).join(", ") || "Nearby"} · {provider.distanceKm} km
                       </span>
-                      {provider.location && (
-                        <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
-                          📍 {provider.location}
-                        </span>
-                      )}
                     </div>
                     <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-gray-500">
-                      {provider.bio}
+                      {provider.bio || "This provider has not added an introduction yet."}
                     </p>
-                    <div className="mt-3 flex items-center justify-between">
-                      <div className="flex items-center gap-1">
-                        <StarIcon filled />
-                        <span className="text-sm font-semibold text-gray-800">
-                          {provider.rating}
-                        </span>
-                        <span className="text-xs text-gray-400">
-                          ({provider.reviews})
-                        </span>
-                      </div>
+                    <div className="mt-3 flex justify-end">
                       <button
                         type="button"
                         onClick={() => setViewingProvider(provider)}
@@ -648,14 +485,16 @@ export default function Explore() {
                 </div>
               ))}
             </div>
-          ) : (
+          ) : loading ? (
+            <div className="rounded-xl border border-gray-100 bg-white py-12 text-center text-sm text-gray-500">Updating results...</div>
+          ) : searchError ? null : (
             <div className="rounded-xl border border-dashed border-gray-300 bg-white py-16 text-center">
               <p className="text-4xl mb-3">🔍</p>
               <p className="text-base font-semibold text-gray-700">
                 No professionals found
               </p>
               <p className="mt-1 text-sm text-gray-500">
-                Try adjusting your filters or search terms
+                Try a different name, service, location, or distance range.
               </p>
               <button
                 onClick={clearFilters}
@@ -666,11 +505,8 @@ export default function Explore() {
             </div>
           )}
         </div>
-        <ProviderModal provider={viewingProvider} onClose={() => setViewingProvider(null)} onBookNow={() => setShowBooking(true)} />
+        <ProviderModal provider={viewingProvider} onClose={() => setViewingProvider(null)} />
       </div>
-      {showBooking && (
-        <RequestBookingModal provider={viewingProvider} onClose={() => setShowBooking(false)} />
-      )}
     </div>
   );
 }
