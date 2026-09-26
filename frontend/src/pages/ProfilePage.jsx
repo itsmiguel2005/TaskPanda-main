@@ -1,37 +1,7 @@
-import { useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
-
-const bookings = [
-  {
-    id: 1,
-    status: "Pending Request",
-    worker: "Johhny Cruz",
-    cred: "TESDA NC II Carpenter",
-    task: "Desktop Table Repair",
-    date: "Sep 9, 2026",
-    price: "P500",
-  },
-  {
-    id: 2,
-    status: "Confirmed",
-    worker: "Maria Santos",
-    cred: "TESDA NC II Electrician",
-    task: "Circuit Breaker Replacement",
-    date: "Sep 10, 2026",
-    price: "P800",
-  },
-  {
-    id: 3,
-    status: "Completed",
-    worker: "Ricky Padilla",
-    cred: "Licensed Landscaper",
-    task: "Front Yard Landscaping",
-    date: "Sep 5, 2026",
-    price: "P1,200",
-  },
-];
 
 function ChangePasswordModal({ onClose }) {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -133,25 +103,17 @@ function ChangePasswordModal({ onClose }) {
 
 export default function ProfilePage() {
   const navigate = useNavigate();
-  const { isLoggedIn, role, isVerified, logout } = useAuth();
+  const { isLoggedIn, role, isVerified, logout, user, refreshProfile } = useAuth();
   const [showChangePassword, setShowChangePassword] = useState(false);
 
-  const stats = useMemo(() => {
-    const total = bookings.length;
-    const completed = bookings.filter((b) => b.status === "Completed").length;
-    const active = bookings.filter(
-      (b) => b.status === "Pending Request" || b.status === "Confirmed"
-    ).length;
-    const cancelled = bookings.filter((b) => b.status === "Cancelled").length;
-    const totalSpent = bookings.reduce((sum, b) => {
-      const num = parseInt(b.price.replace(/[^0-9]/g, ""), 10);
-      return sum + (isNaN(num) ? 0 : num);
-    }, 0);
-    return { total, completed, active, cancelled, totalSpent };
-  }, []);
-
+  useEffect(() => {
+    refreshProfile();
+  }, [refreshProfile]);
   const roleLabel = role === "provider" ? "Service Provider" : role === "admin" ? "Administrator" : "Homeowner";
-  const recentBookings = bookings.slice(0, 3);
+  const fullName = user?.fullName || [user?.firstName, user?.middleName, user?.lastName].filter(Boolean).join(" ") || user?.username || user?.email || "Client";
+  const location = user?.address || [user?.barangay, user?.city, user?.province].filter(Boolean).join(", ");
+  const memberSince = user?.createdAt ? new Date(user.createdAt).toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "Not available";
+  const initials = fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 
   const handleSignOut = () => {
     logout();
@@ -166,17 +128,12 @@ export default function ProfilePage() {
         {/* User Card */}
         <div className="rounded-2xl bg-white p-8 shadow-sm text-center">
           <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary-100 text-2xl font-bold text-primary-700 ring-4 ring-primary-50">
-            M
+            {initials || "?"}
           </div>
-          <h1 className="mt-4 text-2xl font-bold text-gray-900">Miguel</h1>
+          <h1 className="mt-4 text-2xl font-bold text-gray-900">{fullName}</h1>
           <p className="text-sm text-gray-500">{roleLabel}</p>
-          <p className="mt-2 flex items-center justify-center gap-1 text-sm text-gray-400">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
-              <path fillRule="evenodd" d="M11.54 22.351l.07.04.028.016a.76.76 0 00.723 0l.028-.015.071-.041a16.975 16.975 0 001.144-.742 19.58 19.58 0 002.683-2.282c1.944-1.99 3.963-4.98 3.963-8.827a8.25 8.25 0 00-16.5 0c0 3.846 2.02 6.837 3.963 8.827a19.58 19.58 0 002.682 2.282 16.975 16.975 0 001.145.742zM12 13.5a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-            </svg>
-            Dagupan City, Pangasinan
-          </p>
-          <p className="mt-1 text-xs text-gray-400">Member since Jan 2025</p>
+          {location && <p className="mt-2 text-sm text-gray-500">{location}</p>}
+          <p className="mt-1 text-xs text-gray-400">Member since {memberSince}</p>
           <div className="mt-3">
             {isVerified ? (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
@@ -192,6 +149,15 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        <div className="mt-6 rounded-2xl bg-white p-5 shadow-sm">
+          <h2 className="text-sm font-bold text-gray-900">Contact details</h2>
+          <dl className="mt-3 space-y-2 text-sm">
+            <div className="flex justify-between gap-4"><dt className="text-gray-500">Email</dt><dd className="break-all text-right text-gray-800">{user?.email || "Not provided"}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-gray-500">Phone</dt><dd className="text-right text-gray-800">{user?.mobileNumber || "Not provided"}</dd></div>
+          </dl>
+          {user?.bio && <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-gray-600">{user.bio}</p>}
+        </div>
+
         {/* Quick Actions */}
         <div className="mt-6 grid grid-cols-3 gap-3">
           <button
@@ -200,7 +166,7 @@ export default function ProfilePage() {
           >
             <p className="text-2xl">📋</p>
             <p className="mt-1 text-sm font-medium text-gray-700">Bookings</p>
-            <p className="text-xs text-gray-400">{stats.active} active</p>
+            <p className="text-xs text-gray-400">View your requests</p>
           </button>
           <button
             onClick={() => navigate("/messages")}
@@ -220,22 +186,6 @@ export default function ProfilePage() {
           </button>
         </div>
 
-        {/* Stats */}
-        <div className="mt-6 grid grid-cols-3 gap-3">
-          <div className="rounded-xl bg-white p-4 text-center shadow-sm">
-            <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-            <p className="mt-0.5 text-xs text-gray-500">Total</p>
-          </div>
-          <div className="rounded-xl bg-white p-4 text-center shadow-sm">
-            <p className="text-2xl font-bold text-gray-900">{stats.completed}</p>
-            <p className="mt-0.5 text-xs text-gray-500">Completed</p>
-          </div>
-          <div className="rounded-xl bg-white p-4 text-center shadow-sm">
-            <p className="text-2xl font-bold text-gray-900">{stats.active}</p>
-            <p className="mt-0.5 text-xs text-gray-500">Active</p>
-          </div>
-        </div>
-
         {/* Recent Bookings */}
         <div className="mt-6 rounded-2xl bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
@@ -247,20 +197,9 @@ export default function ProfilePage() {
               View All &gt;
             </button>
           </div>
-          <div className="space-y-2">
-            {recentBookings.map((b) => (
-              <div
-                key={b.id}
-                className="flex items-center justify-between rounded-lg bg-gray-50 px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-gray-800">{b.task}</p>
-                  <p className="text-xs text-gray-500">{b.worker} · {b.date}</p>
-                </div>
-                <span className="shrink-0 text-sm font-semibold text-gray-900">{b.price}</span>
-              </div>
-            ))}
-          </div>
+          <p className="rounded-lg bg-gray-50 px-4 py-5 text-center text-sm text-gray-500">
+            Your booking history will appear here.
+          </p>
         </div>
 
         {/* Settings */}

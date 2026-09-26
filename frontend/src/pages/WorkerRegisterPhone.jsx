@@ -40,7 +40,7 @@ export default function WorkerRegisterPhone() {
       }
       keys.forEach((key) => { sessionStorage.removeItem(key); localStorage.removeItem(key); });
       sessionStorage.removeItem("taskpanda_onboarding_token");
-      login(data.user, null, false);
+      login(data.user, data.token, false);
       navigate("/provider-dashboard", { replace: true });
     } catch {
       setError("Network error. Please try again.");

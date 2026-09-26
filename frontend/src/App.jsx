@@ -125,7 +125,7 @@ export default function App() {
         <Route path="/messages" element={<ProtectedRoute roles={["client"]}><MessagesPage /></ProtectedRoute>} />
         <Route path="/provider-messages" element={<ProtectedRoute roles={["provider"]}><ProviderMessagesPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute roles={["client"]}><ProfilePage /></ProtectedRoute>} />
-        <Route path="/profile/edit" element={<ProtectedRoute roles={["client"]}><EditProfilePage /></ProtectedRoute>} />
+        <Route path="/profile/edit" element={<ProtectedRoute roles={["client", "provider"]}><EditProfilePage /></ProtectedRoute>} />
         <Route path="/provider-profile" element={<ProtectedRoute roles={["provider"]}><ProviderProfilePage /></ProtectedRoute>} />
         <Route path="/explore" element={<ProtectedRoute roles={["client", "provider"]}><ExplorePage /></ProtectedRoute>} />
           <Route path="/about" element={<AboutUsPage />} />

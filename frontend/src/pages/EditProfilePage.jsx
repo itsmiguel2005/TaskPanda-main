@@ -1,24 +1,26 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 
-const initialForm = {
-  fullName: "Miguel",
-  username: "miguel",
-  email: "miguel@example.com",
-  phone: "+63 912 345 6789",
-  location: "Dagupan City, Pangasinan",
-  bio: "Homeowner based in Dagupan. Looking for reliable local tradespeople for home repairs and maintenance.",
-};
+const getFormFromUser = (user = {}) => ({
+  fullName: user.fullName || [user.firstName, user.middleName, user.lastName].filter(Boolean).join(" "),
+  username: user.username || "",
+  email: user.email || "",
+  phone: user.mobileNumber || "",
+  location: user.address || [user.barangay, user.city, user.province].filter(Boolean).join(", "),
+  bio: user.bio || "",
+  professions: (user.professions || []).join(", "),
+});
 
 function validateForm(form) {
   const errors = {};
   if (!form.fullName.trim()) errors.fullName = "Full name is required";
   if (!form.username.trim()) errors.username = "Username is required";
-  else if (form.username.length < 3) errors.username = "Minimum 3 characters";
+    else if (!/^[A-Za-z0-9_.-]{3,30}$/.test(form.username) || /^\S+@\S+\.\S+$/.test(form.username)) errors.username = "Use 3-30 letters, numbers, dots, underscores, or hyphens";
   if (!form.email.trim()) errors.email = "Email is required";
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errors.email = "Invalid email format";
-  if (form.phone && !/^[+]?[\d\s\-()]{7,}$/.test(form.phone)) errors.phone = "Invalid phone format";
+    if (form.phone && !/^09\d{9}$/.test(form.phone)) errors.phone = "Enter an 11-digit number starting with 09";
   if (!form.location.trim()) errors.location = "Location is required";
   if (form.bio.length > 500) errors.bio = "Maximum 500 characters";
   return errors;
@@ -26,14 +28,25 @@ function validateForm(form) {
 
 export default function EditProfilePage() {
   const navigate = useNavigate();
-  const [form, setForm] = useState(initialForm);
+  const { user, token, role, updateUser, refreshProfile, isAuthLoading } = useAuth();
+  const [form, setForm] = useState(() => getFormFromUser());
   const [saved, setSaved] = useState(false);
   const [errors, setErrors] = useState({});
-  const [showPhotoUpload, setShowPhotoUpload] = useState(false);
-  const [avatarSrc, setAvatarSrc] = useState("");
+  const [serverError, setServerError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const fileInputRef = useRef(null);
-  const initialFormRef = useRef(JSON.stringify(initialForm));
+  const initialFormRef = useRef(JSON.stringify(getFormFromUser()));
+
+  useEffect(() => {
+    refreshProfile();
+  }, [refreshProfile]);
+
+  useEffect(() => {
+    if (isAuthLoading) return;
+    const currentForm = getFormFromUser(user);
+    setForm(currentForm);
+    initialFormRef.current = JSON.stringify(currentForm);
+  }, [isAuthLoading, user]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -48,8 +61,10 @@ export default function EditProfilePage() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-    setDirty(JSON.stringify(form) !== initialFormRef.current);
+    const nextForm = { ...form, [name]: value };
+    setForm(nextForm);
+    setDirty(JSON.stringify(nextForm) !== initialFormRef.current);
+    setServerError("");
     if (errors[name]) {
       setErrors((prev) => {
         const next = { ...prev };
@@ -59,38 +74,59 @@ export default function EditProfilePage() {
     }
   };
 
-  const handlePhotoSelect = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert("File too large. Maximum 5MB.");
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setAvatarSrc(reader.result);
-        setDirty(true);
-      };
-      reader.readAsDataURL(file);
-    }
-    e.target.value = "";
-  };
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const validationErrors = validateForm(form);
     setErrors(validationErrors);
     if (Object.keys(validationErrors).length > 0) return;
-    setSaved(true);
-    initialFormRef.current = JSON.stringify(form);
-    setDirty(false);
-    setTimeout(() => setSaved(false), 3000);
+    if (!token) {
+      setServerError("Your session expired. Sign in again to save profile changes.");
+      return;
+    }
+
+    setIsSaving(true);
+    setServerError("");
+    try {
+      const response = await fetch("/api/profile", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          fullName: form.fullName,
+          username: form.username,
+          mobileNumber: form.phone,
+          address: form.location,
+          bio: form.bio,
+          professions: form.professions.split(",").map((profession) => profession.trim()).filter(Boolean),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (data.field) setErrors((previous) => ({ ...previous, [data.field]: data.message }));
+        setServerError(data.message || "Could not save your profile.");
+        return;
+      }
+
+      updateUser(data.user);
+      const savedForm = getFormFromUser(data.user);
+      setForm(savedForm);
+      initialFormRef.current = JSON.stringify(savedForm);
+      setDirty(false);
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 3000);
+    } catch {
+      setServerError("Network error. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCancel = () => {
     if (dirty) {
       if (window.confirm("You have unsaved changes. Are you sure you want to discard them?")) {
-        setForm(initialForm);
+        setForm(getFormFromUser(user));
         setErrors({});
         setDirty(false);
         navigate("/profile");
@@ -100,11 +136,9 @@ export default function EditProfilePage() {
     }
   };
 
-  const hasErrors = Object.keys(errors).length > 0;
-
   return (
     <div className="min-h-screen bg-gray-50 pt-16 pb-12">
-      <Header showNav activeTab="Profile" />
+      <Header showNav activeTab="Profile" role={role === "provider" ? "provider" : undefined} />
 
       <div className="mx-auto max-w-lg px-4 sm:px-6 lg:px-8">
         <button
@@ -125,41 +159,8 @@ export default function EditProfilePage() {
         )}
 
         <div className="rounded-2xl bg-white p-8 shadow-sm text-center">
-          <div className="relative inline-block">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary-100 text-2xl font-bold text-primary-700 ring-4 ring-primary-50 overflow-hidden">
-              {avatarSrc ? (
-                <img src={avatarSrc} alt="Profile" className="h-full w-full object-cover" />
-              ) : (
-                form.fullName.charAt(0)
-              )}
-            </div>
-            <button
-              onClick={() => setShowPhotoUpload(!showPhotoUpload)}
-              className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-primary-600 text-white shadow-sm ring-2 ring-white transition hover:bg-primary-700"
-              aria-label="Change photo"
-              title="Change photo"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
-                <path fillRule="evenodd" d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.47 13.75a.75.75 0 010-1.06l7.25-7.25a.75.75 0 011.06 0z" clipRule="evenodd" />
-              </svg>
-            </button>
-            {showPhotoUpload && (
-              <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 mb-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handlePhotoSelect}
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-primary-700 shadow-md ring-1 ring-gray-200 transition hover:bg-gray-50"
-                >
-                  Upload Photo
-                </button>
-              </div>
-            )}
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary-100 text-2xl font-bold text-primary-700 ring-4 ring-primary-50">
+            {form.fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?"}
           </div>
           <h1 className="mt-6 text-2xl font-bold text-gray-900">Edit Profile</h1>
           <p className="text-sm text-gray-500">Update your personal information</p>
@@ -206,13 +207,26 @@ export default function EditProfilePage() {
               type="email"
               name="email"
               value={form.email}
-              onChange={handleChange}
-              className="mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-              style={{ borderColor: errors.email ? "#ef4444" : "#e5e7eb" }}
+              readOnly
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-500 outline-none"
               required
             />
-            {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email}</p>}
           </div>
+
+          {role === "provider" && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Services / professions</label>
+              <input
+                type="text"
+                name="professions"
+                value={form.professions}
+                onChange={handleChange}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+                placeholder="Carpentry, plumbing"
+              />
+              <p className="mt-1 text-xs text-gray-400">Separate each service with a comma.</p>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700">Phone</label>
@@ -266,6 +280,8 @@ export default function EditProfilePage() {
             </div>
           </div>
 
+          {serverError && <p className="text-sm text-red-600" role="alert">{serverError}</p>}
+
           <div className="flex gap-3">
             <button
               type="button"
@@ -276,9 +292,10 @@ export default function EditProfilePage() {
             </button>
             <button
               type="submit"
+              disabled={isSaving}
               className="flex-1 rounded-xl bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-gray-800"
             >
-              Save Changes
+              {isSaving ? "Saving..." : "Save Changes"}
             </button>
           </div>
         </form>

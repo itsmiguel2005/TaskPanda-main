@@ -84,8 +84,32 @@ export function AuthProvider({ children }) {
     );
   }, [user, role, token]);
 
+  const updateUser = useCallback((userData) => {
+    const storage = localStorage.getItem("taskpanda_auth") ? localStorage : sessionStorage;
+    const saved = JSON.parse(storage.getItem("taskpanda_auth") || "{}");
+    const updatedUser = { ...(saved.user || {}), ...userData, role: userData.role || role || saved.role };
+    setUser(updatedUser);
+    storage.setItem("taskpanda_auth", JSON.stringify({ ...saved, user: updatedUser }));
+  }, [role]);
+
+  const refreshProfile = useCallback(async () => {
+    if (!token) return false;
+    try {
+      const response = await fetch("/api/profile", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return false;
+      const data = await response.json();
+      if (!data.user) return false;
+      updateUser(data.user);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [token, updateUser]);
+
   return (
-    <AuthContext.Provider value={{ isLoggedIn, role, isVerified, user, token, isAuthLoading, login, logout, verify }}>
+    <AuthContext.Provider value={{ isLoggedIn, role, isVerified, user, token, isAuthLoading, login, logout, verify, updateUser, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

@@ -71,6 +71,22 @@ const userSchema = new mongoose.Schema(
       type: Date,
       expires: 0,
     },
+    registrationSessionTokenHash: {
+      type: String,
+      select: false,
+    },
+    registrationSessionExpiresAt: {
+      type: Date,
+      select: false,
+    },
+    registrationVerificationClosedAt: {
+      type: Date,
+      select: false,
+    },
+    registrationResumeClaimedAt: {
+      type: Date,
+      select: false,
+    },
     onboardingTokenHash: {
       type: String,
       select: false,
@@ -91,6 +107,19 @@ const userSchema = new mongoose.Schema(
     professions: {
       type: [String],
       default: [],
+    },
+    bio: {
+      type: String,
+      default: "",
+    },
+    accountTokens: {
+      type: [{
+        tokenHash: { type: String, required: true },
+        expiresAt: { type: Date, required: true },
+        _id: false,
+      }],
+      default: [],
+      select: false,
     },
     province: String,
     city: String,

@@ -17,6 +17,60 @@ const {
 } = require("../middleware/authAttempts");
 
 const hashToken = (token) => createHash("sha256").update(token).digest("hex");
+const registrationSessionCookie = "taskpanda_registration";
+
+function formatAddress(street, barangay, city, province) {
+  return [street, barangay, city, province]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+function setRegistrationSessionCookie(res, token) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  res.setHeader(
+    "Set-Cookie",
+    `${registrationSessionCookie}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${secure}`
+  );
+}
+
+function getRegistrationSessionFilter(req) {
+  const cookie = String(req.get("cookie") || "");
+  const match = cookie.match(new RegExp(`(?:^|;\\s*)${registrationSessionCookie}=([a-f\\d]{64})(?:;|$)`, "i"));
+  if (!match) return null;
+
+  return {
+    registrationSessionTokenHash: hashToken(match[1]),
+    registrationSessionExpiresAt: mongoose.trusted({ $gt: new Date() }),
+  };
+}
+
+async function createRegistrationSession(user, res) {
+  const token = randomBytes(32).toString("hex");
+  user.registrationSessionTokenHash = hashToken(token);
+  user.registrationSessionExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  user.registrationVerificationClosedAt = undefined;
+  await user.save();
+  setRegistrationSessionCookie(res, token);
+}
+
+function getRegistrationAppUrl(req) {
+  if (process.env.NODE_ENV !== "production") {
+    try {
+      const requestOrigin = req.get("origin") || req.get("referer") || "";
+      const origin = new URL(String(requestOrigin));
+      if (
+        origin.protocol === "http:" &&
+        ["localhost", "127.0.0.1"].includes(origin.hostname)
+      ) {
+        return origin.origin;
+      }
+    } catch {
+      // Fall back to the configured app URL when the request has no local origin.
+    }
+  }
+  return config.appUrl;
+}
 
 function onboardingTokenFilter(tokenHash, now = new Date()) {
   return mongoose.trusted({
@@ -52,8 +106,27 @@ async function issueOnboardingToken(userId) {
   return token;
 }
 
-async function issueEmailVerification(user, { replaceExisting = false } = {}) {
-  if (!hasValidSmtpCredentials || !config.appUrl) {
+async function issueAccountToken(userId) {
+  const token = randomBytes(32).toString("hex");
+  await User.updateOne(
+    { _id: userId },
+    {
+      $push: {
+        accountTokens: {
+          $each: [{
+            tokenHash: hashToken(token),
+            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          }],
+          $slice: -5,
+        },
+      },
+    }
+  );
+  return token;
+}
+
+async function issueEmailVerification(user, { replaceExisting = false, appUrl = config.appUrl } = {}) {
+  if (!hasValidSmtpCredentials || !appUrl) {
     throw new Error("Email verification delivery is not configured.");
   }
 
@@ -84,7 +157,7 @@ async function issueEmailVerification(user, { replaceExisting = false } = {}) {
   }
   await user.save();
 
-  const verificationUrl = new URL("/verify-email", `${config.appUrl}/`);
+  const verificationUrl = new URL("/verify-email", `${appUrl}/`);
   verificationUrl.searchParams.set("token", token);
   await sendEmailVerificationEmail(user.email, verificationUrl.toString());
 }
@@ -155,15 +228,23 @@ async function handleRegister(req, res) {
       existingEmailUser = null;
     }
     if (existingEmailUser) {
+      let canResumeRegistration = false;
       if (existingEmailUser.emailVerified === false && existingEmailUser.registrationComplete === false) {
         try {
-          await issueEmailVerification(existingEmailUser);
+          canResumeRegistration = await bcrypt.compare(password, existingEmailUser.passwordHash);
+          if (canResumeRegistration) {
+            await createRegistrationSession(existingEmailUser, res);
+          }
+          await issueEmailVerification(existingEmailUser, { appUrl: getRegistrationAppUrl(req) });
         } catch (mailError) {
           console.warn("Verification email could not be resent:", mailError.message);
           return res.status(502).json({ message: "We could not send the verification email. Please try again." });
         }
       }
-      return res.status(202).json({ message: "If this email can be registered, a verification link has been sent." });
+      return res.status(202).json({
+        message: "If this email can be registered, a verification link has been sent.",
+        registrationSession: canResumeRegistration,
+      });
     }
 
     const existingUsername = await User.findOne({ username });
@@ -183,13 +264,17 @@ async function handleRegister(req, res) {
     });
 
     try {
-      await issueEmailVerification(user);
+      await createRegistrationSession(user, res);
+      await issueEmailVerification(user, { appUrl: getRegistrationAppUrl(req) });
     } catch (mailError) {
       console.warn("Verification email could not be sent:", mailError.message);
       return res.status(502).json({ message: "Your registration is saved, but we could not send the verification email. Please retry." });
     }
 
-    return res.status(201).json({ message: "If this email can be registered, a verification link has been sent." });
+    return res.status(201).json({
+      message: "If this email can be registered, a verification link has been sent.",
+      registrationSession: true,
+    });
   } catch (error) {
     console.error("Registration error:", error);
     if (error?.code === 11000 && (error?.keyPattern?.email || error?.keyPattern?.username)) {
@@ -279,6 +364,7 @@ async function handleVerifyEmail(req, res) {
   if (!onboardingToken) {
     return res.status(409).json({ message: "Your registration has changed. Please start again." });
   }
+  await createRegistrationSession(user, res);
   return res.json({
     message: "Email verified successfully. Continue your registration in the original tab.",
     onboardingToken,
@@ -292,6 +378,93 @@ async function handleVerifyEmail(req, res) {
       registrationComplete: false,
     },
   });
+}
+
+async function handleRegistrationStatus(req, res) {
+  try {
+    const sessionFilter = getRegistrationSessionFilter(req);
+    if (!sessionFilter) {
+      return res.status(401).json({ message: "Registration session not found." });
+    }
+
+    const user = await User.findOne(mongoose.trusted({
+      ...sessionFilter,
+      registrationComplete: false,
+    })).select("+registrationVerificationClosedAt");
+    if (!user) {
+      return res.status(401).json({ message: "Registration session expired." });
+    }
+
+    if (!user.emailVerified || !user.registrationVerificationClosedAt) {
+      return res.json({
+        verified: user.emailVerified === true,
+        verificationTabClosed: Boolean(user.registrationVerificationClosedAt),
+      });
+    }
+
+    const claimedUser = await User.findOneAndUpdate(
+      mongoose.trusted({
+        _id: user._id,
+        ...sessionFilter,
+        emailVerified: true,
+        registrationComplete: false,
+        registrationVerificationClosedAt: mongoose.trusted({ $exists: true }),
+        registrationResumeClaimedAt: mongoose.trusted({ $exists: false }),
+      }),
+      { $set: { registrationResumeClaimedAt: new Date() } },
+      { new: true }
+    );
+    if (!claimedUser) return res.json({ verified: true, verificationTabClosed: true, alreadyResumed: true });
+
+    const onboardingToken = await issueOnboardingToken(claimedUser._id);
+    if (!onboardingToken) {
+      return res.status(409).json({ message: "Registration is no longer available." });
+    }
+
+    return res.json({
+      verified: true,
+      verificationTabClosed: true,
+      onboardingToken,
+      user: {
+        id: claimedUser._id,
+        email: claimedUser.email,
+        username: claimedUser.username,
+        role: claimedUser.role,
+        professions: claimedUser.professions,
+        emailVerified: true,
+        registrationComplete: false,
+      },
+    });
+  } catch (error) {
+    console.error("Registration status error:", error);
+    return res.status(500).json({ message: "Could not check registration status." });
+  }
+}
+
+async function handleRegistrationTabClosed(req, res) {
+  try {
+    const sessionFilter = getRegistrationSessionFilter(req);
+    if (!sessionFilter) {
+      return res.status(401).json({ message: "Registration session not found." });
+    }
+
+    const user = await User.findOneAndUpdate(
+      mongoose.trusted({
+        ...sessionFilter,
+        emailVerified: true,
+        registrationComplete: false,
+      }),
+      { $set: { registrationVerificationClosedAt: new Date() } },
+      { new: true }
+    );
+    if (!user) {
+      return res.status(409).json({ message: "Verify the email before continuing registration." });
+    }
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error("Registration tab close error:", error);
+    return res.status(500).json({ message: "Could not continue registration." });
+  }
 }
 
 async function handleResendVerification(req, res) {
@@ -308,7 +481,10 @@ async function handleResendVerification(req, res) {
   }
 
   try {
-    await issueEmailVerification(user, { replaceExisting: true });
+    await issueEmailVerification(user, {
+      replaceExisting: true,
+      appUrl: getRegistrationAppUrl(req),
+    });
     return res.json({ message: "If a pending registration exists for that email, a new link has been sent." });
   } catch (error) {
     console.warn("Verification email could not be resent:", error.message);
@@ -339,6 +515,10 @@ async function handleCompleteRegistration(req, res) {
   const lastName = String(req.body.lastName || "").trim();
   const fullName = String(req.body.fullName || [firstName, middleName, lastName].filter(Boolean).join(" ")).trim();
   const mobileNumber = String(req.body.mobileNumber || "").trim();
+  const province = String(req.body.province || "").trim();
+  const city = String(req.body.city || "").trim();
+  const barangay = String(req.body.barangay || "").trim();
+  const address = formatAddress(req.body.address, barangay, city, province);
   const dateOfBirth = String(req.body.dateOfBirth || "").trim();
   if (!fullName) return res.status(400).json({ message: "Your full name is required." });
   if (!/^09\d{9}$/.test(mobileNumber)) {
@@ -377,10 +557,10 @@ async function handleCompleteRegistration(req, res) {
         middleName,
         lastName,
         mobileNumber,
-        province: String(req.body.province || "").trim(),
-        city: String(req.body.city || "").trim(),
-        barangay: String(req.body.barangay || "").trim(),
-        address: String(req.body.address || "").trim(),
+        province,
+        city,
+        barangay,
+        address,
         registrationComplete: true,
         ...(user.role === "provider" ? { dateOfBirth: parsedDateOfBirth } : {}),
       },
@@ -391,6 +571,10 @@ async function handleCompleteRegistration(req, res) {
         emailVerificationTokenHash: 1,
         emailVerificationExpiresAt: 1,
         emailVerificationTokens: 1,
+        registrationSessionTokenHash: 1,
+        registrationSessionExpiresAt: 1,
+        registrationVerificationClosedAt: 1,
+        registrationResumeClaimedAt: 1,
       },
     },
     { new: true, runValidators: true }
@@ -400,13 +584,32 @@ async function handleCompleteRegistration(req, res) {
     return res.status(401).json({ message: "Your registration session expired. Sign in again to continue." });
   }
 
+  const accountToken = await issueAccountToken(updatedUser._id);
+
+  res.setHeader(
+    "Set-Cookie",
+    `${registrationSessionCookie}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`
+  );
+
   return res.json({
     message: "Registration complete.",
+    token: accountToken,
     user: {
       id: updatedUser._id,
       email: updatedUser.email,
       username: updatedUser.username,
       fullName: updatedUser.fullName,
+      province: updatedUser.province,
+      city: updatedUser.city,
+      barangay: updatedUser.barangay,
+      address: updatedUser.address,
+      mobileNumber: updatedUser.mobileNumber,
+      firstName: updatedUser.firstName,
+      middleName: updatedUser.middleName,
+      lastName: updatedUser.lastName,
+      professions: updatedUser.professions,
+      bio: updatedUser.bio,
+      createdAt: updatedUser.createdAt,
       role: updatedUser.role,
       emailVerified: true,
       registrationComplete: true,
@@ -486,14 +689,34 @@ async function handleLogin(req, res) {
       });
     }
 
+    if (!user.address) {
+      const formattedAddress = formatAddress("", user.barangay, user.city, user.province);
+      if (formattedAddress) {
+        user.address = formattedAddress;
+        await user.save();
+      }
+    }
+
     clearLoginAttempts(normalizedIdentifier);
+    const accountToken = await issueAccountToken(user._id);
     return res.json({
-      message: "Login successful.", token: null, role: user.role,
+      message: "Login successful.", token: accountToken, role: user.role,
       user: {
         id: user._id,
         email: user.email,
         username: user.username,
         fullName: user.fullName,
+        firstName: user.firstName,
+        middleName: user.middleName,
+        lastName: user.lastName,
+        mobileNumber: user.mobileNumber,
+        province: user.province,
+        city: user.city,
+        barangay: user.barangay,
+        address: user.address,
+        professions: user.professions,
+        bio: user.bio,
+        createdAt: user.createdAt,
         role: user.role,
         emailVerified: user.emailVerified !== false,
         registrationComplete: user.registrationComplete !== false,
@@ -575,6 +798,8 @@ async function handleResetPassword(req, res) {
 module.exports = {
   handleRegister,
   handleRegistrationAvailability,
+  handleRegistrationStatus,
+  handleRegistrationTabClosed,
   handleVerifyEmail,
   handleResendVerification,
   handleCompleteRegistration,

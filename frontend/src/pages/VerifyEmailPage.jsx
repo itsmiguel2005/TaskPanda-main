@@ -5,6 +5,30 @@ import Layout from "../components/Layout.jsx";
 const REGISTRATION_CHANNEL = "taskpanda-registration";
 const REGISTRATION_RESUME_KEY = "taskpanda-registration-resume";
 
+function publishRegistrationEvent(type, payload) {
+  const event = { type, payload, sentAt: Date.now() };
+  try {
+    const channel = new BroadcastChannel(REGISTRATION_CHANNEL);
+    channel.postMessage(event);
+    channel.close();
+  } catch {
+    // The storage event below is the fallback for browsers without BroadcastChannel.
+  }
+  try {
+    localStorage.setItem(REGISTRATION_RESUME_KEY, JSON.stringify(event));
+    localStorage.removeItem(REGISTRATION_RESUME_KEY);
+  } catch {
+    // The current tab can still continue using its own onboarding token.
+  }
+}
+
+function notifyRegistrationTabClosed(payload) {
+  publishRegistrationEvent("closed", payload);
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon("/api/auth/registration-tab-closed", new Blob([], { type: "text/plain" }));
+  }
+}
+
 export default function VerifyEmailPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -16,6 +40,7 @@ export default function VerifyEmailPage() {
   const [verifiedData, setVerifiedData] = useState(null);
   const verificationStarted = useRef(false);
   const registrationResumed = useRef(false);
+  const closeSignalSent = useRef(false);
 
   const resumeRegistration = useCallback((payload) => {
     if (!payload?.onboardingToken || !payload?.user || registrationResumed.current) return;
@@ -59,22 +84,10 @@ export default function VerifyEmailPage() {
         }
         const resumePayload = { onboardingToken: data.onboardingToken, user: data.user };
         setVerifiedData(resumePayload);
-        try {
-          const channel = new BroadcastChannel(REGISTRATION_CHANNEL);
-          channel.postMessage(resumePayload);
-          channel.close();
-        } catch {
-          // The storage event below is the fallback for browsers without BroadcastChannel.
-        }
-        try {
-          localStorage.setItem(REGISTRATION_RESUME_KEY, JSON.stringify({ ...resumePayload, sentAt: Date.now() }));
-          localStorage.removeItem(REGISTRATION_RESUME_KEY);
-        } catch {
-          // The current tab can still continue using the button below.
-        }
+        publishRegistrationEvent("verified", resumePayload);
         setEmail(data.user.email || "");
         setStatus("verified");
-        setMessage("Your email is verified. Close this tab and return to the tab where you started registration; it will continue automatically.");
+        setMessage("Your email is verified. Continue here, or close this tab to continue in your registration tab.");
       })
       .catch((error) => {
         setStatus("error");
@@ -83,11 +96,65 @@ export default function VerifyEmailPage() {
   }, [token]);
 
   useEffect(() => {
+    if (!token || !verifiedData) return undefined;
+    const handleTabClose = () => {
+      if (closeSignalSent.current) return;
+      closeSignalSent.current = true;
+      notifyRegistrationTabClosed(verifiedData);
+    };
+    window.addEventListener("beforeunload", handleTabClose);
+    window.addEventListener("pagehide", handleTabClose);
+    return () => {
+      window.removeEventListener("beforeunload", handleTabClose);
+      window.removeEventListener("pagehide", handleTabClose);
+    };
+  }, [token, verifiedData]);
+
+  useEffect(() => {
     if (token) return undefined;
+    let active = true;
+    let checking = false;
+    const checkRegistrationStatus = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const response = await fetch("/api/auth/registration-status", {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!active) return;
+        if (data.verified) {
+          setStatus("verified");
+          setMessage("Email verified. Close the verification tab to continue registration here.");
+        }
+        if (data.verificationTabClosed && data.onboardingToken && data.user) {
+          resumeRegistration(data);
+        }
+      } catch {
+        // Keep waiting; the backend may be temporarily unavailable.
+      } finally {
+        checking = false;
+      }
+    };
+    checkRegistrationStatus();
+    const pollId = window.setInterval(checkRegistrationStatus, 1000);
+    const handleRegistrationEvent = (event) => {
+      const { type, payload } = event || {};
+      if (type === "verified" && payload?.user) {
+        setVerifiedData(payload);
+        setEmail(payload.user.email || "");
+        setStatus("verified");
+        setMessage("Email verified. Close the verification tab to continue registration here.");
+      } else if (type === "closed") {
+        resumeRegistration(payload);
+      }
+    };
     let channel;
     try {
       channel = new BroadcastChannel(REGISTRATION_CHANNEL);
-      channel.onmessage = (event) => resumeRegistration(event.data);
+      channel.onmessage = (event) => handleRegistrationEvent(event.data);
     } catch {
       channel = null;
     }
@@ -95,17 +162,30 @@ export default function VerifyEmailPage() {
     const handleStorage = (event) => {
       if (event.key !== REGISTRATION_RESUME_KEY || !event.newValue) return;
       try {
-        resumeRegistration(JSON.parse(event.newValue));
+        handleRegistrationEvent(JSON.parse(event.newValue));
       } catch {
         // Ignore malformed cross-tab signals.
       }
     };
     window.addEventListener("storage", handleStorage);
     return () => {
+      active = false;
+      window.clearInterval(pollId);
       channel?.close();
       window.removeEventListener("storage", handleStorage);
     };
   }, [resumeRegistration, token]);
+
+  const continueInThisTab = () => resumeRegistration(verifiedData);
+  const closeVerificationTab = () => {
+    if (!verifiedData) return;
+    if (!closeSignalSent.current) {
+      closeSignalSent.current = true;
+      notifyRegistrationTabClosed(verifiedData);
+    }
+    window.close();
+    setMessage("The registration tab can continue now. If this tab stays open, close it using your browser.");
+  };
 
   const handleResend = async (event) => {
     event.preventDefault();
@@ -146,7 +226,7 @@ export default function VerifyEmailPage() {
                 : message || (email ? `We sent a verification link to ${email}.` : "Enter the email used for registration to request a new verification link.")}
             </p>
             {status === "waiting" && (
-              <p className="text-xs text-gray-500">Leave this tab open. After you verify from your email, registration will continue in this tab.</p>
+              <p className="text-xs text-gray-500">Leave this tab open while you verify your email. It will continue after the verification tab is closed.</p>
             )}
             {status !== "verified" && status !== "verifying" && (
               <p className="text-xs text-gray-500">Each resend replaces earlier links. Open the newest verification email.</p>
@@ -176,15 +256,28 @@ export default function VerifyEmailPage() {
             )}
 
             {status === "waiting" && message && <p className="text-sm text-green-700" role="status">{message}</p>}
-            {status === "verified" ? (
-              <button
-                type="button"
-                onClick={handleContinueHere}
-                className={`w-full rounded-lg bg-gradient-to-r ${a.button} px-4 py-2.5 font-semibold text-white`}
-              >
-                Continue registration in this tab
-              </button>
-            ) : (
+            {token && status === "verified" && (
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={continueInThisTab}
+                  className={`w-full rounded-lg bg-gradient-to-r ${a.button} px-4 py-2.5 font-semibold text-white`}
+                >
+                  Continue in this tab
+                </button>
+                <button
+                  type="button"
+                  onClick={closeVerificationTab}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700"
+                >
+                  Close this tab and continue registration
+                </button>
+              </div>
+            )}
+            {!token && status === "verified" && (
+              <p className="text-sm font-medium text-green-700" role="status">{message}</p>
+            )}
+            {status !== "verified" && (
               <Link to="/login" className="inline-block text-sm font-semibold text-primary-700 hover:text-primary-900">
                 Go to sign in
               </Link>
