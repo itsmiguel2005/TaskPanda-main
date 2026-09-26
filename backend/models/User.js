@@ -42,6 +42,52 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    emailVerified: {
+      type: Boolean,
+      default: true,
+    },
+    registrationComplete: {
+      type: Boolean,
+      default: true,
+    },
+    emailVerificationTokenHash: {
+      type: String,
+      select: false,
+    },
+    emailVerificationExpiresAt: {
+      type: Date,
+      select: false,
+    },
+    emailVerificationTokens: {
+      type: [{
+        tokenHash: { type: String, required: true },
+        expiresAt: { type: Date, required: true },
+        _id: false,
+      }],
+      default: [],
+      select: false,
+    },
+    registrationExpiresAt: {
+      type: Date,
+      expires: 0,
+    },
+    onboardingTokenHash: {
+      type: String,
+      select: false,
+    },
+    onboardingTokenExpiresAt: {
+      type: Date,
+      select: false,
+    },
+    onboardingTokens: {
+      type: [{
+        tokenHash: { type: String, required: true },
+        expiresAt: { type: Date, required: true },
+        _id: false,
+      }],
+      default: [],
+      select: false,
+    },
     professions: {
       type: [String],
       default: [],

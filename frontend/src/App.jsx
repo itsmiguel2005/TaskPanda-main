@@ -2,6 +2,7 @@ import React from "react";
 import { Navigate, Routes, Route, useLocation } from "react-router-dom";
 import LandingPage from "./pages/LandingPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
+import VerifyEmailPage from "./pages/VerifyEmailPage.jsx";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage.jsx";
 import RegisterPage from "./pages/RegisterPage.jsx";
 import WorkerRegisterPage from "./pages/WorkerRegisterPage.jsx";
@@ -69,17 +70,21 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-const authRoutes = ["/login", "/forgot-password", "/register", "/worker-register", "/worker-register/name", "/worker-register/location", "/worker-register/dob", "/worker-register/phone", "/client-register", "/client-register/name", "/client-register/location", "/client-register/phone", "/admin"];
+const authRoutes = ["/login", "/forgot-password", "/verify-email", "/register", "/worker-register", "/worker-register/name", "/worker-register/location", "/worker-register/dob", "/worker-register/phone", "/client-register", "/client-register/name", "/client-register/location", "/client-register/phone", "/admin"];
 
 function ProtectedRoute({ children, roles }) {
   const location = useLocation();
-  const { isLoggedIn, role, isAuthLoading } = useAuth();
+  const { isLoggedIn, role, user, isAuthLoading } = useAuth();
 
   if (isAuthLoading) {
     return <div className="flex min-h-screen items-center justify-center text-sm text-gray-600">Checking your session...</div>;
   }
 
   if (!isLoggedIn) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+
+  if (user?.emailVerified === false || user?.registrationComplete === false) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
@@ -100,6 +105,7 @@ export default function App() {
       <ErrorBoundary>
         <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/worker-register" element={<WorkerRegisterPage />} />

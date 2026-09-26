@@ -13,4 +13,9 @@ module.exports = {
   smtpPort: Number(process.env.SMTP_PORT || 587),
   smtpSecure: parseBoolean(process.env.SMTP_SECURE),
   mailFrom: String(process.env.MAIL_FROM || process.env.SMTP_USER || "").replace(/\s+/g, "").trim(),
+  appUrl: String(
+    process.env.APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
+    (process.env.NODE_ENV === "production" ? "" : "http://localhost:5173")
+  ).replace(/\/+$/, ""),
 };

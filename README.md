@@ -70,6 +70,8 @@ SMTP_SECURE=false
 SMTP_USER=your-email@example.com
 SMTP_PASSWORD=your-app-password
 MAIL_FROM=your-email@example.com
+# Optional public site URL for email links (recommended for custom domains)
+APP_URL=https://your-taskpanda-domain.example
 ```
 
 Do not commit `.env` or real passwords to source control. For Gmail, use an app password rather than your normal account password.
@@ -90,7 +92,10 @@ SMTP_SECURE=false
 SMTP_USER=your-email@example.com
 SMTP_PASSWORD=your-gmail-app-password
 MAIL_FROM=your-email@example.com
+APP_URL=https://your-taskpanda-domain.example
 ```
+
+Email verification links use `APP_URL` when configured, or Vercel's deployment URL. Locally, they point to the Vite app at `http://localhost:5173`. New registrations stay pending until the email link is confirmed; verified users must finish onboarding before they can open the app.
 
 In Atlas Network Access, allow Vercel's connections. For an initial deployment this is commonly `0.0.0.0/0`, but use a private networking strategy or a narrower policy when your infrastructure supports it. Never commit the Atlas URI or other secrets.
 

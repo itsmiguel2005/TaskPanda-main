@@ -14,7 +14,7 @@ const mailTransport = nodemailer.createTransport({
   requireTLS: true,
   connectionTimeout: 10000,
   greetingTimeout: 10000,
-  socketTimeout: 10000,
+  socketTimeout: 20000,
   auth: hasValidSmtpCredentials
     ? { user: config.smtpUser, pass: config.smtpPassword }
     : undefined,
@@ -31,17 +31,13 @@ if (process.env.VERCEL) {
 }
 
 async function sendPasswordResetEmail(email, code) {
-  const mailPromise = mailTransport.sendMail({
+  const result = await mailTransport.sendMail({
     from: { name: "TaskPanda", address: config.mailFrom || config.smtpUser },
     to: email,
     subject: "Reset your TaskPanda password",
     text: `Your TaskPanda password reset code is ${code}. It expires in 10 minutes.`,
     html: `<p>Your TaskPanda password reset code is:</p><p style="font-size: 24px; font-weight: 700; letter-spacing: 4px">${code}</p><p>This code expires in 10 minutes.</p>`,
   });
-  const mailTimeout = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error("SMTP request timed out")), 10000);
-  });
-  const result = await Promise.race([mailPromise, mailTimeout]);
   console.log("Password reset email accepted by SMTP:", {
     messageId: result.messageId,
     accepted: result.accepted,
@@ -50,4 +46,19 @@ async function sendPasswordResetEmail(email, code) {
   });
 }
 
-module.exports = { hasValidSmtpCredentials, sendPasswordResetEmail };
+async function sendEmailVerificationEmail(email, verificationUrl) {
+  const result = await mailTransport.sendMail({
+    from: { name: "TaskPanda", address: config.mailFrom || config.smtpUser },
+    to: email,
+    subject: "Verify your TaskPanda email",
+    text: `Verify your email to continue your TaskPanda registration: ${verificationUrl}\nThis link expires in 24 hours.`,
+    html: `<p>Verify your email to continue your TaskPanda registration:</p><p><a href="${verificationUrl}">Verify email</a></p><p>This link expires in 24 hours.</p>`,
+  });
+  console.log("Email verification message accepted by SMTP:", {
+    messageId: result.messageId,
+    accepted: result.accepted,
+    rejected: result.rejected,
+  });
+}
+
+module.exports = { hasValidSmtpCredentials, sendPasswordResetEmail, sendEmailVerificationEmail };

@@ -16,9 +16,7 @@ export default defineConfig({
     sourcemap: true,
     minify: false,
     rollupOptions: {
-      input: {
-        main: "./frontend/index.html",
-      },
+      input: "./index.html",
     },
   },
 });

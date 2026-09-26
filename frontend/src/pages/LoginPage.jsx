@@ -13,7 +13,7 @@ function formatWaitTime(totalSeconds) {
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login } = useAuth();
+  const { login, logout } = useAuth();
   const [formData, setFormData] = useState({ email: "", password: "", remember: false });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -22,6 +22,7 @@ export default function LoginPage() {
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
   const [touched, setTouched] = useState({});
   const [showRegistrationSuccess, setShowRegistrationSuccess] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState("");
   const [isRegistrationToastFading, setIsRegistrationToastFading] = useState(false);
   const [showPasswordResetSuccess, setShowPasswordResetSuccess] = useState(false);
   const [isPasswordResetToastFading, setIsPasswordResetToastFading] = useState(false);
@@ -117,6 +118,22 @@ export default function LoginPage() {
         }),
       });
       const data = await response.json().catch(() => ({}));
+      if (response.ok && data.requiresRegistrationCompletion) {
+        logout();
+        const incompleteUser = data.user || {};
+        const role = incompleteUser.role || data.role || "client";
+        const stepKey = role === "provider" ? "workerStep1" : "clientStep1";
+        const stepData = {
+          email: incompleteUser.email || formData.email,
+          username: incompleteUser.username || "",
+          ...(role === "provider" ? { professions: incompleteUser.professions || [] } : {}),
+        };
+        sessionStorage.setItem("taskpanda_onboarding_token", data.onboardingToken || "");
+        sessionStorage.setItem(stepKey, JSON.stringify(stepData));
+        localStorage.removeItem(stepKey);
+        navigate(role === "provider" ? "/worker-register/name" : "/client-register/name", { replace: true });
+        return;
+      }
       if (response.ok) {
         const loggedInUser = data.user || { email: formData.email, role: data.role || "client" };
         login({ ...loggedInUser, role: data.role || loggedInUser.role || "client" }, data.token, formData.remember);
@@ -127,7 +144,13 @@ export default function LoginPage() {
           : "/dashboard";
         navigate(destination);
       } else {
+        if (data.requiresEmailVerification) {
+          const email = data.email || formData.email;
+          navigate(`/verify-email?email=${encodeURIComponent(email)}`, { replace: true });
+          return;
+        }
         setServerError(data.message || "Invalid email or password. Please try again.");
+        setUnverifiedEmail(data.requiresEmailVerification ? (data.email || formData.email) : "");
         setRequiresPasswordReset(Boolean(data.requiresPasswordReset));
         setLockoutSeconds(Number(data.retryAfterSeconds) || 0);
       }
@@ -145,6 +168,7 @@ export default function LoginPage() {
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setServerError("");
+    setUnverifiedEmail("");
     setRequiresPasswordReset(false);
     setLockoutSeconds(0);
     setFormData((prev) => ({
@@ -264,6 +288,14 @@ export default function LoginPage() {
                         >
                           Forgot password? Reset it here.
                         </button>
+                      )}
+                      {unverifiedEmail && (
+                        <Link
+                          to={`/verify-email?email=${encodeURIComponent(unverifiedEmail)}`}
+                          className="block text-xs font-semibold text-primary-600 hover:text-primary-800"
+                        >
+                          Verify your email or resend the link.
+                        </Link>
                       )}
                     </div>
                   )}

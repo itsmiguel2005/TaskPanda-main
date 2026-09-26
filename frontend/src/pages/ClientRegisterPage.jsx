@@ -134,14 +134,34 @@ export default function ClientRegisterPage() {
       setIsChecking(false);
     }
 
-    const step1 = {
-      username: formData.username,
-      email: formData.email,
-      password: formData.password,
-    };
-    sessionStorage.setItem("clientStep1", JSON.stringify(step1));
-    localStorage.setItem("clientStep1", JSON.stringify(step1));
-    navigate("/client-register/name");
+    setIsChecking(true);
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          role: "client",
+          registrationPhase: "start",
+          username: formData.username,
+          email: formData.email,
+          password: formData.password,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(data.message || "We could not start registration. Please try again.");
+        return;
+      }
+
+      const step1 = { username: formData.username, email: formData.email };
+      sessionStorage.setItem("clientStep1", JSON.stringify(step1));
+      localStorage.removeItem("clientStep1");
+      navigate(`/verify-email?email=${encodeURIComponent(formData.email)}`);
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setIsChecking(false);
+    }
   };
 
   return (
