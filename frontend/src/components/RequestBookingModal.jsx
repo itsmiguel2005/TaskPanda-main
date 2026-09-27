@@ -220,7 +220,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit }) {
               </div>
               <h3 className="mt-4 text-xl font-bold text-gray-900">Offer Submitted</h3>
               <p className="mt-2 text-sm leading-relaxed text-gray-600">
-                Your offer of PHP {Number(offer).toLocaleString()} has been sent to the provider. They have to accept or counter.
+                Your offer of PHP {Number(offer).toLocaleString()} with Cash on Completion has been sent to the provider. They have to accept or counter.
               </p>
               <div className="mt-6 flex gap-3">
                 <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-gray-300 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50">
@@ -375,6 +375,11 @@ export default function RequestBookingModal({ provider, onClose, onSubmit }) {
               />
             </div>
             <p className="mt-1 text-xs text-gray-500">Offer-based pricing, not hourly.</p>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+            <span className="text-gray-500">Payment method</span>
+            <span className="font-semibold text-gray-800">Cash on Completion</span>
           </div>
 
           <label className="flex items-start gap-2 text-xs leading-relaxed text-gray-600">

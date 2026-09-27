@@ -5,12 +5,33 @@ import { useBookings } from "../context/BookingContext.jsx";
 import BookingProgress from "../components/BookingProgress.jsx";
 import BookingHistory from "../components/BookingHistory.jsx";
 import AddressActions from "../components/AddressActions.jsx";
+import { canRequestCancellation, getCancellationLockMessage } from "../utils/bookingCancellation.js";
+import StatusChangeConfirmation from "../components/StatusChangeConfirmation.jsx";
+import RevisionRequestModal from "../components/RevisionRequestModal.jsx";
 
 const tabs = ["All", "Pending", "Active", "Completed", "Cancelled"];
 
 function formatBookingTotal(booking) {
   const amount = Number(booking.offeredPrice ?? booking.offer);
   return Number.isFinite(amount) ? `₱${amount.toLocaleString()}` : String(booking.price || "").replace(/^P/, "₱");
+}
+
+function canRequestRevision(booking) {
+  const revisions = booking?.revisionRequests || [];
+  return booking?.status === "Completed"
+    && !booking.cashReceipt?.receiptNumber
+    && revisions.length < 2
+    && !revisions.some((revision) => ["open", "accepted"].includes(revision.status));
+}
+
+function hasMutualSettlement(booking) {
+  return Boolean((booking?.clientConfirmedCash || booking?.cashPaidConfirmedAt) && (booking?.providerConfirmedCash || booking?.cashReceivedConfirmedAt));
+}
+
+function revisionLimitReached(booking) {
+  return booking?.status === "Completed"
+    && !booking.cashReceipt?.receiptNumber
+    && (booking.revisionRequests || []).length >= 2;
 }
 
 function StatusBadge({ status }) {
@@ -20,9 +41,12 @@ function StatusBadge({ status }) {
     "On the Way": "bg-cyan-100 text-cyan-800 border-cyan-200",
     "In Progress": "bg-purple-100 text-purple-700 border-purple-200",
     Completed: "bg-blue-100 text-blue-700 border-blue-200",
+    Settled: "bg-emerald-100 text-emerald-700 border-emerald-200",
     Cancelled: "bg-red-100 text-red-700 border-red-200",
     Declined: "bg-red-100 text-red-700 border-red-200",
     "Cancellation Requested": "bg-amber-100 text-amber-700 border-amber-200",
+    "In Revision": "bg-amber-100 text-amber-800 border-amber-200",
+    Disputed: "bg-red-100 text-red-700 border-red-200",
   };
   return (
     <span
@@ -42,6 +66,7 @@ function StatusDot({ status }) {
     "On the Way": "bg-cyan-500",
     "In Progress": "bg-purple-500",
     Completed: "bg-blue-500",
+    Settled: "bg-emerald-500",
     Cancelled: "bg-red-500",
     Declined: "bg-red-500",
     "Cancellation Requested": "bg-amber-500",
@@ -58,10 +83,11 @@ function StatusDot({ status }) {
 export default function BookingsPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("All");
-  const { bookings, isLoading, error, requestCancellation, submitReview, respondToProviderUpdate, refreshBookings } = useBookings();
+  const { bookings, isLoading, error, requestCancellation, requestRevision, submitReview, respondToProviderUpdate, refreshBookings } = useBookings();
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("createdAt");
   const [cancelingId, setCancelingId] = useState(null);
+  const [revisioningId, setRevisioningId] = useState(null);
   const [cancellationReason, setCancellationReason] = useState("");
   const [detailId, setDetailId] = useState(null);
   const [reviewingId, setReviewingId] = useState(null);
@@ -87,7 +113,7 @@ export default function BookingsPage() {
         .some((value) => String(value || "").toLowerCase().includes(query));
       const matchesTab = activeTab === "All"
         || (activeTab === "Pending" && booking.status === "Pending Request")
-        || (activeTab === "Active" && ["Confirmed", "On the Way", "In Progress", "Cancellation Requested"].includes(booking.status))
+        || (activeTab === "Active" && ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status))
         || (activeTab === "Completed" && booking.status === "Completed")
         || (activeTab === "Cancelled" && ["Cancelled", "Declined"].includes(booking.status));
       return matchesSearch && matchesTab;
@@ -125,16 +151,15 @@ export default function BookingsPage() {
 
   const detailBooking = bookings.find((b) => b.id === detailId) || null;
   const cancelBooking = bookings.find((b) => b.id === cancelingId);
+  const cancelBookingNeedsReason = Boolean(cancelBooking && Date.now() - new Date(cancelBooking.createdAt).getTime() >= 10 * 60 * 1000);
+  const revisionBooking = bookings.find((booking) => booking.id === revisioningId) || null;
   const reviewingBooking = bookings.find((b) => b.id === reviewingId);
 
   const handleCancel = async () => {
-    if (!cancelingId) return;
-    try {
-      await requestCancellation(cancelingId, "request", cancellationReason);
-    } catch (requestError) {
-      window.alert(requestError.message);
-      return;
+    if (!cancelingId || !cancelBooking || !canRequestCancellation(cancelBooking)) {
+      throw new Error(cancelBooking ? getCancellationLockMessage(cancelBooking) || "Cancellation is only available while the booking is pending or confirmed." : "This booking is no longer available.");
     }
+    await requestCancellation(cancelingId, "request", cancellationReason);
     setCancelingId(null);
     setCancellationReason("");
   };
@@ -145,6 +170,12 @@ export default function BookingsPage() {
     } catch (requestError) {
       window.alert(requestError.message);
     }
+  };
+
+  const handleRequestRevision = async (note, photos) => {
+    if (!revisioningId) throw new Error("Choose a completed booking first.");
+    await requestRevision(revisioningId, note, photos);
+    setRevisioningId(null);
   };
 
   const handleSubmitReview = async (event) => {
@@ -254,7 +285,7 @@ export default function BookingsPage() {
                     <div className="flex flex-wrap items-center justify-end gap-2">
                       <StatusDot status={booking.status} />
                       <StatusBadge status={booking.status} />
-                      <button onClick={() => navigate("/messages")} className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Contact</button>
+                      <button onClick={() => navigate(`/client/messages?bookingId=${booking.id}`)} className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Chat</button>
                     </div>
                   </div>
                   <BookingProgress status={booking.status} />
@@ -279,7 +310,7 @@ export default function BookingsPage() {
                             <p className="mt-2 rounded-md bg-blue-50 px-3 py-2 text-xs font-medium text-blue-800">Task complete. Share a review of your service.</p>
                           )}
                           {booking.clientRating != null && (
-                            <p className="mt-2 text-xs font-medium text-amber-700">Your review: {"★".repeat(booking.clientRating)}{"☆".repeat(5 - booking.clientRating)}{booking.clientReview ? ` · ${booking.clientReview}` : ""}</p>
+                            <p className="mt-2 text-xs font-medium text-amber-700">Your review: <span className="inline-flex items-center gap-0.5">{[1, 2, 3, 4, 5].map((star) => (<span key={star} style={{ color: star <= Number(booking.clientRating || 0) ? "#fbbf24" : "#d1d5db", lineHeight: 1 }}>{"★"}</span>))}</span>{booking.clientReview ? ` · ${booking.clientReview}` : ""}</p>
                           )}
                           {booking.clientReviewPhotos?.length > 0 && (
                             <div className="mt-3 flex flex-wrap gap-2">
@@ -353,19 +384,28 @@ export default function BookingsPage() {
                   <div className="mt-5 flex flex-col-reverse gap-2 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
                     <div><span className="block text-xs font-medium text-gray-500">Total</span><span className="text-xl font-bold text-gray-900">{formatBookingTotal(booking)}</span></div>
                     <div className="flex flex-wrap gap-2">
-                      {["Pending Request", "Confirmed", "On the Way", "In Progress"].includes(booking.status) && (
+                      {canRequestCancellation(booking) ? (
                         <button
                           onClick={() => setCancelingId(booking.id)}
                           className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-red-50 hover:text-red-600 hover:border-red-200"
                         >
                           Cancel
                         </button>
+                      ) : booking.status !== "Completed" && getCancellationLockMessage(booking) && (
+                        <button type="button" disabled title={getCancellationLockMessage(booking)} className="cursor-not-allowed rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-500">Cancellation locked</button>
                       )}
                       {booking.status === "Completed" && (
                         <>
-                          {booking.clientRating == null && (
+                          {canRequestRevision(booking) && <button type="button" onClick={() => setRevisioningId(booking.id)} className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100">Request Revision</button>}
+                          {revisionLimitReached(booking) && <span className="self-center text-xs font-medium text-amber-800">Revision limit reached</span>}
+                          {booking.clientRating == null && hasMutualSettlement(booking) && (
                             <button onClick={() => { setReviewingId(booking.id); setReviewRating(5); setReviewText(""); }} className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-700">
                               Rate Provider
+                            </button>
+                          )}
+                          {booking.clientRating == null && !hasMutualSettlement(booking) && (
+                            <button type="button" disabled className="cursor-not-allowed rounded-lg bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-500">
+                              Settlement pending
                             </button>
                           )}
                           <button onClick={() => navigate("/explore")} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50">Book Again</button>
@@ -425,62 +465,30 @@ export default function BookingsPage() {
       </div>
 
       {/* Cancel Confirmation Modal */}
-      {cancelingId && cancelBooking && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          onClick={() => setCancelingId(null)}
+      {cancelingId && cancelBooking && canRequestCancellation(cancelBooking) && (
+        <StatusChangeConfirmation
+          nextStatus="Cancelled"
+          canConfirm={!cancelBookingNeedsReason || Boolean(cancellationReason.trim())}
+          onConfirm={handleCancel}
+          onClose={() => setCancelingId(null)}
         >
-          <div
-            className="w-full max-w-sm rounded-2xl bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-6">
-              <h3 className="text-lg font-bold text-gray-900">
-                Cancel Booking?
-              </h3>
-              <p className="mt-2 text-sm text-gray-500">
-                Are you sure you want to cancel{" "}
-                <span className="font-semibold text-gray-700">
-                  {cancelBooking.task}
-                </span>{" "}
-                with {cancelBooking.worker}? This action cannot be undone.
-              </p>
-              {Date.now() - new Date(cancelBooking.createdAt).getTime() >= 10 * 60 * 1000 && (
-                <div className="mt-4">
-                  <label htmlFor="client-cancellation-reason" className="mb-1.5 block text-sm font-medium text-gray-700">
-                    Reason for cancellation
-                  </label>
-                  <textarea
-                    id="client-cancellation-reason"
-                    value={cancellationReason}
-                    onChange={(event) => setCancellationReason(event.target.value)}
-                    maxLength={500}
-                    rows={3}
-                    required
-                    placeholder="Tell the provider why you need to cancel"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">A cancellation request will be sent to the provider for approval.</p>
-                </div>
-              )}
-              <div className="mt-6 flex gap-3">
-                <button
-                  onClick={() => setCancelingId(null)}
-                  className="flex-1 rounded-lg border border-gray-200 bg-white py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
-                >
-                  Keep Booking
-                </button>
-                <button
-                  onClick={handleCancel}
-                  disabled={Date.now() - new Date(cancelBooking.createdAt).getTime() >= 10 * 60 * 1000 && !cancellationReason.trim()}
-                  className="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Cancel Booking
-                </button>
-              </div>
+          <p className="mt-2 text-sm text-gray-500">Are you sure you want to cancel <span className="font-semibold text-gray-700">{cancelBooking.task}</span> with {cancelBooking.worker}? This action cannot be undone.</p>
+          {cancelBookingNeedsReason && (
+            <div className="mt-4">
+              <label htmlFor="client-cancellation-reason" className="mb-1.5 block text-sm font-medium text-gray-700">Reason for cancellation</label>
+              <textarea id="client-cancellation-reason" value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} maxLength={500} rows={3} required placeholder="Tell the provider why you need to cancel" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30" />
+              <p className="mt-1 text-xs text-gray-500">A cancellation request will be sent to the provider for approval.</p>
             </div>
-          </div>
-        </div>
+          )}
+        </StatusChangeConfirmation>
+      )}
+      {revisionBooking && canRequestRevision(revisionBooking) && (
+        <RevisionRequestModal
+          booking={revisionBooking}
+          revisionCount={(revisionBooking.revisionRequests || []).length}
+          onSubmit={handleRequestRevision}
+          onClose={() => setRevisioningId(null)}
+        />
       )}
 
       {reviewingBooking && (
@@ -607,13 +615,16 @@ export default function BookingsPage() {
                 <button
                   onClick={() => {
                     setDetailId(null);
-                    navigate("/messages");
+                    navigate(`/client/messages?bookingId=${detailBooking.id}`);
                   }}
                   className="flex-1 rounded-lg bg-purple-600 py-2.5 text-sm font-semibold text-white transition hover:bg-purple-700"
                 >
-                  Contact Worker
+                  Chat Provider
                 </button>
-                {detailBooking.status === "Pending Request" && (
+                {canRequestRevision(detailBooking) && (
+                  <button type="button" onClick={() => { setDetailId(null); setRevisioningId(detailBooking.id); }} className="flex-1 rounded-lg border border-amber-200 bg-amber-50 py-2.5 text-sm font-semibold text-amber-900 hover:bg-amber-100">Request Revision</button>
+                )}
+                {canRequestCancellation(detailBooking) ? (
                   <button
                     onClick={() => {
                       setDetailId(null);
@@ -623,6 +634,8 @@ export default function BookingsPage() {
                   >
                     Cancel
                   </button>
+                ) : detailBooking.status !== "Completed" && getCancellationLockMessage(detailBooking) && (
+                  <button type="button" disabled title={getCancellationLockMessage(detailBooking)} className="flex-1 cursor-not-allowed rounded-lg bg-gray-100 py-2.5 text-sm font-medium text-gray-500">Cancellation locked</button>
                 )}
               </div>
             </div>

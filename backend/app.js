@@ -7,6 +7,7 @@ const verificationRoutes = require("./routes/verificationRoutes");
 const profileRoutes = require("./routes/profileRoutes");
 const providerRoutes = require("./routes/providerRoutes");
 const bookingRoutes = require("./routes/bookingRoutes");
+const messageRoutes = require("./routes/messageRoutes");
 
 const app = express();
 
@@ -29,6 +30,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/providers", providerRoutes);
 app.use("/api/bookings", bookingRoutes);
+app.use("/api", messageRoutes);
 app.use("/api", healthRoutes);
 app.use("/api", verificationRoutes);
 

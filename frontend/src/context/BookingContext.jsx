@@ -94,6 +94,38 @@ export function BookingProvider({ children }) {
     return data.booking;
   }, [token]);
 
+  const submitCompletionProof = useCallback(async (id, completionNote, photos = []) => {
+    const formData = new FormData();
+    formData.append("completionNote", completionNote);
+    (Array.isArray(photos) ? photos : []).forEach((photo) => formData.append("photos", photo));
+    const response = await fetch(`/api/bookings/${id}/completion`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Could not submit completion proof.");
+    if (!data.booking?.id) throw new Error("The server returned an invalid completion response.");
+    setBookings((current) => validBookings(current.map((booking) => booking.id === id ? data.booking : booking)));
+    return data.booking;
+  }, [token]);
+
+  const requestRevision = useCallback(async (id, note, photos = []) => {
+    const formData = new FormData();
+    formData.append("note", note);
+    (Array.isArray(photos) ? photos : []).forEach((photo) => formData.append("photos", photo));
+    const response = await fetch(`/api/bookings/${id}/revisions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Could not submit the revision request.");
+    if (!data.booking?.id) throw new Error("The server returned an invalid revision request.");
+    setBookings((current) => validBookings(current.map((booking) => booking.id === id ? data.booking : booking)));
+    return data.booking;
+  }, [token]);
+
   const requestCancellation = useCallback(async (id, action = "request", reason = "") => {
     const response = await fetch(`/api/bookings/${id}/cancel`, {
       method: "PATCH",
@@ -124,6 +156,14 @@ export function BookingProvider({ children }) {
     if (!response.ok) throw new Error(data.message || "Could not save the booking review.");
     if (!data.booking?.id) throw new Error("The server returned an invalid review response.");
     setBookings((current) => validBookings(current.map((booking) => booking.id === id ? data.booking : booking)));
+    try {
+      const storedRows = JSON.parse(window.localStorage.getItem("taskpanda-reviewed-bookings") || "{}");
+      const nextRows = storedRows && typeof storedRows === "object" ? storedRows : {};
+      nextRows[String(id)] = true;
+      window.localStorage.setItem("taskpanda-reviewed-bookings", JSON.stringify(nextRows));
+    } catch {
+      // Ignore storage failures.
+    }
     return data.booking;
   }, [token]);
 
@@ -153,18 +193,34 @@ export function BookingProvider({ children }) {
     return data.booking;
   }, [token]);
 
+  const respondToRevision = useCallback(async (id, revisionId, action, responseNote = "") => {
+    const response = await fetch(`/api/bookings/${id}/revisions/${revisionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action, responseNote }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Could not respond to the revision request.");
+    if (!data.booking?.id) throw new Error("The server returned an invalid revision response.");
+    setBookings((current) => validBookings(current.map((booking) => booking.id === id ? data.booking : booking)));
+    return data.booking;
+  }, [token]);
+
   const value = useMemo(() => ({
     bookings,
     isLoading,
     error,
     createBooking,
     updateBookingStatus,
+    submitCompletionProof,
+    requestRevision,
     requestCancellation,
     submitReview,
     sendProviderUpdate,
     respondToProviderUpdate,
+    respondToRevision,
     refreshBookings: fetchBookings,
-  }), [bookings, isLoading, error, createBooking, updateBookingStatus, requestCancellation, submitReview, sendProviderUpdate, respondToProviderUpdate, fetchBookings]);
+  }), [bookings, isLoading, error, createBooking, updateBookingStatus, submitCompletionProof, requestRevision, requestCancellation, submitReview, sendProviderUpdate, respondToProviderUpdate, respondToRevision, fetchBookings]);
 
   return <BookingContext.Provider value={value}>{children}</BookingContext.Provider>;
 }

@@ -19,7 +19,7 @@ async function requireAuth(req, res, next) {
         },
       }),
       registrationComplete: true,
-    }));
+    })).select("+accountTokens");
     if (!user) return res.status(401).json({ message: "Your session expired. Sign in again." });
     req.user = user;
     return next();

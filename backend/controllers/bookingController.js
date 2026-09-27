@@ -1,17 +1,20 @@
 const mongoose = require("mongoose");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
+const { ensureBookingConversation, appendBookingSystemMessage } = require("../services/bookingMessaging");
 
 const TIME_SLOTS = new Set(["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"]);
 const PH_TIMEZONE_OFFSET_HOURS = 8;
-const STATUS_VALUES = new Set(["approved", "en_route", "in_progress", "canceled", "complete"]);
+const STATUS_VALUES = new Set(["approved", "en_route", "in_progress", "canceled", "complete", "settled"]);
 const STATUS_ALIASES = {
+  "pending request": "pending",
   confirmed: "approved",
   "on the way": "en_route",
   "in progress": "in_progress",
   declined: "canceled",
   cancelled: "canceled",
   completed: "complete",
+  settled: "settled",
 };
 const STATUS_LABELS = {
   pending: "Pending Request",
@@ -21,9 +24,14 @@ const STATUS_LABELS = {
   cancel_requested: "Cancellation Requested",
   canceled: "Cancelled",
   complete: "Completed",
+  in_revision: "In Revision",
+  disputed: "Disputed",
+  closed: "Completed",
+  settled: "Settled",
 };
 
 const GRACE_PERIOD_MS = 10 * 60 * 1000;
+const CASH_SETTLEMENT_GRACE_MS = 48 * 60 * 60 * 1000;
 
 function normalizeBookingStatus(value) {
   const normalizedStatus = String(value || "").trim().toLowerCase();
@@ -82,6 +90,27 @@ function serializeBooking(booking) {
     price: `P${Number(offeredPrice).toLocaleString()}`,
     offer: offeredPrice,
     offeredPrice,
+    paymentMethod: booking.paymentMethod || "cash",
+    cashPaidConfirmedAt: booking.cashPaidConfirmedAt || null,
+    cashReceivedConfirmedAt: booking.cashReceivedConfirmedAt || null,
+    clientConfirmedCash: Boolean(booking.clientConfirmedCash || booking.cashPaidConfirmedAt),
+    providerConfirmedCash: Boolean(booking.providerConfirmedCash || booking.cashReceivedConfirmedAt),
+    workCompletedAt: booking.workCompletedAt || booking.completionSubmittedAt || null,
+    settledAt: booking.settledAt || null,
+    cashReceipt: booking.cashReceipt || null,
+    completionNote: booking.completionNote || "",
+    completionPhotos: booking.completionPhotos || [],
+    completionSubmittedAt: booking.completionSubmittedAt || null,
+    revisionRequests: (booking.revisionRequests || []).map((request) => ({
+      id: String(request._id),
+      note: request.note,
+      photos: request.photos || [],
+      status: request.status,
+      responseNote: request.responseNote || "",
+      createdAt: request.createdAt,
+      respondedAt: request.respondedAt || null,
+      addressedAt: request.addressedAt || null,
+    })),
     urgency: booking.urgency,
     photoUrl: booking.photoUrl || "",
     photoUrls,
@@ -126,9 +155,9 @@ async function handleListBookings(req, res) {
     if (requestedClientId && !mongoose.isValidObjectId(requestedClientId)) return res.status(400).json({ message: "Invalid clientId filter." });
     if (requestedProviderId && !mongoose.isValidObjectId(requestedProviderId)) return res.status(400).json({ message: "Invalid providerId filter." });
     const normalizedStatus = normalizeBookingStatus(requestedStatus);
-    if (requestedStatus && !["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "complete"].includes(normalizedStatus)) return res.status(400).json({ message: "Invalid status filter." });
+    if (requestedStatus && !["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "complete", "in_revision", "disputed", "closed", "settled"].includes(normalizedStatus)) return res.status(400).json({ message: "Invalid status filter." });
 
-    const filter = { status: normalizedStatus || mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "complete", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Cancelled", "Completed"] }) };
+    const filter = { status: normalizedStatus || mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "complete", "in_revision", "disputed", "closed", "settled", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Cancelled", "Completed", "Settled"] }) };
     if (req.user.role === "provider") {
       filter.providerId = req.user._id;
       if (requestedProviderId && requestedProviderId !== String(req.user._id)) return res.status(403).json({ message: "You can only view your own provider bookings." });
@@ -197,6 +226,11 @@ async function handleCreateBooking(req, res) {
       photoUrl: req.files?.[0] ? `/uploads/${req.files[0].filename}` : "",
       statusHistory: [{ status: "pending", at: new Date() }],
     });
+    try {
+      await ensureBookingConversation(booking);
+    } catch (messageError) {
+      console.error("Initial booking conversation error:", messageError);
+    }
     await booking.populate(populatePaths);
     return res.status(201).json({ booking: serializeBooking(booking) });
   } catch (error) {
@@ -219,7 +253,14 @@ async function handleUpdateBookingStatus(req, res) {
   if (req.user.role !== "provider") {
     return res.status(403).json({ message: "Only providers can update booking status." });
   }
-
+  const rawRequestedStatus = String(req.body.status || "").trim().toLowerCase();
+  const isDecline = status === "canceled" && (req.body.action === "decline" || rawRequestedStatus === "declined");
+  if (req.body.action && !isDecline) {
+    return res.status(400).json({ message: "Choose a valid booking status action." });
+  }
+  if (status === "canceled" && !isDecline) return res.status(400).json({ message: "Use the cancellation request endpoint to cancel a booking." });
+  if (status === "complete") return res.status(400).json({ message: "Submit completion notes and at least one photo through the completion proof form." });
+    if (status === "settled") return res.status(400).json({ message: "Settled bookings are managed automatically after cash confirmation." });
   try {
     if (status === "en_route") {
       const pendingReschedule = await Booking.exists({
@@ -232,7 +273,7 @@ async function handleUpdateBookingStatus(req, res) {
     }
     const allowedPreviousStatuses = {
       approved: ["pending", "Pending Request"],
-      canceled: ["pending", "Pending Request"],
+      canceled: isDecline ? ["pending", "Pending Request"] : [],
       en_route: ["approved", "Confirmed"],
       in_progress: ["en_route", "On the Way"],
       complete: ["in_progress", "In Progress"],
@@ -246,10 +287,186 @@ async function handleUpdateBookingStatus(req, res) {
       { new: true }
     ).populate(populatePaths);
     if (!booking) return res.status(404).json({ message: "Booking not found or it has already been updated." });
+    const systemMessages = {
+      approved: "Booking approved. The provider is preparing for the task.",
+      en_route: "Provider is on the way to your location.",
+      in_progress: "Task has started.",
+      complete: `Task completed! Please settle the cash payment of ₱${Number(booking.offeredPrice).toLocaleString("en-PH")} directly with the provider.`,
+      canceled: isDecline ? "Provider declined the booking." : "Provider canceled the booking.",
+    };
+    try {
+      await appendBookingSystemMessage(booking, systemMessages[status], req.user._id, "booking_status", {
+        status,
+        offeredPrice: booking.offeredPrice,
+        serviceDate: booking.serviceDate,
+        timeSlot: booking.timeSlot,
+        actorRole: req.user.role,
+        action: status === "canceled" ? (isDecline ? "decline" : "cancel") : undefined,
+      });
+    } catch (messageError) {
+      console.error("Booking status system message error:", messageError);
+    }
     return res.json({ booking: serializeBooking(booking) });
   } catch (error) {
     console.error("Update booking status error:", error);
     return res.status(500).json({ message: "Could not update the booking status." });
+  }
+}
+
+async function handleSubmitCompletion(req, res) {
+  const bookingId = String(req.params.id || "");
+  const completionNote = String(req.body.completionNote || "").trim();
+  const files = Array.isArray(req.files) ? req.files : [];
+  if (!mongoose.isValidObjectId(bookingId)) return res.status(400).json({ message: "Choose a valid booking." });
+  if (req.user.role !== "provider") return res.status(403).json({ message: "Only the provider can submit completion proof." });
+  if (!completionNote || completionNote.length > 2000) return res.status(400).json({ message: "Add a completion note of up to 2,000 characters." });
+
+  try {
+    const submittedAt = new Date();
+    const completionPhotos = files.map((file) => `/uploads/${file.filename}`);
+    const currentBooking = await Booking.findOne({
+      _id: bookingId,
+      providerId: req.user._id,
+      status: mongoose.trusted({ $in: ["in_progress", "In Progress", "in_revision"] }),
+    });
+    if (!currentBooking) return res.status(409).json({ message: "Only an in-progress task or accepted revision can be marked complete." });
+    const acceptedRevision = currentBooking.status === "in_revision"
+      ? [...currentBooking.revisionRequests].reverse().find((revision) => revision.status === "accepted")
+      : null;
+    if (currentBooking.status === "in_revision" && !acceptedRevision) {
+      return res.status(409).json({ message: "The provider must accept the revision request before resubmitting the work." });
+    }
+    const bookingFilter = {
+      _id: bookingId,
+      providerId: req.user._id,
+      status: currentBooking.status === "in_revision" ? "in_revision" : mongoose.trusted({ $in: ["in_progress", "In Progress"] }),
+    };
+    if (acceptedRevision) bookingFilter.revisionRequests = mongoose.trusted({ $elemMatch: { _id: acceptedRevision._id, status: "accepted" } });
+    const update = {
+      $set: {
+        status: "complete",
+        completionNote,
+        completionPhotos,
+        completionSubmittedAt: submittedAt,
+        workCompletedAt: submittedAt,
+      },
+      $push: { statusHistory: { status: "complete", at: submittedAt } },
+    };
+    if (acceptedRevision) {
+      update.$set["revisionRequests.$.status"] = "addressed";
+      update.$set["revisionRequests.$.addressedAt"] = submittedAt;
+    }
+    const booking = await Booking.findOneAndUpdate(
+      bookingFilter,
+      update,
+      { new: true, runValidators: true }
+    ).populate(populatePaths);
+    if (!booking) return res.status(409).json({ message: "This task changed before completion proof was saved. Refresh and try again." });
+
+    try {
+      await appendBookingSystemMessage(booking, acceptedRevision ? "Provider resubmitted the task after completing the requested revision." : "Provider marked the task complete and submitted a completion summary.", req.user._id, "booking_status", {
+        status: "complete",
+        actorRole: "provider",
+        completionNote,
+        completionPhotos,
+        completionSubmittedAt: submittedAt,
+        revisionRound: booking.revisionRequests.length,
+      });
+    } catch (messageError) {
+      console.error("Completion proof system message error:", messageError);
+    }
+    return res.json({ booking: serializeBooking(booking) });
+  } catch (error) {
+    console.error("Submit completion proof error:", error);
+    return res.status(500).json({ message: "Could not submit completion proof." });
+  }
+}
+
+async function handleCreateRevisionRequest(req, res) {
+  const bookingId = String(req.params.id || "");
+  const note = String(req.body.note || "").trim();
+  const photos = (Array.isArray(req.files) ? req.files : []).map((file) => `/uploads/${file.filename}`);
+  if (!mongoose.isValidObjectId(bookingId)) return res.status(400).json({ message: "Choose a valid booking." });
+  if (req.user.role !== "client") return res.status(403).json({ message: "Only the client can request a revision." });
+  if (!note || note.length > 1000) return res.status(400).json({ message: "Describe the revision needed in up to 1,000 characters." });
+
+  try {
+    const booking = await Booking.findOne({ _id: bookingId, clientId: req.user._id });
+    if (!booking) return res.status(404).json({ message: "Booking not found." });
+    if (booking.status === "closed" || booking.cashReceipt?.receiptNumber) return res.status(409).json({ message: "This booking is settled and closed to revision requests. Use Report Post-Service Issue for further concerns." });
+    if (booking.status !== "complete") return res.status(409).json({ message: "A revision can only be requested after the provider marks the task complete." });
+    if (booking.revisionRequests.length >= 2) return res.status(409).json({ message: "The two-revision limit has been reached. Please use chat or contact support to resolve the remaining concern." });
+    if (booking.revisionRequests.some((request) => ["open", "accepted"].includes(request.status))) return res.status(409).json({ message: "The current revision must be resolved before requesting another." });
+
+    const createdAt = new Date();
+    booking.revisionRequests.push({ requestedBy: req.user._id, note, photos, status: "open", createdAt });
+    booking.status = "in_revision";
+    booking.statusHistory.push({ status: "in_revision", at: createdAt });
+    await booking.save();
+    try {
+      await appendBookingSystemMessage(booking, `Client requested a revision: ${note}`, req.user._id, "revision_request", {
+        note,
+        photos,
+        status: "open",
+        actorRole: "client",
+        revisionRound: booking.revisionRequests.length,
+        completionNote: booking.completionNote,
+        completionPhotos: booking.completionPhotos,
+        completionSubmittedAt: booking.completionSubmittedAt,
+      });
+    } catch (messageError) {
+      console.error("Revision request system message error:", messageError);
+    }
+    await booking.populate(populatePaths);
+    return res.status(201).json({ booking: serializeBooking(booking) });
+  } catch (error) {
+    console.error("Create revision request error:", error);
+    return res.status(500).json({ message: "Could not submit the revision request." });
+  }
+}
+
+async function handleRespondToRevision(req, res) {
+  const bookingId = String(req.params.id || "");
+  const revisionId = String(req.params.revisionId || "");
+  const action = String(req.body.action || "");
+  const responseNote = String(req.body.responseNote || "").trim();
+  if (!mongoose.isValidObjectId(bookingId) || !mongoose.isValidObjectId(revisionId)) return res.status(400).json({ message: "Choose a valid revision request." });
+  if (req.user.role !== "provider") return res.status(403).json({ message: "Only the provider can respond to a revision request." });
+  if (!["accept", "dispute"].includes(action)) return res.status(400).json({ message: "Choose accept or dispute." });
+  if (responseNote.length > 1000) return res.status(400).json({ message: "Response notes must be 1,000 characters or fewer." });
+
+  try {
+    const booking = await Booking.findOne({ _id: bookingId, providerId: req.user._id });
+    if (!booking) return res.status(404).json({ message: "Booking not found." });
+    if (booking.status !== "in_revision") return res.status(409).json({ message: "This booking is no longer awaiting a revision response." });
+    const revision = booking.revisionRequests.id(revisionId);
+    if (!revision || revision.status !== "open") return res.status(409).json({ message: "This revision request has already been addressed." });
+
+    const respondedAt = new Date();
+    revision.status = action === "accept" ? "accepted" : "disputed";
+    revision.responseNote = responseNote;
+    revision.respondedAt = respondedAt;
+    if (action === "dispute") {
+      booking.status = "disputed";
+      booking.statusHistory.push({ status: "disputed", at: respondedAt });
+    }
+    await booking.save();
+    try {
+      await appendBookingSystemMessage(
+        booking,
+        action === "accept" ? "Provider accepted the revision request and will update the work." : "Provider disputed the revision request for manual review.",
+        req.user._id,
+        "revision_response",
+        { revisionId: String(revision._id), action, status: revision.status, responseNote, actorRole: "provider" }
+      );
+    } catch (messageError) {
+      console.error("Revision response system message error:", messageError);
+    }
+    await booking.populate(populatePaths);
+    return res.json({ booking: serializeBooking(booking) });
+  } catch (error) {
+    console.error("Revision response error:", error);
+    return res.status(500).json({ message: "Could not respond to the revision request." });
   }
 }
 
@@ -270,7 +487,9 @@ async function handleCancellation(req, res) {
     if (!isParticipant) return res.status(403).json({ message: "You can only manage cancellations for your bookings." });
 
     if (action === "request") {
-      if (!["pending", "approved", "en_route", "in_progress"].includes(booking.status)) return res.status(409).json({ message: "This booking is no longer active." });
+      if (!["pending", "approved"].includes(normalizeBookingStatus(booking.status))) {
+        return res.status(400).json({ message: "Cannot cancel a booking once the provider is on the way or work has started." });
+      }
       const withinGracePeriod = Date.now() - new Date(booking.createdAt).getTime() < GRACE_PERIOD_MS;
       if (!withinGracePeriod && !reason) return res.status(400).json({ message: "Add a brief reason for the cancellation request." });
       booking.cancellationReason = reason;
@@ -313,6 +532,24 @@ async function handleCancellation(req, res) {
     }
 
     await booking.save();
+    const actorLabel = role === "client" ? "Client" : "Provider";
+    const cancellationMessage = booking.status === "cancel_requested"
+      ? `${actorLabel} requested to cancel the booking: ${reason}`
+      : booking.cancellationOutcome === "instant"
+        ? `${actorLabel} canceled the booking.`
+        : booking.cancellationOutcome === "approved"
+          ? `${actorLabel} approved the cancellation request. The booking was canceled.`
+          : booking.cancellationOutcome === "rejected"
+            ? `${actorLabel} declined the cancellation request. The booking remains active.`
+            : "The cancellation request expired. The booking was canceled.";
+    try {
+      await appendBookingSystemMessage(booking, cancellationMessage, req.user._id, "cancellation", {
+        status: booking.status,
+        cancellationOutcome: booking.cancellationOutcome || "requested",
+      });
+    } catch (messageError) {
+      console.error("Cancellation system message error:", messageError);
+    }
     await booking.populate(populatePaths);
     return res.json({ booking: serializeBooking(booking) });
   } catch (error) {
@@ -333,18 +570,83 @@ async function handleBookingReview(req, res) {
   try {
     const booking = await Booking.findOne({ _id: bookingId, clientId: req.user._id });
     if (!booking) return res.status(404).json({ message: "Booking not found." });
-    if (booking.status !== "complete") return res.status(409).json({ message: "Only completed bookings can be reviewed." });
+    const canReviewBooking = booking.status === "settled" || Boolean((booking.cashPaidConfirmedAt && booking.cashReceivedConfirmedAt) || (booking.clientConfirmedCash && booking.providerConfirmedCash));
+    if (!canReviewBooking) return res.status(409).json({ message: "The booking must be fully settled before a review can be submitted." });
     if (booking.clientRating != null) return res.status(409).json({ message: "This booking already has a review." });
     booking.clientRating = rating;
     booking.clientReview = review;
     booking.clientReviewPhotos = (req.files || []).map((file) => `/uploads/${file.filename}`);
     booking.reviewedAt = new Date();
     await booking.save();
+    try {
+      const reviewMessageText = review
+        ? `Rated this service ${rating}/5 stars: “${review}”`
+        : `Rated this service ${rating}/5 stars.`;
+      await appendBookingSystemMessage(
+        booking,
+        reviewMessageText,
+        req.user._id,
+        "review",
+        {
+          rating,
+          review,
+          reviewPhotos: booking.clientReviewPhotos || [],
+          reviewedAt: booking.reviewedAt,
+        }
+      );
+    } catch (messageError) {
+      console.error("Booking review system message error:", messageError);
+    }
     await booking.populate(populatePaths);
     return res.json({ booking: serializeBooking(booking) });
   } catch (error) {
     console.error("Booking review error:", error);
     return res.status(500).json({ message: "Could not save the booking review." });
+  }
+}
+
+async function processCashSettlementFallbacks() {
+  const cutoff = new Date(Date.now() - CASH_SETTLEMENT_GRACE_MS);
+  const expiredBookings = await Booking.find({
+    status: "complete",
+    paymentMethod: "cash",
+    workCompletedAt: { $lte: cutoff },
+    $or: [
+      { clientConfirmedCash: { $ne: true } },
+      { providerConfirmedCash: { $ne: true } },
+    ],
+  });
+
+  for (const booking of expiredBookings) {
+    const autoSettledAt = new Date();
+    const nextStatus = "settled";
+    const updatePayload = {
+      status: nextStatus,
+      settledAt: autoSettledAt,
+      clientConfirmedCash: booking.clientConfirmedCash || true,
+      providerConfirmedCash: booking.providerConfirmedCash || true,
+      cashPaidConfirmedAt: booking.cashPaidConfirmedAt || autoSettledAt,
+      cashReceivedConfirmedAt: booking.cashReceivedConfirmedAt || autoSettledAt,
+    };
+    await Booking.findByIdAndUpdate(
+      booking._id,
+      {
+        $set: updatePayload,
+        $push: { statusHistory: { status: nextStatus, at: autoSettledAt } },
+      },
+      { new: true }
+    );
+    try {
+      await appendBookingSystemMessage(
+        booking,
+        "The client did not confirm cash payment within the grace period, so the booking was automatically settled and is now ready for review.",
+        booking.providerId,
+        "cash_settlement",
+        { status: nextStatus, settledAt: autoSettledAt, autoSettled: true }
+      );
+    } catch (messageError) {
+      console.error("Auto-settlement system message error:", messageError);
+    }
   }
 }
 
@@ -396,6 +698,17 @@ async function handleProviderUpdate(req, res) {
       requestedAt: new Date(),
     });
     await booking.save();
+    try {
+      await appendBookingSystemMessage(
+        booking,
+        isReschedule ? `Provider requested a new appointment time: ${note}` : `Provider update: ${note}`,
+        req.user._id,
+        "provider_update",
+        { updateType: isReschedule ? "reschedule" : "note", note }
+      );
+    } catch (messageError) {
+      console.error("Provider update system message error:", messageError);
+    }
     await booking.populate(populatePaths);
     return res.json({ booking: serializeBooking(booking) });
   } catch (error) {
@@ -440,4 +753,136 @@ async function handleProviderUpdateResponse(req, res) {
   }
 }
 
-module.exports = { handleListBookings, handleCreateBooking, handleUpdateBookingStatus, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse };
+async function handleCreateCounterOffer(req, res) {
+  const bookingId = String(req.params.id || "");
+  const proposedPriceValue = String(req.body.proposedPrice ?? "").trim();
+  const proposedDateValue = String(req.body.proposedServiceDate || "").trim();
+  const proposedTimeSlot = String(req.body.proposedTimeSlot || "").trim();
+  const proposedRepairDescription = String(req.body.proposedRepairDescription || "").trim();
+  const note = String(req.body.note || "").trim();
+  const hasPrice = proposedPriceValue !== "";
+  const hasSchedule = Boolean(proposedDateValue || proposedTimeSlot);
+  const hasScope = Boolean(proposedRepairDescription);
+  const proposedPrice = hasPrice ? Number(proposedPriceValue) : undefined;
+  const proposedServiceDate = proposedDateValue ? parseServiceDate(proposedDateValue) : null;
+
+  if (!mongoose.isValidObjectId(bookingId)) return res.status(400).json({ message: "Choose a valid booking." });
+  if (!["client", "provider"].includes(req.user.role)) return res.status(403).json({ message: "Only booking participants can negotiate booking terms." });
+  if (hasPrice && (!Number.isFinite(proposedPrice) || proposedPrice < 100)) return res.status(400).json({ message: "Counter-offer price must be at least PHP 100." });
+  if (hasSchedule && (!proposedDateValue || !proposedServiceDate || !TIME_SLOTS.has(proposedTimeSlot))) {
+    return res.status(400).json({ message: "Choose both a valid proposed date and time slot." });
+  }
+  if (proposedRepairDescription.length > 2000 || note.length > 500) return res.status(400).json({ message: "Task details or note exceed the allowed length." });
+  if (!hasPrice && !hasSchedule && !hasScope && !note) return res.status(400).json({ message: "Change at least one booking term or add a note." });
+
+  try {
+    const participantField = req.user.role === "client" ? "clientId" : "providerId";
+    const booking = await Booking.findOne({ _id: bookingId, [participantField]: req.user._id });
+    if (!booking) return res.status(404).json({ message: "Booking not found." });
+    if (booking.status !== "pending") return res.status(409).json({ message: "Terms can only be negotiated before the booking is accepted." });
+    if (booking.counterOffers.some((offer) => offer.status === "pending")) {
+      return res.status(409).json({ message: "Wait for the other participant to respond to the current offer." });
+    }
+    if (hasSchedule && await hasConflictingSlot(booking.providerId, proposedServiceDate, proposedTimeSlot, booking._id)) {
+      return res.status(409).json({ message: "That proposed time slot is no longer available." });
+    }
+
+    booking.counterOffers.push({
+      proposedBy: req.user.role,
+      proposedPrice,
+      proposedServiceDate: proposedServiceDate || undefined,
+      proposedTimeSlot: hasSchedule ? proposedTimeSlot : undefined,
+      proposedRepairDescription: hasScope ? proposedRepairDescription : undefined,
+      note,
+      status: "pending",
+      createdAt: new Date(),
+    });
+    const offer = booking.counterOffers[booking.counterOffers.length - 1];
+    await booking.save();
+    const eventData = {
+      counterOfferId: String(offer._id),
+      proposedBy: offer.proposedBy,
+      proposedPrice: offer.proposedPrice ?? booking.offeredPrice,
+      proposedServiceDate: offer.proposedServiceDate || booking.serviceDate,
+      proposedTimeSlot: offer.proposedTimeSlot || booking.timeSlot,
+      proposedRepairDescription: offer.proposedRepairDescription || booking.repairDescription,
+      note: offer.note || "",
+      status: "pending",
+    };
+    await appendBookingSystemMessage(
+      booking,
+      `${req.user.role === "client" ? "Client" : "Provider"} proposed updated booking terms.`,
+      req.user._id,
+      "counter_offer",
+      eventData
+    );
+    await booking.populate(populatePaths);
+    return res.status(201).json({ booking: serializeBooking(booking), counterOfferId: String(offer._id) });
+  } catch (error) {
+    console.error("Create counter-offer error:", error);
+    return res.status(500).json({ message: "Could not send the counter-offer." });
+  }
+}
+
+async function handleRespondToCounterOffer(req, res) {
+  const bookingId = String(req.params.id || "");
+  const counterOfferId = String(req.params.counterOfferId || "");
+  const action = String(req.body.action || "");
+  if (!mongoose.isValidObjectId(bookingId) || !mongoose.isValidObjectId(counterOfferId)) return res.status(400).json({ message: "Choose a valid booking offer." });
+  if (!["accept", "reject"].includes(action)) return res.status(400).json({ message: "Choose accept or reject." });
+  if (!["client", "provider"].includes(req.user.role)) return res.status(403).json({ message: "Only booking participants can respond to offers." });
+
+  try {
+    const participantField = req.user.role === "client" ? "clientId" : "providerId";
+    const booking = await Booking.findOne({ _id: bookingId, [participantField]: req.user._id });
+    if (!booking) return res.status(404).json({ message: "Booking not found." });
+    if (booking.status !== "pending") return res.status(409).json({ message: "This booking is no longer open for negotiation." });
+    const offer = booking.counterOffers.id(counterOfferId);
+    if (!offer || offer.status !== "pending") return res.status(409).json({ message: "This offer is no longer pending." });
+    if (offer.proposedBy === req.user.role) return res.status(403).json({ message: "The other participant must respond to this offer." });
+
+    const now = new Date();
+    if (action === "accept") {
+      const finalServiceDate = offer.proposedServiceDate || booking.serviceDate;
+      const finalTimeSlot = offer.proposedTimeSlot || booking.timeSlot;
+      if ((offer.proposedServiceDate || offer.proposedTimeSlot) && await hasConflictingSlot(booking.providerId, finalServiceDate, finalTimeSlot, booking._id)) {
+        return res.status(409).json({ message: "That proposed time slot is no longer available." });
+      }
+      if (offer.proposedPrice != null) booking.offeredPrice = offer.proposedPrice;
+      if (offer.proposedServiceDate) booking.serviceDate = offer.proposedServiceDate;
+      if (offer.proposedTimeSlot) booking.timeSlot = offer.proposedTimeSlot;
+      if (offer.proposedRepairDescription) booking.repairDescription = offer.proposedRepairDescription;
+      booking.status = "approved";
+      booking.statusHistory.push({ status: "approved", at: now });
+      offer.status = "accepted";
+    } else {
+      offer.status = "rejected";
+    }
+    offer.respondedAt = now;
+    await booking.save();
+    const eventData = {
+      counterOfferId: String(offer._id),
+      proposedBy: offer.proposedBy,
+      proposedPrice: offer.proposedPrice ?? booking.offeredPrice,
+      proposedServiceDate: offer.proposedServiceDate || booking.serviceDate,
+      proposedTimeSlot: offer.proposedTimeSlot || booking.timeSlot,
+      proposedRepairDescription: offer.proposedRepairDescription || booking.repairDescription,
+      note: offer.note || "",
+      status: offer.status,
+    };
+    await appendBookingSystemMessage(
+      booking,
+      action === "accept" ? "Counter-offer accepted. The updated booking terms are now confirmed." : "Counter-offer declined. The original booking terms remain in effect.",
+      req.user._id,
+      "counter_offer",
+      eventData
+    );
+    await booking.populate(populatePaths);
+    return res.json({ booking: serializeBooking(booking) });
+  } catch (error) {
+    console.error("Counter-offer response error:", error);
+    return res.status(500).json({ message: "Could not respond to the counter-offer." });
+  }
+}
+
+module.exports = { handleListBookings, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks };

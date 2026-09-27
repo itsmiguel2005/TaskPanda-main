@@ -33,14 +33,14 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     { label: "Home", icon: "🏠", path: "/dashboard" },
     { label: "Explore", icon: "🔍", path: "/explore" },
     { label: "Bookings", icon: "📋", path: "/bookings" },
-    { label: "Messages", icon: "💬", path: "/messages" },
+    { label: "Messages", icon: "💬", path: "/client/messages" },
     { label: "Profile", icon: "👤", path: "/profile" },
   ];
 
   const providerNavLinks = [
     { label: "Home", icon: "🏠", path: "/provider-dashboard" },
     { label: "Bookings", icon: "📋", path: "/provider-bookings" },
-    { label: "Messages", icon: "💬", path: "/provider-messages" },
+    { label: "Messages", icon: "💬", path: "/provider/messages" },
     { label: "Profile", icon: "👤", path: "/provider-profile" },
   ];
 

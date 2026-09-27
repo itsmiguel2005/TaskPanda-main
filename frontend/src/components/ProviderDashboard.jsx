@@ -5,8 +5,11 @@ import { useBookings } from "../context/BookingContext.jsx";
 import Header from "../components/Header.jsx";
 import BookingProgress from "./BookingProgress.jsx";
 import StatusChangeConfirmation from "./StatusChangeConfirmation.jsx";
+import CompletionProofModal from "./CompletionProofModal.jsx";
+import RevisionReviewPanel from "./RevisionReviewPanel.jsx";
 import BookingHistory from "./BookingHistory.jsx";
 import AddressActions from "./AddressActions.jsx";
+import { canRequestCancellation, getCancellationLockMessage, requiresCancellationApproval } from "../utils/bookingCancellation.js";
 
 const STATUS_ACTIONS = {
   Confirmed: { status: "en_route", nextStatus: "On the Way", buttonLabel: "I'm On My Way" },
@@ -92,7 +95,7 @@ function StatusBadge({ status }) {
 export default function ProviderDashboard() {
   const navigate = useNavigate();
   const { isLoggedIn, role } = useAuth();
-  const { bookings, isLoading, error, updateBookingStatus, requestCancellation } = useBookings();
+  const { bookings, isLoading, error, updateBookingStatus, submitCompletionProof, requestCancellation } = useBookings();
   const [activeTab, setActiveTab] = useState("All");
   const [bookingSearchQuery, setBookingSearchQuery] = useState("");
   const [expandedJob, setExpandedJob] = useState(null);
@@ -100,12 +103,14 @@ export default function ProviderDashboard() {
   const [statusChange, setStatusChange] = useState(null);
   const [cancelingId, setCancelingId] = useState(null);
   const [cancellationReason, setCancellationReason] = useState("");
+  const [completionBookingId, setCompletionBookingId] = useState(null);
 
   const normalizedBookingQuery = bookingSearchQuery.trim().toLowerCase();
   const matchesBookingSearch = (booking) => !normalizedBookingQuery ||
     [booking.client, booking.task, booking.description].some((value) => String(value || "").toLowerCase().includes(normalizedBookingQuery));
   const requests = bookings.filter((booking) => booking.status === "Pending Request" && matchesBookingSearch(booking));
   const jobs = bookings.filter((booking) => booking.status !== "Pending Request" && matchesBookingSearch(booking));
+  const cancelBooking = bookings.find((booking) => booking.id === cancelingId);
 
   const sortedRequests = useMemo(() => {
     return [...requests].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
@@ -117,7 +122,7 @@ export default function ProviderDashboard() {
 
   const filteredJobs = useMemo(() => {
     if (activeTab === "Incoming Requests") return [];
-    if (activeTab === "Active") return sortedJobs.filter((j) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested"].includes(j.status));
+    if (activeTab === "Active") return sortedJobs.filter((j) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(j.status));
     if (activeTab === "Completed") return sortedJobs.filter((j) => j.status === "Completed");
     if (activeTab === "Cancelled") return sortedJobs.filter((j) => ["Cancelled", "Declined"].includes(j.status));
     return sortedJobs;
@@ -126,13 +131,13 @@ export default function ProviderDashboard() {
   const dashboardTabCounts = {
     All: bookings.length,
     "Incoming Requests": bookings.filter((booking) => booking.status === "Pending Request").length,
-    Active: bookings.filter((booking) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested"].includes(booking.status)).length,
+    Active: bookings.filter((booking) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status)).length,
     Completed: bookings.filter((booking) => booking.status === "Completed").length,
     Cancelled: bookings.filter((booking) => ["Cancelled", "Declined"].includes(booking.status)).length,
   };
 
   const stats = useMemo(() => {
-    const activeJobs = jobs.filter((j) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested"].includes(j.status)).length;
+    const activeJobs = jobs.filter((j) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(j.status)).length;
     const completedJobs = jobs.filter((j) => j.status === "Completed").length;
     const earnings = jobs
       .filter((j) => j.status === "Completed")
@@ -172,14 +177,12 @@ export default function ProviderDashboard() {
   }
 
   async function handleCancelJob() {
-    if (!cancelingId) return;
-    try {
-      await requestCancellation(cancelingId, "request", cancellationReason);
-      setCancelingId(null);
-      setCancellationReason("");
-    } catch (requestError) {
-      window.alert(requestError.message);
+    if (!cancelingId || !cancelBooking || !canRequestCancellation(cancelBooking)) {
+      throw new Error(cancelBooking ? getCancellationLockMessage(cancelBooking) || "Cancellation is no longer available." : "This booking is no longer available.");
     }
+    await requestCancellation(cancelingId, "request", cancellationReason);
+    setCancelingId(null);
+    setCancellationReason("");
   }
 
   return (
@@ -338,7 +341,7 @@ export default function ProviderDashboard() {
                               {job.client}
                             </span>
                             <StatusBadge status={job.status} />
-                            <button onClick={() => navigate("/provider-messages")} className="ml-auto rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Contact</button>
+                            <button onClick={() => navigate(`/provider/messages?bookingId=${job.id}`)} className="ml-auto rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Chat</button>
                           </div>
                           <BookingProgress status={job.status} />
                           <p className="mt-1 text-sm font-medium text-gray-700">
@@ -346,7 +349,7 @@ export default function ProviderDashboard() {
                           </p>
                           {job.status === "Completed" && job.clientRating != null && (
                             <div className="mt-2 rounded-md border border-amber-100 bg-amber-50 p-2.5 text-xs text-amber-950">
-                              <p className="font-semibold">Client review: {"★".repeat(job.clientRating)}{"☆".repeat(5 - job.clientRating)}</p>
+                              <p className="font-semibold">Client review: <span className="inline-flex items-center gap-0.5">{[1, 2, 3, 4, 5].map((star) => (<span key={star} style={{ color: star <= Number(job.clientRating || 0) ? "#fbbf24" : "#d1d5db", lineHeight: 1 }}>{"★"}</span>))}</span></p>
                               {job.clientReview && <p className="mt-1">{job.clientReview}</p>}
                               {job.clientReviewPhotos?.length > 0 && <div className="mt-2 flex gap-2">{job.clientReviewPhotos.map((photo) => <a key={photo} href={photo} target="_blank" rel="noreferrer"><img src={photo} alt="Client review attachment" className="h-12 w-12 rounded object-cover" /></a>)}</div>}
                             </div>
@@ -362,27 +365,32 @@ export default function ProviderDashboard() {
                               onClick={() => setExpandedJob(expandedJob === job.id ? null : job.id)}
                               className="text-xs font-medium text-primary-600 transition hover:text-primary-800"
                             >
-                              {expandedJob === job.id ? "Hide details" : "View details"}
+                              {job.status === "In Revision" ? (expandedJob === job.id ? "Hide revision" : "Review revision") : expandedJob === job.id ? "Hide details" : "View details"}
                             </button>
                             {STATUS_ACTIONS[job.status] && (
                               <button
-                                onClick={() => setStatusChange({ bookingId: job.id, ...STATUS_ACTIONS[job.status] })}
+                                onClick={() => STATUS_ACTIONS[job.status].status === "complete"
+                                  ? setCompletionBookingId(job.id)
+                                  : setStatusChange({ bookingId: job.id, ...STATUS_ACTIONS[job.status] })}
                                 className="text-xs font-semibold text-primary-700 transition hover:text-primary-900"
                               >
                                 {STATUS_ACTIONS[job.status].buttonLabel}
                               </button>
                             )}
-                            {["Pending Request", "Confirmed", "On the Way", "In Progress"].includes(job.status) && (
+                            {canRequestCancellation(job) ? (
                               <button
-                                onClick={() => setCancelingId(job.id)}
+                                onClick={() => { setCancelingId(job.id); setCancellationReason(""); }}
                                 className="text-xs font-medium text-red-600 transition hover:text-red-800"
                               >
                                 Cancel
                               </button>
+                            ) : getCancellationLockMessage(job) && (
+                              <button type="button" disabled title={getCancellationLockMessage(job)} className="cursor-not-allowed text-xs font-medium text-gray-400">Cancellation locked</button>
                             )}
                           </div>
                           {expandedJob === job.id && (
                             <div className="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-500">
+                              <RevisionReviewPanel booking={job} />
                               <p>{job.description}</p>
                               <div className="mt-2"><AddressActions address={job.address} /></div>
                               <div className="mt-2 flex items-center gap-3">
@@ -430,7 +438,7 @@ export default function ProviderDashboard() {
                 </h3>
               </div>
               <button
-                onClick={() => navigate("/provider-messages")}
+                onClick={() => navigate("/provider/messages")}
                 className="flex w-full items-center gap-3 px-5 py-3 text-sm text-gray-600 transition hover:bg-gray-50"
               >
                 <span className="text-base">💬</span>
@@ -500,46 +508,27 @@ export default function ProviderDashboard() {
           onClose={() => setStatusChange(null)}
         />
       )}
-
-      {cancelingId && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          onClick={() => setCancelingId(null)}
+      {cancelingId && cancelBooking && canRequestCancellation(cancelBooking) && (
+        <StatusChangeConfirmation
+          nextStatus="Cancelled"
+          cancellationRequiresApproval={requiresCancellationApproval(cancelBooking)}
+          canConfirm={!requiresCancellationApproval(cancelBooking) || Boolean(cancellationReason.trim())}
+          onConfirm={handleCancelJob}
+          onClose={() => setCancelingId(null)}
         >
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl" onClick={(event) => event.stopPropagation()}>
-            <div className="p-6">
-              <h3 className="text-lg font-bold text-gray-900">Cancel Booking?</h3>
-              <p className="mt-2 text-sm text-gray-500">The client may need to approve this cancellation request.</p>
-              {(() => {
-                const booking = bookings.find((item) => item.id === cancelingId);
-                const needsReason = booking && Date.now() - new Date(booking.createdAt).getTime() >= 10 * 60 * 1000;
-                return needsReason ? (
-                  <div className="mt-4">
-                    <label htmlFor="dashboard-cancellation-reason" className="mb-1.5 block text-sm font-medium text-gray-700">Brief cancellation reason</label>
-                    <textarea
-                      id="dashboard-cancellation-reason"
-                      value={cancellationReason}
-                      onChange={(event) => setCancellationReason(event.target.value)}
-                      maxLength={500}
-                      rows={3}
-                      required
-                      placeholder="Why do you need to cancel?"
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30"
-                    />
-                  </div>
-                ) : null;
-              })()}
-              <div className="mt-6 flex gap-3">
-                <button type="button" onClick={() => setCancelingId(null)} className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-semibold text-gray-700">Keep Booking</button>
-                <button type="button" disabled={(() => {
-                  const booking = bookings.find((item) => item.id === cancelingId);
-                  return booking && Date.now() - new Date(booking.createdAt).getTime() >= 10 * 60 * 1000 && !cancellationReason.trim();
-                })()} onClick={handleCancelJob} className="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Request Cancellation</button>
-              </div>
-            </div>
-          </div>
-        </div>
+          <p className="mt-2 text-sm text-gray-600">{cancelBooking.task} for {cancelBooking.client}</p>
+          {requiresCancellationApproval(cancelBooking) && (
+            <label className="mt-4 block text-sm font-medium text-gray-700">Reason for cancellation
+              <textarea value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} maxLength={500} rows={3} required placeholder="Explain why you need to cancel" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            </label>
+          )}
+        </StatusChangeConfirmation>
       )}
+      {completionBookingId && <CompletionProofModal
+        bookingName={bookings.find((booking) => booking.id === completionBookingId)?.task}
+        onSubmit={(note, photos) => submitCompletionProof(completionBookingId, note, photos)}
+        onClose={() => setCompletionBookingId(null)}
+      />}
     </div>
   );
 }
