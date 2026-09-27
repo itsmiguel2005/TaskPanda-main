@@ -9,7 +9,10 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const TIME_SLOTS = ["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"];
 
 function CalendarPicker({ selectedDate, onSelect, onClose }) {
-  const [viewDate, setViewDate] = useState(selectedDate ? new Date(selectedDate) : new Date());
+  const selectedDateParts = selectedDate ? selectedDate.split("-").map(Number) : null;
+  const [viewDate, setViewDate] = useState(selectedDateParts
+    ? new Date(selectedDateParts[0], selectedDateParts[1] - 1, selectedDateParts[2])
+    : new Date());
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
@@ -66,13 +69,14 @@ function CalendarPicker({ selectedDate, onSelect, onClose }) {
           const dateObj = new Date(year, month, d);
           const isToday = dateObj.getTime() === today.getTime();
           const isPast = dateObj < today;
-          const isSelected = selectedDate && dateObj.getTime() === new Date(selectedDate).setHours(0,0,0,0);
+          const dateKey = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+          const isSelected = selectedDate === dateKey;
           return (
             <button
               key={d}
               type="button"
               disabled={isPast}
-              onClick={() => { onSelect(dateObj.toISOString().split("T")[0]); onClose(); }}
+              onClick={() => { onSelect(dateKey); onClose(); }}
               className={`rounded-full py-1 text-sm transition ${
                 isSelected
                   ? "bg-gray-900 text-white font-semibold"
@@ -158,7 +162,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit }) {
         cred: trade,
         task: taskDescription.trim(),
         description: taskDescription.trim(),
-        date: formatDate(selectedDate),
+        date: selectedDate,
         time: selectedTime,
         offer: offerAmount,
         urgency,

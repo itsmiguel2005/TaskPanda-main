@@ -3,6 +3,17 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
 import Header from "../components/Header.jsx";
+import BookingProgress from "./BookingProgress.jsx";
+import StatusChangeConfirmation from "./StatusChangeConfirmation.jsx";
+import BookingHistory from "./BookingHistory.jsx";
+import AddressActions from "./AddressActions.jsx";
+
+const STATUS_ACTIONS = {
+  Confirmed: { status: "en_route", nextStatus: "On the Way", buttonLabel: "I'm On My Way" },
+  "On the Way": { status: "in_progress", nextStatus: "In Progress", buttonLabel: "Start Task" },
+  "In Progress": { status: "complete", nextStatus: "Completed", buttonLabel: "Mark as Complete" },
+};
+const DASHBOARD_TABS = ["All", "Incoming Requests", "Active", "Completed", "Cancelled"];
 
 const initialJobs = [
   {
@@ -52,13 +63,6 @@ const initialRequests = [
   },
 ];
 
-function parseDate(dateStr) {
-  const months = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
-  const match = dateStr.match(/(\w{3})\s+(\d+),\s+(\d+)/);
-  if (!match) return new Date("1970-01-01");
-  return new Date(parseInt(match[3]), months[match[1]] || 0, parseInt(match[2]));
-}
-
 function parsePrice(priceStr) {
   const num = parseInt(priceStr.replace(/[^0-9]/g, ""), 10);
   return isNaN(num) ? 0 : num;
@@ -70,6 +74,9 @@ function StatusBadge({ status }) {
     Confirmed: "bg-green-100 text-green-700 border-green-200",
     Completed: "bg-blue-100 text-blue-700 border-blue-200",
     "In Progress": "bg-purple-100 text-purple-700 border-purple-200",
+    "Cancellation Requested": "bg-amber-100 text-amber-700 border-amber-200",
+    Cancelled: "bg-red-100 text-red-700 border-red-200",
+    "On the Way": "bg-cyan-100 text-cyan-800 border-cyan-200",
   };
   return (
     <span
@@ -87,30 +94,45 @@ export default function ProviderDashboard() {
   const { isLoggedIn, role } = useAuth();
   const { bookings, isLoading, error, updateBookingStatus, requestCancellation } = useBookings();
   const [activeTab, setActiveTab] = useState("All");
+  const [bookingSearchQuery, setBookingSearchQuery] = useState("");
   const [expandedJob, setExpandedJob] = useState(null);
   const [acceptingId, setAcceptingId] = useState(null);
+  const [statusChange, setStatusChange] = useState(null);
   const [cancelingId, setCancelingId] = useState(null);
   const [cancellationReason, setCancellationReason] = useState("");
 
-  const requests = bookings.filter((booking) => booking.status === "Pending Request");
-  const jobs = bookings.filter((booking) => booking.status !== "Pending Request");
+  const normalizedBookingQuery = bookingSearchQuery.trim().toLowerCase();
+  const matchesBookingSearch = (booking) => !normalizedBookingQuery ||
+    [booking.client, booking.task, booking.description].some((value) => String(value || "").toLowerCase().includes(normalizedBookingQuery));
+  const requests = bookings.filter((booking) => booking.status === "Pending Request" && matchesBookingSearch(booking));
+  const jobs = bookings.filter((booking) => booking.status !== "Pending Request" && matchesBookingSearch(booking));
 
   const sortedRequests = useMemo(() => {
-    return [...requests].sort((a, b) => parseDate(b.date) - parseDate(a.date));
+    return [...requests].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   }, [requests]);
 
   const sortedJobs = useMemo(() => {
-    return [...jobs].sort((a, b) => parseDate(b.date) - parseDate(a.date));
+    return [...jobs].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   }, [jobs]);
 
   const filteredJobs = useMemo(() => {
-    if (activeTab === "Active") return sortedJobs.filter((j) => j.status !== "Completed");
+    if (activeTab === "Incoming Requests") return [];
+    if (activeTab === "Active") return sortedJobs.filter((j) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested"].includes(j.status));
     if (activeTab === "Completed") return sortedJobs.filter((j) => j.status === "Completed");
+    if (activeTab === "Cancelled") return sortedJobs.filter((j) => ["Cancelled", "Declined"].includes(j.status));
     return sortedJobs;
   }, [sortedJobs, activeTab]);
 
+  const dashboardTabCounts = {
+    All: bookings.length,
+    "Incoming Requests": bookings.filter((booking) => booking.status === "Pending Request").length,
+    Active: bookings.filter((booking) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested"].includes(booking.status)).length,
+    Completed: bookings.filter((booking) => booking.status === "Completed").length,
+    Cancelled: bookings.filter((booking) => ["Cancelled", "Declined"].includes(booking.status)).length,
+  };
+
   const stats = useMemo(() => {
-    const activeJobs = jobs.filter((j) => j.status !== "Completed").length;
+    const activeJobs = jobs.filter((j) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested"].includes(j.status)).length;
     const completedJobs = jobs.filter((j) => j.status === "Completed").length;
     const earnings = jobs
       .filter((j) => j.status === "Completed")
@@ -122,17 +144,6 @@ export default function ProviderDashboard() {
       completedJobs,
       earnings: `₱${earnings.toLocaleString()}`,
     };
-  }, [jobs]);
-
-  const jobTabs = useMemo(() => {
-    const all = jobs.length;
-    const active = jobs.filter((j) => j.status !== "Completed").length;
-    const completed = jobs.filter((j) => j.status === "Completed").length;
-    return [
-      { label: "All", count: all },
-      { label: "Active", count: active },
-      { label: "Completed", count: completed },
-    ];
   }, [jobs]);
 
   function acceptRequest(id) {
@@ -222,11 +233,27 @@ export default function ProviderDashboard() {
           </div>
         </div>
 
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex gap-1 overflow-x-auto pb-1">
+            {DASHBOARD_TABS.map((tab) => (
+              <button key={tab} onClick={() => setActiveTab(tab)} className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${activeTab === tab ? "bg-gray-900 text-white" : "bg-white text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50"}`}>
+                {tab === "Active" ? "My Bookings (Active)" : tab}
+                <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold ${activeTab === tab ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"}`}>{dashboardTabCounts[tab]}</span>
+              </button>
+            ))}
+          </div>
+          <label className="relative block w-full sm:max-w-xs">
+            <span className="sr-only">Search bookings</span>
+            <input type="search" value={bookingSearchQuery} onChange={(event) => setBookingSearchQuery(event.target.value)} placeholder="Search client or repair" className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20" />
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
+          </label>
+        </div>
+
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Main Column */}
           <div className="space-y-6 lg:col-span-2">
             {/* Incoming Requests */}
-            <div className="rounded-2xl bg-white shadow-sm">
+            {(activeTab === "All" || activeTab === "Incoming Requests") && <div className="rounded-2xl bg-white shadow-sm">
               <div className="border-b border-gray-100 px-5 py-4">
                 <h2 className="text-base font-semibold text-gray-900">
                   Incoming Requests
@@ -288,38 +315,12 @@ export default function ProviderDashboard() {
                   ))}
                 </div>
               )}
-            </div>
+            </div>}
 
             {/* My Jobs */}
-            <div className="rounded-2xl bg-white shadow-sm">
+            {activeTab !== "Incoming Requests" && <div className="rounded-2xl bg-white shadow-sm">
               <div className="border-b border-gray-100 px-5 py-4">
                 <h2 className="text-base font-semibold text-gray-900">My Jobs</h2>
-              </div>
-              <div className="flex gap-1 border-b border-gray-100 px-5 py-2">
-                {jobTabs.map((tab) => (
-                  <button
-                    key={tab.label}
-                    onClick={() => setActiveTab(tab.label)}
-                    className={`relative rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                      activeTab === tab.label
-                        ? "bg-gray-900 text-white"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    <span className="flex items-center gap-1.5">
-                      {tab.label}
-                      <span
-                        className={`inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[9px] font-bold ${
-                          activeTab === tab.label
-                            ? "bg-white/20 text-white"
-                            : "bg-gray-200 text-gray-500"
-                        }`}
-                      >
-                        {tab.count}
-                      </span>
-                    </span>
-                  </button>
-                ))}
               </div>
               {filteredJobs.length === 0 ? (
                 <div className="py-12 text-center">
@@ -337,10 +338,25 @@ export default function ProviderDashboard() {
                               {job.client}
                             </span>
                             <StatusBadge status={job.status} />
+                            <button onClick={() => navigate("/provider-messages")} className="ml-auto rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Contact</button>
                           </div>
+                          <BookingProgress status={job.status} />
                           <p className="mt-1 text-sm font-medium text-gray-700">
                             {job.task}
                           </p>
+                          {job.status === "Completed" && job.clientRating != null && (
+                            <div className="mt-2 rounded-md border border-amber-100 bg-amber-50 p-2.5 text-xs text-amber-950">
+                              <p className="font-semibold">Client review: {"★".repeat(job.clientRating)}{"☆".repeat(5 - job.clientRating)}</p>
+                              {job.clientReview && <p className="mt-1">{job.clientReview}</p>}
+                              {job.clientReviewPhotos?.length > 0 && <div className="mt-2 flex gap-2">{job.clientReviewPhotos.map((photo) => <a key={photo} href={photo} target="_blank" rel="noreferrer"><img src={photo} alt="Client review attachment" className="h-12 w-12 rounded object-cover" /></a>)}</div>}
+                            </div>
+                          )}
+                          {job.status === "Cancellation Requested" && job.cancellationExpiresAt && (
+                            <p className="mt-1 text-xs text-amber-700">Cancellation response due {new Date(job.cancellationExpiresAt).toLocaleString()}.</p>
+                          )}
+                          {job.cancellationOutcome === "rejected" && (
+                            <p className="mt-1 text-xs text-red-700">Your cancellation request was declined. The booking remains active.</p>
+                          )}
                           <div className="mt-1 flex items-center gap-3">
                             <button
                               onClick={() => setExpandedJob(expandedJob === job.id ? null : job.id)}
@@ -348,7 +364,15 @@ export default function ProviderDashboard() {
                             >
                               {expandedJob === job.id ? "Hide details" : "View details"}
                             </button>
-                            {(job.status === "Pending Request" || job.status === "Confirmed") && (
+                            {STATUS_ACTIONS[job.status] && (
+                              <button
+                                onClick={() => setStatusChange({ bookingId: job.id, ...STATUS_ACTIONS[job.status] })}
+                                className="text-xs font-semibold text-primary-700 transition hover:text-primary-900"
+                              >
+                                {STATUS_ACTIONS[job.status].buttonLabel}
+                              </button>
+                            )}
+                            {["Pending Request", "Confirmed", "On the Way", "In Progress"].includes(job.status) && (
                               <button
                                 onClick={() => setCancelingId(job.id)}
                                 className="text-xs font-medium text-red-600 transition hover:text-red-800"
@@ -360,12 +384,15 @@ export default function ProviderDashboard() {
                           {expandedJob === job.id && (
                             <div className="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-500">
                               <p>{job.description}</p>
+                              <div className="mt-2"><AddressActions address={job.address} /></div>
                               <div className="mt-2 flex items-center gap-3">
                                 <span>📍 {job.address}</span>
                                 <span>📅 {job.date}</span>
                                 <span>🕐 {job.time}</span>
                                 <span>💵 {job.price}</span>
+                                <span className={job.urgency === "Emergency" ? "font-semibold text-red-700" : ""}>{job.urgency || "Flexible"}</span>
                               </div>
+                              <BookingHistory events={job.statusHistory} />
                             </div>
                           )}
                         </div>
@@ -374,7 +401,7 @@ export default function ProviderDashboard() {
                   ))}
                 </div>
               )}
-            </div>
+            </div>}
           </div>
 
           {/* Sidebar */}
@@ -466,6 +493,14 @@ export default function ProviderDashboard() {
         </div>
       )}
 
+      {statusChange && (
+        <StatusChangeConfirmation
+          nextStatus={statusChange.nextStatus}
+          onConfirm={() => updateBookingStatus(statusChange.bookingId, statusChange.status)}
+          onClose={() => setStatusChange(null)}
+        />
+      )}
+
       {cancelingId && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
@@ -475,20 +510,31 @@ export default function ProviderDashboard() {
             <div className="p-6">
               <h3 className="text-lg font-bold text-gray-900">Cancel Booking?</h3>
               <p className="mt-2 text-sm text-gray-500">The client may need to approve this cancellation request.</p>
-              <div className="mt-4">
-                <label htmlFor="dashboard-cancellation-reason" className="mb-1.5 block text-sm font-medium text-gray-700">Reason</label>
-                <textarea
-                  id="dashboard-cancellation-reason"
-                  value={cancellationReason}
-                  onChange={(event) => setCancellationReason(event.target.value)}
-                  rows={3}
-                  placeholder="Why do you need to cancel?"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30"
-                />
-              </div>
+              {(() => {
+                const booking = bookings.find((item) => item.id === cancelingId);
+                const needsReason = booking && Date.now() - new Date(booking.createdAt).getTime() >= 10 * 60 * 1000;
+                return needsReason ? (
+                  <div className="mt-4">
+                    <label htmlFor="dashboard-cancellation-reason" className="mb-1.5 block text-sm font-medium text-gray-700">Brief cancellation reason</label>
+                    <textarea
+                      id="dashboard-cancellation-reason"
+                      value={cancellationReason}
+                      onChange={(event) => setCancellationReason(event.target.value)}
+                      maxLength={500}
+                      rows={3}
+                      required
+                      placeholder="Why do you need to cancel?"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30"
+                    />
+                  </div>
+                ) : null;
+              })()}
               <div className="mt-6 flex gap-3">
                 <button type="button" onClick={() => setCancelingId(null)} className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-semibold text-gray-700">Keep Booking</button>
-                <button type="button" onClick={handleCancelJob} className="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white">Request Cancellation</button>
+                <button type="button" disabled={(() => {
+                  const booking = bookings.find((item) => item.id === cancelingId);
+                  return booking && Date.now() - new Date(booking.createdAt).getTime() >= 10 * 60 * 1000 && !cancellationReason.trim();
+                })()} onClick={handleCancelJob} className="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Request Cancellation</button>
               </div>
             </div>
           </div>

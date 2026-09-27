@@ -110,6 +110,49 @@ export function BookingProvider({ children }) {
     return data.booking;
   }, [token]);
 
+  const submitReview = useCallback(async (id, rating, review, photos = []) => {
+    const formData = new FormData();
+    formData.append("rating", String(rating));
+    formData.append("review", review);
+    photos.forEach((photo) => formData.append("photos", photo));
+    const response = await fetch(`/api/bookings/${id}/rate`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Could not save the booking review.");
+    if (!data.booking?.id) throw new Error("The server returned an invalid review response.");
+    setBookings((current) => validBookings(current.map((booking) => booking.id === id ? data.booking : booking)));
+    return data.booking;
+  }, [token]);
+
+  const sendProviderUpdate = useCallback(async (id, update) => {
+    const response = await fetch(`/api/bookings/${id}/provider-updates`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(update),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Could not send the provider update.");
+    if (!data.booking?.id) throw new Error("The server returned an invalid provider update.");
+    setBookings((current) => validBookings(current.map((booking) => booking.id === id ? data.booking : booking)));
+    return data.booking;
+  }, [token]);
+
+  const respondToProviderUpdate = useCallback(async (id, updateId, action) => {
+    const response = await fetch(`/api/bookings/${id}/provider-updates`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ updateId, action }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Could not respond to the schedule request.");
+    if (!data.booking?.id) throw new Error("The server returned an invalid schedule response.");
+    setBookings((current) => validBookings(current.map((booking) => booking.id === id ? data.booking : booking)));
+    return data.booking;
+  }, [token]);
+
   const value = useMemo(() => ({
     bookings,
     isLoading,
@@ -117,8 +160,11 @@ export function BookingProvider({ children }) {
     createBooking,
     updateBookingStatus,
     requestCancellation,
+    submitReview,
+    sendProviderUpdate,
+    respondToProviderUpdate,
     refreshBookings: fetchBookings,
-  }), [bookings, isLoading, error, createBooking, updateBookingStatus, requestCancellation, fetchBookings]);
+  }), [bookings, isLoading, error, createBooking, updateBookingStatus, requestCancellation, submitReview, sendProviderUpdate, respondToProviderUpdate, fetchBookings]);
 
   return <BookingContext.Provider value={value}>{children}</BookingContext.Provider>;
 }

@@ -1,7 +1,11 @@
 import { useState, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { useBookings } from "../context/BookingContext.jsx";
 import Header from "./Header.jsx";
+import BookingProgress from "./BookingProgress.jsx";
+import BookingHistory from "./BookingHistory.jsx";
+import AddressActions from "./AddressActions.jsx";
 
 export const categories = [
   { name: "All Services", icon: "🏠" },
@@ -32,41 +36,15 @@ const favourites = [
   },
 ];
 
-const initialBookings = [
-  {
-    id: 1,
-    status: "Pending Request",
-    worker: "Johhny Cruz",
-    cred: "TESDA NC II Carpenter",
-    task: "Desktop Table Repair",
-    date: "Sep 9, 2026 - 09:00 AM",
-    price: "P500",
-  },
-  {
-    id: 2,
-    status: "Confirmed",
-    worker: "Maria Santos",
-    cred: "TESDA NC II Electrician",
-    task: "Circuit Breaker Replacement",
-    date: "Sep 10, 2026 - 02:00 PM",
-    price: "P800",
-  },
-  {
-    id: 3,
-    status: "Completed",
-    worker: "Pedro Cruz",
-    cred: "TESDA NC II Plumbing",
-    task: "Leaky Faucet Fix",
-    date: "Aug 28, 2026 - 10:00 AM",
-    price: "P350",
-  },
-];
-
 function StatusBadge({ status }) {
   const colors = {
     "Pending Request": "bg-amber-100 text-amber-700 border-amber-200",
     Confirmed: "bg-green-100 text-green-700 border-green-200",
+    "On the Way": "bg-cyan-100 text-cyan-800 border-cyan-200",
+    "In Progress": "bg-purple-100 text-purple-700 border-purple-200",
     Completed: "bg-blue-100 text-blue-700 border-blue-200",
+    "Cancellation Requested": "bg-amber-100 text-amber-700 border-amber-200",
+    Cancelled: "bg-red-100 text-red-700 border-red-200",
   };
   return (
     <span
@@ -101,27 +79,29 @@ function StarIcon({ filled }) {
 export default function Dashboard() {
   const navigate = useNavigate();
   const { isLoggedIn } = useAuth();
+  const { bookings: bookingList, isLoading, error, requestCancellation, respondToProviderUpdate } = useBookings();
   const [bannerVisible, setBannerVisible] = useState(true);
   const [activeTab, setActiveTab] = useState("All");
   const [search, setSearch] = useState("");
-  const [bookingList, setBookingList] = useState(initialBookings);
+  const [bookingSearchQuery, setBookingSearchQuery] = useState("");
+  const [cancelingId, setCancelingId] = useState(null);
+  const [cancellationReason, setCancellationReason] = useState("");
   const [activeCategory, setActiveCategory] = useState("");
   const scrollRef = useRef(null);
   const catScrollRef = useRef(null);
 
-  const tabs = ["All", "Pending", "Confirmed", "Completed"];
+  const tabs = ["All", "Pending", "Active", "Completed", "Cancelled"];
 
   const tabCounts = {
     All: bookingList.length,
     Pending: bookingList.filter(
       (b) => b.status === "Pending Request"
     ).length,
-    Confirmed: bookingList.filter(
-      (b) => b.status === "Confirmed"
-    ).length,
+    Active: bookingList.filter((b) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested"].includes(b.status)).length,
     Completed: bookingList.filter(
       (b) => b.status === "Completed"
     ).length,
+    Cancelled: bookingList.filter((b) => ["Cancelled", "Declined"].includes(b.status)).length,
   };
 
   const scroll = (direction) => {
@@ -142,15 +122,18 @@ export default function Dashboard() {
     }
   };
 
-  const filteredBookings =
-    activeTab === "All"
-      ? bookingList.filter((b) => b.status !== "Cancelled")
-      : bookingList.filter((b) => {
-          if (activeTab === "Pending") return b.status === "Pending Request";
-          if (activeTab === "Confirmed") return b.status === "Confirmed";
-          if (activeTab === "Completed") return b.status === "Completed";
-          return true;
-        });
+  const normalizedBookingQuery = bookingSearchQuery.trim().toLowerCase();
+  const matchingBookingList = bookingList.filter((booking) => !normalizedBookingQuery ||
+    [booking.worker, booking.cred, booking.task, booking.description]
+      .some((value) => String(value || "").toLowerCase().includes(normalizedBookingQuery))
+  );
+  const filteredBookings = matchingBookingList.filter((booking) => {
+    if (activeTab === "All") return true;
+    if (activeTab === "Pending") return booking.status === "Pending Request";
+    if (activeTab === "Active") return ["Confirmed", "On the Way", "In Progress", "Cancellation Requested"].includes(booking.status);
+    if (activeTab === "Completed") return booking.status === "Completed";
+    return ["Cancelled", "Declined"].includes(booking.status);
+  });
 
   const filteredCategories = categories.filter((cat) =>
     search.trim()
@@ -158,15 +141,40 @@ export default function Dashboard() {
       : true
   );
 
-  const cancelBooking = (id) => {
-    setBookingList((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, status: "Cancelled" } : b))
-    );
+  const cancelBooking = bookingList.find((booking) => booking.id === cancelingId);
+  const enRouteBooking = bookingList.find((booking) => booking.status === "On the Way");
+
+  const handleCancelBooking = async () => {
+    if (!cancelingId) return;
+    try {
+      await requestCancellation(cancelingId, "request", cancellationReason);
+      setCancelingId(null);
+      setCancellationReason("");
+    } catch (requestError) {
+      window.alert(requestError.message);
+    }
+  };
+
+  const handleProviderUpdateResponse = async (bookingId, updateId, action) => {
+    try {
+      await respondToProviderUpdate(bookingId, updateId, action);
+    } catch (requestError) {
+      window.alert(requestError.message);
+    }
   };
 
   return (
     <div className="min-h-screen bg-gray-50 pt-16">
       <Header showNav activeTab="Home" />
+
+      {enRouteBooking && (
+        <div role="status" className="border-b border-cyan-200 bg-cyan-50 px-4 py-3 text-cyan-950 sm:px-6 lg:px-8">
+          <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4">
+            <p className="text-sm font-semibold">{enRouteBooking.worker} is on the way for {enRouteBooking.task}.</p>
+            <button onClick={() => navigate("/bookings")} className="shrink-0 text-sm font-semibold underline underline-offset-2">View booking</button>
+          </div>
+        </div>
+      )}
 
       {bannerVisible && (
         <div className="relative w-full overflow-hidden bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-300 px-4 py-3 sm:px-6 lg:px-8">
@@ -425,7 +433,7 @@ export default function Dashboard() {
             {/* Summary */}
             <div className="grid grid-cols-2 gap-px bg-gray-100">
               {[
-                { label: "Active", value: tabCounts.Pending + tabCounts.Confirmed, color: "bg-white" },
+                { label: "Active", value: tabCounts.Active, color: "bg-white" },
                 { label: "Completed", value: tabCounts.Completed, color: "bg-white" },
               ].map((s) => (
                 <div key={s.label} className={`${s.color} px-4 py-3 text-center`}>
@@ -445,6 +453,8 @@ export default function Dashboard() {
                 See All &gt;
               </button>
             </div>
+            {error && <p role="alert" className="border-b border-red-100 px-5 py-3 text-xs text-red-700">{error}</p>}
+            {isLoading && <p className="border-b border-gray-100 px-5 py-3 text-xs text-gray-500">Loading bookings...</p>}
             <div className="flex w-full min-w-0 gap-1 overflow-x-auto border-b border-gray-100 px-5 py-3">
               {tabs.map((tab) => (
                 <button
@@ -471,6 +481,11 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
+            <label className="relative block px-4 pt-3">
+              <span className="sr-only">Search bookings</span>
+              <input type="search" value={bookingSearchQuery} onChange={(event) => setBookingSearchQuery(event.target.value)} placeholder="Search provider or repair" className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20" />
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-7 top-[1.125rem] h-4 w-4 text-gray-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
+            </label>
             <div className="max-h-[480px] overflow-y-auto p-4">
               {filteredBookings.length === 0 ? (
                 <p className="py-8 text-center text-sm text-gray-400">
@@ -488,6 +503,7 @@ export default function Dashboard() {
                         {booking.price}
                       </span>
                     </div>
+                    <BookingProgress status={booking.status} />
                     <div className="mt-3 flex items-center gap-3">
                       <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-100 text-xs font-bold text-primary-700">
                         {booking.worker.charAt(0)}
@@ -504,7 +520,43 @@ export default function Dashboard() {
                         {booking.task}
                       </p>
                       <p className="text-xs text-gray-500">{booking.date}</p>
+                      {booking.status === "Cancellation Requested" && booking.cancellationExpiresAt && (
+                        <p className="mt-1 text-xs text-amber-700">
+                          Response due {new Date(booking.cancellationExpiresAt).toLocaleString()}
+                        </p>
+                      )}
+                      {booking.cancellationOutcome === "rejected" && (
+                        <p className="mt-1 text-xs text-red-700">The cancellation was declined. This booking remains active.</p>
+                      )}
+                      {booking.clientRating != null && (
+                        <p className="mt-2 text-xs font-medium text-amber-700">Your review: {"★".repeat(booking.clientRating)}{"☆".repeat(5 - booking.clientRating)}{booking.clientReview ? ` · ${booking.clientReview}` : ""}</p>
+                      )}
+                      {booking.clientReviewPhotos?.length > 0 && (
+                        <div className="mt-2 flex gap-2">
+                          {booking.clientReviewPhotos.map((photo) => <a key={photo} href={photo} target="_blank" rel="noreferrer"><img src={photo} alt="Review attachment" className="h-12 w-12 rounded object-cover" /></a>)}
+                        </div>
+                      )}
+                      {booking.providerUpdates?.map((update) => (
+                        <div key={update.id} className="mt-2 rounded-md border border-cyan-100 bg-cyan-50 p-2 text-xs text-cyan-950">
+                          <p className="font-semibold">Provider update{update.type === "reschedule" ? " · Time change requested" : ""}</p>
+                          <p className="mt-1">{update.note}</p>
+                          {update.type === "reschedule" && (
+                            <>
+                              <p className="mt-1">Proposed: {new Date(update.proposedServiceDate).toLocaleDateString()} at {update.proposedTimeSlot}</p>
+                              {update.status === "pending" && booking.status === "Confirmed" && (
+                                <div className="mt-2 flex gap-2">
+                                  <button onClick={() => handleProviderUpdateResponse(booking.id, update.id, "accept")} className="rounded border border-cyan-300 bg-white px-2 py-1 font-semibold">Accept</button>
+                                  <button onClick={() => handleProviderUpdateResponse(booking.id, update.id, "reject")} className="rounded border border-cyan-300 bg-white px-2 py-1 font-semibold">Keep current time</button>
+                                </div>
+                              )}
+                              {update.status !== "pending" && <p className="mt-1 font-medium">Request {update.status}.</p>}
+                            </>
+                          )}
+                        </div>
+                      ))}
+                      <div className="mt-2 text-xs text-gray-600"><AddressActions address={booking.address} /></div>
                     </div>
+                    <BookingHistory events={booking.statusHistory} />
                     <div className="mt-3 flex gap-2">
                       <button
                         onClick={() => navigate("/messages")}
@@ -512,20 +564,20 @@ export default function Dashboard() {
                       >
                         Contact
                       </button>
-                      {booking.status !== "Cancelled" && booking.status !== "Completed" && (
+                      {["Pending Request", "Confirmed", "On the Way", "In Progress"].includes(booking.status) && (
                         <button
-                          onClick={() => cancelBooking(booking.id)}
+                          onClick={() => setCancelingId(booking.id)}
                           className="flex-1 rounded-lg bg-red-50 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-100"
                         >
-                          Cancel Request
+                          Cancel
                         </button>
                       )}
                       <button
                         type="button"
-                        onClick={() => navigate("/profile")}
+                        onClick={() => navigate(booking.status === "Completed" && !booking.clientRating ? "/bookings" : "/profile")}
                         className="flex-1 rounded-lg border border-gray-300 bg-white py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50"
                       >
-                        View Profile
+                        {booking.status === "Completed" && !booking.clientRating ? "Rate Provider" : "View Profile"}
                       </button>
                     </div>
                   </div>
@@ -535,6 +587,36 @@ export default function Dashboard() {
           </div>
         </aside>
       </div>
+      {cancelingId && cancelBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setCancelingId(null)}>
+          <div className="w-full max-w-sm rounded-xl bg-white shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="p-6">
+              <h2 className="text-lg font-bold text-gray-900">Cancel booking?</h2>
+              <p className="mt-2 text-sm text-gray-600">{cancelBooking.task} with {cancelBooking.worker}</p>
+              {Date.now() - new Date(cancelBooking.createdAt).getTime() >= 10 * 60 * 1000 && (
+                <div className="mt-4">
+                  <label htmlFor="dashboard-cancellation-reason" className="mb-1.5 block text-sm font-medium text-gray-700">Brief cancellation reason</label>
+                  <textarea
+                    id="dashboard-cancellation-reason"
+                    value={cancellationReason}
+                    onChange={(event) => setCancellationReason(event.target.value)}
+                    maxLength={500}
+                    rows={3}
+                    required
+                    placeholder="Why do you need to cancel?"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">The other participant can respond before this request expires.</p>
+                </div>
+              )}
+              <div className="mt-6 flex gap-3">
+                <button type="button" onClick={() => setCancelingId(null)} className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-semibold text-gray-700">Keep booking</button>
+                <button type="button" disabled={Date.now() - new Date(cancelBooking.createdAt).getTime() > 10 * 60 * 1000 && !cancellationReason.trim()} onClick={handleCancelBooking} className="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Cancel booking</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

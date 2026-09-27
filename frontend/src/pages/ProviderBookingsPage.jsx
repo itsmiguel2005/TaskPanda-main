@@ -2,6 +2,17 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
+import BookingProgress from "../components/BookingProgress.jsx";
+import StatusChangeConfirmation from "../components/StatusChangeConfirmation.jsx";
+import BookingHistory from "../components/BookingHistory.jsx";
+import AddressActions from "../components/AddressActions.jsx";
+
+const STATUS_ACTIONS = {
+  Confirmed: { status: "en_route", nextStatus: "On the Way", buttonLabel: "I'm On My Way" },
+  "On the Way": { status: "in_progress", nextStatus: "In Progress", buttonLabel: "Start Task" },
+  "In Progress": { status: "complete", nextStatus: "Completed", buttonLabel: "Mark as Complete" },
+};
+const TIME_SLOTS = ["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"];
 
 const initialRequests = [
   {
@@ -51,18 +62,22 @@ const initialBookings = [
   },
 ];
 
-const tabs = ["All", "Incoming Requests", "Active", "Cancellation Requests", "Completed", "Cancelled"];
-
-function parseDate(dateStr) {
-  const months = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
-  const match = dateStr.match(/(\w{3})\s+(\d+),\s+(\d+)/);
-  if (!match) return new Date("1970-01-01");
-  return new Date(parseInt(match[3]), months[match[1]] || 0, parseInt(match[2]));
-}
+const tabs = [
+  { key: "All", label: "All" },
+  { key: "Incoming Requests", label: "Incoming Requests" },
+  { key: "Active", label: "My Bookings (Active)" },
+  { key: "Completed", label: "Completed" },
+  { key: "Cancelled", label: "Cancelled" },
+];
 
 function parsePrice(priceStr) {
   const num = parseInt(priceStr.replace(/[^0-9]/g, ""), 10);
   return isNaN(num) ? 0 : num;
+}
+
+function formatBookingTotal(booking) {
+  const amount = Number(booking.offeredPrice ?? booking.offer);
+  return Number.isFinite(amount) ? `₱${amount.toLocaleString()}` : String(booking.price || "").replace(/^P/, "₱");
 }
 
 function StatusBadge({ status }) {
@@ -74,6 +89,7 @@ function StatusBadge({ status }) {
     Declined: "bg-red-100 text-red-700 border-red-200",
     "Cancellation Requested": "bg-amber-100 text-amber-700 border-amber-200",
     "In Progress": "bg-purple-100 text-purple-700 border-purple-200",
+    "On the Way": "bg-cyan-100 text-cyan-800 border-cyan-200",
   };
   return (
     <span
@@ -95,6 +111,7 @@ function StatusDot({ status }) {
     Declined: "bg-red-500",
     "Cancellation Requested": "bg-amber-500",
     "In Progress": "bg-purple-500",
+    "On the Way": "bg-cyan-500",
   };
   return (
     <span
@@ -108,37 +125,50 @@ function StatusDot({ status }) {
 export default function ProviderBookingsPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("All");
-  const { bookings, isLoading, error, updateBookingStatus, requestCancellation } = useBookings();
-  const [sortBy, setSortBy] = useState("date");
+  const [searchQuery, setSearchQuery] = useState("");
+  const { bookings, isLoading, error, updateBookingStatus, requestCancellation, sendProviderUpdate } = useBookings();
+  const [sortBy, setSortBy] = useState("createdAt");
   const [acceptingId, setAcceptingId] = useState(null);
+  const [statusChange, setStatusChange] = useState(null);
   const [rejectingId, setRejectingId] = useState(null);
   const [cancelingId, setCancelingId] = useState(null);
   const [cancellationReason, setCancellationReason] = useState("");
   const [detailId, setDetailId] = useState(null);
+  const [providerUpdateId, setProviderUpdateId] = useState(null);
+  const [providerUpdateNote, setProviderUpdateNote] = useState("");
+  const [isRescheduleRequest, setIsRescheduleRequest] = useState(false);
+  const [proposedServiceDate, setProposedServiceDate] = useState("");
+  const [proposedTimeSlot, setProposedTimeSlot] = useState(TIME_SLOTS[0]);
+  const [providerUpdateError, setProviderUpdateError] = useState("");
+  const [providerUpdateSuccess, setProviderUpdateSuccess] = useState(false);
 
-  const requests = bookings.filter((booking) => booking.status === "Pending Request");
-  const managedBookings = bookings.filter((booking) => booking.status !== "Pending Request");
+  const query = searchQuery.trim().toLowerCase();
+  const matchesSearch = (booking) => !query || [booking.client, booking.task, booking.description]
+    .some((value) => String(value || "").toLowerCase().includes(query));
+  const requests = bookings.filter((booking) => booking.status === "Pending Request" && matchesSearch(booking));
+  const managedBookings = bookings.filter((booking) => booking.status !== "Pending Request" && matchesSearch(booking));
   const filteredManagedBookings = managedBookings.filter((booking) => {
     if (activeTab === "All") return true;
-    if (activeTab === "Active") return booking.status === "Confirmed";
-    if (activeTab === "Cancellation Requests") return booking.status === "Cancellation Requested";
+    if (activeTab === "Active") return ["Confirmed", "On the Way", "In Progress", "Cancellation Requested"].includes(booking.status);
     if (activeTab === "Completed") return booking.status === "Completed";
     if (activeTab === "Cancelled") return ["Cancelled", "Declined"].includes(booking.status);
     return false;
   });
 
   const sortedRequests = useMemo(() => {
-    return [...requests].sort((a, b) => parseDate(a.date) - parseDate(b.date));
+    return [...requests].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   }, [requests]);
 
   const sortedBookings = useMemo(() => {
     let result = [...filteredManagedBookings];
-    if (sortBy === "date") {
-      result.sort((a, b) => parseDate(b.date) - parseDate(a.date));
+    if (sortBy === "createdAt") {
+      result.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    } else if (sortBy === "date") {
+      result.sort((a, b) => new Date(a.serviceDate || 0) - new Date(b.serviceDate || 0));
     } else if (sortBy === "price") {
       result.sort((a, b) => parsePrice(b.price) - parsePrice(a.price));
     } else if (sortBy === "status") {
-      const order = { "Pending Request": 0, Confirmed: 1, "In Progress": 2, Completed: 3, Cancelled: 4 };
+      const order = { "Pending Request": 0, Confirmed: 1, "On the Way": 2, "In Progress": 3, Completed: 4, Cancelled: 5 };
       result.sort((a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99));
     }
     return result;
@@ -146,7 +176,7 @@ export default function ProviderBookingsPage() {
 
   const stats = useMemo(() => ({
     incoming: requests.length,
-    active: managedBookings.filter((b) => b.status !== "Completed" && b.status !== "Cancelled").length,
+    active: managedBookings.filter((b) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested"].includes(b.status)).length,
     completed: managedBookings.filter((b) => b.status === "Completed").length,
     cancelled: managedBookings.filter((b) => b.status === "Cancelled").length,
     earnings: managedBookings
@@ -209,6 +239,25 @@ export default function ProviderBookingsPage() {
     }
   }
 
+  async function handleSendProviderUpdate(event) {
+    event.preventDefault();
+    if (!providerUpdateId) return;
+    setProviderUpdateError("");
+    try {
+      await sendProviderUpdate(providerUpdateId, {
+        note: providerUpdateNote,
+        proposedServiceDate: isRescheduleRequest ? proposedServiceDate : "",
+        proposedTimeSlot: isRescheduleRequest ? proposedTimeSlot : "",
+      });
+      setProviderUpdateId(null);
+      setProviderUpdateNote("");
+      setIsRescheduleRequest(false);
+      setProviderUpdateSuccess(true);
+    } catch (requestError) {
+      setProviderUpdateError(requestError.message);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 pt-16">
       <Header showNav activeTab="Bookings" role="provider" />
@@ -252,34 +301,33 @@ export default function ProviderBookingsPage() {
         </div>
 
         {/* Tabs */}
-        <div className="mb-4 flex flex-wrap gap-1">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex gap-1 overflow-x-auto pb-1">
           {tabs.map((tab) => {
             const count =
-              tab === "All"
+              tab.key === "All"
                 ? requests.length + managedBookings.length
-                : tab === "Incoming Requests"
+                : tab.key === "Incoming Requests"
                 ? requests.length
-                : tab === "Active"
-                ? managedBookings.filter((booking) => booking.status === "Confirmed").length
-                : tab === "Cancellation Requests"
-                ? managedBookings.filter((booking) => booking.status === "Cancellation Requested").length
-                : tab === "Completed"
+                : tab.key === "Active"
+                ? managedBookings.filter((booking) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested"].includes(booking.status)).length
+                : tab.key === "Completed"
                 ? managedBookings.filter((booking) => booking.status === "Completed").length
                 : managedBookings.filter((booking) => ["Cancelled", "Declined"].includes(booking.status)).length;
             return (
               <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`relative flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition ${
-                  activeTab === tab
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`relative flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                  activeTab === tab.key
                     ? "bg-gray-900 text-white"
                     : "bg-white text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50"
                 }`}
               >
-                {tab}
+                {tab.label}
                 <span
                   className={`inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[10px] font-bold ${
-                    activeTab === tab
+                    activeTab === tab.key
                       ? "bg-white/20 text-white"
                       : "bg-gray-100 text-gray-500"
                   }`}
@@ -289,6 +337,12 @@ export default function ProviderBookingsPage() {
               </button>
             );
           })}
+          </div>
+          <label className="relative block w-full sm:max-w-xs">
+            <span className="sr-only">Search bookings</span>
+            <input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search client or repair" className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20" />
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
+          </label>
         </div>
 
         {/* Sort */}
@@ -299,7 +353,8 @@ export default function ProviderBookingsPage() {
               onChange={(e) => setSortBy(e.target.value)}
               className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none focus:border-purple-500"
             >
-              <option value="date">Sort: Date</option>
+              <option value="createdAt">Submitted: Newest</option>
+              <option value="date">Service date: Earliest</option>
               <option value="price">Sort: Price</option>
               <option value="status">Sort: Status</option>
             </select>
@@ -430,22 +485,51 @@ export default function ProviderBookingsPage() {
                               <h3 className="text-base font-semibold text-gray-900">
                                 {booking.client}
                               </h3>
-                              <p className="text-sm text-gray-500">Job</p>
+                              <p className="text-sm text-gray-500">Submitted {booking.createdAt ? new Date(booking.createdAt).toLocaleString() : ""}</p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center justify-end gap-2">
                             <StatusDot status={booking.status} />
                             <StatusBadge status={booking.status} />
+                            <button onClick={() => navigate("/provider-messages")} className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Contact</button>
                           </div>
                         </div>
 
-                        <div className="mt-4 border-t border-gray-100 pt-4">
+                        <div className="mt-4 grid grid-cols-1 gap-4 border-t border-gray-100 pt-4 md:grid-cols-[minmax(0,1.5fr)_minmax(14rem,1fr)]">
+                          <div className="min-w-0">
+                          <BookingProgress status={booking.status} />
                           <h4 className="text-sm font-semibold text-gray-800">
                             {booking.task}
                           </h4>
                           <p className="mt-1 text-sm leading-relaxed text-gray-500">
                             {booking.description}
                           </p>
+                          {booking.status === "Cancellation Requested" && booking.cancellationExpiresAt && (
+                            <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                              Cancellation requested. Response due {new Date(booking.cancellationExpiresAt).toLocaleString()}.
+                            </p>
+                          )}
+                          {booking.cancellationOutcome === "rejected" && (
+                            <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">The cancellation was declined. This booking remains active.</p>
+                          )}
+                          {booking.providerUpdates?.map((update) => (
+                            <div key={update.id} className="mt-3 rounded-md border border-cyan-100 bg-cyan-50 p-3 text-xs text-cyan-950">
+                              <p className="font-semibold">Your update{update.type === "reschedule" ? " · Time change request" : ""} ({update.status})</p>
+                              <p className="mt-1">{update.note}</p>
+                              {update.type === "reschedule" && <p className="mt-1">Proposed: {new Date(update.proposedServiceDate).toLocaleDateString()} at {update.proposedTimeSlot}</p>}
+                            </div>
+                          ))}
+                          {booking.status === "Completed" && booking.clientRating != null && (
+                            <div className="mt-3 rounded-md border border-amber-100 bg-amber-50 p-3 text-sm text-amber-950">
+                              <p className="font-semibold">Client review: <span aria-label={`${booking.clientRating} out of 5 stars`}>{"★".repeat(booking.clientRating)}{"☆".repeat(5 - booking.clientRating)}</span></p>
+                              {booking.clientReview && <p className="mt-1">{booking.clientReview}</p>}
+                              {booking.clientReviewPhotos?.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {booking.clientReviewPhotos.map((photo) => <a key={photo} href={photo} target="_blank" rel="noreferrer"><img src={photo} alt="Client review attachment" className="h-14 w-14 rounded-md object-cover" /></a>)}
+                                </div>
+                              )}
+                            </div>
+                          )}
                           {booking.photoUrls?.length > 0 && (
                             <div className="mt-3 flex gap-2">
                               {booking.photoUrls.map((url) => <img key={url} src={url} alt="Repair item" className="h-16 w-16 rounded-lg object-cover" />)}
@@ -453,14 +537,14 @@ export default function ProviderBookingsPage() {
                           )}
                         </div>
 
-                        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-600">
-                          <div className="flex items-center gap-1.5">
+                          <div className="space-y-3 rounded-lg bg-gray-50 p-4 text-sm text-gray-700">
+                          <div className="flex items-start gap-2">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-gray-400">
                               <path fillRule="evenodd" d="M19.5 6.75a3 3 0 00-6 0v7.5a3 3 0 006 0V6.75zM3.75 9.75a3 3 0 016 0v7.5a3 3 0 01-6 0V9.75zM15.75 2.25a3 3 0 016 0v7.5a3 3 0 01-6 0V2.25z" clipRule="evenodd" />
                             </svg>
-                            <span>{booking.address}</span>
+                            <AddressActions address={booking.address} />
                           </div>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-start gap-2">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-gray-400">
                               <path fillRule="evenodd" d="M19.5 6.75a3 3 0 00-6 0v7.5a3 3 0 006 0V6.75zM3.75 9.75a3 3 0 016 0v7.5a3 3 0 01-6 0V9.75zM15.75 2.25a3 3 0 016 0v7.5a3 3 0 01-6 0V2.25z" clipRule="evenodd" />
                             </svg>
@@ -468,11 +552,16 @@ export default function ProviderBookingsPage() {
                             <span className="text-gray-300">|</span>
                             <span>{booking.time}</span>
                           </div>
+                          <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${booking.urgency === "Emergency" ? "bg-red-100 text-red-700" : "bg-gray-200 text-gray-700"}`}>
+                            {booking.urgency || "Flexible"} service
+                          </span>
+                          </div>
                         </div>
+                        <BookingHistory events={booking.statusHistory} />
 
                         <div className="mt-5 flex flex-col-reverse gap-2 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex items-center gap-3">
-                            <span className="text-xl font-bold text-gray-900">{booking.price}</span>
+                            <span><span className="block text-xs font-medium text-gray-500">Total</span><span className="text-xl font-bold text-gray-900">{formatBookingTotal(booking)}</span></span>
                             <button
                               onClick={() => setDetailId(booking.id)}
                               className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
@@ -481,13 +570,30 @@ export default function ProviderBookingsPage() {
                             </button>
                           </div>
                           <div className="flex flex-wrap gap-2">
-                            <button
-                              onClick={() => navigate("/provider-messages")}
-                              className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-700"
-                            >
-                              Contact
-                            </button>
-                            {(booking.status === "Pending Request" || booking.status === "Confirmed") && (
+                            {STATUS_ACTIONS[booking.status] && (
+                              <button
+                                onClick={() => setStatusChange({ bookingId: booking.id, ...STATUS_ACTIONS[booking.status] })}
+                                className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-700"
+                              >
+                                {STATUS_ACTIONS[booking.status].buttonLabel}
+                              </button>
+                            )}
+                            {booking.status === "Confirmed" && (
+                              <button
+                                onClick={() => {
+                                  setProviderUpdateId(booking.id);
+                                  setProviderUpdateNote("");
+                                  setProposedServiceDate(booking.serviceDate?.slice(0, 10) || "");
+                                  setProposedTimeSlot(booking.timeSlot || TIME_SLOTS[0]);
+                                  setIsRescheduleRequest(false);
+                                  setProviderUpdateError("");
+                                }}
+                                className="rounded-lg border border-cyan-200 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 transition hover:bg-cyan-100"
+                              >
+                                Send Update
+                              </button>
+                            )}
+                            {["Pending Request", "Confirmed", "On the Way", "In Progress"].includes(booking.status) && (
                               <button
                                 onClick={() => setCancelingId(booking.id)}
                                 className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-red-50 hover:text-red-600 hover:border-red-200"
@@ -510,14 +616,6 @@ export default function ProviderBookingsPage() {
                                   Approve Cancellation
                                 </button>
                               </>
-                            )}
-                            {booking.status === "Completed" && (
-                              <button
-                                onClick={() => navigate("/explore")}
-                                className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800"
-                              >
-                                Book Again
-                              </button>
                             )}
                           </div>
                         </div>
@@ -598,6 +696,57 @@ export default function ProviderBookingsPage() {
         </div>
       )}
 
+      {statusChange && (
+        <StatusChangeConfirmation
+          nextStatus={statusChange.nextStatus}
+          onConfirm={() => updateBookingStatus(statusChange.bookingId, statusChange.status)}
+          onClose={() => setStatusChange(null)}
+        />
+      )}
+
+      {providerUpdateId && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={() => setProviderUpdateId(null)}>
+          <form onSubmit={handleSendProviderUpdate} className="w-full max-w-md rounded-xl bg-white shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="p-6">
+              <h2 className="text-lg font-bold text-gray-900">Update the client</h2>
+              <p className="mt-1 text-sm text-gray-500">Send a delay note or request a different appointment time before you head out.</p>
+              <label htmlFor="provider-update-note" className="mt-4 block text-sm font-medium text-gray-700">Message to client</label>
+              <textarea id="provider-update-note" value={providerUpdateNote} onChange={(event) => setProviderUpdateNote(event.target.value)} maxLength={500} rows={3} required placeholder="Explain the delay or schedule change" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30" />
+              <label className="mt-4 flex items-center gap-2 text-sm font-medium text-gray-700">
+                <input type="checkbox" checked={isRescheduleRequest} onChange={(event) => setIsRescheduleRequest(event.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary-600" />
+                Request a new appointment time
+              </label>
+              {isRescheduleRequest && (
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="text-sm font-medium text-gray-700">Proposed date
+                    <input type="date" value={proposedServiceDate} onChange={(event) => setProposedServiceDate(event.target.value)} required min={new Date().toISOString().slice(0, 10)} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                  </label>
+                  <label className="text-sm font-medium text-gray-700">Proposed time
+                    <select value={proposedTimeSlot} onChange={(event) => setProposedTimeSlot(event.target.value)} className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm">
+                      {TIME_SLOTS.map((slot) => <option key={slot}>{slot}</option>)}
+                    </select>
+                  </label>
+                </div>
+              )}
+              {providerUpdateError && <p role="alert" className="mt-3 text-sm text-red-700">{providerUpdateError}</p>}
+              <div className="mt-6 flex gap-3">
+                <button type="button" onClick={() => setProviderUpdateId(null)} className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-semibold text-gray-700">Cancel</button>
+                <button type="submit" disabled={!providerUpdateNote.trim() || (isRescheduleRequest && !proposedServiceDate)} className="flex-1 rounded-lg bg-primary-600 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Send to client</button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {providerUpdateSuccess && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={() => setProviderUpdateSuccess(false)}>
+          <section role="dialog" aria-modal="true" className="w-full max-w-sm rounded-xl bg-white p-6 text-center shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <p className="text-lg font-bold text-gray-900">Update sent to client</p>
+            <button onClick={() => setProviderUpdateSuccess(false)} className="mt-5 w-full rounded-lg bg-primary-600 py-2.5 text-sm font-semibold text-white">Done</button>
+          </section>
+        </div>
+      )}
+
       {/* Reject Confirmation Modal */}
       {rejectingId && (
         <div
@@ -649,7 +798,7 @@ export default function ProviderBookingsPage() {
               </p>
               {cancelingId && (() => {
                 const booking = managedBookings.find((item) => item.id === cancelingId);
-                return booking && Date.now() - new Date(booking.createdAt).getTime() > 10 * 60 * 1000 ? (
+                return booking && Date.now() - new Date(booking.createdAt).getTime() >= 10 * 60 * 1000 ? (
                   <div className="mt-4">
                     <label htmlFor="provider-cancellation-reason" className="mb-1.5 block text-sm font-medium text-gray-700">
                       Reason for cancellation
@@ -658,7 +807,9 @@ export default function ProviderBookingsPage() {
                       id="provider-cancellation-reason"
                       value={cancellationReason}
                       onChange={(event) => setCancellationReason(event.target.value)}
+                      maxLength={500}
                       rows={3}
+                      required
                       placeholder="Tell the client why you need to cancel"
                       className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30"
                     />
@@ -675,7 +826,11 @@ export default function ProviderBookingsPage() {
                 </button>
                 <button
                   onClick={handleCancelBooking}
-                  className="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700"
+                  disabled={(() => {
+                    const booking = managedBookings.find((item) => item.id === cancelingId);
+                    return booking && Date.now() - new Date(booking.createdAt).getTime() >= 10 * 60 * 1000 && !cancellationReason.trim();
+                  })()}
+                  className="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Cancel Booking
                 </button>
