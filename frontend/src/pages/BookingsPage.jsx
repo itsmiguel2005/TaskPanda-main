@@ -9,7 +9,11 @@ import { canRequestCancellation, getCancellationLockMessage } from "../utils/boo
 import StatusChangeConfirmation from "../components/StatusChangeConfirmation.jsx";
 import RevisionRequestModal from "../components/RevisionRequestModal.jsx";
 
-const tabs = ["All", "Pending", "Active", "Completed", "Cancelled"];
+const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined"];
+
+function isCompletedLikeStatus(status) {
+  return status === "Completed" || status === "Settled";
+}
 
 function formatBookingTotal(booking) {
   const amount = Number(booking.offeredPrice ?? booking.offer);
@@ -18,7 +22,7 @@ function formatBookingTotal(booking) {
 
 function canRequestRevision(booking) {
   const revisions = booking?.revisionRequests || [];
-  return booking?.status === "Completed"
+  return isCompletedLikeStatus(booking?.status)
     && !booking.cashReceipt?.receiptNumber
     && revisions.length < 2
     && !revisions.some((revision) => ["open", "accepted"].includes(revision.status));
@@ -29,7 +33,7 @@ function hasMutualSettlement(booking) {
 }
 
 function revisionLimitReached(booking) {
-  return booking?.status === "Completed"
+  return isCompletedLikeStatus(booking?.status)
     && !booking.cashReceipt?.receiptNumber
     && (booking.revisionRequests || []).length >= 2;
 }
@@ -37,21 +41,21 @@ function revisionLimitReached(booking) {
 function StatusBadge({ status }) {
   const colors = {
     "Pending Request": "bg-amber-100 text-amber-700 border-amber-200",
-    Confirmed: "bg-green-100 text-green-700 border-green-200",
+    Confirmed: "bg-emerald-100 text-emerald-700 border-emerald-200",
     "On the Way": "bg-cyan-100 text-cyan-800 border-cyan-200",
-    "In Progress": "bg-purple-100 text-purple-700 border-purple-200",
+    "In Progress": "bg-violet-100 text-violet-700 border-violet-200",
     Completed: "bg-blue-100 text-blue-700 border-blue-200",
     Settled: "bg-emerald-100 text-emerald-700 border-emerald-200",
     Cancelled: "bg-red-100 text-red-700 border-red-200",
-    Declined: "bg-red-100 text-red-700 border-red-200",
+    "Declined by Provider": "bg-rose-100 text-rose-800 border-rose-200",
     "Cancellation Requested": "bg-amber-100 text-amber-700 border-amber-200",
     "In Revision": "bg-amber-100 text-amber-800 border-amber-200",
-    Disputed: "bg-red-100 text-red-700 border-red-200",
+    Disputed: "bg-rose-100 text-rose-700 border-rose-200",
   };
   return (
     <span
-      className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-medium ${
-        colors[status] || "bg-gray-100 text-gray-700 border-gray-200"
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-[0.01em] ${
+        colors[status] || "bg-slate-100 text-slate-700 border-slate-200"
       }`}
     >
       {status}
@@ -68,7 +72,7 @@ function StatusDot({ status }) {
     Completed: "bg-blue-500",
     Settled: "bg-emerald-500",
     Cancelled: "bg-red-500",
-    Declined: "bg-red-500",
+    "Declined by Provider": "bg-rose-600",
     "Cancellation Requested": "bg-amber-500",
   };
   return (
@@ -83,7 +87,7 @@ function StatusDot({ status }) {
 export default function BookingsPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("All");
-  const { bookings, isLoading, error, requestCancellation, requestRevision, submitReview, respondToProviderUpdate, refreshBookings } = useBookings();
+  const { bookings, isLoading, error, requestCancellation, requestRevision, submitReview, respondToProviderUpdate, refreshBookings, confirmCashSettlement } = useBookings();
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("createdAt");
   const [cancelingId, setCancelingId] = useState(null);
@@ -100,9 +104,9 @@ export default function BookingsPage() {
     const total = bookings.length;
     const pending = bookings.filter((b) => b.status === "Pending Request").length;
     const active = bookings.filter((b) => ["Confirmed", "On the Way", "In Progress"].includes(b.status)).length;
-    const completed = bookings.filter((b) => b.status === "Completed").length;
+    const completed = bookings.filter((b) => isCompletedLikeStatus(b.status)).length;
     const cancelled = bookings.filter((b) => b.status === "Cancelled").length;
-    const declined = bookings.filter((b) => b.status === "Declined").length;
+    const declined = bookings.filter((b) => ["Declined", "Declined by Provider"].includes(b.status)).length;
     return { total, pending, active, completed, cancelled, declined };
   }, [bookings]);
 
@@ -114,8 +118,9 @@ export default function BookingsPage() {
       const matchesTab = activeTab === "All"
         || (activeTab === "Pending" && booking.status === "Pending Request")
         || (activeTab === "Active" && ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status))
-        || (activeTab === "Completed" && booking.status === "Completed")
-        || (activeTab === "Cancelled" && ["Cancelled", "Declined"].includes(booking.status));
+        || (activeTab === "Completed" && isCompletedLikeStatus(booking.status))
+        || (activeTab === "Cancelled" && booking.status === "Cancelled")
+        || (activeTab === "Declined" && booking.status === "Declined by Provider");
       return matchesSearch && matchesTab;
     });
     const sorted = [...result];
@@ -132,8 +137,9 @@ export default function BookingsPage() {
         "Pending Request": 0,
         Confirmed: 1,
         Completed: 2,
+        Settled: 2,
         Cancelled: 3,
-        Declined: 4,
+        "Declined by Provider": 4,
         "Cancellation Requested": 5,
       };
       sorted.sort((a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99));
@@ -146,7 +152,8 @@ export default function BookingsPage() {
     Pending: stats.pending,
     Active: stats.active,
     Completed: stats.completed,
-    Cancelled: stats.cancelled + stats.declined,
+    Cancelled: stats.cancelled,
+    Declined: stats.declined,
   };
 
   const detailBooking = bookings.find((b) => b.id === detailId) || null;
@@ -201,51 +208,61 @@ export default function BookingsPage() {
     }
   };
 
+  const handleCashSettlementConfirmation = async (bookingId, confirmation) => {
+    try {
+      await confirmCashSettlement(bookingId, confirmation);
+      await refreshBookings(undefined, true);
+    } catch (requestError) {
+      window.alert(requestError.message);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 pt-16">
+    <div className="min-h-screen bg-slate-50 pt-16 text-slate-800">
       <Header showNav activeTab="Bookings" />
-      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">My Bookings</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            View and manage your service bookings
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-600">Your activity</p>
+          <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">My Bookings</h1>
+          <p className="mt-2 text-sm text-slate-500">
+            View and manage your service bookings in one place.
           </p>
         </div>
-        {error && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-        {isLoading && <p className="mb-4 text-sm text-gray-500">Loading bookings...</p>}
+        {error && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+        {isLoading && <p className="mb-4 text-sm text-slate-500">Loading bookings...</p>}
 
-        {/* Summary Stats */}
-        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-6">
           {[
-            { label: "Total", value: stats.total, color: "bg-gray-100 text-gray-700" },
-            { label: "Pending", value: stats.pending, color: "bg-amber-50 text-amber-700" },
-            { label: "Active", value: stats.active, color: "bg-green-50 text-green-700" },
-            { label: "Completed", value: stats.completed, color: "bg-blue-50 text-blue-700" },
-            { label: "Cancelled", value: stats.cancelled, color: "bg-red-50 text-red-700" },
+            { label: "Total", value: stats.total, tone: "bg-white text-slate-700 border-slate-200" },
+            { label: "Pending", value: stats.pending, tone: "bg-amber-50 text-amber-700 border-amber-100" },
+            { label: "Active", value: stats.active, tone: "bg-emerald-50 text-emerald-700 border-emerald-100" },
+            { label: "Completed", value: stats.completed, tone: "bg-blue-50 text-blue-700 border-blue-100" },
+            { label: "Cancelled", value: stats.cancelled, tone: "bg-rose-50 text-rose-700 border-rose-100" },
+            { label: "Declined", value: stats.declined, tone: "bg-rose-50 text-rose-800 border-rose-100" },
           ].map((s) => (
             <div
               key={s.label}
-              className={`rounded-xl ${s.color} px-4 py-3 text-center`}
+              className={`rounded-2xl border ${s.tone} px-4 py-3 text-center shadow-sm`}
             >
-              <p className="text-xl font-bold">{s.value}</p>
-              <p className="text-xs font-medium opacity-80">{s.label}</p>
+              <p className="text-2xl font-bold tracking-tight">{s.value}</p>
+              <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-current/75">{s.label}</p>
             </div>
           ))}
         </div>
 
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex gap-1 overflow-x-auto pb-1">
+        <div className="mb-4 space-y-3">
+          <div className="grid grid-cols-2 gap-2 pb-1 sm:grid-cols-3 lg:grid-cols-6">
             {tabs.map((tab) => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${activeTab === tab ? "bg-gray-900 text-white" : "bg-white text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50"}`}>
+              <button key={tab} onClick={() => setActiveTab(tab)} className={`flex min-h-10 w-full items-center justify-center gap-2 rounded-xl px-2 py-2 text-xs font-semibold transition sm:text-sm ${activeTab === tab ? "bg-slate-900 text-white shadow-sm" : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"}`}>
                 {tab}
-                <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold ${activeTab === tab ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"}`}>{tabCounts[tab]}</span>
+                <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${activeTab === tab ? "bg-white/15 text-white" : "bg-slate-100 text-slate-500"}`}>{tabCounts[tab]}</span>
               </button>
             ))}
           </div>
-          <label className="relative block w-full sm:max-w-xs">
+          <label className="relative block w-full">
             <span className="sr-only">Search bookings</span>
-            <input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search provider or repair" className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20" />
-            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
+            <input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search provider or repair" className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20" />
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
           </label>
         </div>
 
@@ -253,7 +270,7 @@ export default function BookingsPage() {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none focus:border-purple-500"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
           >
             <option value="createdAt">Submitted: Newest</option>
             <option value="price">Sort: Price</option>
@@ -267,35 +284,37 @@ export default function BookingsPage() {
             filteredBookings.map((booking) => (
               <div
                 key={booking.id}
-                className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:shadow-md"
+                className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
               >
                 <div className="p-5 sm:p-6">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex items-start gap-4">
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-100 text-lg font-bold text-primary-700">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-100 text-lg font-bold text-primary-700 shadow-inner ring-1 ring-primary-200">
                         {booking.worker.charAt(0)}
                       </div>
                       <div>
-                        <h3 className="text-base font-semibold text-gray-900">
+                        <h3 className="text-lg font-bold text-slate-900">
                           {booking.worker}
                         </h3>
-                        <p className="text-sm text-gray-500">{booking.cred}</p>
+                        <p className="text-sm text-slate-500">{booking.cred}</p>
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2">
                       <StatusDot status={booking.status} />
                       <StatusBadge status={booking.status} />
-                      <button onClick={() => navigate(`/client/messages?bookingId=${booking.id}`)} className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Chat</button>
+                      <button onClick={() => navigate(`/client/messages?bookingId=${booking.id}`)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">Chat</button>
                     </div>
                   </div>
-                  <BookingProgress status={booking.status} />
+                  <div className="mt-4">
+                    <BookingProgress status={booking.status} />
+                  </div>
 
-                  <div className="mt-4 grid grid-cols-1 gap-4 border-t border-gray-100 pt-4 md:grid-cols-[minmax(0,1.5fr)_minmax(14rem,1fr)]">
+                  <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.5fr)_minmax(15rem,1fr)]">
                     <div className="min-w-0">
-                    <h4 className="text-sm font-semibold text-gray-800">
+                    <h4 className="text-base font-bold text-slate-800">
                       {booking.task}
                     </h4>
-                    <p className="mt-1 text-sm leading-relaxed text-gray-500">
+                    <p className="mt-1 text-sm leading-relaxed text-slate-500">
                       {booking.description}
                     </p>
                           {booking.status === "Cancellation Requested" && booking.cancellationExpiresAt && (
@@ -306,7 +325,7 @@ export default function BookingsPage() {
                           {booking.cancellationOutcome === "rejected" && (
                             <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">The cancellation was declined. This booking remains active.</p>
                           )}
-                          {booking.status === "Completed" && booking.clientRating == null && (
+                          {isCompletedLikeStatus(booking.status) && booking.clientRating == null && (
                             <p className="mt-2 rounded-md bg-blue-50 px-3 py-2 text-xs font-medium text-blue-800">Task complete. Share a review of your service.</p>
                           )}
                           {booking.clientRating != null && (
@@ -340,13 +359,13 @@ export default function BookingsPage() {
                       </div>
                     )}
                     </div>
-                    <div className="space-y-3 rounded-lg bg-gray-50 p-4 text-sm text-gray-700">
+                    <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
                     <div className="flex items-start gap-2">
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         viewBox="0 0 24 24"
                         fill="currentColor"
-                        className="h-4 w-4 text-gray-400"
+                        className="mt-0.5 h-4 w-4 text-slate-400"
                       >
                         <path
                           fillRule="evenodd"
@@ -354,17 +373,17 @@ export default function BookingsPage() {
                           clipRule="evenodd"
                         />
                       </svg>
-                      <span>{booking.date}</span>
-                      <span className="text-gray-300">|</span>
+                      <span className="font-medium text-slate-800">{booking.date}</span>
+                      <span className="text-slate-300">|</span>
                       <span>{booking.time}</span>
                     </div>
-                    {booking.createdAt && <p className="pl-6 text-xs text-gray-500">Submitted {new Date(booking.createdAt).toLocaleString()}</p>}
+                    {booking.createdAt && <p className="pl-6 text-xs text-slate-500">Submitted {new Date(booking.createdAt).toLocaleString()}</p>}
                     <div className="flex items-start gap-2">
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         viewBox="0 0 24 24"
                         fill="currentColor"
-                        className="h-4 w-4 text-gray-400"
+                        className="mt-0.5 h-4 w-4 text-slate-400"
                       >
                         <path
                           fillRule="evenodd"
@@ -374,15 +393,17 @@ export default function BookingsPage() {
                       </svg>
                       <AddressActions address={booking.address} />
                     </div>
-                    <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${booking.urgency === "Emergency" ? "bg-red-100 text-red-700" : "bg-gray-200 text-gray-700"}`}>
+                    <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-[11px] font-semibold ${booking.urgency === "Emergency" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>
                       {booking.urgency || "Flexible"} service
                     </span>
                   </div>
                   </div>
-                  <BookingHistory events={booking.statusHistory} />
+                  <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+                    <BookingHistory events={booking.statusHistory} />
+                  </div>
 
-                  <div className="mt-5 flex flex-col-reverse gap-2 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div><span className="block text-xs font-medium text-gray-500">Total</span><span className="text-xl font-bold text-gray-900">{formatBookingTotal(booking)}</span></div>
+                  <div className="mt-5 flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div><span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Total</span><span className="text-2xl font-bold text-slate-900">{formatBookingTotal(booking)}</span></div>
                     <div className="flex flex-wrap gap-2">
                       {canRequestCancellation(booking) ? (
                         <button
@@ -394,18 +415,23 @@ export default function BookingsPage() {
                       ) : booking.status !== "Completed" && getCancellationLockMessage(booking) && (
                         <button type="button" disabled title={getCancellationLockMessage(booking)} className="cursor-not-allowed rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-500">Cancellation locked</button>
                       )}
-                      {booking.status === "Completed" && (
+                      {isCompletedLikeStatus(booking.status) && (
                         <>
                           {canRequestRevision(booking) && <button type="button" onClick={() => setRevisioningId(booking.id)} className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100">Request Revision</button>}
                           {revisionLimitReached(booking) && <span className="self-center text-xs font-medium text-amber-800">Revision limit reached</span>}
+                          {booking.paymentMethod === "cash" && isCompletedLikeStatus(booking.status) && (
+                            <button
+                              type="button"
+                              onClick={() => handleCashSettlementConfirmation(booking.id, "cash_paid")}
+                              disabled={Boolean(booking.cashPaidConfirmedAt || booking.clientConfirmedCash)}
+                              className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${booking.cashPaidConfirmedAt || booking.clientConfirmedCash ? "cursor-not-allowed bg-emerald-100 text-emerald-800" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
+                            >
+                              {booking.cashPaidConfirmedAt || booking.clientConfirmedCash ? "Cash Paid Confirmed" : "Confirm Cash Paid"}
+                            </button>
+                          )}
                           {booking.clientRating == null && hasMutualSettlement(booking) && (
                             <button onClick={() => { setReviewingId(booking.id); setReviewRating(5); setReviewText(""); }} className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-700">
                               Rate Provider
-                            </button>
-                          )}
-                          {booking.clientRating == null && !hasMutualSettlement(booking) && (
-                            <button type="button" disabled className="cursor-not-allowed rounded-lg bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-500">
-                              Settlement pending
                             </button>
                           )}
                           <button onClick={() => navigate("/explore")} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50">Book Again</button>
@@ -498,13 +524,19 @@ export default function BookingsPage() {
               <h2 className="text-lg font-bold text-gray-900">How was your service?</h2>
               <p className="mt-1 text-sm text-gray-500">{reviewingBooking.task} with {reviewingBooking.worker}</p>
               <label htmlFor="client-review-rating" className="mt-5 block text-sm font-medium text-gray-700">Rating</label>
-              <select id="client-review-rating" value={reviewRating} onChange={(event) => setReviewRating(Number(event.target.value))} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800">
-                <option value={5}>5 stars</option>
-                <option value={4}>4 stars</option>
-                <option value={3}>3 stars</option>
-                <option value={2}>2 stars</option>
-                <option value={1}>1 star</option>
-              </select>
+              <div className="mt-2 flex items-center gap-2">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setReviewRating(star)}
+                    aria-label={`Rate ${star} out of 5`}
+                    className="text-3xl leading-none transition hover:scale-110 focus:outline-none"
+                  >
+                    <span className={star <= reviewRating ? "text-amber-500" : "text-gray-300"}>★</span>
+                  </button>
+                ))}
+              </div>
               <label htmlFor="client-review-text" className="mt-4 block text-sm font-medium text-gray-700">Review (optional)</label>
               <textarea id="client-review-text" value={reviewText} onChange={(event) => setReviewText(event.target.value)} maxLength={1000} rows={4} placeholder="Share a few details about the service" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30" />
               <label htmlFor="client-review-photos" className="mt-4 block text-sm font-medium text-gray-700">Photos (up to 5)</label>

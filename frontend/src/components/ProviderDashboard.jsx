@@ -16,7 +16,7 @@ const STATUS_ACTIONS = {
   "On the Way": { status: "in_progress", nextStatus: "In Progress", buttonLabel: "Start Task" },
   "In Progress": { status: "complete", nextStatus: "Completed", buttonLabel: "Mark as Complete" },
 };
-const DASHBOARD_TABS = ["All", "Incoming Requests", "Active", "Completed", "Cancelled"];
+const DASHBOARD_TABS = ["All", "Incoming Requests", "Active", "Completed", "Cancelled", "Declined"];
 
 const initialJobs = [
   {
@@ -79,6 +79,7 @@ function StatusBadge({ status }) {
     "In Progress": "bg-purple-100 text-purple-700 border-purple-200",
     "Cancellation Requested": "bg-amber-100 text-amber-700 border-amber-200",
     Cancelled: "bg-red-100 text-red-700 border-red-200",
+    "Declined by Provider": "bg-rose-100 text-rose-800 border-rose-200",
     "On the Way": "bg-cyan-100 text-cyan-800 border-cyan-200",
   };
   return (
@@ -100,6 +101,7 @@ export default function ProviderDashboard() {
   const [bookingSearchQuery, setBookingSearchQuery] = useState("");
   const [expandedJob, setExpandedJob] = useState(null);
   const [acceptingId, setAcceptingId] = useState(null);
+  const [rejectingId, setRejectingId] = useState(null);
   const [statusChange, setStatusChange] = useState(null);
   const [cancelingId, setCancelingId] = useState(null);
   const [cancellationReason, setCancellationReason] = useState("");
@@ -124,7 +126,8 @@ export default function ProviderDashboard() {
     if (activeTab === "Incoming Requests") return [];
     if (activeTab === "Active") return sortedJobs.filter((j) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(j.status));
     if (activeTab === "Completed") return sortedJobs.filter((j) => j.status === "Completed");
-    if (activeTab === "Cancelled") return sortedJobs.filter((j) => ["Cancelled", "Declined"].includes(j.status));
+    if (activeTab === "Cancelled") return sortedJobs.filter((j) => j.status === "Cancelled");
+    if (activeTab === "Declined") return sortedJobs.filter((j) => j.status === "Declined by Provider");
     return sortedJobs;
   }, [sortedJobs, activeTab]);
 
@@ -133,7 +136,8 @@ export default function ProviderDashboard() {
     "Incoming Requests": bookings.filter((booking) => booking.status === "Pending Request").length,
     Active: bookings.filter((booking) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status)).length,
     Completed: bookings.filter((booking) => booking.status === "Completed").length,
-    Cancelled: bookings.filter((booking) => ["Cancelled", "Declined"].includes(booking.status)).length,
+    Cancelled: bookings.filter((booking) => booking.status === "Cancelled").length,
+    Declined: bookings.filter((booking) => booking.status === "Declined by Provider").length,
   };
 
   const stats = useMemo(() => {
@@ -169,11 +173,7 @@ export default function ProviderDashboard() {
   }
 
   async function rejectRequest(id) {
-    try {
-      await updateBookingStatus(id, "Declined");
-    } catch (requestError) {
-      window.alert(requestError.message);
-    }
+    setRejectingId(id);
   }
 
   async function handleCancelJob() {
@@ -310,7 +310,7 @@ export default function ProviderDashboard() {
                             onClick={() => rejectRequest(req.id)}
                             className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
                           >
-                            Reject
+                            Decline
                           </button>
                         </div>
                       </div>
@@ -506,6 +506,13 @@ export default function ProviderDashboard() {
           nextStatus={statusChange.nextStatus}
           onConfirm={() => updateBookingStatus(statusChange.bookingId, statusChange.status)}
           onClose={() => setStatusChange(null)}
+        />
+      )}
+      {rejectingId && (
+        <StatusChangeConfirmation
+          nextStatus="Declined by Provider"
+          onConfirm={() => updateBookingStatus(rejectingId, "declined")}
+          onClose={() => setRejectingId(null)}
         />
       )}
       {cancelingId && cancelBooking && canRequestCancellation(cancelBooking) && (

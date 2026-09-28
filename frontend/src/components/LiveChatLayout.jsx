@@ -10,6 +10,28 @@ import { canRequestCancellation, getCancellationLockMessage } from "../utils/boo
 const MAX_MESSAGE_INPUT_HEIGHT = 144;
 const COUNTER_OFFER_TIME_SLOTS = ["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"];
 
+function getLocalDateInputValue(date) {
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isPastCounterOfferSlot(dateValue, timeValue, now) {
+  if (!dateValue || !timeValue) return false;
+  const [year, month, day] = dateValue.split("-").map(Number);
+  const selectedDay = new Date(year, month - 1, day);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (selectedDay < today) return true;
+  if (selectedDay > today) return false;
+
+  const [time, period] = timeValue.split(" ");
+  const [hour, minute] = time.split(":").map(Number);
+  const slotMinutes = (hour % 12 + (period === "PM" ? 12 : 0)) * 60 + minute;
+  return slotMinutes <= now.getHours() * 60 + now.getMinutes();
+}
+
 function formatConversationTime(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -42,6 +64,7 @@ const STATUS_LABELS = {
   in_progress: "In Progress",
   cancel_requested: "Cancellation Requested",
   canceled: "Cancelled",
+  declined: "Declined by Provider",
   complete: "Completed",
   in_revision: "In Revision",
   disputed: "Disputed",
@@ -56,6 +79,7 @@ const STATUS_BADGE_STYLES = {
   in_progress: "border-violet-200 bg-violet-50 text-violet-800",
   cancel_requested: "border-amber-200 bg-amber-50 text-amber-800",
   canceled: "border-red-200 bg-red-50 text-red-800",
+  declined: "border-rose-200 bg-rose-50 text-rose-800",
   complete: "border-blue-200 bg-blue-50 text-blue-800",
   in_revision: "border-amber-200 bg-amber-50 text-amber-800",
   disputed: "border-red-200 bg-red-50 text-red-800",
@@ -76,6 +100,9 @@ function normalizeBookingStatus(status) {
     cancel_requested: "cancel_requested",
     canceled: "canceled",
     cancelled: "canceled",
+    declined: "declined",
+    rejected: "declined",
+    "declined by provider": "declined",
     complete: "complete",
     completed: "complete",
     closed: "closed",
@@ -185,6 +212,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const [counterOfferPrice, setCounterOfferPrice] = useState("");
   const [counterOfferDate, setCounterOfferDate] = useState("");
   const [counterOfferTime, setCounterOfferTime] = useState("");
+  const [counterOfferNow, setCounterOfferNow] = useState(() => new Date());
   const [counterOfferScope, setCounterOfferScope] = useState("");
   const [counterOfferNote, setCounterOfferNote] = useState("");
   const [cancelReason, setCancelReason] = useState("");
@@ -346,6 +374,13 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   }, [authenticatedRole, requestHeaders, role, selectedId, token]);
 
   const selectedConversation = conversations.find((conversation) => conversation?.id === selectedId) || null;
+  const currentBookingDate = selectedConversation?.serviceDate
+    ? getLocalDateInputValue(new Date(selectedConversation.serviceDate))
+    : "";
+  const counterOfferEffectiveDate = counterOfferDate || currentBookingDate;
+  const counterOfferEffectiveTime = counterOfferTime || selectedConversation?.timeSlot || "";
+  const counterOfferScheduleIsPast = Boolean(counterOfferDate || counterOfferTime)
+    && isPastCounterOfferSlot(counterOfferEffectiveDate, counterOfferEffectiveTime, counterOfferNow);
   const currentBookingIdKey = selectedConversation ? String(selectedConversation.bookingId || "") : "";
   const currentReviewDetails = useMemo(() => {
     if (!selectedConversation) return { hasReview: false, rating: null, review: "", reviewPhotos: [] };
@@ -603,7 +638,6 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
 
   const handleBookingStatusAction = async (status, action) => {
     if (!selectedConversation) throw new Error("Choose a booking first.");
-    setActionMessage(null);
     try {
       const response = await fetch(`/api/bookings/${selectedConversation.bookingId}/status`, {
         method: "PATCH",
@@ -614,6 +648,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
       if (!response.ok) throw new Error(data.message || "Could not update this booking.");
       if (!data.booking?.id) throw new Error("The server returned an invalid booking response.");
       setConversations((current) => current.map((conversation) => conversation.id === selectedConversation.id ? { ...conversation, bookingStatus: normalizeBookingStatus(data.booking.statusCode || status) } : conversation));
+      setActionMessage(null);
       await loadConversations();
     } catch (requestError) {
       throw requestError;
@@ -684,6 +719,14 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const handleCounterOfferSubmit = async (event) => {
     event.preventDefault();
     if (!selectedConversation) return;
+    const proposedDate = counterOfferDate || currentBookingDate;
+    const proposedTime = counterOfferTime || selectedConversation.timeSlot;
+    if ((counterOfferDate || counterOfferTime) && isPastCounterOfferSlot(proposedDate, proposedTime, new Date())) {
+      setCounterOfferTime("");
+      setActionError("That time has passed. Choose another time slot.");
+      return;
+    }
+    setActionError("");
     const data = await postChatApiAction(`/api/bookings/${selectedConversation.bookingId}/counter-offers`, "POST", {
       proposedPrice: counterOfferPrice,
       proposedServiceDate: counterOfferDate,
@@ -701,6 +744,15 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
       setActionMessage(null);
     }
   };
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCounterOfferNow(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (counterOfferTime && isPastCounterOfferSlot(counterOfferEffectiveDate, counterOfferTime, counterOfferNow)) setCounterOfferTime("");
+  }, [counterOfferEffectiveDate, counterOfferNow, counterOfferTime]);
 
   const handleCounterOfferResponse = async (counterOfferId, action) => {
     if (!selectedConversation) return;
@@ -921,7 +973,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
             </label>
           </div>
           {error && <p role="alert" className="border-b border-red-100 bg-red-50 px-5 py-3 text-xs text-red-700">{error}</p>}
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
             {isLoading || openingBooking ? (
               <p className="p-5 text-sm text-gray-500">{openingBooking ? "Opening booking conversation…" : "Loading conversations…"}</p>
             ) : filteredConversations.length ? filteredConversations.map((conversation) => (
@@ -1120,7 +1172,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                 <p className="border-b border-red-200 bg-red-50 px-4 py-3 text-xs font-medium text-red-900 sm:px-5">The provider disputed this revision. It has been escalated for manual review. <button type="button" onClick={() => { setSupportReportDetails(""); setSupportReportOpen(true); }} className="ml-1 underline">Contact support</button></p>
               )}
               {error && <p role="alert" className="border-b border-red-100 bg-red-50 px-4 py-2 text-xs text-red-700">{error}</p>}
-              <div ref={messagesContainerRef} className="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 py-4">
+              <div ref={messagesContainerRef} className="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 py-4 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
                 {isLoadingMessages ? (
                   <p className="py-8 text-center text-sm text-gray-500">Loading messages…</p>
                 ) : (
@@ -1230,10 +1282,10 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                 <StatusChangeConfirmation
                   key={`${selectedConversation.id}-decline`}
                   embedded
-                  nextStatus="Declined"
+                  nextStatus="Declined by Provider"
                   onConfirm={() => {
                     if (role !== "provider" || selectedConversation.bookingStatus !== "pending") throw new Error("This booking request is no longer available to decline.");
-                    return handleBookingStatusAction("canceled", "decline");
+                    return handleBookingStatusAction("declined");
                   }}
                   onClose={() => setActionModalView("DETAILS")}
                 />
@@ -1326,12 +1378,17 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                         <input type="number" min="100" step="1" value={counterOfferPrice} onChange={(event) => setCounterOfferPrice(event.target.value)} placeholder={`Current ₱${Number(selectedConversation.offeredPrice || 0).toLocaleString("en-PH")}`} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
                       </label>
                       <label className="text-xs font-medium text-gray-700">New service date
-                        <input type="date" value={counterOfferDate} min={new Date().toISOString().slice(0, 10)} onChange={(event) => setCounterOfferDate(event.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+                        <input type="date" value={counterOfferDate} min={getLocalDateInputValue(counterOfferNow)} onChange={(event) => { setCounterOfferDate(event.target.value); setCounterOfferTime(""); setActionError(""); }} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
                       </label>
                       <label className="text-xs font-medium text-gray-700">New time slot
                         <select value={counterOfferTime} onChange={(event) => setCounterOfferTime(event.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm">
-                          <option value="">Keep current time</option>
-                          {COUNTER_OFFER_TIME_SLOTS.map((slot) => <option key={slot}>{slot}</option>)}
+                          <option value="" disabled={isPastCounterOfferSlot(counterOfferEffectiveDate, selectedConversation.timeSlot, counterOfferNow)}>
+                            Keep current time{isPastCounterOfferSlot(counterOfferEffectiveDate, selectedConversation.timeSlot, counterOfferNow) ? " (Passed)" : ""}
+                          </option>
+                          {COUNTER_OFFER_TIME_SLOTS.map((slot) => {
+                            const isPast = isPastCounterOfferSlot(counterOfferEffectiveDate, slot, counterOfferNow);
+                            return <option key={slot} value={slot} disabled={isPast}>{slot}{isPast ? " (Passed)" : ""}</option>;
+                          })}
                         </select>
                       </label>
                       <label className="text-xs font-medium text-gray-700">Task scope
@@ -1342,7 +1399,8 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                       <textarea maxLength={500} rows={2} value={counterOfferNote} onChange={(event) => setCounterOfferNote(event.target.value)} placeholder="Explain your proposed changes" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
                     </label>
                     {actionError && <p role="alert" className="text-xs text-red-700">{actionError}</p>}
-                    <button type="submit" disabled={isActionSubmitting || (Boolean(counterOfferDate) !== Boolean(counterOfferTime)) || (!counterOfferPrice && !counterOfferDate && !counterOfferScope.trim() && !counterOfferNote.trim())} className="rounded-md bg-primary-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{isActionSubmitting ? "Sending…" : "Send counter-offer"}</button>
+                    {counterOfferScheduleIsPast && !actionError && <p role="alert" className="text-xs text-red-700">The unchanged appointment time has passed. Choose a future time slot.</p>}
+                    <button type="submit" disabled={isActionSubmitting || counterOfferScheduleIsPast || (!counterOfferPrice && !counterOfferDate && !counterOfferTime && !counterOfferScope.trim() && !counterOfferNote.trim())} className="rounded-md bg-primary-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{isActionSubmitting ? "Sending…" : "Send counter-offer"}</button>
                   </form>
                 )}
 

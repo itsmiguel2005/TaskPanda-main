@@ -29,13 +29,7 @@ In Atlas, create a database user, add the IP addresses that need access under Ne
 
 Use a separate Atlas database for development, such as `taskpanda-dev`, so test accounts and reset codes never mix with production data. Keep the production `taskpanda` URI only in Vercel's Production environment.
 
-Start the backend in one terminal:
-
-```bash
-npm start
-```
-
-Start the frontend in a second terminal:
+Start the backend and frontend together:
 
 ```bash
 npm run dev
@@ -116,10 +110,11 @@ Then open [http://localhost:3000](http://localhost:3000).
 
 | Command | Purpose |
 | --- | --- |
-| `npm run dev` | Start the Vite development server on port 5173 |
+| `npm run dev` | Start the Vite frontend on port 5173 and Express backend on port 3000 |
 | `npm start` | Start the Express backend on port 3000 |
 | `npm run build` | Build the frontend into `dist/` |
 | `npm run check:health` | Verify the local API and MongoDB connection |
+| `npm run backfill:provider-ratings` | Recalculate provider ratings from completed and settled bookings |
 | `npm run preview` | Preview the Vite production build |
 | `npm run watch:css` | Watch and rebuild Tailwind CSS |
 
@@ -131,12 +126,11 @@ Then open [http://localhost:3000](http://localhost:3000).
 2. Run `git pull` to get the latest code.
 3. Confirm `.env` exists locally and points to the development Atlas database.
 4. Run `npm install` if dependencies changed.
-5. Start the backend with `npm start`.
-6. Run `npm run check:health`.
-7. Start the frontend with `npm run dev`.
-8. Test the changed workflow locally.
-9. Run `npm run build`.
-10. Commit and push the change:
+5. Start the frontend and backend with `npm run dev`.
+6. Run `npm run check:health` in another terminal.
+7. Test the changed workflow locally.
+8. Run `npm run build`.
+9. Commit and push the change:
 
 ```bash
 git add .

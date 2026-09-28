@@ -5,13 +5,14 @@ const { ensureBookingConversation, appendBookingSystemMessage } = require("../se
 
 const TIME_SLOTS = new Set(["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"]);
 const PH_TIMEZONE_OFFSET_HOURS = 8;
-const STATUS_VALUES = new Set(["approved", "en_route", "in_progress", "canceled", "complete", "settled"]);
+const STATUS_VALUES = new Set(["approved", "en_route", "in_progress", "canceled", "declined", "complete", "settled"]);
 const STATUS_ALIASES = {
   "pending request": "pending",
   confirmed: "approved",
   "on the way": "en_route",
   "in progress": "in_progress",
-  declined: "canceled",
+  rejected: "declined",
+  "declined by provider": "declined",
   cancelled: "canceled",
   completed: "complete",
   settled: "settled",
@@ -23,6 +24,7 @@ const STATUS_LABELS = {
   in_progress: "In Progress",
   cancel_requested: "Cancellation Requested",
   canceled: "Cancelled",
+  declined: "Declined by Provider",
   complete: "Completed",
   in_revision: "In Revision",
   disputed: "Disputed",
@@ -58,6 +60,17 @@ function parseServiceDate(value) {
     ? new Date(Date.UTC(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3])))
     : new Date(String(value || ""));
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isServiceSlotInPast(serviceDate, timeSlot) {
+  const match = String(timeSlot || "").match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) return false;
+
+  let hours = Number(match[1]) % 12;
+  if (match[3].toUpperCase() === "PM") hours += 12;
+  const appointmentTime = new Date(serviceDate);
+  appointmentTime.setUTCHours(hours - PH_TIMEZONE_OFFSET_HOURS, Number(match[2]), 0, 0);
+  return appointmentTime.getTime() <= Date.now();
 }
 
 function serializeBooking(booking) {
@@ -147,6 +160,39 @@ const populatePaths = [
   { path: "providerId", select: "fullName username email professions" },
 ];
 
+async function recalculateProviderRatingSummary(providerId) {
+  const summary = await Booking.aggregate([
+    {
+      $match: {
+        providerId: new mongoose.Types.ObjectId(String(providerId)),
+        status: { $in: ["complete", "closed", "settled", "Completed", "Settled"] },
+        clientRating: { $ne: null },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        totalReviews: { $sum: 1 },
+        averageRating: { $avg: "$clientRating" },
+      },
+    },
+  ]);
+
+  const totalReviews = Number(summary[0]?.totalReviews || 0);
+  const averageRating = totalReviews > 0 ? Number(Number(summary[0].averageRating || 0).toFixed(1)) : 0;
+
+  await User.findByIdAndUpdate(
+    providerId,
+    {
+      averageRating,
+      totalReviews,
+    },
+    { new: true }
+  );
+
+  return { averageRating, totalReviews };
+}
+
 async function handleListBookings(req, res) {
   try {
     const requestedClientId = req.query.clientId ? String(req.query.clientId) : "";
@@ -155,9 +201,14 @@ async function handleListBookings(req, res) {
     if (requestedClientId && !mongoose.isValidObjectId(requestedClientId)) return res.status(400).json({ message: "Invalid clientId filter." });
     if (requestedProviderId && !mongoose.isValidObjectId(requestedProviderId)) return res.status(400).json({ message: "Invalid providerId filter." });
     const normalizedStatus = normalizeBookingStatus(requestedStatus);
-    if (requestedStatus && !["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "complete", "in_revision", "disputed", "closed", "settled"].includes(normalizedStatus)) return res.status(400).json({ message: "Invalid status filter." });
+    if (requestedStatus && !["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "declined", "complete", "in_revision", "disputed", "closed", "settled"].includes(normalizedStatus)) return res.status(400).json({ message: "Invalid status filter." });
 
-    const filter = { status: normalizedStatus || mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "complete", "in_revision", "disputed", "closed", "settled", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Cancelled", "Completed", "Settled"] }) };
+    const filter = {};
+    if (normalizedStatus) {
+      filter.status = normalizedStatus;
+    } else {
+      filter.status = mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "declined", "complete", "in_revision", "disputed", "closed", "settled", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Declined by Provider", "Cancelled", "Completed", "Settled"] });
+    }
     if (req.user.role === "provider") {
       filter.providerId = req.user._id;
       if (requestedProviderId && requestedProviderId !== String(req.user._id)) return res.status(403).json({ message: "You can only view your own provider bookings." });
@@ -165,55 +216,86 @@ async function handleListBookings(req, res) {
       filter.clientId = req.user._id;
       if (requestedClientId && requestedClientId !== String(req.user._id)) return res.status(403).json({ message: "You can only view your own client bookings." });
     }
-    await Booking.updateMany(
-      mongoose.trusted({ ...filter, status: "cancel_requested", cancellationExpiresAt: mongoose.trusted({ $lte: new Date() }) }),
-      {
-        $set: { status: "canceled", cancellationResolvedAt: new Date(), cancellationOutcome: "expired" },
-        $push: { statusHistory: { status: "canceled", at: new Date() } },
-      }
-    );
+
     const bookings = await Booking.find(filter).sort({ createdAt: -1, _id: -1 }).populate(populatePaths);
     return res.json({ bookings: bookings.map(serializeBooking) });
   } catch (error) {
     console.error("List bookings error:", error);
-    return res.status(500).json({ message: "Could not load bookings." });
+    return res.status(500).json({
+      message: error?.message || "Could not submit the booking.",
+      details: process.env.NODE_ENV !== "production" ? String(error?.stack || error) : undefined,
+    });
   }
 }
 
 async function handleCreateBooking(req, res) {
   if (req.user.role !== "client") return res.status(403).json({ message: "Only clients can create bookings." });
 
-  const providerId = String(req.body.providerId || "");
-  const repairDescription = String(req.body.repairDescription || req.body.description || req.body.task || "").trim();
-  const address = String(req.body.address || "").trim();
-  const serviceDate = parseServiceDate(req.body.serviceDate || req.body.date);
-  const timeSlot = String(req.body.timeSlot || req.body.time || "").trim();
+  const providerId = String(req.body.providerId || req.body.provider || "").trim();
+  const repairDescription = String(req.body.repairDescription || req.body.description || req.body.task || req.body.serviceDetails || "").trim();
+  const address = String(req.body.address || req.body.location || "").trim();
+  const serviceDate = parseServiceDate(req.body.serviceDate || req.body.date || req.body.service_details?.date || "");
+  const timeSlot = String(req.body.timeSlot || req.body.time || req.body.service_details?.time || "").trim();
   const urgency = String(req.body.urgency || "Flexible").trim();
-  const offeredPrice = Number(req.body.offeredPrice ?? req.body.offer);
-  const termsAccepted = req.body.termsAccepted === true || req.body.termsAccepted === "true";
+  const offeredPrice = Number(req.body.offeredPrice ?? req.body.offerPrice ?? req.body.offer ?? req.body.price ?? 0);
+  const paymentMethod = String(req.body.paymentMethod || "cash").trim().toLowerCase();
+  const termsAccepted = req.body.termsAccepted === true || req.body.termsAccepted === "true" || req.body.termsAccepted === "True";
+  const safeStatus = "pending";
+  delete req.body.status;
 
   if (!mongoose.isValidObjectId(providerId)) return res.status(400).json({ message: "Choose a valid provider." });
   if (!repairDescription || repairDescription.length > 2000) return res.status(400).json({ message: "Add a valid description of the repair." });
   if (!serviceDate) return res.status(400).json({ message: "Choose a valid service date." });
   if (!TIME_SLOTS.has(timeSlot)) return res.status(400).json({ message: "Choose an available time slot." });
   if (!Number.isFinite(offeredPrice) || offeredPrice < 100) return res.status(400).json({ message: "Your offer must be at least PHP 100." });
+  if (paymentMethod !== "cash") return res.status(400).json({ message: "Cash on completion is the only supported payment method." });
   if (!["Emergency", "Flexible"].includes(urgency)) return res.status(400).json({ message: "Choose a valid urgency." });
   if (!termsAccepted) return res.status(400).json({ message: "Accept the terms and cancellation policy before submitting." });
 
   try {
     const provider = await User.findOne({ _id: providerId, role: "provider", registrationComplete: true }).select("_id");
     if (!provider) return res.status(404).json({ message: "That provider is no longer available." });
+
+    const slotTimeMinutes = (() => {
+      const match = String(timeSlot).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+      if (!match) return Number.POSITIVE_INFINITY;
+      let hours = Number(match[1]);
+      const minutes = Number(match[2]);
+      const period = String(match[3]).toUpperCase();
+      if (period === "AM" && hours === 12) hours = 0;
+      if (period === "PM" && hours !== 12) hours += 12;
+      return hours * 60 + minutes;
+    })();
+
+    const today = new Date();
+    const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const serviceDateOnly = new Date(serviceDate);
+    serviceDateOnly.setUTCHours(0, 0, 0, 0);
+
+    if (serviceDateOnly.getTime() < todayOnly.getTime()) {
+      return res.status(400).json({ message: "The selected service date is in the past." });
+    }
+
+    if (serviceDateOnly.getTime() === todayOnly.getTime() && slotTimeMinutes < (today.getHours() * 60 + today.getMinutes())) {
+      return res.status(400).json({ message: "That time slot has already passed." });
+    }
+
     const serviceDayStart = new Date(serviceDate);
     serviceDayStart.setUTCHours(0, 0, 0, 0);
     const serviceDayEnd = new Date(serviceDayStart);
     serviceDayEnd.setUTCDate(serviceDayEnd.getUTCDate() + 1);
-    const conflictingBooking = await Booking.exists({
+
+    const existingBooking = await Booking.findOne({
       providerId: provider._id,
       serviceDate: mongoose.trusted({ $gte: serviceDayStart, $lt: serviceDayEnd }),
       timeSlot,
-      status: mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested"] }),
+      status: mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested"] }),
     });
-    if (conflictingBooking) return res.status(409).json({ message: "That time slot is no longer available." });
+
+    if (existingBooking) {
+      return res.status(409).json({ message: "That time slot is no longer available." });
+    }
+
     const booking = await Booking.create({
       clientId: req.user._id,
       providerId: provider._id,
@@ -223,43 +305,54 @@ async function handleCreateBooking(req, res) {
       timeSlot,
       offeredPrice,
       urgency,
+      paymentMethod,
       photoUrl: req.files?.[0] ? `/uploads/${req.files[0].filename}` : "",
+      status: safeStatus,
       statusHistory: [{ status: "pending", at: new Date() }],
     });
+
     try {
       await ensureBookingConversation(booking);
     } catch (messageError) {
       console.error("Initial booking conversation error:", messageError);
     }
+
     await booking.populate(populatePaths);
     return res.status(201).json({ booking: serializeBooking(booking) });
   } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(409).json({ message: "That time slot is already booked." });
+    }
     console.error("Create booking error:", error);
-    return res.status(500).json({ message: "Could not submit the booking." });
+    return res.status(500).json({
+      message: error?.message || "Could not submit the booking.",
+      details: process.env.NODE_ENV !== "production" ? String(error?.stack || error) : undefined,
+    });
   }
 }
 
 async function handleUpdateBookingStatus(req, res) {
   const bookingId = String(req.params.id || "");
-  const status = normalizeBookingStatus(req.body.status);
+  const rawRequestedStatus = String(req.body.status || "").trim().toLowerCase();
+  const requestedStatus = normalizeBookingStatus(rawRequestedStatus);
+  const isDecline = requestedStatus === "declined" || (requestedStatus === "canceled" && req.body.action === "decline");
+  const status = isDecline ? "declined" : requestedStatus;
   if (!mongoose.isValidObjectId(bookingId)) {
     return res.status(400).json({ message: "Choose a valid booking." });
   }
   if (!STATUS_VALUES.has(status)) {
     return res.status(400).json({
-      message: `Unsupported booking status "${status || "(empty)"}". Use approved, en_route, in_progress, canceled, or complete.`,
+      message: `Unsupported booking status "${status || "(empty)"}". Use approved, en_route, in_progress, declined, canceled, or complete.`,
     });
   }
   if (req.user.role !== "provider") {
     return res.status(403).json({ message: "Only providers can update booking status." });
   }
-  const rawRequestedStatus = String(req.body.status || "").trim().toLowerCase();
-  const isDecline = status === "canceled" && (req.body.action === "decline" || rawRequestedStatus === "declined");
   if (req.body.action && !isDecline) {
     return res.status(400).json({ message: "Choose a valid booking status action." });
   }
   if (status === "canceled" && !isDecline) return res.status(400).json({ message: "Use the cancellation request endpoint to cancel a booking." });
-  if (status === "complete") return res.status(400).json({ message: "Submit completion notes and at least one photo through the completion proof form." });
+  if (status === "complete") return res.status(400).json({ message: "Submit a completion note through the completion proof form." });
     if (status === "settled") return res.status(400).json({ message: "Settled bookings are managed automatically after cash confirmation." });
   try {
     if (status === "en_route") {
@@ -273,7 +366,8 @@ async function handleUpdateBookingStatus(req, res) {
     }
     const allowedPreviousStatuses = {
       approved: ["pending", "Pending Request"],
-      canceled: isDecline ? ["pending", "Pending Request"] : [],
+      canceled: [],
+      declined: ["pending", "Pending Request"],
       en_route: ["approved", "Confirmed"],
       in_progress: ["en_route", "On the Way"],
       complete: ["in_progress", "In Progress"],
@@ -292,7 +386,8 @@ async function handleUpdateBookingStatus(req, res) {
       en_route: "Provider is on the way to your location.",
       in_progress: "Task has started.",
       complete: `Task completed! Please settle the cash payment of ₱${Number(booking.offeredPrice).toLocaleString("en-PH")} directly with the provider.`,
-      canceled: isDecline ? "Provider declined the booking." : "Provider canceled the booking.",
+      canceled: "Provider canceled the booking.",
+      declined: "Provider declined the booking.",
     };
     try {
       await appendBookingSystemMessage(booking, systemMessages[status], req.user._id, "booking_status", {
@@ -301,7 +396,7 @@ async function handleUpdateBookingStatus(req, res) {
         serviceDate: booking.serviceDate,
         timeSlot: booking.timeSlot,
         actorRole: req.user.role,
-        action: status === "canceled" ? (isDecline ? "decline" : "cancel") : undefined,
+        action: status === "declined" ? "decline" : status === "canceled" ? "cancel" : undefined,
       });
     } catch (messageError) {
       console.error("Booking status system message error:", messageError);
@@ -578,6 +673,7 @@ async function handleBookingReview(req, res) {
     booking.clientReviewPhotos = (req.files || []).map((file) => `/uploads/${file.filename}`);
     booking.reviewedAt = new Date();
     await booking.save();
+    await recalculateProviderRatingSummary(booking.providerId);
     try {
       const reviewMessageText = review
         ? `Rated this service ${rating}/5 stars: “${review}”`
@@ -606,47 +702,51 @@ async function handleBookingReview(req, res) {
 }
 
 async function processCashSettlementFallbacks() {
-  const cutoff = new Date(Date.now() - CASH_SETTLEMENT_GRACE_MS);
-  const expiredBookings = await Booking.find({
-    status: "complete",
-    paymentMethod: "cash",
-    workCompletedAt: { $lte: cutoff },
-    $or: [
-      { clientConfirmedCash: { $ne: true } },
-      { providerConfirmedCash: { $ne: true } },
-    ],
-  });
+  try {
+    const cutoff = new Date(Date.now() - CASH_SETTLEMENT_GRACE_MS);
+    const expiredBookings = await mongoose.connection.collection("bookings").find({
+      status: "complete",
+      paymentMethod: "cash",
+      workCompletedAt: { $lte: cutoff },
+      $or: [
+        { clientConfirmedCash: { $ne: true } },
+        { providerConfirmedCash: { $ne: true } },
+      ],
+    }).toArray();
 
-  for (const booking of expiredBookings) {
-    const autoSettledAt = new Date();
-    const nextStatus = "settled";
-    const updatePayload = {
-      status: nextStatus,
-      settledAt: autoSettledAt,
-      clientConfirmedCash: booking.clientConfirmedCash || true,
-      providerConfirmedCash: booking.providerConfirmedCash || true,
-      cashPaidConfirmedAt: booking.cashPaidConfirmedAt || autoSettledAt,
-      cashReceivedConfirmedAt: booking.cashReceivedConfirmedAt || autoSettledAt,
-    };
-    await Booking.findByIdAndUpdate(
-      booking._id,
-      {
-        $set: updatePayload,
-        $push: { statusHistory: { status: nextStatus, at: autoSettledAt } },
-      },
-      { new: true }
-    );
-    try {
-      await appendBookingSystemMessage(
-        booking,
-        "The client did not confirm cash payment within the grace period, so the booking was automatically settled and is now ready for review.",
-        booking.providerId,
-        "cash_settlement",
-        { status: nextStatus, settledAt: autoSettledAt, autoSettled: true }
+    for (const booking of expiredBookings) {
+      const autoSettledAt = new Date();
+      const nextStatus = "settled";
+      const updatePayload = {
+        status: nextStatus,
+        settledAt: autoSettledAt,
+        clientConfirmedCash: booking.clientConfirmedCash || true,
+        providerConfirmedCash: booking.providerConfirmedCash || true,
+        cashPaidConfirmedAt: booking.cashPaidConfirmedAt || autoSettledAt,
+        cashReceivedConfirmedAt: booking.cashReceivedConfirmedAt || autoSettledAt,
+      };
+      await Booking.findByIdAndUpdate(
+        booking._id,
+        {
+          $set: updatePayload,
+          $push: { statusHistory: { status: nextStatus, at: autoSettledAt } },
+        },
+        { new: true }
       );
-    } catch (messageError) {
-      console.error("Auto-settlement system message error:", messageError);
+      try {
+        await appendBookingSystemMessage(
+          booking,
+          "The client did not confirm cash payment within the grace period, so the booking was automatically settled and is now ready for review.",
+          booking.providerId,
+          "cash_settlement",
+          { status: nextStatus, settledAt: autoSettledAt, autoSettled: true }
+        );
+      } catch (messageError) {
+        console.error("Auto-settlement system message error:", messageError);
+      }
     }
+  } catch (error) {
+    console.error("Cash settlement fallback error:", error);
   }
 }
 
@@ -657,7 +757,7 @@ async function hasConflictingSlot(providerId, serviceDate, timeSlot, excludeBook
   dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
   return Booking.exists({
     providerId,
-    _id: mongoose.trusted({ $ne: excludeBookingId }),
+    _id: mongoose.trusted({ $ne: excludeBookingId || null }),
     serviceDate: mongoose.trusted({ $gte: dayStart, $lt: dayEnd }),
     timeSlot,
     status: mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested"] }),
@@ -769,8 +869,8 @@ async function handleCreateCounterOffer(req, res) {
   if (!mongoose.isValidObjectId(bookingId)) return res.status(400).json({ message: "Choose a valid booking." });
   if (!["client", "provider"].includes(req.user.role)) return res.status(403).json({ message: "Only booking participants can negotiate booking terms." });
   if (hasPrice && (!Number.isFinite(proposedPrice) || proposedPrice < 100)) return res.status(400).json({ message: "Counter-offer price must be at least PHP 100." });
-  if (hasSchedule && (!proposedDateValue || !proposedServiceDate || !TIME_SLOTS.has(proposedTimeSlot))) {
-    return res.status(400).json({ message: "Choose both a valid proposed date and time slot." });
+  if ((proposedDateValue && !proposedServiceDate) || (proposedTimeSlot && !TIME_SLOTS.has(proposedTimeSlot))) {
+    return res.status(400).json({ message: "Choose a valid proposed date or time slot." });
   }
   if (proposedRepairDescription.length > 2000 || note.length > 500) return res.status(400).json({ message: "Task details or note exceed the allowed length." });
   if (!hasPrice && !hasSchedule && !hasScope && !note) return res.status(400).json({ message: "Change at least one booking term or add a note." });
@@ -783,7 +883,12 @@ async function handleCreateCounterOffer(req, res) {
     if (booking.counterOffers.some((offer) => offer.status === "pending")) {
       return res.status(409).json({ message: "Wait for the other participant to respond to the current offer." });
     }
-    if (hasSchedule && await hasConflictingSlot(booking.providerId, proposedServiceDate, proposedTimeSlot, booking._id)) {
+    const finalServiceDate = proposedServiceDate || booking.serviceDate;
+    const finalTimeSlot = proposedTimeSlot || booking.timeSlot;
+    if (hasSchedule && isServiceSlotInPast(finalServiceDate, finalTimeSlot)) {
+      return res.status(400).json({ message: "Choose a future date and time for the counter-offer." });
+    }
+    if (hasSchedule && await hasConflictingSlot(booking.providerId, finalServiceDate, finalTimeSlot, booking._id)) {
       return res.status(409).json({ message: "That proposed time slot is no longer available." });
     }
 
@@ -791,7 +896,7 @@ async function handleCreateCounterOffer(req, res) {
       proposedBy: req.user.role,
       proposedPrice,
       proposedServiceDate: proposedServiceDate || undefined,
-      proposedTimeSlot: hasSchedule ? proposedTimeSlot : undefined,
+      proposedTimeSlot: proposedTimeSlot || undefined,
       proposedRepairDescription: hasScope ? proposedRepairDescription : undefined,
       note,
       status: "pending",
@@ -845,6 +950,9 @@ async function handleRespondToCounterOffer(req, res) {
     if (action === "accept") {
       const finalServiceDate = offer.proposedServiceDate || booking.serviceDate;
       const finalTimeSlot = offer.proposedTimeSlot || booking.timeSlot;
+      if ((offer.proposedServiceDate || offer.proposedTimeSlot) && isServiceSlotInPast(finalServiceDate, finalTimeSlot)) {
+        return res.status(409).json({ message: "This counter-offer time has already passed." });
+      }
       if ((offer.proposedServiceDate || offer.proposedTimeSlot) && await hasConflictingSlot(booking.providerId, finalServiceDate, finalTimeSlot, booking._id)) {
         return res.status(409).json({ message: "That proposed time slot is no longer available." });
       }

@@ -8,6 +8,21 @@ const MONTHS = [
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const TIME_SLOTS = ["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"];
 
+function isPastTimeSlot(dateValue, timeValue, now) {
+  if (!dateValue || !timeValue) return false;
+
+  const [year, month, day] = dateValue.split("-").map(Number);
+  const selectedDay = new Date(year, month - 1, day);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (selectedDay < today) return true;
+  if (selectedDay > today) return false;
+
+  const [time, period] = timeValue.split(" ");
+  const [hour, minute] = time.split(":").map(Number);
+  const slotMinutes = (hour % 12 + (period === "PM" ? 12 : 0)) * 60 + minute;
+  return slotMinutes <= now.getHours() * 60 + now.getMinutes();
+}
+
 function CalendarPicker({ selectedDate, onSelect, onClose }) {
   const selectedDateParts = selectedDate ? selectedDate.split("-").map(Number) : null;
   const [viewDate, setViewDate] = useState(selectedDateParts
@@ -100,6 +115,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit }) {
   const [taskDescription, setTaskDescription] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
+  const [currentTime, setCurrentTime] = useState(() => new Date());
   const [urgency, setUrgency] = useState("Flexible");
   const [offer, setOffer] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -125,6 +141,15 @@ export default function RequestBookingModal({ provider, onClose, onSubmit }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [provider, onClose]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (isPastTimeSlot(selectedDate, selectedTime, currentTime)) setSelectedTime("");
+  }, [currentTime, selectedDate, selectedTime]);
+
   if (!provider) return null;
 
   const name = provider.fullName || provider.username || provider.name || "Provider";
@@ -147,11 +172,21 @@ export default function RequestBookingModal({ provider, onClose, onSubmit }) {
     return `${MONTHS[parseInt(m) - 1]} ${parseInt(d)}, ${y}`;
   };
 
+  const handleDateSelect = (date) => {
+    setSelectedDate(date);
+    setSelectedTime("");
+    setFormError("");
+  };
+
   const handleSubmit = async () => {
     const offerAmount = Number(offer);
     if (!taskDescription.trim()) return setFormError("Please describe the item or issue you want repaired.");
     if (!selectedDate) return setFormError("Please select a service date.");
     if (!selectedTime) return setFormError("Please select an available time.");
+    if (isPastTimeSlot(selectedDate, selectedTime, new Date())) {
+      setSelectedTime("");
+      return setFormError("That time has passed. Please choose another time.");
+    }
     if (!Number.isFinite(offerAmount) || offerAmount < 100) return setFormError("Your offer must be at least PHP 100.");
     if (!termsAccepted) return setFormError("Please agree to the terms and cancellation policy.");
     setFormError("");
@@ -319,7 +354,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit }) {
             </button>
             {showCalendar && (
               <div className="absolute z-10 mt-1 w-full">
-                <CalendarPicker selectedDate={selectedDate} onSelect={setSelectedDate} onClose={() => setShowCalendar(false)} />
+                <CalendarPicker selectedDate={selectedDate} onSelect={handleDateSelect} onClose={() => setShowCalendar(false)} />
               </div>
             )}
           </div>
@@ -344,16 +379,21 @@ export default function RequestBookingModal({ provider, onClose, onSubmit }) {
           <div>
             <p className="mb-2 text-sm font-medium text-gray-700">Available time</p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {TIME_SLOTS.map((time) => (
-                <button
-                  key={time}
-                  type="button"
-                  onClick={() => setSelectedTime(time)}
-                  className={`rounded-lg border px-2 py-2 text-xs font-medium transition ${selectedTime === time ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-700 hover:border-gray-400"}`}
-                >
-                  {time}
-                </button>
-              ))}
+              {TIME_SLOTS.map((time) => {
+                const isPast = isPastTimeSlot(selectedDate, time, currentTime);
+                return (
+                  <button
+                    key={time}
+                    type="button"
+                    disabled={isPast}
+                    title={isPast ? "This time has passed" : undefined}
+                    onClick={() => { setSelectedTime(time); setFormError(""); }}
+                    className={`rounded-lg border px-2 py-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:border-gray-100 disabled:bg-gray-100 disabled:text-gray-400 ${selectedTime === time ? "border-gray-900 bg-gray-900 text-white" : "border-gray-200 bg-white text-gray-700 hover:border-gray-400"}`}
+                  >
+                    {time}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

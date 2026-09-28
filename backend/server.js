@@ -14,7 +14,8 @@ if (require.main === module) {
       }, CASH_SETTLEMENT_INTERVAL_MS);
       app.listen(port, () => console.log(`TaskPanda server running at http://localhost:${port}`));
     })
-    .catch(() => {
+    .catch((error) => {
+      console.error("TaskPanda server failed to start:", error.message);
       process.exitCode = 1;
     });
 }

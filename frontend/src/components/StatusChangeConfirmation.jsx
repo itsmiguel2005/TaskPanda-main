@@ -5,7 +5,7 @@ const COUNTDOWN_SECONDS = 3;
 export default function StatusChangeConfirmation({ nextStatus, onConfirm, onClose, embedded = false, canConfirm = true, cancellationRequiresApproval = false, children }) {
   const normalizedStatus = String(nextStatus).toLowerCase();
   const isCancellation = normalizedStatus === "cancelled";
-  const isDecline = normalizedStatus === "declined";
+  const isDecline = normalizedStatus === "declined" || normalizedStatus === "declined by provider";
   const isApproval = normalizedStatus === "approved";
   const isDispute = normalizedStatus === "disputed";
   const [secondsLeft, setSecondsLeft] = useState(COUNTDOWN_SECONDS);

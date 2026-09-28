@@ -1,4 +1,7 @@
-export default function ProviderModal({ provider, onClose }) {
+import { useAuth } from "../context/AuthContext.jsx";
+
+export default function ProviderModal({ provider, onClose, isFavorite = false, onToggleFavorite }) {
+  const { isLoggedIn } = useAuth();
   if (!provider) return null;
   const name = provider.fullName || provider.username || "Provider";
   const location = [provider.barangay, provider.city, provider.province].filter(Boolean).join(", ");
@@ -47,9 +50,18 @@ export default function ProviderModal({ provider, onClose }) {
           </div>
 
           <div className="mt-5 flex gap-2">
+            {isLoggedIn && (
+              <button
+                type="button"
+                onClick={onToggleFavorite}
+                className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${isFavorite ? "border border-rose-200 bg-rose-100 text-rose-700 hover:bg-rose-200" : "bg-primary-600 text-white hover:bg-primary-700"}`}
+              >
+                {isFavorite ? "Saved to Favorites" : "Save to Favorites"}
+              </button>
+            )}
             <button
               onClick={onClose}
-              className="w-full rounded-lg border border-gray-300 bg-white py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+              className={`${isLoggedIn ? "flex-1" : "w-full"} rounded-lg border border-gray-300 bg-white py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50`}
             >
               Close
             </button>

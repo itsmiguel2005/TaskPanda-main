@@ -67,10 +67,11 @@ const initialBookings = [
 
 const tabs = [
   { key: "All", label: "All" },
-  { key: "Incoming Requests", label: "Incoming Requests" },
-  { key: "Active", label: "My Bookings (Active)" },
+  { key: "Incoming Requests", label: "Incoming" },
+  { key: "Active", label: "Active" },
   { key: "Completed", label: "Completed" },
   { key: "Cancelled", label: "Cancelled" },
+  { key: "Declined", label: "Declined" },
 ];
 
 function parsePrice(priceStr) {
@@ -86,20 +87,20 @@ function formatBookingTotal(booking) {
 function StatusBadge({ status }) {
   const colors = {
     "Pending Request": "bg-amber-100 text-amber-700 border-amber-200",
-    Confirmed: "bg-green-100 text-green-700 border-green-200",
+    Confirmed: "bg-emerald-100 text-emerald-700 border-emerald-200",
     Completed: "bg-blue-100 text-blue-700 border-blue-200",
     Cancelled: "bg-red-100 text-red-700 border-red-200",
-    Declined: "bg-red-100 text-red-700 border-red-200",
+    "Declined by Provider": "bg-rose-100 text-rose-800 border-rose-200",
     "Cancellation Requested": "bg-amber-100 text-amber-700 border-amber-200",
     "In Revision": "bg-amber-100 text-amber-800 border-amber-200",
-    Disputed: "bg-red-100 text-red-700 border-red-200",
-    "In Progress": "bg-purple-100 text-purple-700 border-purple-200",
+    Disputed: "bg-rose-100 text-rose-700 border-rose-200",
+    "In Progress": "bg-violet-100 text-violet-700 border-violet-200",
     "On the Way": "bg-cyan-100 text-cyan-800 border-cyan-200",
   };
   return (
     <span
-      className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-medium ${
-        colors[status] || "bg-gray-100 text-gray-700 border-gray-200"
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-[0.01em] ${
+        colors[status] || "bg-slate-100 text-slate-700 border-slate-200"
       }`}
     >
       {status}
@@ -113,7 +114,7 @@ function StatusDot({ status }) {
     Confirmed: "bg-green-500",
     Completed: "bg-blue-500",
     Cancelled: "bg-red-500",
-    Declined: "bg-red-500",
+    "Declined by Provider": "bg-rose-600",
     "Cancellation Requested": "bg-amber-500",
     "In Progress": "bg-purple-500",
     "On the Way": "bg-cyan-500",
@@ -131,7 +132,7 @@ export default function ProviderBookingsPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
-  const { bookings, isLoading, error, updateBookingStatus, submitCompletionProof, requestCancellation, sendProviderUpdate } = useBookings();
+  const { bookings, isLoading, error, updateBookingStatus, submitCompletionProof, requestCancellation, sendProviderUpdate, confirmCashSettlement, refreshBookings } = useBookings();
   const [sortBy, setSortBy] = useState("createdAt");
   const [acceptingId, setAcceptingId] = useState(null);
   const [statusChange, setStatusChange] = useState(null);
@@ -158,7 +159,8 @@ export default function ProviderBookingsPage() {
     if (activeTab === "All") return true;
     if (activeTab === "Active") return ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status);
     if (activeTab === "Completed") return booking.status === "Completed";
-    if (activeTab === "Cancelled") return ["Cancelled", "Declined"].includes(booking.status);
+    if (activeTab === "Cancelled") return booking.status === "Cancelled";
+    if (activeTab === "Declined") return booking.status === "Declined by Provider";
     return false;
   });
 
@@ -175,17 +177,19 @@ export default function ProviderBookingsPage() {
     } else if (sortBy === "price") {
       result.sort((a, b) => parsePrice(b.price) - parsePrice(a.price));
     } else if (sortBy === "status") {
-      const order = { "Pending Request": 0, Confirmed: 1, "On the Way": 2, "In Progress": 3, Completed: 4, Cancelled: 5 };
+      const order = { "Pending Request": 0, Confirmed: 1, "On the Way": 2, "In Progress": 3, Completed: 4, Cancelled: 5, "Declined by Provider": 6 };
       result.sort((a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99));
     }
     return result;
   }, [filteredManagedBookings, sortBy]);
 
   const stats = useMemo(() => ({
+    total: requests.length + managedBookings.length,
     incoming: requests.length,
     active: managedBookings.filter((b) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(b.status)).length,
     completed: managedBookings.filter((b) => b.status === "Completed").length,
     cancelled: managedBookings.filter((b) => b.status === "Cancelled").length,
+    declined: managedBookings.filter((b) => b.status === "Declined by Provider").length,
     earnings: managedBookings
       .filter((b) => b.status === "Completed")
       .reduce((sum, b) => sum + parsePrice(b.price), 0),
@@ -220,11 +224,6 @@ export default function ProviderBookingsPage() {
     } finally {
       setAcceptingId(null);
     }
-  }
-
-  function rejectRequest(id) {
-    updateBookingStatus(id, "Declined").catch((error) => window.alert(error.message));
-    setRejectingId(null);
   }
 
   async function handleCancelBooking() {
@@ -263,51 +262,49 @@ export default function ProviderBookingsPage() {
     }
   }
 
+  const handleCashSettlementConfirmation = async (bookingId, confirmation) => {
+    try {
+      await confirmCashSettlement(bookingId, confirmation);
+      await refreshBookings(undefined, true);
+    } catch (requestError) {
+      window.alert(requestError.message);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 pt-16">
+    <div className="min-h-screen bg-slate-50 pt-16 text-slate-800">
       <Header showNav activeTab="Bookings" role="provider" />
 
-      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* Back Link */}
-        <button
-          onClick={() => navigate("/provider-dashboard")}
-          className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 transition hover:text-gray-700"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-            <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-          </svg>
-          Back to Dashboard
-        </button>
-
-        {/* Page Title */}
+      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Manage Bookings</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            View incoming requests and manage your jobs
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-600">Provider dashboard</p>
+          <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">Manage Bookings</h1>
+          <p className="mt-2 text-sm text-slate-500">
+            View incoming requests and manage your jobs.
           </p>
         </div>
-        {error && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-        {isLoading && <p className="mb-4 text-sm text-gray-500">Loading bookings...</p>}
+        {error && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+        {isLoading && <p className="mb-4 text-sm text-slate-500">Loading bookings...</p>}
 
-        {/* Stats */}
-        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-7">
           {[
-            { label: "Incoming", value: stats.incoming, color: "bg-amber-50 text-amber-700" },
-            { label: "Active", value: stats.active, color: "bg-green-50 text-green-700" },
-            { label: "Completed", value: stats.completed, color: "bg-blue-50 text-blue-700" },
-            { label: "Cancelled", value: stats.cancelled, color: "bg-red-50 text-red-700" },
-            { label: "Earnings", value: `₱${stats.earnings.toLocaleString()}`, color: "bg-gray-100 text-gray-700" },
+            { label: "Total", value: stats.total, tone: "bg-white text-slate-700 border-slate-200" },
+            { label: "Incoming", value: stats.incoming, tone: "bg-amber-50 text-amber-700 border-amber-100" },
+            { label: "Active", value: stats.active, tone: "bg-emerald-50 text-emerald-700 border-emerald-100" },
+            { label: "Completed", value: stats.completed, tone: "bg-blue-50 text-blue-700 border-blue-100" },
+            { label: "Cancelled", value: stats.cancelled, tone: "bg-rose-50 text-rose-700 border-rose-100" },
+            { label: "Declined", value: stats.declined, tone: "bg-rose-50 text-rose-800 border-rose-100" },
+            { label: "Earnings", value: `₱${stats.earnings.toLocaleString()}`, tone: "bg-white text-slate-700 border-slate-200" },
           ].map((s) => (
-            <div key={s.label} className={`rounded-xl ${s.color} px-3 py-3 text-center`}>
-              <p className="text-lg font-bold">{s.value}</p>
-              <p className="text-[11px] font-medium opacity-80">{s.label}</p>
+            <div key={s.label} className={`rounded-2xl border ${s.tone} px-3 py-3 text-center shadow-sm`}>
+              <p className="text-2xl font-bold tracking-tight">{s.value}</p>
+              <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-current/75">{s.label}</p>
             </div>
           ))}
         </div>
 
-        {/* Tabs */}
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex gap-1 overflow-x-auto pb-1">
+        <div className="mb-4 space-y-3">
+          <div className="grid grid-cols-2 gap-2 pb-1 sm:grid-cols-3 lg:grid-cols-6">
           {tabs.map((tab) => {
             const count =
               tab.key === "All"
@@ -318,23 +315,25 @@ export default function ProviderBookingsPage() {
                 ? managedBookings.filter((booking) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status)).length
                 : tab.key === "Completed"
                 ? managedBookings.filter((booking) => booking.status === "Completed").length
-                : managedBookings.filter((booking) => ["Cancelled", "Declined"].includes(booking.status)).length;
+                : tab.key === "Declined"
+                ? managedBookings.filter((booking) => booking.status === "Declined by Provider").length
+                : managedBookings.filter((booking) => booking.status === "Cancelled").length;
             return (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`relative flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                className={`relative flex min-h-10 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-2 py-2 text-xs font-semibold transition sm:text-sm ${
                   activeTab === tab.key
-                    ? "bg-gray-900 text-white"
-                    : "bg-white text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50"
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
                 }`}
               >
                 {tab.label}
                 <span
-                  className={`inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[10px] font-bold ${
+                  className={`inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${
                     activeTab === tab.key
-                      ? "bg-white/20 text-white"
-                      : "bg-gray-100 text-gray-500"
+                      ? "bg-white/15 text-white"
+                      : "bg-slate-100 text-slate-500"
                   }`}
                 >
                   {count}
@@ -343,20 +342,20 @@ export default function ProviderBookingsPage() {
             );
           })}
           </div>
-          <label className="relative block w-full sm:max-w-xs">
+          <label className="relative block w-full">
             <span className="sr-only">Search bookings</span>
-            <input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search client or repair" className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20" />
-            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
+            <input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search client or repair" className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20" />
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
           </label>
         </div>
 
-        {/* Sort */}
         {showBookings && filteredManagedBookings.length > 0 && (
-          <div className="mb-4 flex justify-end">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-gray-900">My Bookings</h2>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none focus:border-purple-500"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
             >
               <option value="createdAt">Submitted: Newest</option>
               <option value="date">Service date: Earliest</option>
@@ -381,19 +380,19 @@ export default function ProviderBookingsPage() {
                   {sortedRequests.map((req) => (
                     <div
                       key={req.id}
-                      className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:shadow-md"
+                      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                     >
                       <div className="p-5 sm:p-6">
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
                           <div className="flex items-start gap-4">
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent-100 text-lg font-bold text-accent-700">
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-100 text-lg font-bold text-amber-700 ring-1 ring-amber-200">
                               {req.client.charAt(0)}
                             </div>
                             <div>
-                              <h3 className="text-base font-semibold text-gray-900">
+                              <h3 className="text-lg font-bold text-slate-900">
                                 {req.client}
                               </h3>
-                              <p className="text-sm text-gray-500">
+                              <p className="text-sm text-slate-500">
                                 New booking request
                               </p>
                             </div>
@@ -401,11 +400,11 @@ export default function ProviderBookingsPage() {
                           <StatusBadge status="Pending Request" />
                         </div>
 
-                        <div className="mt-4 border-t border-gray-100 pt-4">
-                          <h4 className="text-sm font-semibold text-gray-800">
+                        <div className="mt-4">
+                          <h4 className="text-base font-bold text-slate-800">
                             {req.task}
                           </h4>
-                          <p className="mt-1 text-sm leading-relaxed text-gray-500">
+                          <p className="mt-1 text-sm leading-relaxed text-slate-500">
                             {req.description}
                           </p>
                           {req.photoUrls?.length > 0 && (
@@ -415,29 +414,29 @@ export default function ProviderBookingsPage() {
                           )}
                         </div>
 
-                        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-600">
+                        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-600">
                           <div className="flex items-center gap-1.5">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-gray-400">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-slate-400">
                               <path fillRule="evenodd" d="M19.5 6.75a3 3 0 00-6 0v7.5a3 3 0 006 0V6.75zM3.75 9.75a3 3 0 016 0v7.5a3 3 0 01-6 0V9.75zM15.75 2.25a3 3 0 016 0v7.5a3 3 0 01-6 0V2.25z" clipRule="evenodd" />
                             </svg>
                             <span>{req.address}</span>
                           </div>
                           <div className="flex items-center gap-1.5">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-gray-400">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-slate-400">
                               <path fillRule="evenodd" d="M19.5 6.75a3 3 0 00-6 0v7.5a3 3 0 006 0V6.75zM3.75 9.75a3 3 0 016 0v7.5a3 3 0 01-6 0V9.75zM15.75 2.25a3 3 0 016 0v7.5a3 3 0 01-6 0V2.25z" clipRule="evenodd" />
                             </svg>
                             <span>{req.date}</span>
-                            <span className="text-gray-300">|</span>
+                            <span className="text-slate-300">|</span>
                             <span>{req.time}</span>
                           </div>
                         </div>
 
-                        <div className="mt-5 flex flex-col-reverse gap-2 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="mt-5 flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex items-center gap-3">
-                            <span className="text-xl font-bold text-gray-900">{req.price}</span>
+                            <span className="text-2xl font-bold text-slate-900">{req.price}</span>
                             <button
                               onClick={() => setDetailId(req.id)}
-                              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                             >
                               Details
                             </button>
@@ -445,9 +444,9 @@ export default function ProviderBookingsPage() {
                           <div className="flex gap-2">
                             <button
                               onClick={() => setRejectingId(req.id)}
-                              className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
                             >
-                              Reject
+                              Decline
                             </button>
                             <button
                               onClick={() => acceptRequest(req.id)}
@@ -471,61 +470,58 @@ export default function ProviderBookingsPage() {
           <div>
             {filteredManagedBookings.length > 0 ? (
               <>
-                <h2 className="mb-4 text-lg font-semibold text-gray-900">
-                  My Bookings
-                </h2>
                 <div className="space-y-4">
                   {sortedBookings.map((booking) => (
                     <div
                       key={booking.id}
-                      className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:shadow-md"
+                      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                     >
                       <div className="p-5 sm:p-6">
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
                           <div className="flex items-start gap-4">
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-100 text-lg font-bold text-primary-700">
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-100 text-lg font-bold text-primary-700 shadow-inner ring-1 ring-primary-200">
                               {booking.client.charAt(0)}
                             </div>
                             <div>
-                              <h3 className="text-base font-semibold text-gray-900">
+                              <h3 className="text-lg font-bold text-slate-900">
                                 {booking.client}
                               </h3>
-                              <p className="text-sm text-gray-500">Submitted {booking.createdAt ? new Date(booking.createdAt).toLocaleString() : ""}</p>
+                              <p className="text-sm text-slate-500">Submitted {booking.createdAt ? new Date(booking.createdAt).toLocaleString() : ""}</p>
                             </div>
                           </div>
                           <div className="flex flex-wrap items-center justify-end gap-2">
                             <StatusDot status={booking.status} />
                             <StatusBadge status={booking.status} />
-                            <button onClick={() => navigate(`/provider/messages?bookingId=${booking.id}`)} className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Chat</button>
+                            <button onClick={() => navigate(`/provider/messages?bookingId=${booking.id}`)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">Chat</button>
                           </div>
                         </div>
 
-                        <div className="mt-4 grid grid-cols-1 gap-4 border-t border-gray-100 pt-4 md:grid-cols-[minmax(0,1.5fr)_minmax(14rem,1fr)]">
+                        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.5fr)_minmax(15rem,1fr)]">
                           <div className="min-w-0">
                           <BookingProgress status={booking.status} />
-                          <h4 className="text-sm font-semibold text-gray-800">
+                          <h4 className="mt-4 text-base font-bold text-slate-800">
                             {booking.task}
                           </h4>
-                          <p className="mt-1 text-sm leading-relaxed text-gray-500">
+                          <p className="mt-1 text-sm leading-relaxed text-slate-500">
                             {booking.description}
                           </p>
                           {booking.status === "Cancellation Requested" && booking.cancellationExpiresAt && (
-                            <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                               Cancellation requested. Response due {new Date(booking.cancellationExpiresAt).toLocaleString()}.
                             </p>
                           )}
                           {booking.cancellationOutcome === "rejected" && (
-                            <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">The cancellation was declined. This booking remains active.</p>
+                            <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">The cancellation was declined. This booking remains active.</p>
                           )}
                           {booking.providerUpdates?.map((update) => (
-                            <div key={update.id} className="mt-3 rounded-md border border-cyan-100 bg-cyan-50 p-3 text-xs text-cyan-950">
+                            <div key={update.id} className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50 p-3 text-xs text-cyan-950">
                               <p className="font-semibold">Your update{update.type === "reschedule" ? " · Time change request" : ""} ({update.status})</p>
                               <p className="mt-1">{update.note}</p>
                               {update.type === "reschedule" && <p className="mt-1">Proposed: {new Date(update.proposedServiceDate).toLocaleDateString()} at {update.proposedTimeSlot}</p>}
                             </div>
                           ))}
                           {booking.status === "Completed" && booking.clientRating != null && (
-                            <div className="mt-3 rounded-md border border-amber-100 bg-amber-50 p-3 text-sm text-amber-950">
+                            <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 p-3 text-sm text-amber-950">
                               <p className="font-semibold">Client review: <span aria-label={`${booking.clientRating} out of 5 stars`} className="inline-flex items-center gap-0.5">{[1, 2, 3, 4, 5].map((star) => (<span key={star} style={{ color: star <= Number(booking.clientRating || 0) ? "#fbbf24" : "#d1d5db", lineHeight: 1 }}>{"★"}</span>))}</span></p>
                               {booking.clientReview && <p className="mt-1">{booking.clientReview}</p>}
                               {booking.clientReviewPhotos?.length > 0 && (
@@ -542,34 +538,36 @@ export default function ProviderBookingsPage() {
                           )}
                         </div>
 
-                          <div className="space-y-3 rounded-lg bg-gray-50 p-4 text-sm text-gray-700">
+                          <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
                           <div className="flex items-start gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-gray-400">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="mt-0.5 h-4 w-4 text-slate-400">
                               <path fillRule="evenodd" d="M19.5 6.75a3 3 0 00-6 0v7.5a3 3 0 006 0V6.75zM3.75 9.75a3 3 0 016 0v7.5a3 3 0 01-6 0V9.75zM15.75 2.25a3 3 0 016 0v7.5a3 3 0 01-6 0V2.25z" clipRule="evenodd" />
                             </svg>
                             <AddressActions address={booking.address} />
                           </div>
                           <div className="flex items-start gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-gray-400">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="mt-0.5 h-4 w-4 text-slate-400">
                               <path fillRule="evenodd" d="M19.5 6.75a3 3 0 00-6 0v7.5a3 3 0 006 0V6.75zM3.75 9.75a3 3 0 016 0v7.5a3 3 0 01-6 0V9.75zM15.75 2.25a3 3 0 016 0v7.5a3 3 0 01-6 0V2.25z" clipRule="evenodd" />
                             </svg>
-                            <span>{booking.date}</span>
-                            <span className="text-gray-300">|</span>
+                            <span className="font-medium text-slate-800">{booking.date}</span>
+                            <span className="text-slate-300">|</span>
                             <span>{booking.time}</span>
                           </div>
-                          <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${booking.urgency === "Emergency" ? "bg-red-100 text-red-700" : "bg-gray-200 text-gray-700"}`}>
+                          <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-[11px] font-semibold ${booking.urgency === "Emergency" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>
                             {booking.urgency || "Flexible"} service
                           </span>
                           </div>
                         </div>
-                        <BookingHistory events={booking.statusHistory} />
+                        <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+                          <BookingHistory events={booking.statusHistory} />
+                        </div>
 
-                        <div className="mt-5 flex flex-col-reverse gap-2 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="mt-5 flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex items-center gap-3">
-                            <span><span className="block text-xs font-medium text-gray-500">Total</span><span className="text-xl font-bold text-gray-900">{formatBookingTotal(booking)}</span></span>
+                            <span><span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Total</span><span className="text-2xl font-bold text-slate-900">{formatBookingTotal(booking)}</span></span>
                             <button
                               onClick={() => setDetailId(booking.id)}
-                              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                             >
                               {booking.status === "In Revision" ? "Review revision" : "Details"}
                             </button>
@@ -598,6 +596,16 @@ export default function ProviderBookingsPage() {
                                 className="rounded-lg border border-cyan-200 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 transition hover:bg-cyan-100"
                               >
                                 Send Update
+                              </button>
+                            )}
+                            {booking.paymentMethod === "cash" && ["Completed", "Settled"].includes(booking.status) && (
+                              <button
+                                type="button"
+                                onClick={() => handleCashSettlementConfirmation(booking.id, "cash_received")}
+                                disabled={Boolean(booking.cashReceivedConfirmedAt || booking.providerConfirmedCash) || !booking.cashPaidConfirmedAt}
+                                className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${booking.cashReceivedConfirmedAt || booking.providerConfirmedCash ? "cursor-not-allowed bg-emerald-100 text-emerald-800" : !booking.cashPaidConfirmedAt ? "cursor-not-allowed bg-gray-100 text-gray-500" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
+                              >
+                                {booking.cashReceivedConfirmedAt || booking.providerConfirmedCash ? "Cash Received Confirmed" : !booking.cashPaidConfirmedAt ? "Waiting for client payment" : "Confirm Cash Received"}
                               </button>
                             )}
                             {canRequestCancellation(booking) ? (
@@ -651,7 +659,9 @@ export default function ProviderBookingsPage() {
                 : activeTab === "Completed"
                 ? "Completed jobs will appear here."
                 : activeTab === "Cancelled"
-                ? "Canceled or declined bookings will appear here."
+                ? "Canceled bookings will appear here."
+                : activeTab === "Declined"
+                ? "Requests declined by you will appear here."
                 : "No requests or bookings are available yet."}
             </p>
             {activeTab !== "All" && (
@@ -777,38 +787,13 @@ export default function ProviderBookingsPage() {
         </div>
       )}
 
-      {/* Reject Confirmation Modal */}
+      {/* Decline Confirmation */}
       {rejectingId && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          onClick={() => setRejectingId(null)}
-        >
-          <div
-            className="w-full max-w-sm rounded-2xl bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-6">
-              <h3 className="text-lg font-bold text-gray-900">Reject Request?</h3>
-              <p className="mt-2 text-sm text-gray-500">
-                Are you sure you want to reject this request? The client will not be notified.
-              </p>
-              <div className="mt-6 flex gap-3">
-                <button
-                  onClick={() => setRejectingId(null)}
-                  className="flex-1 rounded-lg border border-gray-200 bg-white py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
-                >
-                  Keep Request
-                </button>
-                <button
-                  onClick={() => rejectRequest(rejectingId)}
-                  className="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700"
-                >
-                  Reject
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <StatusChangeConfirmation
+          nextStatus="Declined by Provider"
+          onConfirm={() => updateBookingStatus(rejectingId, "declined")}
+          onClose={() => setRejectingId(null)}
+        />
       )}
 
       {/* Detail Modal */}

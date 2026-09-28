@@ -27,6 +27,7 @@ function describeEvent(message, actorName) {
   const actor = actorName || "The other participant";
   const status = String(event.status || "").replaceAll("_", " ");
   if (message.eventType === "booking_request") return `${actor} requested a booking`;
+  if (message.eventType === "booking_status" && event.status === "declined") return `${actor} declined the booking`;
   if (message.eventType === "booking_status") return `${actor} updated the booking${status ? ` to ${status}` : ""}`;
   if (message.eventType === "counter_offer") {
     if (event.status === "accepted") return `${actor} accepted the counter-offer`;

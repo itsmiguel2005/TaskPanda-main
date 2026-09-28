@@ -57,14 +57,14 @@ const bookingSchema = new mongoose.Schema(
     }],
     status: {
       type: String,
-      enum: ["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "complete", "in_revision", "disputed", "closed", "settled"],
+      enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "declined", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Cancelled", "Completed", "Settled"],
       default: "pending",
       index: true,
     },
     cancellationReason: { type: String, default: "", trim: true, maxlength: 500 },
     cancellationRequestedBy: { type: String, enum: ["client", "provider"], default: undefined },
     cancellationRequestedAt: { type: Date },
-    cancellationExpiresAt: { type: Date },
+    cancellationExpiresAt: { type: mongoose.Schema.Types.Mixed, default: null },
     cancellationPreviousStatus: { type: String, enum: ["pending", "approved", "en_route", "in_progress"] },
     cancellationResolvedAt: { type: Date },
     cancellationOutcome: { type: String, enum: ["instant", "approved", "rejected", "expired"] },
@@ -73,7 +73,7 @@ const bookingSchema = new mongoose.Schema(
     clientReviewPhotos: { type: [String], default: [] },
     reviewedAt: { type: Date },
     statusHistory: [{
-      status: { type: String, enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled"] },
+      status: { type: String, enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "declined"] },
       at: { type: Date, default: Date.now },
     }],
     providerUpdates: [{
@@ -102,5 +102,6 @@ const bookingSchema = new mongoose.Schema(
 
 bookingSchema.index({ clientId: 1, createdAt: -1 });
 bookingSchema.index({ providerId: 1, createdAt: -1 });
+bookingSchema.index({ providerId: 1, serviceDate: 1, timeSlot: 1 }, { unique: true, partialFilterExpression: { status: { $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested"] } } });
 
 module.exports = mongoose.model("Booking", bookingSchema);

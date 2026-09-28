@@ -46,6 +46,19 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
+    verificationStatus: {
+      type: String,
+      enum: ["unverified", "pending", "verified", "rejected"],
+      default: "unverified",
+    },
+    verificationReviewedAt: {
+      type: Date,
+      default: null,
+    },
     registrationComplete: {
       type: Boolean,
       default: true,
@@ -142,6 +155,17 @@ const userSchema = new mongoose.Schema(
         submittedAt: { type: Date, default: Date.now },
       }],
       default: [],
+    },
+    averageRating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5,
+    },
+    totalReviews: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
     dateOfBirth: {
       type: Date,

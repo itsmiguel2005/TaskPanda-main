@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import Header from "./Header.jsx";
 import ProviderModal from "./ProviderModal.jsx";
@@ -33,6 +33,7 @@ const sortOptions = [
   { value: "distance", label: "Nearest" },
   { value: "name", label: "Name A–Z" },
 ];
+const FAVORITES_SYNC_EVENT = "taskpanda:favorites-sync";
 
 function CheckBox({ label, count, checked, onChange }) {
   return (
@@ -69,8 +70,10 @@ export default function Explore() {
   const [maxKm, setMaxKm] = useState(25);
   const [providers, setProviders] = useState([]);
   const [totalProviders, setTotalProviders] = useState(0);
+  const [favoriteProviderIds, setFavoriteProviderIds] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const { token } = useAuth();
 
   useEffect(() => {
     refreshProfile();
@@ -89,6 +92,50 @@ export default function Explore() {
       setAppliedQuery(service);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    const handleFavoritesSync = (event) => {
+      const nextIds = Array.isArray(event?.detail?.favoriteProviderIds)
+        ? event.detail.favoriteProviderIds
+        : [];
+      setFavoriteProviderIds(new Set(nextIds.map((id) => String(id)).filter(Boolean)));
+    };
+
+    window.addEventListener(FAVORITES_SYNC_EVENT, handleFavoritesSync);
+    return () => window.removeEventListener(FAVORITES_SYNC_EVENT, handleFavoritesSync);
+  }, []);
+
+  useEffect(() => {
+    if (!token) {
+      setFavoriteProviderIds(new Set());
+      return undefined;
+    }
+
+    let cancelled = false;
+    const loadFavorites = async () => {
+      try {
+        const response = await fetch("/api/client/favorites", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) return;
+        const data = await response.json().catch(() => ({}));
+        if (cancelled) return;
+
+        const favorites = Array.isArray(data.favorites) ? data.favorites : [];
+        const nextIds = favorites.map((favorite) => String(favorite._id || favorite.id)).filter(Boolean);
+        const normalizedSet = new Set(nextIds);
+        setFavoriteProviderIds(normalizedSet);
+        window.dispatchEvent(new CustomEvent(FAVORITES_SYNC_EVENT, { detail: { favoriteProviderIds: nextIds } }));
+      } catch {
+        if (!cancelled) setFavoriteProviderIds(new Set());
+      }
+    };
+
+    void loadFavorites();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   useEffect(() => {
     if (!searchCoordinates?.coordinates) {
@@ -206,6 +253,45 @@ export default function Explore() {
     setSearchParams({});
   };
 
+  const toggleFavorite = useCallback(async (providerId) => {
+    if (!token || !providerId) return;
+
+    const normalizedId = String(providerId);
+    const isSaved = favoriteProviderIds.has(normalizedId);
+    const fallbackSet = new Set(favoriteProviderIds);
+
+    try {
+      const response = isSaved
+        ? await fetch(`/api/client/favorites/${normalizedId}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        : await fetch("/api/client/favorites", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ providerId: normalizedId }),
+          });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || "Could not update favorites.");
+      }
+
+      const nextSet = new Set(favoriteProviderIds);
+      if (isSaved) nextSet.delete(normalizedId);
+      else nextSet.add(normalizedId);
+
+      setFavoriteProviderIds(nextSet);
+      window.dispatchEvent(new CustomEvent(FAVORITES_SYNC_EVENT, { detail: { favoriteProviderIds: [...nextSet] } }));
+    } catch (error) {
+      setFavoriteProviderIds(fallbackSet);
+      window.alert(error.message || "Could not update favorites.");
+    }
+  }, [favoriteProviderIds, token]);
+
   const removeFilter = (type, value) => {
     if (type === "category") {
       setSelectedCategories((prev) => {
@@ -246,8 +332,9 @@ export default function Explore() {
     <div className="min-h-screen bg-gray-50 pt-16">
       <Header showNav activeTab="Explore" />
 
-      {/* Hero Search Section */}
-      <div className="relative mx-auto mt-6 max-w-5xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto mt-6 grid max-w-7xl grid-cols-1 gap-6 px-4 pb-10 sm:px-6 lg:grid-cols-[16rem_minmax(0,1fr)] lg:px-8">
+        {/* Hero Search Section */}
+        <div className="relative lg:col-start-2 lg:row-start-1">
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-teal-700 via-slate-700 to-slate-800 px-6 py-10 sm:px-10 sm:py-12">
           <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-white/5" />
           <div className="pointer-events-none absolute bottom-0 left-1/2 h-32 w-32 rounded-full bg-white/5" />
@@ -295,11 +382,9 @@ export default function Explore() {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="mx-auto mt-6 flex max-w-5xl flex-col gap-6 px-4 pb-10 sm:px-6 lg:flex-row lg:px-8">
         {/* Left Sidebar */}
-        <aside className="w-full shrink-0 lg:w-64">
-          <div className="sticky top-20 rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+        <aside className="w-full shrink-0 lg:col-start-1 lg:row-start-1 lg:row-span-2">
+          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm lg:sticky lg:top-20">
             <div className="mb-5 flex items-center justify-between">
               <h2 className="text-base font-bold text-gray-900">
                 Browse Filters
@@ -381,7 +466,7 @@ export default function Explore() {
         </aside>
 
         {/* Right Main Area */}
-        <div className="flex-1 lg:min-w-0">
+        <div className="min-w-0 lg:col-start-2 lg:row-start-2">
           {/* Results Header */}
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
@@ -451,66 +536,85 @@ export default function Explore() {
             <div className="rounded-xl border border-gray-100 bg-white py-12 text-center text-sm text-gray-500">Searching nearby professionals...</div>
           ) : filteredProviders.length > 0 ? (
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
-              {filteredProviders.map((provider) => (
-                <div
-                  key={provider._id}
-                  className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:shadow-md"
-                >
-                  <div className="h-40 overflow-hidden bg-slate-200">
-                    {provider.profileImage ? (
-                      <img
-                        src={provider.profileImage}
-                        alt={`${provider.fullName || provider.username || "Provider"} profile`}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-full items-end justify-center text-white" aria-label="No profile photo">
-                        <svg viewBox="0 0 120 120" role="img" aria-hidden="true" className="h-36 w-36 text-white">
-                          <circle cx="60" cy="35" r="23" fill="currentColor" />
-                          <path d="M18 116c2-30 19-48 42-48s40 18 42 48" fill="currentColor" />
-                        </svg>
+              {filteredProviders.map((provider) => {
+                const isProviderVerified = Boolean(provider.isVerified || provider.verificationStatus === "verified");
+
+                return (
+                  <div
+                    key={provider._id}
+                    className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:shadow-md"
+                  >
+                    <div className="h-40 overflow-hidden bg-slate-200">
+                      {provider.profileImage ? (
+                        <img
+                          src={provider.profileImage}
+                          alt={`${provider.fullName || provider.username || "Provider"} profile`}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full items-end justify-center text-white" aria-label="No profile photo">
+                          <svg viewBox="0 0 120 120" role="img" aria-hidden="true" className="h-36 w-36 text-white">
+                            <circle cx="60" cy="35" r="23" fill="currentColor" />
+                            <path d="M18 116c2-30 19-48 42-48s40 18 42 48" fill="currentColor" />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+                    <div className="px-4 py-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <h3 className="truncate text-sm font-bold text-gray-900">
+                            {provider.fullName || provider.username || "Provider"}
+                          </h3>
+                          <p className="text-xs text-gray-500">{provider.professions?.join(" · ") || "Service provider"}</p>
+                        </div>
+                        {token && (
+                          <button
+                            type="button"
+                            aria-label={favoriteProviderIds.has(String(provider._id)) ? "Remove from favorites" : "Add to favorites"}
+                            onClick={() => toggleFavorite(provider._id)}
+                            className={`flex h-8 w-8 items-center justify-center rounded-full border transition ${favoriteProviderIds.has(String(provider._id)) ? "border-rose-200 bg-rose-100 text-rose-600" : "border-gray-200 bg-white text-gray-500 hover:border-rose-200 hover:text-rose-600"}`}
+                          >
+                            <svg viewBox="0 0 24 24" fill={favoriteProviderIds.has(String(provider._id)) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+                              <path d="M12 21.35 10.55 20C5.4 15.36 2 12.28 2 8.5A4.5 4.5 0 0 1 6.5 4c1.74 0 3.41.81 4.5 2.09A6.12 6.12 0 0 1 15.5 4 4.5 4.5 0 0 1 20 8.5c0 3.78-3.4 6.86-8.55 11.5L12 21.35Z" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
-                    )}
-                  </div>
-                  <div className="px-4 py-4">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="text-sm font-bold text-gray-900">
-                          {provider.fullName || provider.username || "Provider"}
-                        </h3>
-                        <p className="text-xs text-gray-500">{provider.professions?.join(" · ") || "Service provider"}</p>
+
+                      <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                        {(provider.tesdaCertificates || []).map((certificate) => (
+                          <span key={`${provider._id}-${certificate.trade}`} className="inline-flex items-center rounded border border-green-200 bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-800">TESDA · {certificate.trade}</span>
+                        ))}
+                        <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+                          {[provider.barangay, provider.city, provider.province].filter(Boolean).join(", ") || "Nearby"} · {provider.distanceKm} km
+                        </span>
+                      </div>
+
+                      <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-gray-500">
+                        {provider.bio || "This provider has not added an introduction yet."}
+                      </p>
+
+                      <div className="mt-3 flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setViewingProvider(provider)}
+                          className="rounded-lg bg-purple-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-purple-700"
+                        >
+                          View Profile
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBookingProvider(provider)}
+                          className="rounded-lg border border-purple-200 px-4 py-1.5 text-xs font-semibold text-purple-700 transition hover:bg-purple-50"
+                        >
+                          Book
+                        </button>
                       </div>
                     </div>
-                    <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                      {(provider.tesdaCertificates || []).map((certificate) => (
-                        <span key={`${provider._id}-${certificate.trade}`} className="inline-flex items-center rounded border border-green-200 bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-800">TESDA · {certificate.trade}</span>
-                      ))}
-                      <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
-                        {[provider.barangay, provider.city, provider.province].filter(Boolean).join(", ") || "Nearby"} · {provider.distanceKm} km
-                      </span>
-                    </div>
-                    <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-gray-500">
-                      {provider.bio || "This provider has not added an introduction yet."}
-                    </p>
-                    <div className="mt-3 flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setViewingProvider(provider)}
-                        className="rounded-lg bg-purple-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-purple-700"
-                      >
-                        View Profile
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setBookingProvider(provider)}
-                        className="rounded-lg border border-purple-200 px-4 py-1.5 text-xs font-semibold text-purple-700 transition hover:bg-purple-50"
-                      >
-                        Book
-                      </button>
-                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : loading ? (
             <div className="rounded-xl border border-gray-100 bg-white py-12 text-center text-sm text-gray-500">Updating results...</div>
@@ -532,13 +636,19 @@ export default function Explore() {
             </div>
           )}
         </div>
-        <ProviderModal provider={viewingProvider} onClose={() => setViewingProvider(null)} />
+      </div>
+
+        <ProviderModal
+          provider={viewingProvider}
+          onClose={() => setViewingProvider(null)}
+          isFavorite={viewingProvider ? favoriteProviderIds.has(String(viewingProvider._id)) : false}
+          onToggleFavorite={() => viewingProvider && toggleFavorite(viewingProvider._id)}
+        />
         <RequestBookingModal
           provider={bookingProvider}
           onClose={() => setBookingProvider(null)}
           onSubmit={createBooking}
         />
-      </div>
     </div>
   );
 }
