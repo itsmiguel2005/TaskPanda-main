@@ -2,14 +2,76 @@ import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 
+const CONVERSATION_READ_EVENT = "taskpanda:conversation-read";
+
 export default function Header({ logoColor = "text-primary-700", showNav = false, activeTab = "Home", role = "client", notifCount = 2 }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
-  const { isLoggedIn, role: authRole, firstName, logout } = useAuth();
+  const { isLoggedIn, role: authRole, firstName, logout, token } = useAuth();
   const notifRef = useRef(null);
+
+  useEffect(() => {
+    if (!showNav || !isLoggedIn || !token || !["client", "provider"].includes(authRole)) {
+      setUnreadMessageCount(0);
+      return undefined;
+    }
+
+    let active = true;
+    let isFetching = false;
+    let refreshAfterFetch = false;
+    const loadUnreadMessageCount = async () => {
+      if (isFetching) {
+        refreshAfterFetch = true;
+        return;
+      }
+      isFetching = true;
+      try {
+        const headers = { Authorization: `Bearer ${token}` };
+        const [activeResponse, archivedResponse] = await Promise.all([
+          fetch("/api/conversations", { headers }),
+          fetch("/api/conversations?includeArchived=true", { headers }),
+        ]);
+        if (!activeResponse.ok || !archivedResponse.ok) return;
+        const [activeData, archivedData] = await Promise.all([
+          activeResponse.json(),
+          archivedResponse.json(),
+        ]);
+        const conversations = [
+          ...(Array.isArray(activeData.conversations) ? activeData.conversations : []),
+          ...(Array.isArray(archivedData.conversations) ? archivedData.conversations : []),
+        ];
+        const totalUnread = conversations.reduce((total, conversation) => total + Math.max(0, Number(conversation.unreadCount) || 0), 0);
+        if (active) setUnreadMessageCount(totalUnread);
+      } catch {
+        // Keep the last known count when the conversation request is temporarily unavailable.
+      } finally {
+        isFetching = false;
+        if (active && refreshAfterFetch) {
+          refreshAfterFetch = false;
+          void loadUnreadMessageCount();
+        }
+      }
+    };
+
+    const handleConversationRead = (event) => {
+      const count = Math.max(0, Number(event.detail?.unreadCount) || 0);
+      if (count > 0) setUnreadMessageCount((current) => Math.max(0, current - count));
+      if (event.detail?.refresh) void loadUnreadMessageCount();
+    };
+
+    void loadUnreadMessageCount();
+    const intervalId = window.setInterval(loadUnreadMessageCount, 8_000);
+    window.addEventListener(CONVERSATION_READ_EVENT, handleConversationRead);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener(CONVERSATION_READ_EVENT, handleConversationRead);
+    };
+  }, [authRole, isLoggedIn, showNav, token]);
 
   useEffect(() => {
     function handleClick(e) {
@@ -70,7 +132,8 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
               <Link
                 key={link.label}
                 to={link.path}
-                className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                aria-label={link.label === "Messages" && unreadMessageCount > 0 ? `Messages, ${unreadMessageCount} unread` : link.label}
+                className={`relative flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
                   activeTab === link.label
                     ? "bg-gray-900 text-white"
                     : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
@@ -78,6 +141,11 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
               >
                 <span>{link.icon}</span>
                 <span>{link.label}</span>
+                {link.label === "Messages" && unreadMessageCount > 0 && (
+                  <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-none text-white shadow-sm">
+                    {unreadMessageCount > 99 ? "99+" : unreadMessageCount}
+                  </span>
+                )}
               </Link>
             ))}
           </nav>
@@ -209,6 +277,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                 key={link.label}
                 to={link.path}
                 onClick={() => setMobileOpen(false)}
+                aria-label={link.label === "Messages" && unreadMessageCount > 0 ? `Messages, ${unreadMessageCount} unread` : link.label}
                 className={`flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
                   activeTab === link.label
                     ? "bg-gray-900 text-white"
@@ -217,6 +286,11 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
               >
                 <span className="text-base">{link.icon}</span>
                 <span>{link.label}</span>
+                {link.label === "Messages" && unreadMessageCount > 0 && (
+                  <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 text-[10px] font-bold leading-none text-white">
+                    {unreadMessageCount > 99 ? "99+" : unreadMessageCount}
+                  </span>
+                )}
               </Link>
             ))}
           </nav>

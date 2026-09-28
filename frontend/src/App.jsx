@@ -36,6 +36,7 @@ import { AuthProvider } from "./context/AuthContext.jsx";
 import { BookingProvider } from "./context/BookingContext.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
 import Footer from "./components/Footer.jsx";
+import CommunityImpactBanner from "./components/CommunityImpactBanner.jsx";
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -72,6 +73,7 @@ class ErrorBoundary extends React.Component {
 }
 
 const authRoutes = ["/login", "/forgot-password", "/verify-email", "/register", "/worker-register", "/worker-register/name", "/worker-register/location", "/worker-register/dob", "/worker-register/phone", "/client-register", "/client-register/name", "/client-register/location", "/client-register/phone", "/admin"];
+const footerlessRoutes = ["/messages", "/client/messages", "/provider-messages", "/provider/messages"];
 
 function ProtectedRoute({ children, roles }) {
   const location = useLocation();
@@ -100,7 +102,7 @@ function ProtectedRoute({ children, roles }) {
 export default function App() {
   const location = useLocation();
   console.log("[App] rendering at:", location.pathname);
-  const showFooter = !authRoutes.includes(location.pathname);
+  const showFooter = !authRoutes.includes(location.pathname) && !footerlessRoutes.includes(location.pathname);
   return (
     <AuthProvider>
       <BookingProvider>
@@ -142,7 +144,10 @@ export default function App() {
         <Route path="/profile/verify" element={<ProtectedRoute roles={["client", "provider"]}><VerificationPage /></ProtectedRoute>} />
           </Routes>
         </ErrorBoundary>
-        {showFooter && <Footer />}
+        {showFooter && <>
+          <CommunityImpactBanner />
+          <Footer />
+        </>}
       </BookingProvider>
     </AuthProvider>
   );

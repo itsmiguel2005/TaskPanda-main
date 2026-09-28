@@ -9,6 +9,7 @@ import { canRequestCancellation, getCancellationLockMessage } from "../utils/boo
 
 const MAX_MESSAGE_INPUT_HEIGHT = 144;
 const COUNTER_OFFER_TIME_SLOTS = ["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"];
+const CONVERSATION_READ_EVENT = "taskpanda:conversation-read";
 
 function getLocalDateInputValue(date) {
   if (Number.isNaN(date.getTime())) return "";
@@ -271,7 +272,9 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
       console.log("Fetched conversations:", data);
       if (!response.ok) throw new Error(data.message || "Could not load conversations.");
       const payload = Array.isArray(data) ? data : (Array.isArray(data?.conversations) ? data.conversations : []);
-      const nextConversations = payload.filter((conversation) => conversation && typeof conversation.id === "string");
+      const nextConversations = payload
+        .filter((conversation) => conversation && typeof conversation.id === "string")
+        .map((conversation) => conversation.id === selectedIdRef.current ? { ...conversation, unreadCount: 0 } : conversation);
       setConversations(nextConversations);
       setError("");
     } catch (requestError) {
@@ -350,11 +353,13 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
         if (active) {
           const nextMessages = Array.isArray(data.messages) ? data.messages : [];
           setMessages((current) => mergeMessages(current, nextMessages));
+          setConversations((current) => current.map((conversation) => conversation.id === selectedId ? { ...conversation, unreadCount: 0 } : conversation));
           setError("");
           if (!initialLoadComplete) {
             initialLoadComplete = true;
             setHasMoreMessages(Boolean(data.hasMore));
             setIsLoadingMessages(false);
+            window.dispatchEvent(new CustomEvent(CONVERSATION_READ_EVENT, { detail: { conversationId: selectedId, refresh: true } }));
           }
         }
       } catch (requestError) {
@@ -517,6 +522,14 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   }, [messages]);
 
   const selectConversation = (conversationId) => {
+    const conversation = conversations.find((item) => item.id === conversationId);
+    const unreadCount = Math.max(0, Number(conversation?.unreadCount) || 0);
+    setConversations((current) => current.map((item) => item.id === conversationId ? { ...item, unreadCount: 0 } : item));
+    if (unreadCount > 0) {
+      window.dispatchEvent(new CustomEvent(CONVERSATION_READ_EVENT, {
+        detail: { conversationId, unreadCount },
+      }));
+    }
     wasAtBottomRef.current = false;
     setSelectedId(conversationId);
     setActionMessage(null);
@@ -948,36 +961,36 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-gray-50 pt-16">
+    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-slate-50 pt-16">
       <Header showNav activeTab="Messages" role={role} />
-      <div className="mx-auto flex w-full max-w-5xl flex-1 px-4 sm:px-6 lg:px-8">
-        <aside className={`flex w-full shrink-0 flex-col border-r border-gray-200 bg-white md:w-80 lg:w-96 ${selectedConversation ? "hidden md:flex" : ""}`}>
-          <div className="border-b border-gray-100 px-5 py-5">
-            <h1 className="text-lg font-bold text-gray-900">Messages</h1>
+      <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 overflow-hidden border-y border-slate-200 bg-white shadow-sm sm:my-4 sm:rounded-2xl sm:border">
+        <aside className={`flex min-h-0 w-full shrink-0 flex-col border-r border-slate-200 bg-white md:w-80 lg:w-96 ${selectedConversation ? "hidden md:flex" : ""}`}>
+          <div className="border-b border-slate-100 bg-white px-5 py-5">
+            <h1 className="text-lg font-bold text-slate-900">Messages</h1>
             <p className="mt-1 text-xs text-gray-500">Booking conversations</p>
-            <div className="mt-3 flex rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Conversation folders">
+            <div className="mt-3 flex rounded-full bg-slate-100 p-1" role="tablist" aria-label="Conversation folders">
               {[{ archived: false, label: "Active" }, { archived: true, label: "Archived" }].map((folder) => (
                 <button key={folder.label} role="tab" aria-selected={showArchived === folder.archived} onClick={() => {
                   setShowArchived(folder.archived);
                   setSelectedId(null);
                   setSearchParams({}, { replace: true });
-                }} className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold ${showArchived === folder.archived ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                }} className={`flex-1 rounded-full px-3 py-1.5 text-xs font-semibold transition ${showArchived === folder.archived ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>
                   {folder.label}
                 </button>
               ))}
             </div>
             <label className="relative mt-3 block">
               <span className="sr-only">Search conversations</span>
-              <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search conversations" className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-primary-400 focus:bg-white" />
+              <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search conversations" className="w-full rounded-full border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-4 text-sm text-slate-700 outline-none transition focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100" />
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
             </label>
           </div>
           {error && <p role="alert" className="border-b border-red-100 bg-red-50 px-5 py-3 text-xs text-red-700">{error}</p>}
-          <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/50 p-2 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
             {isLoading || openingBooking ? (
               <p className="p-5 text-sm text-gray-500">{openingBooking ? "Opening booking conversation…" : "Loading conversations…"}</p>
             ) : filteredConversations.length ? filteredConversations.map((conversation) => (
-              <div key={conversation.id} className={`flex items-center border-b border-gray-100 pr-2 transition hover:bg-gray-50 ${selectedId === conversation.id ? "border-l-[3px] border-l-primary-500 bg-primary-50/60" : ""}`}>
+              <div key={conversation.id} className={`flex items-center rounded-xl border pr-2 transition ${selectedId === conversation.id ? "border-slate-200 bg-white shadow-sm" : "border-transparent hover:bg-white/80"}`}>
                 <button onClick={() => selectConversation(conversation.id)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-4 text-left">
                   <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-bold text-primary-700">{getInitial(conversation.name)}</span>
                   <span className="min-w-0 flex-1">
@@ -1007,10 +1020,10 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
           </div>
         </aside>
 
-        <main className={`relative min-w-0 flex-1 flex-col bg-white ${selectedConversation ? "flex" : "hidden md:flex"}`}>
+        <main className={`relative min-h-0 min-w-0 flex-1 flex-col bg-white ${selectedConversation ? "flex" : "hidden md:flex"}`}>
           {selectedConversation ? (
             <>
-              <header className="flex items-center gap-3 border-b border-gray-100 px-4 py-4 sm:px-5">
+              <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-4 sm:px-5">
                 <button onClick={() => { setSelectedId(null); setSearchParams({}, { replace: true }); }} className="mr-1 rounded-md p-1.5 text-gray-500 hover:bg-gray-100 md:hidden" aria-label="Back to conversations">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5"><path strokeLinecap="round" strokeLinejoin="round" d="m15 18-6-6 6-6" /></svg>
                 </button>
@@ -1028,7 +1041,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                     Settlement pending
                   </span>
                 )}
-                <button type="button" onClick={() => { setSupportReportDetails(""); setSupportReportOpen(true); }} className="rounded-md border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50">{selectedConversation.bookingStatus === "closed" ? "Report post-service issue" : "Report issue"}</button>
+                <button type="button" onClick={() => { setSupportReportDetails(""); setSupportReportOpen(true); }} className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50">{selectedConversation.bookingStatus === "closed" ? "Report post-service issue" : "Report issue"}</button>
               </header>
               {role === "client" && ["complete", "closed", "settled"].includes(normalizeBookingStatus(selectedConversation.bookingStatus)) && !hasClientRatedCurrentConversation && bookingMutuallySettled && (
                 <section className="border-b border-gray-100 bg-amber-50/60 px-4 py-3 sm:px-5">
@@ -1172,7 +1185,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                 <p className="border-b border-red-200 bg-red-50 px-4 py-3 text-xs font-medium text-red-900 sm:px-5">The provider disputed this revision. It has been escalated for manual review. <button type="button" onClick={() => { setSupportReportDetails(""); setSupportReportOpen(true); }} className="ml-1 underline">Contact support</button></p>
               )}
               {error && <p role="alert" className="border-b border-red-100 bg-red-50 px-4 py-2 text-xs text-red-700">{error}</p>}
-              <div ref={messagesContainerRef} className="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 py-4 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+              <div ref={messagesContainerRef} className="min-h-0 flex-1 space-y-1 overflow-y-auto bg-slate-50/50 px-4 py-5 sm:px-6 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
                 {isLoadingMessages ? (
                   <p className="py-8 text-center text-sm text-gray-500">Loading messages…</p>
                 ) : (
@@ -1180,24 +1193,23 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                 {hasMoreMessages && <div className="flex justify-center py-2"><button type="button" disabled={isLoadingOlderMessages} onClick={loadOlderMessages} className="rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50">{isLoadingOlderMessages ? "Loading older messages…" : "Load older messages"}</button></div>}
                 {groupedMessages.length ? groupedMessages.map((group) => (
                   <section key={group.date}>
-                    <div className="flex justify-center py-3"><span className="rounded-full bg-gray-100 px-3 py-1 text-[11px] font-medium text-gray-500">{group.date}</span></div>
-                    <div className="space-y-1">
+                    <div className="flex justify-center py-4"><span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-500 shadow-sm">{group.date}</span></div>
+                    <div className="space-y-2">
                       {group.messages.map((message) => message.senderRole === "system" ? (
-                        <div key={message.id} className={`flex ${message.isMine ? "justify-end" : "justify-start"} py-1`}>
+                        <div key={message.id} className={`flex py-1 ${message.isMine ? "justify-end" : "justify-start"}`}>
                           <SystemMessageCard
                             message={message}
                             role={role}
                             actorName={message.isMine ? "You" : selectedConversation.name}
-                            isMine={message.isMine}
                             onOpen={(event) => { setActionModalView("DETAILS"); setActionMessage(event); setActionError(""); setCounterFormOpen(false); }}
                             onRespondToOffer={handleCounterOfferResponse}
                           />
                         </div>
                       ) : (
                         <div key={message.id} className={`flex ${message.isMine ? "justify-end" : "justify-start"}`}>
-                          <div className={`max-w-[82%] rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed shadow-sm ${message.isMine ? "rounded-br-sm bg-primary-600 text-white" : "rounded-bl-sm bg-gray-100 text-gray-800"}`}>
+                          <div className={`max-w-[82%] rounded-2xl border px-4 py-2.5 text-[13px] leading-relaxed shadow-sm ${message.isMine ? "rounded-br-md border-slate-800 bg-slate-800 text-white" : "rounded-bl-md border-slate-200 bg-white text-slate-800"}`}>
                             <p className="whitespace-pre-wrap break-words">{message.text}</p>
-                            <time className={`mt-1 block text-right text-[10px] ${message.isMine ? "text-white/70" : "text-gray-400"}`} dateTime={message.createdAt}>{formatConversationTime(message.createdAt)}</time>
+                            <time className={`mt-1 block text-right text-[10px] ${message.isMine ? "text-white/65" : "text-slate-400"}`} dateTime={message.createdAt}>{formatConversationTime(message.createdAt)}</time>
                           </div>
                         </div>
                       ))}
@@ -1212,13 +1224,13 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
               {isManuallyArchivedForRole(selectedConversation, role) ? (
                 <div className="border-t border-gray-100 bg-gray-50 px-4 py-4 text-center text-xs text-gray-500">Restore this conversation from Archived to send messages. The digital receipt remains available above.</div>
               ) : (
-                <div className="border-t border-gray-100 bg-white px-4 py-2">
+                <div className="border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
                   <div className="mb-2 flex flex-wrap gap-1.5">
-                    {quickReplies.map((reply) => <button key={reply} type="button" onClick={() => setInput(reply)} className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-100">{reply}</button>)}
+                    {quickReplies.map((reply) => <button key={reply} type="button" onClick={() => setInput(reply)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-medium text-slate-600 transition hover:bg-slate-50">{reply}</button>)}
                   </div>
                   <form onSubmit={(event) => { event.preventDefault(); handleSend(); }} className="flex items-end gap-2 pb-1">
-                    <textarea ref={inputRef} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} rows={1} maxLength={2000} placeholder={`Message ${selectedConversation.name}…`} className="min-h-10 max-h-36 flex-1 resize-none overflow-y-hidden rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-800 outline-none focus:border-primary-300 focus:bg-white focus:ring-1 focus:ring-primary-300" />
-                    <button type="submit" disabled={!input.trim() || isSending} className="flex h-10 shrink-0 items-center justify-center rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-40">{isSending ? "Sending…" : "Send"}</button>
+                    <textarea ref={inputRef} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} rows={1} maxLength={2000} placeholder={`Message ${selectedConversation.name}…`} className="min-h-11 max-h-36 flex-1 resize-none overflow-y-hidden rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100" />
+                    <button type="submit" disabled={!input.trim() || isSending} className="flex h-11 shrink-0 items-center justify-center rounded-full bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40">{isSending ? "Sending…" : "Send"}</button>
                   </form>
                 </div>
               )}

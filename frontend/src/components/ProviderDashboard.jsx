@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
@@ -17,6 +17,8 @@ const STATUS_ACTIONS = {
   "In Progress": { status: "complete", nextStatus: "Completed", buttonLabel: "Mark as Complete" },
 };
 const DASHBOARD_TABS = ["All", "Incoming Requests", "Active", "Completed", "Cancelled", "Declined"];
+const DISMISSIBLE_JOB_STATUSES = new Set(["Completed", "Settled", "Cancelled", "Declined by Provider"]);
+const DISMISSED_JOBS_STORAGE_KEY = "taskpanda-hidden-provider-dashboard-jobs";
 
 const initialJobs = [
   {
@@ -76,6 +78,7 @@ function StatusBadge({ status }) {
     "Pending Request": "bg-amber-100 text-amber-700 border-amber-200",
     Confirmed: "bg-green-100 text-green-700 border-green-200",
     Completed: "bg-blue-100 text-blue-700 border-blue-200",
+    Settled: "bg-emerald-100 text-emerald-800 border-emerald-200",
     "In Progress": "bg-purple-100 text-purple-700 border-purple-200",
     "Cancellation Requested": "bg-amber-100 text-amber-700 border-amber-200",
     Cancelled: "bg-red-100 text-red-700 border-red-200",
@@ -95,7 +98,6 @@ function StatusBadge({ status }) {
 
 export default function ProviderDashboard() {
   const navigate = useNavigate();
-  const { isLoggedIn, role } = useAuth();
   const { bookings, isLoading, error, updateBookingStatus, submitCompletionProof, requestCancellation } = useBookings();
   const [activeTab, setActiveTab] = useState("All");
   const [bookingSearchQuery, setBookingSearchQuery] = useState("");
@@ -106,6 +108,18 @@ export default function ProviderDashboard() {
   const [cancelingId, setCancelingId] = useState(null);
   const [cancellationReason, setCancellationReason] = useState("");
   const [completionBookingId, setCompletionBookingId] = useState(null);
+  const [dismissedJobIds, setDismissedJobIds] = useState(() => {
+    try {
+      const savedIds = JSON.parse(window.localStorage.getItem(DISMISSED_JOBS_STORAGE_KEY) || "[]");
+      return Array.isArray(savedIds) ? savedIds.map(String) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem(DISMISSED_JOBS_STORAGE_KEY, JSON.stringify(dismissedJobIds));
+  }, [dismissedJobIds]);
 
   const normalizedBookingQuery = bookingSearchQuery.trim().toLowerCase();
   const matchesBookingSearch = (booking) => !normalizedBookingQuery ||
@@ -113,6 +127,12 @@ export default function ProviderDashboard() {
   const requests = bookings.filter((booking) => booking.status === "Pending Request" && matchesBookingSearch(booking));
   const jobs = bookings.filter((booking) => booking.status !== "Pending Request" && matchesBookingSearch(booking));
   const cancelBooking = bookings.find((booking) => booking.id === cancelingId);
+
+  function dismissJob(bookingId) {
+    const booking = bookings.find((item) => String(item.id) === String(bookingId));
+    if (!booking || !DISMISSIBLE_JOB_STATUSES.has(booking.status)) return;
+    setDismissedJobIds((current) => current.includes(String(bookingId)) ? current : [...current, String(bookingId)]);
+  }
 
   const sortedRequests = useMemo(() => {
     return [...requests].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
@@ -130,6 +150,10 @@ export default function ProviderDashboard() {
     if (activeTab === "Declined") return sortedJobs.filter((j) => j.status === "Declined by Provider");
     return sortedJobs;
   }, [sortedJobs, activeTab]);
+  const visibleJobs = filteredJobs.filter((job) => !dismissedJobIds.includes(String(job.id)));
+  const hiddenJobCount = bookings.filter((booking) =>
+    dismissedJobIds.includes(String(booking.id)) && DISMISSIBLE_JOB_STATUSES.has(booking.status)
+  ).length;
 
   const dashboardTabCounts = {
     All: bookings.length,
@@ -141,19 +165,42 @@ export default function ProviderDashboard() {
   };
 
   const stats = useMemo(() => {
-    const activeJobs = jobs.filter((j) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(j.status)).length;
-    const completedJobs = jobs.filter((j) => j.status === "Completed").length;
-    const earnings = jobs
-      .filter((j) => j.status === "Completed")
+    const activeStatuses = ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"];
+    const completedStatuses = ["Completed", "Settled"];
+    const activeJobs = bookings.filter((booking) => activeStatuses.includes(booking.status)).length;
+    const completedJobs = bookings.filter((booking) => completedStatuses.includes(booking.status)).length;
+    const earnings = bookings
+      .filter((booking) => completedStatuses.includes(booking.status))
       .reduce((sum, j) => sum + parsePrice(j.price), 0);
+    const reviewedBookings = bookings.filter((booking) =>
+      completedStatuses.includes(booking.status)
+      && booking.clientRating !== null
+      && booking.clientRating !== undefined
+      && Number.isFinite(Number(booking.clientRating))
+    );
+    const rating = reviewedBookings.length
+      ? reviewedBookings.reduce((total, booking) => total + Number(booking.clientRating), 0) / reviewedBookings.length
+      : 0;
     return {
-      rating: "4.9",
-      reviews: "128 reviews",
+      rating,
+      reviews: `${reviewedBookings.length} ${reviewedBookings.length === 1 ? "review" : "reviews"}`,
       activeJobs,
       completedJobs,
       earnings: `₱${earnings.toLocaleString()}`,
     };
-  }, [jobs]);
+  }, [bookings]);
+
+  const nextBooking = useMemo(() => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    return bookings
+      .filter((booking) => ["Confirmed", "On the Way", "In Progress"].includes(booking.status))
+      .filter((booking) => {
+        const date = new Date(booking.serviceDate || booking.createdAt);
+        return Number.isFinite(date.getTime()) && date >= startOfToday;
+      })
+      .sort((a, b) => new Date(a.serviceDate || a.createdAt) - new Date(b.serviceDate || b.createdAt))[0] || null;
+  }, [bookings]);
 
   function acceptRequest(id) {
     const req = requests.find((r) => r.id === id);
@@ -189,7 +236,7 @@ export default function ProviderDashboard() {
     <div className="min-h-screen bg-gray-50 pt-16 pb-12">
       <Header showNav activeTab="Home" role="provider" notifCount={requests.length} />
 
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Page Title */}
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Provider Dashboard</h1>
@@ -201,54 +248,40 @@ export default function ProviderDashboard() {
         {isLoading && <p className="mb-4 text-sm text-gray-500">Loading bookings...</p>}
 
         {/* Stats */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <div className="rounded-xl bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2">
-              <span className="text-xl">⭐</span>
-              <span className="text-xs text-gray-500">Rating</span>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[
+            { label: "Rating", value: stats.rating, detail: stats.reviews, tone: "border-amber-100 bg-amber-50/70" },
+            { label: "Active Jobs", value: stats.activeJobs, detail: "Currently in progress", tone: "border-emerald-100 bg-emerald-50/60" },
+            { label: "Completed Jobs", value: stats.completedJobs, detail: "All-time completed", tone: "border-blue-100 bg-blue-50/60" },
+            { label: "Total Earnings", value: stats.earnings, detail: "From completed jobs", tone: "border-slate-200 bg-white" },
+          ].map((metric) => (
+            <div key={metric.label} className={`min-h-28 rounded-2xl border p-4 shadow-sm sm:p-5 ${metric.tone}`}>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{metric.label}</p>
+              {metric.label === "Rating" ? (
+                <div className="mt-2 flex items-center gap-1" aria-label={metric.value > 0 ? `${metric.value.toFixed(1)} out of 5 stars` : "No ratings yet"}>
+                  {[1, 2, 3, 4, 5].map((star) => <span key={star} aria-hidden="true" className={`text-xl leading-none ${metric.value > 0 && star <= Math.round(metric.value) ? "text-amber-500" : "text-slate-300"}`}>★</span>)}
+                </div>
+              ) : (
+                <p className="mt-2 text-2xl font-bold text-slate-900">{metric.value}</p>
+              )}
+              <p className="mt-1 text-xs text-slate-500">{metric.detail}</p>
             </div>
-            <p className="mt-2 text-2xl font-bold text-gray-900">{stats.rating}</p>
-            <p className="mt-0.5 text-xs text-gray-400">{stats.reviews}</p>
-          </div>
-          <div className="rounded-xl bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2">
-              <span className="text-xl">🔧</span>
-              <span className="text-xs text-gray-500">Active Jobs</span>
-            </div>
-            <p className="mt-2 text-2xl font-bold text-gray-900">{stats.activeJobs}</p>
-            <p className="mt-0.5 text-xs text-gray-400">In progress</p>
-          </div>
-          <div className="rounded-xl bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2">
-              <span className="text-xl">✅</span>
-              <span className="text-xs text-gray-500">Completed</span>
-            </div>
-            <p className="mt-2 text-2xl font-bold text-gray-900">{stats.completedJobs}</p>
-            <p className="mt-0.5 text-xs text-gray-400">All time</p>
-          </div>
-          <div className="rounded-xl bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2">
-              <span className="text-xl">💰</span>
-              <span className="text-xs text-gray-500">Earnings</span>
-            </div>
-            <p className="mt-2 text-2xl font-bold text-gray-900">{stats.earnings}</p>
-            <p className="mt-0.5 text-xs text-gray-400">From completed jobs</p>
-          </div>
+          ))}
         </div>
 
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex gap-1 overflow-x-auto pb-1">
+        <div className="mt-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex min-w-0 gap-2 overflow-x-auto pb-1">
             {DASHBOARD_TABS.map((tab) => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${activeTab === tab ? "bg-gray-900 text-white" : "bg-white text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50"}`}>
-                {tab === "Active" ? "My Bookings (Active)" : tab}
-                <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold ${activeTab === tab ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"}`}>{dashboardTabCounts[tab]}</span>
+              <button key={tab} onClick={() => setActiveTab(tab)} className={`flex min-h-10 shrink-0 items-center gap-2 rounded-full px-3.5 text-xs font-semibold transition sm:text-sm ${activeTab === tab ? "bg-slate-900 text-white shadow-sm" : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"}`}>
+                {tab === "Active" ? "Active Bookings" : tab}
+                <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${activeTab === tab ? "bg-white/15 text-white" : "bg-slate-100 text-slate-500"}`}>{dashboardTabCounts[tab]}</span>
               </button>
             ))}
           </div>
-          <label className="relative block w-full sm:max-w-xs">
+          <label className="relative block w-full shrink-0 xl:max-w-sm">
             <span className="sr-only">Search bookings</span>
-            <input type="search" value={bookingSearchQuery} onChange={(event) => setBookingSearchQuery(event.target.value)} placeholder="Search client or repair" className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20" />
-            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
+            <input type="search" value={bookingSearchQuery} onChange={(event) => setBookingSearchQuery(event.target.value)} placeholder="Search client or repair" className="w-full rounded-full border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100" />
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-3.5 top-3 h-4 w-4 text-slate-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
           </label>
         </div>
 
@@ -256,63 +289,68 @@ export default function ProviderDashboard() {
           {/* Main Column */}
           <div className="space-y-6 lg:col-span-2">
             {/* Incoming Requests */}
-            {(activeTab === "All" || activeTab === "Incoming Requests") && <div className="rounded-2xl bg-white shadow-sm">
-              <div className="border-b border-gray-100 px-5 py-4">
-                <h2 className="text-base font-semibold text-gray-900">
+            {(activeTab === "All" || activeTab === "Incoming Requests") && <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-5 py-4">
+                <h2 className="text-base font-bold text-slate-900">
                   Incoming Requests
                   {requests.length > 0 && (
-                    <span className="ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-amber-100 px-1.5 text-xs font-medium text-amber-700">
+                    <span className="ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-amber-50 px-1.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200">
                       {requests.length}
                     </span>
                   )}
                 </h2>
               </div>
               {requests.length === 0 ? (
-                <div className="py-12 text-center">
-                  <span className="text-3xl">📭</span>
-                  <p className="mt-2 text-sm text-gray-400">No incoming requests</p>
+                <div className="px-5 py-12 text-center">
+                  <p className="text-sm font-medium text-slate-500">No incoming requests</p>
                 </div>
               ) : (
-                <div className="divide-y divide-gray-100">
+                <div className="divide-y divide-slate-100">
                   {sortedRequests.map((req) => (
-                    <div key={req.id} className="px-5 py-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-gray-900">
-                              {req.client}
-                            </span>
-                            <StatusBadge status="Pending Request" />
+                    <div key={req.id} className="grid gap-4 px-5 py-5 sm:grid-cols-[minmax(0,1fr)_11rem] sm:px-6">
+                      <div className="min-w-0">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-700 ring-1 ring-slate-200">{req.client.charAt(0)}</div>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-slate-900">{req.client}</p>
+                              <p className="text-xs text-slate-500">New booking request</p>
+                            </div>
                           </div>
-                          <p className="mt-1 text-sm font-medium text-gray-700">
-                            {req.task}
-                          </p>
-                          <p className="mt-1 text-xs text-gray-500">
-                            {req.description}
-                          </p>
-                          <p className="mt-2 flex items-center gap-3 text-xs text-gray-400">
-                            <span>{req.address}</span>
-                            <span>{req.date}</span>
-                            <span>{req.time}</span>
-                            <span className="font-medium text-gray-600">
-                              {req.price}
-                            </span>
-                          </p>
+                          <StatusBadge status="Pending Request" />
                         </div>
-                        <div className="flex shrink-0 flex-col gap-2">
+                        <div className="mt-4">
+                          <h3 className="text-base font-bold text-slate-900">{req.task}</h3>
+                          <p className="mt-1 text-sm leading-relaxed text-slate-500">{req.description}</p>
+                        </div>
+                        <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2">
+                          <div className="min-w-0">
+                            <dt className="font-medium text-slate-400">Location</dt>
+                            <dd className="mt-0.5 truncate text-slate-700">{req.address}</dd>
+                          </div>
+                          <div>
+                            <dt className="font-medium text-slate-400">Requested time</dt>
+                            <dd className="mt-0.5 text-slate-700">{req.date} · {req.time}</dd>
+                          </div>
+                        </dl>
+                        <div className="mt-4 flex flex-wrap items-center gap-2">
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">{req.urgency || "Flexible"}</span>
+                          <span className="text-sm font-bold text-slate-900">{req.price}</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-row gap-2 border-t border-slate-100 pt-3 sm:flex-col sm:justify-center sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
                           <button
                             onClick={() => acceptRequest(req.id)}
-                            className="rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-primary-700"
+                            className="flex-1 rounded-full bg-primary-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-primary-700 sm:flex-none"
                           >
                             Accept
                           </button>
                           <button
                             onClick={() => rejectRequest(req.id)}
-                            className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
+                            className="flex-1 rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 sm:flex-none"
                           >
                             Decline
                           </button>
-                        </div>
                       </div>
                     </div>
                   ))}
@@ -321,89 +359,120 @@ export default function ProviderDashboard() {
             </div>}
 
             {/* My Jobs */}
-            {activeTab !== "Incoming Requests" && <div className="rounded-2xl bg-white shadow-sm">
-              <div className="border-b border-gray-100 px-5 py-4">
-                <h2 className="text-base font-semibold text-gray-900">My Jobs</h2>
+            {activeTab !== "Incoming Requests" && <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+                <h2 className="text-base font-bold text-slate-900">My Jobs</h2>
+                {hiddenJobCount > 0 && (
+                  <button type="button" onClick={() => setDismissedJobIds([])} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50">
+                    Restore {hiddenJobCount} hidden
+                  </button>
+                )}
               </div>
-              {filteredJobs.length === 0 ? (
+              {visibleJobs.length === 0 ? (
                 <div className="py-12 text-center">
-                  <span className="text-3xl">📋</span>
-                  <p className="mt-2 text-sm text-gray-400">No {activeTab.toLowerCase()} jobs</p>
+                  <p className="text-sm font-medium text-slate-500">No {activeTab.toLowerCase()} jobs</p>
                 </div>
               ) : (
-                <div className="divide-y divide-gray-100">
-                  {filteredJobs.map((job) => (
-                    <div key={job.id} className="px-5 py-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-gray-900">
-                              {job.client}
-                            </span>
-                            <StatusBadge status={job.status} />
-                            <button onClick={() => navigate(`/provider/messages?bookingId=${job.id}`)} className="ml-auto rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Chat</button>
+                <div className="max-h-[60vh] divide-y divide-slate-100 overflow-y-auto overscroll-contain scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent lg:max-h-[calc(100vh-21rem)]">
+                  {visibleJobs.map((job) => (
+                    <div key={job.id} className="grid gap-4 px-5 py-5 sm:grid-cols-[minmax(0,1fr)_11rem] sm:px-6">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-700 ring-1 ring-slate-200">{job.client?.charAt(0) || "C"}</div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-semibold text-slate-900">{job.client}</p>
+                            <p className="text-xs text-slate-500">Submitted {job.createdAt ? new Date(job.createdAt).toLocaleString() : ""}</p>
                           </div>
-                          <BookingProgress status={job.status} />
-                          <p className="mt-1 text-sm font-medium text-gray-700">
-                            {job.task}
-                          </p>
+                          <StatusBadge status={job.status} />
+                          {DISMISSIBLE_JOB_STATUSES.has(job.status) && (
+                            <button
+                              type="button"
+                              onClick={() => dismissJob(job.id)}
+                              aria-label={`Archive ${job.task} booking from dashboard`}
+                              title="Hide this job from the dashboard"
+                              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-3.5 w-3.5" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+                            </button>
+                          )}
+                        </div>
+                        <div className="mt-4">
+                          <p className="text-base font-bold text-slate-900">{job.task}</p>
+                          <p className="mt-1 text-sm leading-relaxed text-slate-500">{job.description}</p>
+                        </div>
+                        <div className="mt-3 max-w-md"><BookingProgress status={job.status} /></div>
+                        <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2">
+                          <div className="min-w-0">
+                            <dt className="font-medium text-slate-400">Location</dt>
+                            <dd className="mt-0.5 truncate text-slate-700">{job.address}</dd>
+                          </div>
+                          <div>
+                            <dt className="font-medium text-slate-400">Schedule</dt>
+                            <dd className="mt-0.5 text-slate-700">{job.date} · {job.time}</dd>
+                          </div>
+                          <div>
+                            <dt className="font-medium text-slate-400">Agreed price</dt>
+                            <dd className="mt-0.5 font-semibold text-slate-900">{job.price}</dd>
+                          </div>
+                          <div>
+                            <dt className="font-medium text-slate-400">Service category</dt>
+                            <dd className="mt-0.5 text-slate-700">{job.cred || "Local service"}</dd>
+                          </div>
+                          <div>
+                            <dt className="font-medium text-slate-400">Urgency</dt>
+                            <dd className={`mt-0.5 text-slate-700 ${job.urgency === "Emergency" ? "font-semibold text-rose-700" : ""}`}>{job.urgency || "Flexible"}</dd>
+                          </div>
+                        </dl>
                           {job.status === "Completed" && job.clientRating != null && (
-                            <div className="mt-2 rounded-md border border-amber-100 bg-amber-50 p-2.5 text-xs text-amber-950">
+                            <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50/70 p-3 text-xs text-amber-950">
                               <p className="font-semibold">Client review: <span className="inline-flex items-center gap-0.5">{[1, 2, 3, 4, 5].map((star) => (<span key={star} style={{ color: star <= Number(job.clientRating || 0) ? "#fbbf24" : "#d1d5db", lineHeight: 1 }}>{"★"}</span>))}</span></p>
                               {job.clientReview && <p className="mt-1">{job.clientReview}</p>}
                               {job.clientReviewPhotos?.length > 0 && <div className="mt-2 flex gap-2">{job.clientReviewPhotos.map((photo) => <a key={photo} href={photo} target="_blank" rel="noreferrer"><img src={photo} alt="Client review attachment" className="h-12 w-12 rounded object-cover" /></a>)}</div>}
                             </div>
                           )}
                           {job.status === "Cancellation Requested" && job.cancellationExpiresAt && (
-                            <p className="mt-1 text-xs text-amber-700">Cancellation response due {new Date(job.cancellationExpiresAt).toLocaleString()}.</p>
+                            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Cancellation response due {new Date(job.cancellationExpiresAt).toLocaleString()}.</p>
                           )}
                           {job.cancellationOutcome === "rejected" && (
-                            <p className="mt-1 text-xs text-red-700">Your cancellation request was declined. The booking remains active.</p>
+                            <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">Your cancellation request was declined. The booking remains active.</p>
                           )}
-                          <div className="mt-1 flex items-center gap-3">
-                            <button
-                              onClick={() => setExpandedJob(expandedJob === job.id ? null : job.id)}
-                              className="text-xs font-medium text-primary-600 transition hover:text-primary-800"
-                            >
-                              {job.status === "In Revision" ? (expandedJob === job.id ? "Hide revision" : "Review revision") : expandedJob === job.id ? "Hide details" : "View details"}
-                            </button>
-                            {STATUS_ACTIONS[job.status] && (
-                              <button
-                                onClick={() => STATUS_ACTIONS[job.status].status === "complete"
-                                  ? setCompletionBookingId(job.id)
-                                  : setStatusChange({ bookingId: job.id, ...STATUS_ACTIONS[job.status] })}
-                                className="text-xs font-semibold text-primary-700 transition hover:text-primary-900"
-                              >
-                                {STATUS_ACTIONS[job.status].buttonLabel}
-                              </button>
-                            )}
-                            {canRequestCancellation(job) ? (
-                              <button
-                                onClick={() => { setCancelingId(job.id); setCancellationReason(""); }}
-                                className="text-xs font-medium text-red-600 transition hover:text-red-800"
-                              >
-                                Cancel
-                              </button>
-                            ) : getCancellationLockMessage(job) && (
-                              <button type="button" disabled title={getCancellationLockMessage(job)} className="cursor-not-allowed text-xs font-medium text-gray-400">Cancellation locked</button>
-                            )}
-                          </div>
                           {expandedJob === job.id && (
-                            <div className="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-500">
+                            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">
                               <RevisionReviewPanel booking={job} />
-                              <p>{job.description}</p>
+                              <p className="mt-2">{job.description}</p>
                               <div className="mt-2"><AddressActions address={job.address} /></div>
-                              <div className="mt-2 flex items-center gap-3">
-                                <span>📍 {job.address}</span>
-                                <span>📅 {job.date}</span>
-                                <span>🕐 {job.time}</span>
-                                <span>💵 {job.price}</span>
-                                <span className={job.urgency === "Emergency" ? "font-semibold text-red-700" : ""}>{job.urgency || "Flexible"}</span>
-                              </div>
                               <BookingHistory events={job.statusHistory} />
                             </div>
                           )}
-                        </div>
+                      </div>
+                      <div className="flex flex-row flex-wrap gap-2 border-t border-slate-100 pt-3 sm:flex-col sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
+                        <button onClick={() => navigate(`/provider/messages?bookingId=${job.id}`)} className="flex-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 sm:flex-none">Open conversation</button>
+                        <button
+                          onClick={() => setExpandedJob(expandedJob === job.id ? null : job.id)}
+                          className="flex-1 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 sm:flex-none"
+                        >
+                          {job.status === "In Revision" ? (expandedJob === job.id ? "Hide revision" : "Review revision") : expandedJob === job.id ? "Hide details" : "View details"}
+                        </button>
+                        {STATUS_ACTIONS[job.status] && (
+                          <button
+                            onClick={() => STATUS_ACTIONS[job.status].status === "complete"
+                              ? setCompletionBookingId(job.id)
+                              : setStatusChange({ bookingId: job.id, ...STATUS_ACTIONS[job.status] })}
+                            className="flex-1 rounded-full bg-primary-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-primary-700 sm:flex-none"
+                          >
+                            {STATUS_ACTIONS[job.status].buttonLabel}
+                          </button>
+                        )}
+                        {canRequestCancellation(job) ? (
+                          <button
+                            onClick={() => { setCancelingId(job.id); setCancellationReason(""); }}
+                            className="flex-1 rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 sm:flex-none"
+                          >
+                            Cancel booking
+                          </button>
+                        ) : getCancellationLockMessage(job) && (
+                          <button type="button" disabled title={getCancellationLockMessage(job)} className="flex-1 cursor-not-allowed rounded-full border border-slate-200 px-3 py-2 text-xs font-medium text-slate-400 sm:flex-none">Cancellation locked</button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -414,46 +483,58 @@ export default function ProviderDashboard() {
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Provider Profile Mini Card */}
-            <div className="rounded-2xl bg-white p-5 shadow-sm text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-primary-100 text-lg font-bold text-primary-700 ring-4 ring-primary-50">
-                {isLoggedIn ? "J" : "?"}
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-primary-600">Next up</p>
+                  <h2 className="mt-1 text-base font-bold text-slate-900">Upcoming Schedule</h2>
+                </div>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{nextBooking ? "Scheduled" : "Clear"}</span>
               </div>
-              <h3 className="mt-3 text-base font-bold text-gray-900">
-                {isLoggedIn ? "Johhny Cruz" : "Guest"}
-              </h3>
-              <p className="text-xs text-gray-500">{role === "provider" ? "TESDA NC II Carpenter" : "Provider"}</p>
-              <div className="mt-3 flex items-center justify-center gap-1 text-sm">
-                <span>⭐</span>
-                <span className="font-semibold text-gray-900">4.9</span>
-                <span className="text-gray-400">(128)</span>
-              </div>
-            </div>
+              {nextBooking ? (
+                <div className="p-5">
+                  <p className="text-sm font-semibold text-primary-700">{nextBooking.date} · {nextBooking.time}</p>
+                  <h3 className="mt-2 text-base font-bold text-slate-900">{nextBooking.task}</h3>
+                  <p className="mt-1 text-sm text-slate-600">{nextBooking.client}</p>
+                  <p className="mt-3 border-t border-slate-100 pt-3 text-xs leading-relaxed text-slate-500">{nextBooking.address || "Address to be confirmed"}</p>
+                  <div className="mt-4 flex flex-col gap-2">
+                    <button type="button" onClick={() => navigate(`/provider/messages?bookingId=${nextBooking.id}`)} className="w-full rounded-full bg-primary-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-primary-700">Open conversation</button>
+                    <button type="button" onClick={() => setActiveTab("Active")} className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">View active jobs</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="px-5 py-8 text-center">
+                  <p className="text-sm font-medium text-slate-700">No upcoming jobs</p>
+                  <p className="mt-1 text-xs text-slate-500">Accepted bookings will appear here.</p>
+                  <button type="button" onClick={() => navigate("/provider-bookings")} className="mt-4 rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">Manage bookings</button>
+                </div>
+              )}
+            </section>
 
             {/* Quick Actions */}
-            <div className="rounded-2xl bg-white shadow-sm">
-              <div className="border-b border-gray-100 px-5 py-3">
-                <h3 className="text-sm font-semibold text-gray-900">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-5 py-3">
+                <h3 className="text-sm font-semibold text-slate-900">
                   Quick Actions
                 </h3>
               </div>
               <button
                 onClick={() => navigate("/provider/messages")}
-                className="flex w-full items-center gap-3 px-5 py-3 text-sm text-gray-600 transition hover:bg-gray-50"
+                className="flex w-full items-center gap-3 px-5 py-3 text-sm text-slate-600 transition hover:bg-slate-50"
               >
                 <span className="text-base">💬</span>
                 <span>Messages</span>
               </button>
               <button
                 onClick={() => navigate("/provider-bookings")}
-                className="flex w-full items-center gap-3 px-5 py-3 text-sm text-gray-600 transition hover:bg-gray-50"
+                className="flex w-full items-center gap-3 px-5 py-3 text-sm text-slate-600 transition hover:bg-slate-50"
               >
                 <span className="text-base">📋</span>
                 <span>All Bookings</span>
               </button>
               <button
                 onClick={() => navigate("/provider-profile")}
-                className="flex w-full items-center gap-3 px-5 py-3 text-sm text-gray-600 transition hover:bg-gray-50"
+                className="flex w-full items-center gap-3 px-5 py-3 text-sm text-slate-600 transition hover:bg-slate-50"
               >
                 <span className="text-base">👤</span>
                 <span>My Profile</span>

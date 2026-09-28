@@ -133,7 +133,7 @@ export default function Dashboard() {
   const visibleTopRatedProviders = useMemo(() => topRatedProviders, [topRatedProviders]);
 
   const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined"];
-  const dashboardDismissableStatuses = new Set(["Completed", "Settled"]);
+  const dashboardDismissableStatuses = new Set(["Completed", "Settled", "Cancelled", "Declined by Provider"]);
   const nonDismissedBookingList = bookingList.filter((booking) => !dismissedBookingIds.includes(booking.id));
 
   const canDismissBookingFromDashboard = (booking) => dashboardDismissableStatuses.has(String(booking?.status || ""));
@@ -201,17 +201,40 @@ export default function Dashboard() {
   const hasDismissedBookings = dismissedBookingIds.length > 0;
 
   useEffect(() => {
+    let active = true;
+    let latestRequest = 0;
+
+    const refreshFavoriteProviders = async () => {
+      if (!token) return;
+      const requestId = ++latestRequest;
+      try {
+        const response = await fetch("/api/client/favorites", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) return;
+        const data = await response.json().catch(() => ({}));
+        if (!active || requestId !== latestRequest) return;
+        setFavoriteProviders(Array.isArray(data.favorites) ? data.favorites : []);
+      } catch {
+        // Preserve the currently displayed favorites if a background refresh fails.
+      }
+    };
+
     const handleFavoritesSync = (event) => {
       const nextIds = Array.isArray(event?.detail?.favoriteProviderIds)
         ? event.detail.favoriteProviderIds
         : [];
       const normalizedIds = nextIds.map((id) => String(id)).filter(Boolean);
       setFavoriteProviderIds(new Set(normalizedIds));
+      void refreshFavoriteProviders();
     };
 
     window.addEventListener(FAVORITES_SYNC_EVENT, handleFavoritesSync);
-    return () => window.removeEventListener(FAVORITES_SYNC_EVENT, handleFavoritesSync);
-  }, []);
+    return () => {
+      active = false;
+      window.removeEventListener(FAVORITES_SYNC_EVENT, handleFavoritesSync);
+    };
+  }, [token]);
 
   useEffect(() => {
     if (!token) {
