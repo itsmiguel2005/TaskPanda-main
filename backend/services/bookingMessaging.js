@@ -64,7 +64,8 @@ async function ensureBookingConversation(booking) {
   const conversation = await getOrCreateConversation(booking);
   const existingMessage = await Message.exists({ conversationId: conversation._id });
   if (!existingMessage) {
-    const text = `New Booking Request: ${booking.repairDescription} for ${formatAmount(booking.offeredPrice)} on ${bookingDateText(booking)} - Payment Method: Cash on Completion`;
+    const taskSummary = booking.repairDescription || "Service request";
+    const text = `New Booking Request • Task: ${taskSummary} • Budget: ${formatAmount(booking.offeredPrice)} • Date: ${bookingDateText(booking)} • Payment: Cash on Completion`;
     await appendSystemMessageToConversation(conversation, booking, text, booking.clientId, "booking_request", {
       bookingId: String(idOf(booking)),
       repairDescription: booking.repairDescription,

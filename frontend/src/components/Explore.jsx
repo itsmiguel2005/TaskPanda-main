@@ -538,6 +538,9 @@ export default function Explore() {
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
               {filteredProviders.map((provider) => {
                 const isProviderVerified = Boolean(provider.isVerified || provider.verificationStatus === "verified");
+                const rating = Number(provider?.averageRating ?? 0);
+                const reviews = Number(provider?.totalReviews ?? 0);
+                const hasRatings = rating > 0 && reviews > 0;
 
                 return (
                   <div
@@ -589,6 +592,18 @@ export default function Explore() {
                         <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
                           {[provider.barangay, provider.city, provider.province].filter(Boolean).join(", ") || "Nearby"} · {provider.distanceKm} km
                         </span>
+                      </div>
+
+                      <div className="mt-3 flex items-center gap-2 text-sm">
+                        <div className="flex items-center gap-1 text-amber-500" aria-label={hasRatings ? `${rating.toFixed(1)} out of 5 stars` : "No ratings yet"}>
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <span key={star} className={hasRatings && star <= Math.round(rating) ? "text-amber-500" : "text-gray-300"}>
+                              ★
+                            </span>
+                          ))}
+                        </div>
+                        <span className="font-semibold text-gray-900">{hasRatings ? rating.toFixed(1) : "New"}</span>
+                        <span className="text-xs text-gray-500">({hasRatings ? reviews : 0} reviews)</span>
                       </div>
 
                       <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-gray-500">

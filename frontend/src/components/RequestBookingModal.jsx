@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -112,6 +113,7 @@ function CalendarPicker({ selectedDate, onSelect, onClose }) {
 }
 
 export default function RequestBookingModal({ provider, onClose, onSubmit }) {
+  const navigate = useNavigate();
   const [taskDescription, setTaskDescription] = useState("");
   const [step, setStep] = useState(1);
   const [selectedDate, setSelectedDate] = useState("");
@@ -274,10 +276,10 @@ export default function RequestBookingModal({ provider, onClose, onSubmit }) {
                 Your offer of PHP {Number(offer).toLocaleString()} with Cash on Completion has been sent to the provider. They have to accept or counter.
               </p>
               <div className="mt-6 flex gap-3">
-                <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-gray-300 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50">
+                <button type="button" onClick={() => { onClose(); navigate("/"); }} className="flex-1 rounded-lg border border-gray-300 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50">
                   Return Home
                 </button>
-                <button type="button" onClick={onClose} className="flex-1 rounded-lg bg-gray-900 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800">
+                <button type="button" onClick={() => { onClose(); navigate("/bookings"); }} className="flex-1 rounded-lg bg-gray-900 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800">
                   View Booking Status
                 </button>
               </div>

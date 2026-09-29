@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
+import { useBookings } from "../context/BookingContext.jsx";
 
 function ChangePasswordModal({ onClose }) {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -104,6 +105,7 @@ function ChangePasswordModal({ onClose }) {
 export default function ProfilePage() {
   const navigate = useNavigate();
   const { isLoggedIn, role, isVerified, logout, user, refreshProfile } = useAuth();
+  const { bookings } = useBookings();
   const [showChangePassword, setShowChangePassword] = useState(false);
 
   useEffect(() => {
@@ -114,6 +116,7 @@ export default function ProfilePage() {
   const location = user?.address || [user?.barangay, user?.city, user?.province].filter(Boolean).join(", ");
   const memberSince = user?.createdAt ? new Date(user.createdAt).toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "Not available";
   const initials = fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+  const recentBookings = Array.isArray(bookings) ? bookings.slice(0, 3) : [];
 
   const handleSignOut = () => {
     logout();
@@ -197,9 +200,30 @@ export default function ProfilePage() {
               View All &gt;
             </button>
           </div>
-          <p className="rounded-lg bg-gray-50 px-4 py-5 text-center text-sm text-gray-500">
-            Your booking history will appear here.
-          </p>
+          {recentBookings.length > 0 ? (
+            <div className="space-y-3">
+              {recentBookings.map((booking) => (
+                <button
+                  key={booking.id}
+                  type="button"
+                  onClick={() => navigate("/bookings")}
+                  className="flex w-full items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-left transition hover:bg-gray-100"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-gray-800">{booking.task || booking.description || "Service request"}</p>
+                    <p className="mt-1 text-xs text-gray-500">{booking.worker || booking.providerName || "Provider"}</p>
+                  </div>
+                  <span className="ml-3 inline-flex shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-700">
+                    {booking.status || "Pending"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-lg bg-gray-50 px-4 py-5 text-center text-sm text-gray-500">
+              Your booking history will appear here.
+            </p>
+          )}
         </div>
 
         {/* Settings */}

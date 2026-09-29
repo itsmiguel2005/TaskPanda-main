@@ -128,7 +128,20 @@ export default function SystemMessageCard({ message, role, actorName, onOpen, on
         </div>
         <time className="shrink-0 text-[10px] text-slate-400" dateTime={message.createdAt}>{new Date(message.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time>
       </div>
-      {message.text && <p className="mt-2 text-xs leading-relaxed text-slate-600">{message.text}</p>}
+      {message.eventType === "booking_request" && (event.repairDescription || message.text) && (
+        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 shadow-inner shadow-amber-100/40">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-700">Task summary</span>
+            <span className="rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-amber-800">{formatPrice(event.offeredPrice)}</span>
+          </div>
+          <p className="mt-2 text-sm font-bold leading-relaxed text-amber-950">{event.repairDescription || message.text}</p>
+          <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-medium text-amber-800">
+            {event.serviceDate && <span className="rounded-full bg-amber-100 px-2 py-1">{formatAppointment(event.serviceDate, event.timeSlot)}</span>}
+            <span className="rounded-full bg-amber-100 px-2 py-1">{event.paymentMethod === "cash" ? "Cash on completion" : String(event.paymentMethod || "Payment arranged")}</span>
+          </div>
+        </div>
+      )}
+      {message.text && message.eventType !== "booking_request" && <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs leading-relaxed text-slate-600">{message.text}</p>}
       <div>
         {message.eventType === "counter_offer" && (
           <span className="mt-2 block rounded-md border border-gray-200 bg-white p-2 text-gray-900">

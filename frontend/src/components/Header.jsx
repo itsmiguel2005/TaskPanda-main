@@ -4,6 +4,14 @@ import { useAuth } from "../context/AuthContext.jsx";
 
 const CONVERSATION_READ_EVENT = "taskpanda:conversation-read";
 
+function MenuIcon({ children, className = "h-4 w-4" }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      {children}
+    </svg>
+  );
+}
+
 export default function Header({ logoColor = "text-primary-700", showNav = false, activeTab = "Home", role = "client", notifCount = 2 }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -11,7 +19,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
-  const { isLoggedIn, role: authRole, firstName, logout, token } = useAuth();
+  const { isLoggedIn, role: authRole, user, firstName, logout, token } = useAuth();
   const notifRef = useRef(null);
 
   useEffect(() => {
@@ -115,7 +123,18 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
 
   const navLinks = role === "provider" ? providerNavLinks : role === "admin" ? adminNavLinks : clientNavLinks;
 
-  const displayName = isLoggedIn ? "Miguel" : "Guest";
+  const displayName = isLoggedIn ? (user?.fullName || user?.username || firstName || "User") : "Guest";
+  const firstNameOnly = isLoggedIn ? (user?.fullName?.split(" ")[0] || user?.username || firstName || "User") : "Guest";
+  const userEmail = user?.email || "your@email.com";
+  const initials = displayName
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "G";
+  const accountRoleLabel = authRole === "provider" ? "Provider" : authRole === "admin" ? "Admin" : "Client";
+  const dashboardPath = authRole === "provider" ? "/provider-dashboard" : authRole === "admin" ? "/admin?section=dashboard" : "/dashboard";
+  const profilePath = authRole === "provider" ? "/provider-profile" : "/profile";
 
   return (
     <header className="fixed inset-x-0 top-0 z-30 bg-white/80 backdrop-blur-md shadow-sm">
@@ -221,7 +240,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                 onClick={() => setDropdownOpen(!dropdownOpen)}
                 className="flex items-center gap-3 text-sm"
               >
-                <span className="hidden whitespace-nowrap text-gray-600 sm:inline">Good morning, {displayName}!</span>
+                <span className="hidden whitespace-nowrap text-gray-600 sm:inline">Good morning, {firstNameOnly}!</span>
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 text-sm font-bold text-primary-700">
                   {displayName.charAt(0).toUpperCase()}
                 </div>
@@ -239,30 +258,85 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                 </svg>
               </button>
               {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-48 rounded-xl border border-gray-100 bg-white py-1 shadow-lg">
-                  {role === "provider" ? (
-                    <Link to="/provider-dashboard" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setDropdownOpen(false)}>
-                      Dashboard
-                    </Link>
-                  ) : role === "admin" ? (
-                    <Link to="/admin" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setDropdownOpen(false)}>
-                      Dashboard
-                    </Link>
-                  ) : (
-                    <Link to="/dashboard" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" onClick={() => setDropdownOpen(false)}>
-                      Dashboard
-                    </Link>
-                  )}
-                  <button
-                    onClick={() => {
-                      setDropdownOpen(false);
-                      logout();
-                      navigate("/");
-                    }}
-                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    Sign Out
-                  </button>
+                <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 shadow-[0_22px_44px_rgba(15,23,42,0.12)] backdrop-blur-xl">
+                  <div className="border-b border-slate-200 bg-slate-50/90 px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-slate-800 to-slate-600 text-sm font-semibold text-white shadow-sm">
+                        {initials}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-900">{displayName}</p>
+                        <p className="truncate text-xs text-slate-500">{userEmail}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-2">
+                    <div className="mb-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      {accountRoleLabel} account
+                    </div>
+
+                    <nav className="space-y-1">
+                      <Link
+                        to={dashboardPath}
+                        className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                        onClick={() => setDropdownOpen(false)}
+                      >
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                          <MenuIcon className="h-4 w-4">
+                            <path d="M3 11.5h7.5M3 6.5h18M3 16.5h12.5" />
+                            <path d="M16.5 7.5V17l4.5-2.5-4.5-2.5Z" />
+                          </MenuIcon>
+                        </span>
+                        Dashboard
+                      </Link>
+                      <Link
+                        to={profilePath}
+                        className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                        onClick={() => setDropdownOpen(false)}
+                      >
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                          <MenuIcon className="h-4 w-4">
+                            <path d="M12 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+                            <path d="M4.5 19.5c1.5-3 4-4.5 7.5-4.5s6 1.5 7.5 4.5" />
+                          </MenuIcon>
+                        </span>
+                        Profile
+                      </Link>
+                      <Link
+                        to="/profile/edit"
+                        className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                        onClick={() => setDropdownOpen(false)}
+                      >
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                          <MenuIcon className="h-4 w-4">
+                            <circle cx="12" cy="12" r="3" />
+                            <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .7 1.7 1.7 0 0 0-.2 1.04V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-.2-1.04 1.7 1.7 0 0 0-1-.7 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.7-1 1.7 1.7 0 0 0-1.04-.2H2.75a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.04-.2 1.7 1.7 0 0 0 .7-1A1.7 1.7 0 0 0 4.6 7.27l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.7 1.7 1.7 0 0 0 .2-1.04V2.75a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 .2 1.04 1.7 1.7 0 0 0 1 .7 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 .7 1 1.7 1.7 0 0 0 1.04.2h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.04.2 1.7 1.7 0 0 0-.7 1Z" />
+                          </MenuIcon>
+                        </span>
+                        Settings
+                      </Link>
+                    </nav>
+                  </div>
+
+                  <div className="border-t border-slate-200 bg-slate-50 px-3 py-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDropdownOpen(false);
+                        logout();
+                        navigate("/");
+                      }}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-100"
+                    >
+                      <MenuIcon className="h-4 w-4">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <path d="M16 17l5-5-5-5" />
+                        <path d="M21 12H9" />
+                      </MenuIcon>
+                      Sign Out
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
