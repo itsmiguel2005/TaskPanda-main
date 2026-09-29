@@ -28,8 +28,8 @@ export default function ProviderProfilePage() {
       <div className="mx-auto max-w-lg px-4 sm:px-6 lg:px-8">
         {/* User Card */}
         <div className="rounded-2xl bg-white p-8 shadow-sm text-center">
-          <div className={`mx-auto flex aspect-square h-20 w-20 items-center justify-center overflow-hidden rounded-full text-2xl font-bold ${user?.profileImage ? "bg-transparent" : "bg-accent-100 text-accent-700 ring-4 ring-accent-50"}`} style={{ clipPath: "circle(50%)" }}>
-            {user?.profileImage ? <img src={user.profileImage} alt={`${fullName} profile`} className="block aspect-square h-full w-full shrink-0 rounded-full object-cover" style={{ clipPath: "circle(50%)", objectPosition: "center" }} /> : initials || "?"}
+          <div className={`avatar-shell mx-auto h-20 w-20 border-4 border-accent-50 text-2xl font-bold ${user?.profileImage ? "bg-transparent" : "bg-accent-100 text-accent-700"}`}>
+            {user?.profileImage ? <img src={user.profileImage} alt={`${fullName} profile`} className="avatar-image" /> : initials || "?"}
           </div>
           <h1 className="mt-4 text-2xl font-bold text-gray-900">{fullName}</h1>
           <p className="text-sm text-gray-500">Service Provider</p>

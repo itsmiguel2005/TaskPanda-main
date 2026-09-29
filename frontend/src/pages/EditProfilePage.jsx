@@ -307,11 +307,11 @@ export default function EditProfilePage() {
 
         <div className="rounded-2xl bg-white p-8 shadow-sm text-center">
           <input ref={photoInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" onChange={handleProfilePhotoChange} />
-          <button type="button" onClick={() => photoInputRef.current?.click()} disabled={isUploadingPhoto} aria-label="Choose profile photo" title="Choose profile photo" className={`group relative mx-auto flex aspect-square h-20 w-20 items-center justify-center overflow-hidden rounded-full text-2xl font-bold disabled:cursor-wait ${photoPreview || profileImage ? "bg-transparent text-transparent ring-0" : "bg-primary-100 text-primary-700 ring-4 ring-primary-50"}`} style={{ clipPath: "circle(50%)" }}>
+          <button type="button" onClick={() => photoInputRef.current?.click()} disabled={isUploadingPhoto} aria-label="Choose profile photo" title="Choose profile photo" className={`avatar-shell group relative mx-auto h-20 w-20 border-4 border-primary-50 text-2xl font-bold disabled:cursor-wait ${photoPreview || profileImage ? "bg-transparent text-transparent" : "bg-primary-100 text-primary-700"}`}>
             {photoPreview || profileImage
-              ? <img src={photoPreview || profileImage} alt="Profile" className="block aspect-square h-full w-full shrink-0 rounded-full object-cover" style={{ clipPath: "circle(50%)", objectPosition: "center" }} />
+              ? <img src={photoPreview || profileImage} alt="Profile" className="avatar-image" />
               : <span>{form.fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?"}</span>}
-            <span aria-hidden="true" className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 text-[10px] font-semibold text-white opacity-0 transition-opacity group-hover:bg-black/40 group-hover:opacity-100" style={{ clipPath: "circle(50%)" }}>{isUploadingPhoto ? "Uploading" : "Edit photo"}</span>
+            <span aria-hidden="true" className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 text-[10px] font-semibold text-white opacity-0 transition-opacity group-hover:bg-black/40 group-hover:opacity-100">{isUploadingPhoto ? "Uploading" : "Edit photo"}</span>
           </button>
           <p className="mt-2 text-xs text-gray-500">{isUploadingPhoto ? "Uploading photo..." : "Click to choose a profile photo"}</p>
           {photoError && <p role="alert" className="mt-1 text-xs text-red-600">{photoError}</p>}

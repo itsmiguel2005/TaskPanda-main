@@ -285,8 +285,8 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                 className="flex items-center gap-3 text-sm"
               >
                 <span className="hidden whitespace-nowrap text-gray-600 sm:inline">Good morning, {firstNameOnly}!</span>
-                <div className={`flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-bold ${user?.profileImage ? "bg-transparent" : "bg-primary-100 text-primary-700"}`}>
-                  {user?.profileImage ? <img src={user.profileImage} alt={`${displayName} profile`} className="h-full w-full rounded-full object-cover" /> : displayName.charAt(0).toUpperCase()}
+                <div className={`avatar-shell h-8 w-8 border border-slate-200 bg-slate-100 text-sm font-bold ${user?.profileImage ? "bg-transparent" : "bg-primary-100 text-primary-700"}`}>
+                  {user?.profileImage ? <img src={user.profileImage} alt={`${displayName} profile`} className="avatar-image" /> : displayName.charAt(0).toUpperCase()}
                 </div>
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -305,8 +305,8 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                 <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 shadow-[0_22px_44px_rgba(15,23,42,0.12)] backdrop-blur-xl">
                   <div className="border-b border-slate-200 bg-slate-50/90 px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className={`flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-semibold text-white shadow-sm ${user?.profileImage ? "bg-transparent" : "bg-gradient-to-br from-slate-800 to-slate-600"}`}>
-                        {user?.profileImage ? <img src={user.profileImage} alt={`${displayName} profile`} className="h-full w-full rounded-full object-cover" /> : initials}
+                      <div className={`avatar-shell h-11 w-11 border border-slate-200 bg-slate-100 text-sm font-semibold text-white shadow-sm ${user?.profileImage ? "bg-transparent" : "bg-gradient-to-br from-slate-800 to-slate-600"}`}>
+                        {user?.profileImage ? <img src={user.profileImage} alt={`${displayName} profile`} className="avatar-image" /> : initials}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold text-slate-900">{displayName}</p>

@@ -1060,7 +1060,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
             </label>
           </div>
           {error && <p role="alert" className="border-b border-red-100 bg-red-50 px-5 py-3 text-xs text-red-700">{error}</p>}
-          <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/50 p-2 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent" style={{ scrollbarGutter: "stable" }}>
+          <div className="chat-scroll-area min-h-0 flex-1 overflow-y-auto bg-slate-50/50 p-2">
             {isLoading || openingBooking ? (
               <p className="p-5 text-sm text-gray-500">{openingBooking ? "Opening booking conversation…" : "Loading conversations…"}</p>
             ) : filteredConversations.length ? filteredConversations.map((conversation) => (
@@ -1259,7 +1259,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                 <p className="border-b border-red-200 bg-red-50 px-4 py-3 text-xs font-medium text-red-900 sm:px-5">The provider disputed this revision. It has been escalated for manual review. <button type="button" onClick={() => { setSupportReportDetails(""); setSupportReportOpen(true); }} className="ml-1 underline">Contact support</button></p>
               )}
               {error && <p role="alert" className="border-b border-red-100 bg-red-50 px-4 py-2 text-xs text-red-700">{error}</p>}
-              <div ref={messagesContainerRef} className="min-h-0 flex-1 space-y-1 overflow-y-auto bg-slate-50/50 px-4 py-5 sm:px-6 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+              <div ref={messagesContainerRef} className="chat-scroll-area min-h-0 flex-1 space-y-1 overflow-y-auto bg-slate-50/50 px-4 py-5 sm:px-6">
                 {isLoadingMessages ? (
                   <p className="py-8 text-center text-sm text-gray-500">Loading messages…</p>
                 ) : (
