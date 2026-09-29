@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
+import ProfileSetupPanel from "../components/ProfileSetupPanel.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
 
@@ -130,8 +131,8 @@ export default function ProfilePage() {
       <div className="mx-auto max-w-lg px-4 sm:px-6 lg:px-8">
         {/* User Card */}
         <div className="rounded-2xl bg-white p-8 shadow-sm text-center">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary-100 text-2xl font-bold text-primary-700 ring-4 ring-primary-50">
-            {initials || "?"}
+          <div className={`mx-auto flex aspect-square h-20 w-20 items-center justify-center overflow-hidden rounded-full text-2xl font-bold ${user?.profileImage ? "bg-transparent" : "bg-primary-100 text-primary-700 ring-4 ring-primary-50"}`} style={{ clipPath: "circle(50%)" }}>
+            {user?.profileImage ? <img src={user.profileImage} alt={`${fullName} profile`} className="block aspect-square h-full w-full shrink-0 rounded-full object-cover" style={{ clipPath: "circle(50%)", objectPosition: "center" }} /> : initials || "?"}
           </div>
           <h1 className="mt-4 text-2xl font-bold text-gray-900">{fullName}</h1>
           <p className="text-sm text-gray-500">{roleLabel}</p>
@@ -150,6 +151,7 @@ export default function ProfilePage() {
               </span>
             )}
           </div>
+          <ProfileSetupPanel user={user} role="client" onEdit={() => navigate("/profile/edit")} />
         </div>
 
         <div className="mt-6 rounded-2xl bg-white p-5 shadow-sm">

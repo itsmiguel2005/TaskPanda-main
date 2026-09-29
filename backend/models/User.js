@@ -125,6 +125,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    profileImage: {
+      type: String,
+      default: "",
+    },
     accountTokens: {
       type: [{
         tokenHash: { type: String, required: true },

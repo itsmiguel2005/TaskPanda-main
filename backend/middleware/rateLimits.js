@@ -31,5 +31,6 @@ const limitRegistrationChecks = createRateLimiter(30);
 const limitBookingCreation = createRateLimiter(10);
 const limitVerificationUploads = createRateLimiter(5, 60 * 60 * 1000);
 const limitChatPhotoUploads = createRateLimiter(30, 15 * 60 * 1000);
+const limitProfilePhotoUploads = createRateLimiter(30, 15 * 60 * 1000);
 
-module.exports = { limitAuthAttempts, limitRegistrationChecks, limitBookingCreation, limitVerificationUploads, limitChatPhotoUploads };
+module.exports = { limitAuthAttempts, limitRegistrationChecks, limitBookingCreation, limitVerificationUploads, limitChatPhotoUploads, limitProfilePhotoUploads };

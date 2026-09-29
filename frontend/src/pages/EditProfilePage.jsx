@@ -22,15 +22,16 @@ const getFormFromUser = (user = {}) => ({
 
 const comparableForm = ({ provinceCode, cityCode, barangayCode, ...values }) => values;
 
-function validateForm(form) {
+function validateForm(form, role) {
   const errors = {};
   if (!form.fullName.trim()) errors.fullName = "Full name is required";
   if (!form.username.trim()) errors.username = "Username is required";
     else if (!/^[A-Za-z0-9_.-]{3,30}$/.test(form.username) || /^\S+@\S+\.\S+$/.test(form.username)) errors.username = "Use 3-30 letters, numbers, dots, underscores, or hyphens";
   if (!form.email.trim()) errors.email = "Email is required";
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errors.email = "Invalid email format";
-    if (form.phone && !/^09\d{9}$/.test(form.phone)) errors.phone = "Enter an 11-digit number starting with 09";
+  if (form.phone && !/^09\d{9}$/.test(form.phone)) errors.phone = "Enter an 11-digit number starting with 09";
   if (!form.province || !form.city || !form.barangay) errors.location = "Select your province, city, and barangay";
+  if (role === "provider" && !form.professions.split(",").some((profession) => profession.trim())) errors.professions = "Add at least one service you offer";
   if (form.bio.length > 500) errors.bio = "Maximum 500 characters";
   return errors;
 }
@@ -40,12 +41,35 @@ export default function EditProfilePage() {
   const { user, token, role, updateUser, refreshProfile, isAuthLoading } = useAuth();
   const [form, setForm] = useState(() => getFormFromUser());
   const [saved, setSaved] = useState(false);
+  const [isSavedToastFading, setIsSavedToastFading] = useState(false);
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState("");
   const [locationError, setLocationError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [profileImage, setProfileImage] = useState("");
+  const [photoPreview, setPhotoPreview] = useState("");
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [photoError, setPhotoError] = useState("");
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [dirty, setDirty] = useState(false);
   const initialFormRef = useRef(JSON.stringify(getFormFromUser()));
+  const photoInputRef = useRef(null);
+  const savedToastTimersRef = useRef({ fade: null, hide: null });
+
+  const dismissSavedToast = () => {
+    window.clearTimeout(savedToastTimersRef.current.fade);
+    window.clearTimeout(savedToastTimersRef.current.hide);
+    setSaved(false);
+  };
+
+  const showSavedToast = () => {
+    window.clearTimeout(savedToastTimersRef.current.fade);
+    window.clearTimeout(savedToastTimersRef.current.hide);
+    setSaved(true);
+    setIsSavedToastFading(false);
+    savedToastTimersRef.current.fade = window.setTimeout(() => setIsSavedToastFading(true), 2300);
+    savedToastTimersRef.current.hide = window.setTimeout(() => setSaved(false), 3000);
+  };
 
   useEffect(() => {
     refreshProfile();
@@ -54,9 +78,22 @@ export default function EditProfilePage() {
   useEffect(() => {
     if (isAuthLoading) return;
     const currentForm = getFormFromUser(user);
-    setForm(currentForm);
-    initialFormRef.current = JSON.stringify(comparableForm(currentForm));
+    const currentSnapshot = JSON.stringify(comparableForm(currentForm));
+    if (currentSnapshot !== initialFormRef.current) {
+      setForm(currentForm);
+      initialFormRef.current = currentSnapshot;
+    }
+    setProfileImage(user?.profileImage || "");
   }, [isAuthLoading, user]);
+
+  useEffect(() => () => {
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+  }, [photoPreview]);
+
+  useEffect(() => () => {
+    window.clearTimeout(savedToastTimersRef.current.fade);
+    window.clearTimeout(savedToastTimersRef.current.hide);
+  }, []);
 
   useEffect(() => {
     setDirty(JSON.stringify(comparableForm(form)) !== initialFormRef.current);
@@ -142,9 +179,23 @@ export default function EditProfilePage() {
     tryCapture();
   };
 
+  const handleProfilePhotoChange = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/") || file.size > 4 * 1024 * 1024) {
+      setPhotoError("Choose a JPEG, PNG, WebP, or GIF image up to 4 MB.");
+      return;
+    }
+    setSelectedPhoto(file);
+    setPhotoPreview(URL.createObjectURL(file));
+    setPhotoError("");
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const validationErrors = validateForm(form);
+    if (isSaving || (!dirty && !selectedPhoto)) return;
+    const validationErrors = validateForm(form, role);
     setErrors(validationErrors);
     if (Object.keys(validationErrors).length > 0) return;
     if (!token) {
@@ -181,14 +232,44 @@ export default function EditProfilePage() {
         return;
       }
 
-      updateUser(data.user);
+      let savedUser = data.user;
+      if (selectedPhoto) {
+        setIsUploadingPhoto(true);
+        try {
+          const photoFormData = new FormData();
+          photoFormData.append("photo", selectedPhoto);
+          const photoResponse = await fetch("/api/profile/photo", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+            body: photoFormData,
+          });
+          const photoData = await photoResponse.json().catch(() => ({}));
+          if (!photoResponse.ok || !photoData.user) throw new Error(photoData.message || "Could not upload your photo.");
+          savedUser = photoData.user;
+          setProfileImage(savedUser.profileImage || "");
+          setSelectedPhoto(null);
+          setPhotoPreview("");
+          setPhotoError("");
+        } catch (photoUploadError) {
+          updateUser(data.user);
+          const savedForm = getFormFromUser(data.user);
+          setForm(savedForm);
+          initialFormRef.current = JSON.stringify(comparableForm(savedForm));
+          setDirty(false);
+          setPhotoError(photoUploadError.message || "Your profile details were saved, but the photo could not be uploaded. Try saving again.");
+          return;
+        } finally {
+          setIsUploadingPhoto(false);
+        }
+      }
+
+      updateUser(savedUser);
       setLocationError(data.locationWarning || "");
-      const savedForm = getFormFromUser(data.user);
+      const savedForm = getFormFromUser(savedUser);
       setForm(savedForm);
       initialFormRef.current = JSON.stringify(comparableForm(savedForm));
       setDirty(false);
-      setSaved(true);
-      window.setTimeout(() => setSaved(false), 3000);
+      showSavedToast();
     } catch {
       setServerError("Network error. Please try again.");
     } finally {
@@ -224,19 +305,18 @@ export default function EditProfilePage() {
           Back to Profile
         </button>
 
-        {saved && (
-          <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4 text-center animate-fade-in">
-            <span className="text-lg">✅</span>
-            <p className="mt-1 text-sm font-medium text-green-800">Profile saved successfully!</p>
-          </div>
-        )}
-
         <div className="rounded-2xl bg-white p-8 shadow-sm text-center">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary-100 text-2xl font-bold text-primary-700 ring-4 ring-primary-50">
-            {form.fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?"}
-          </div>
-          <h1 className="mt-6 text-2xl font-bold text-gray-900">Edit Profile</h1>
-          <p className="text-sm text-gray-500">Update your personal information</p>
+          <input ref={photoInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" onChange={handleProfilePhotoChange} />
+          <button type="button" onClick={() => photoInputRef.current?.click()} disabled={isUploadingPhoto} aria-label="Choose profile photo" title="Choose profile photo" className={`group relative mx-auto flex aspect-square h-20 w-20 items-center justify-center overflow-hidden rounded-full text-2xl font-bold disabled:cursor-wait ${photoPreview || profileImage ? "bg-transparent text-transparent ring-0" : "bg-primary-100 text-primary-700 ring-4 ring-primary-50"}`} style={{ clipPath: "circle(50%)" }}>
+            {photoPreview || profileImage
+              ? <img src={photoPreview || profileImage} alt="Profile" className="block aspect-square h-full w-full shrink-0 rounded-full object-cover" style={{ clipPath: "circle(50%)", objectPosition: "center" }} />
+              : <span>{form.fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?"}</span>}
+            <span aria-hidden="true" className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 text-[10px] font-semibold text-white opacity-0 transition-opacity group-hover:bg-black/40 group-hover:opacity-100" style={{ clipPath: "circle(50%)" }}>{isUploadingPhoto ? "Uploading" : "Edit photo"}</span>
+          </button>
+          <p className="mt-2 text-xs text-gray-500">{isUploadingPhoto ? "Uploading photo..." : "Click to choose a profile photo"}</p>
+          {photoError && <p role="alert" className="mt-1 text-xs text-red-600">{photoError}</p>}
+          <h1 className="mt-6 text-2xl font-bold text-gray-900">{user?.fullName && user?.username ? "Edit Profile" : "Set Up Your Profile"}</h1>
+          <p className="text-sm text-gray-500">{role === "provider" ? "Add your service details so clients know what you offer." : "Add your personal and location details."}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-5">
@@ -296,8 +376,9 @@ export default function EditProfilePage() {
                 onChange={handleChange}
                 className="mt-1 w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
                 placeholder="Carpentry, plumbing"
+                aria-invalid={Boolean(errors.professions)}
               />
-              <p className="mt-1 text-xs text-gray-400">Separate each service with a comma.</p>
+              {errors.professions ? <p className="mt-1 text-xs text-red-500">{errors.professions}</p> : <p className="mt-1 text-xs text-gray-400">Separate each service with a comma.</p>}
             </div>
           )}
 
@@ -362,14 +443,21 @@ export default function EditProfilePage() {
             </button>
             <button
               type="submit"
-              disabled={isSaving}
-              className="flex-1 rounded-xl bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-gray-800"
+              disabled={isSaving || (!dirty && !selectedPhoto)}
+              className="flex-1 rounded-xl bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSaving ? "Saving..." : "Save Changes"}
             </button>
           </div>
         </form>
       </div>
+      {saved && (
+        <div className={`fixed bottom-5 right-5 z-50 flex max-w-[calc(100vw-2.5rem)] items-center gap-3 rounded-lg border border-green-200 bg-white px-4 py-3 text-sm text-green-800 shadow-lg transition-opacity duration-500 ${isSavedToastFading ? "opacity-0" : "opacity-100"}`} role="status" aria-live="polite">
+          <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-100 text-xs font-bold text-green-700">✓</span>
+          <p className="flex-1 font-semibold">Profile saved successfully!</p>
+          <button type="button" onClick={dismissSavedToast} className="text-green-600 hover:text-green-900" aria-label="Dismiss notification">×</button>
+        </div>
+      )}
     </div>
   );
 }

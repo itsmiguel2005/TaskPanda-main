@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const User = require("../models/User");
 const { geocodeAddress } = require("../services/geocoder");
+const { uploadProfileImage } = require("../services/cloudinaryMedia");
 
 function profileFromUser(user) {
   return {
@@ -20,8 +21,23 @@ function profileFromUser(user) {
     barangay: user.barangay,
     professions: user.professions || [],
     bio: user.bio || "",
+    profileImage: user.profileImage || "",
     createdAt: user.createdAt,
   };
+}
+
+async function handleUploadProfilePhoto(req, res) {
+  if (!req.file?.buffer?.length) return res.status(400).json({ message: "Choose an image to upload." });
+  try {
+    const { secureUrl } = await uploadProfileImage(req.file.buffer, String(req.user._id));
+    req.user.profileImage = secureUrl;
+    await req.user.save();
+    return res.status(201).json({ user: profileFromUser(req.user) });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
+    console.error("Upload profile photo error:", error.message);
+    return res.status(502).json({ message: "Could not upload your photo. Check Cloudinary configuration and try again." });
+  }
 }
 
 async function handleGetProfile(req, res) {
@@ -94,6 +110,9 @@ async function handleUpdateProfile(req, res) {
           .map((profession) => String(profession).trim())
           .filter(Boolean))].slice(0, 10)
       : user.professions;
+    if (user.role === "provider" && !professions.length) {
+      return res.status(400).json({ message: "Add at least one service you offer.", field: "professions" });
+    }
 
     user.fullName = fullName;
     user.firstName = nameParts[0] || "";
@@ -125,4 +144,4 @@ async function handleUpdateProfile(req, res) {
   }
 }
 
-module.exports = { handleGetProfile, handleUpdateProfile };
+module.exports = { handleGetProfile, handleUpdateProfile, handleUploadProfilePhoto };

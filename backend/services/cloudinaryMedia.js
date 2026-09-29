@@ -3,18 +3,40 @@ const cloudinary = require("cloudinary").v2;
 
 const CHAT_PHOTO_MAX_BYTES = 4 * 1024 * 1024;
 const CHAT_PHOTO_FORMATS = ["jpg", "jpeg", "png", "webp", "gif"];
+const PROFILE_PHOTO_MAX_BYTES = 4 * 1024 * 1024;
 
 function getCredentials() {
   const cloudName = String(process.env.CLOUDINARY_CLOUD_NAME || "").trim();
   const apiKey = String(process.env.CLOUDINARY_API_KEY || "").trim();
   const apiSecret = String(process.env.CLOUDINARY_API_SECRET || "").trim();
   if (!cloudName || !apiKey || !apiSecret) {
-    const error = new Error("Chat photo uploads are not configured. Set the Cloudinary environment variables.");
+    const error = new Error("Image uploads are not configured. Set the Cloudinary environment variables.");
     error.statusCode = 503;
     throw error;
   }
   cloudinary.config({ cloud_name: cloudName, api_key: apiKey, api_secret: apiSecret, secure: true });
   return { cloudName, apiKey, apiSecret };
+}
+
+async function uploadProfileImage(buffer, userId) {
+  getCredentials();
+  const publicId = `taskpanda_profiles/${userId}`;
+  const result = await new Promise((resolve, reject) => {
+    cloudinary.uploader.upload_stream({
+      allowed_formats: CHAT_PHOTO_FORMATS,
+      overwrite: true,
+      invalidate: true,
+      public_id: publicId,
+      resource_type: "image",
+      type: "upload",
+    }, (error, uploadedResource) => error ? reject(error) : resolve(uploadedResource)).end(buffer);
+  });
+  if (!CHAT_PHOTO_FORMATS.includes(String(result.format || "").toLowerCase()) || result.bytes > PROFILE_PHOTO_MAX_BYTES || !result.secure_url) {
+    const error = new Error("Profile photos must be 4 MB or smaller and use JPEG, PNG, WebP, or GIF format.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return { publicId, secureUrl: result.secure_url };
 }
 
 async function uploadChatPhoto(buffer, conversationId, userId) {
@@ -122,6 +144,7 @@ module.exports = {
   deleteChatPhoto,
   fetchAuthenticatedChatPhoto,
   isOwnedChatPhotoPublicId,
+  uploadProfileImage,
   uploadChatPhoto,
   verifyChatPhotoUploads,
 };
