@@ -1,5 +1,7 @@
 const express = require("express");
-const { requireAuth } = require("../middleware/requireAuth");
+const { param } = require("express-validator");
+const { requireAuth, requireRole } = require("../middleware/requireAuth");
+const { validateRequest } = require("../middleware/validateRequest");
 const {
   handleGetClientFavorites,
   handleAddClientFavorite,
@@ -8,9 +10,9 @@ const {
 
 const router = express.Router();
 
-router.use(requireAuth);
+router.use(requireAuth, requireRole("client"));
 router.get("/favorites", handleGetClientFavorites);
 router.post("/favorites", handleAddClientFavorite);
-router.delete("/favorites/:providerId", handleRemoveClientFavorite);
+router.delete("/favorites/:providerId", param("providerId").isMongoId(), validateRequest, handleRemoveClientFavorite);
 
 module.exports = router;

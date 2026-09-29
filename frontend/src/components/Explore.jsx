@@ -354,7 +354,7 @@ export default function Explore() {
               Find nearby professionals by name, trade, or location.
             </p>
 
-            <div className="mt-6 flex items-center overflow-hidden rounded-xl bg-white shadow-lg">
+            <div className="mt-6 flex items-center overflow-hidden rounded-xl bg-white shadow-lg" style={{ scrollbarGutter: "auto" }}>
               <input
                 type="text"
                 value={searchQuery}

@@ -1,9 +1,6 @@
-const { createHash } = require("crypto");
 const mongoose = require("mongoose");
 const User = require("../models/User");
 const { geocodeAddress } = require("../services/geocoder");
-
-const hashToken = (token) => createHash("sha256").update(token).digest("hex");
 
 function profileFromUser(user) {
   return {
@@ -27,26 +24,9 @@ function profileFromUser(user) {
   };
 }
 
-async function getAuthenticatedUser(req) {
-  const authorization = String(req.get("authorization") || "");
-  const token = authorization.replace(/^Bearer\s+/i, "").trim();
-  if (!/^[a-f\d]{64}$/i.test(token)) return null;
-
-  return User.findOne(mongoose.trusted({
-    accountTokens: mongoose.trusted({
-      $elemMatch: {
-        tokenHash: hashToken(token),
-        expiresAt: mongoose.trusted({ $gt: new Date() }),
-      },
-    }),
-    registrationComplete: true,
-  })).select("+accountTokens");
-}
-
 async function handleGetProfile(req, res) {
   try {
-    const user = await getAuthenticatedUser(req);
-    if (!user) return res.status(401).json({ message: "Your session expired. Sign in again." });
+    const user = req.user;
     return res.json({ user: profileFromUser(user) });
   } catch (error) {
     console.error("Get profile error:", error);
@@ -56,8 +36,7 @@ async function handleGetProfile(req, res) {
 
 async function handleUpdateProfile(req, res) {
   try {
-    const user = await getAuthenticatedUser(req);
-    if (!user) return res.status(401).json({ message: "Your session expired. Sign in again." });
+    const user = req.user;
 
     const fullName = String(req.body.fullName || "").trim();
     const username = String(req.body.username || "").trim();

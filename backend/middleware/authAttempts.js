@@ -1,20 +1,4 @@
-const authAttempts = new Map();
 const loginAttempts = new Map();
-
-function limitAuthAttempts(req, res, next) {
-  const key = `${req.ip}:${req.path}`;
-  const now = Date.now();
-  const windowMs = 15 * 60 * 1000;
-  const attempts = (authAttempts.get(key) || []).filter((time) => now - time < windowMs);
-
-  if (attempts.length >= 10) {
-    return res.status(429).json({ message: "Too many attempts. Please try again later." });
-  }
-
-  attempts.push(now);
-  authAttempts.set(key, attempts);
-  return next();
-}
 
 function getLoginLock(identifier) {
   const attempt = loginAttempts.get(identifier);
@@ -55,4 +39,4 @@ function loginLockResponse(res, attempt) {
   });
 }
 
-module.exports = { limitAuthAttempts, getLoginLock, recordFailedLogin, clearLoginAttempts, loginLockResponse };
+module.exports = { getLoginLock, recordFailedLogin, clearLoginAttempts, loginLockResponse };

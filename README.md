@@ -67,9 +67,27 @@ SMTP_PASSWORD=your-app-password
 MAIL_FROM=your-email@example.com
 # Optional public site URL for email links (recommended for custom domains)
 APP_URL=https://your-taskpanda-domain.example
+# Optional comma-separated trusted browser origins for cross-origin deployments
+CORS_ORIGINS=http://localhost:5173,https://your-taskpanda-domain.example
+# Optional trusted reverse-proxy hop count for non-Vercel deployments
+TRUST_PROXY=1
 ```
 
 Do not commit `.env` or real passwords to source control. For Gmail, use an app password rather than your normal account password.
+
+## Security Features
+
+- **HTTP security headers:** Helmet sets a Content Security Policy and standard browser protections in Express. Vercel applies matching headers to static frontend responses, including HSTS in production.
+- **CORS and proxy trust:** Cross-origin requests are allowed only from `CORS_ORIGINS`, `APP_URL`, and recognized Vercel deployment URLs. Local Vite origins are allowed outside production. Vercel proxy trust is configured automatically; other deployments can set `TRUST_PROXY` to the trusted proxy-hop count.
+- **NoSQL injection defenses:** Request bodies and query data are sanitized with an Express 5-compatible `express-mongo-sanitize` adapter. Mongoose also enables `sanitizeFilter` and `strictQuery`; database filters are constructed from validated fields rather than accepting client-supplied query objects.
+- **Request validation:** `express-validator` checks authentication, profile, and booking inputs. Booking, provider, conversation, revision, and offer IDs are validated before database use. Mongoose schemas enforce field types, enums, ranges, and required values.
+- **Request size limits:** JSON and URL-encoded bodies are limited to 10KB, with at most 100 URL-encoded parameters. Multipart uploads are limited to 5MB per file, five files, 40 fields, 10KB per field, and 45 total parts.
+- **Rate limiting:** Authentication endpoints are limited to 10 requests per IP per 15 minutes; registration availability checks to 30 per 15 minutes; booking creation to 10 per 15 minutes; and verification uploads to five per hour. Login also has account-based failed-attempt lockouts.
+- **Authentication and sessions:** Passwords and reset codes are hashed with bcrypt. Email-verification and onboarding tokens are random, stored as hashes, and expire. Account sessions use random 32-byte opaque bearer tokens stored as hashes with 30-day expiry; this app does not use JWTs or require a `JWT_SECRET`. The registration-session cookie is `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
+- **Authorization:** Server middleware restricts profile, booking, messaging, favorites, and verification routes by role. Booking and conversation handlers also check participant ownership before access or updates.
+- **Safer error responses:** Unexpected server and database failures return generic messages rather than stack traces or raw database errors. Unknown `/api` paths return JSON 404 responses.
+
+The rate limiter currently uses its default in-memory store. Limits are per application process and are not shared between separate serverless instances; use a shared store such as Redis when consistent limits across multiple instances are required.
 
 ## Vercel Deployment
 
@@ -89,6 +107,7 @@ SMTP_USER=your-email@example.com
 SMTP_PASSWORD=your-gmail-app-password
 MAIL_FROM=your-email@example.com
 APP_URL=https://your-taskpanda-domain.example
+CORS_ORIGINS=https://your-taskpanda-domain.example,https://www.your-taskpanda-domain.example
 ```
 
 Email verification links use `APP_URL` when configured, or Vercel's deployment URL. Locally, they point to the Vite app at `http://localhost:5173`. New registrations stay pending until the email link is confirmed; verified users must finish onboarding before they can open the app.

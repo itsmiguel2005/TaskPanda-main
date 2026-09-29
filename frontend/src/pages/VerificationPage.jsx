@@ -49,7 +49,7 @@ function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove, e
 
 export default function VerificationPage() {
   const navigate = useNavigate();
-  const { verify } = useAuth();
+  const { verify, token } = useAuth();
   const [idFrontFile, setIdFrontFile] = useState(null);
   const [idBackFile, setIdBackFile] = useState(null);
   const [idFrontPreview, setIdFrontPreview] = useState("");
@@ -90,7 +90,11 @@ export default function VerificationPage() {
     }
 
     try {
-      const res = await fetch("/api/verify", { method: "POST", body: formData });
+      const res = await fetch("/api/verify", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Verification failed");

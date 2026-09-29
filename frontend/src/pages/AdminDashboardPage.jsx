@@ -1,13 +1,8 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import Header from "../components/Header.jsx";
 
-const stats = [
-  { label: "Total Users", value: "1,247", sub: "853 clients, 394 providers", icon: "👥" },
-  { label: "Pending Verifications", value: "12", sub: "ID reviews awaiting", icon: "⏳" },
-  { label: "Active Bookings", value: "38", sub: "14 pending, 24 in progress", icon: "📋" },
-  { label: "Completed Today", value: "56", sub: "Across all categories", icon: "✅" },
-];
+const AdminDashboardOverview = lazy(() => import("../components/AdminDashboardOverview.jsx"));
 
 const users = [
   { id: 1, name: "Miguel Torres", email: "miguel@taskpanda.com", role: "client", verified: true, status: "Active", joined: "Jan 15, 2025" },
@@ -79,54 +74,15 @@ export default function AdminDashboardPage() {
     console.log(`[Admin] Suspending user #${id}`);
   };
 
-  const resetData = () => {
-    if (window.confirm("Are you sure you want to reset all test data? This will clear all mock data.")) {
-      console.log("[Admin] Resetting all test data...");
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gray-50 pt-16 pb-12">
       <Header showNav activeTab={activeTab} role="admin" />
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-        {/* Dev Mode Banner */}
-        <div className="mb-4 rounded-lg bg-primary-50 border border-primary-200 px-4 py-3 text-sm font-medium text-primary-700">
-          🔧 Debug Mode — Admin Dashboard (not secured)
-        </div>
-
         {section === "dashboard" && (
-          <>
-            {/* Page Title */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
-                  <p className="mt-1 text-sm text-gray-500">Platform overview, user management, and debugging tools</p>
-                </div>
-                <button
-                  onClick={resetData}
-                  className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-100"
-                >
-                  Reset Test Data
-                </button>
-              </div>
-            </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-              {stats.map((s) => (
-                <div key={s.label} className="rounded-xl bg-white p-4 shadow-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">{s.icon}</span>
-                    <span className="text-xs text-gray-500">{s.label}</span>
-                  </div>
-                  <p className="mt-2 text-2xl font-bold text-gray-900">{s.value}</p>
-                  <p className="mt-0.5 text-xs text-gray-400">{s.sub}</p>
-                </div>
-              ))}
-            </div>
-          </>
+          <Suspense fallback={<div className="rounded-lg border border-slate-200 bg-white p-8 text-sm text-slate-500">Loading dashboard…</div>}>
+            <AdminDashboardOverview />
+          </Suspense>
         )}
 
         {section === "users" && (
@@ -190,7 +146,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {(section === "bookings" || section === "dashboard") && (
+        {section === "bookings" && (
           <div className="mt-6">
             <div className="rounded-2xl bg-white shadow-sm">
               <div className="border-b border-gray-100 px-5 py-4">
@@ -241,7 +197,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {(section === "verifications" || section === "dashboard") && (
+        {section === "verifications" && (
           <div className="mt-6">
             <div className="rounded-2xl bg-white shadow-sm">
               <div className="border-b border-gray-100 px-5 py-4">
@@ -302,7 +258,7 @@ export default function AdminDashboardPage() {
         )}
 
         {/* System Info */}
-        <div className="mt-6">
+        <div className={section === "dashboard" ? "hidden" : "mt-6"}>
           <div className="rounded-2xl bg-white shadow-sm">
             <div className="border-b border-gray-100 px-5 py-4">
               <h2 className="text-base font-semibold text-gray-900">System Info</h2>

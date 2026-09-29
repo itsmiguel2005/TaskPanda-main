@@ -521,7 +521,7 @@ export default function Dashboard() {
                 independent local specialists.
               </p>
 
-              <div className="mt-8 flex items-center overflow-hidden rounded-xl bg-white shadow-lg">
+              <div className="mt-8 flex items-center overflow-hidden rounded-xl bg-white shadow-lg" style={{ scrollbarGutter: "auto" }}>
                 <input
                   type="text"
                   value={search}

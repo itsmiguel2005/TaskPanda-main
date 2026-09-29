@@ -3,6 +3,7 @@ const { createHash, randomBytes } = require("crypto");
 const mongoose = require("mongoose");
 const User = require("../models/User");
 const PasswordReset = require("../models/PasswordReset");
+const AdminSession = require("../models/AdminSession");
 const config = require("../config/env");
 const { geocodeAddress } = require("../services/geocoder");
 const {
@@ -293,7 +294,7 @@ async function handleRegister(req, res) {
         message: error.keyPattern.username ? "This username is already taken." : "An account with this email already exists.",
       });
     }
-    return res.status(500).json({ message: error.message || "Registration failed." });
+    return res.status(500).json({ message: "Registration failed. Please try again." });
   }
 }
 
@@ -655,8 +656,14 @@ async function handleLogin(req, res) {
     const adminEmail = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
     const adminPassword = String(process.env.ADMIN_PASSWORD || "");
     if (adminEmail && adminPassword && identifier.toLowerCase() === adminEmail && password === adminPassword) {
+      const adminToken = randomBytes(32).toString("hex");
+      await AdminSession.create({
+        adminEmail,
+        tokenHash: hashToken(adminToken),
+        expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000),
+      });
       clearLoginAttempts(normalizedIdentifier);
-      return res.json({ message: "Login successful.", token: null, role: "admin", user: { email: adminEmail, role: "admin" } });
+      return res.json({ message: "Login successful.", token: adminToken, role: "admin", user: { email: adminEmail, role: "admin" } });
     }
 
     const user = await User.findOne({ $or: [{ email: normalizedIdentifier }, { username: identifier }] });
