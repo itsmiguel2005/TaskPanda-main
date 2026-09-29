@@ -192,7 +192,15 @@ Set a different backend port in `.env` with `PORT`. The Vite proxy currently tar
 
 ### Uploaded files
 
-Uploaded images are stored in the `uploads/` directory and are limited to 5 MB. Supported formats are JPEG, PNG, WebP, and GIF.
+Chat photos are uploaded by the authenticated backend to Cloudinary as authenticated images. Each photo is uploaded in its own request and limited to 4 MB to stay under the Vercel Function request-body limit; messages can contain up to five photos. Supported formats are JPEG, PNG, WebP, and GIF. The chat API checks conversation membership before upload and before returning image bytes. Add these server-side environment variables to local `.env` and Vercel Project Settings:
+
+```env
+CLOUDINARY_CLOUD_NAME=your-cloud-name
+CLOUDINARY_API_KEY=your-api-key
+CLOUDINARY_API_SECRET=your-api-secret
+```
+
+Keep `CLOUDINARY_API_SECRET` out of frontend variables and source control. Other existing uploads continue to use the local `uploads/` directory; chat-photo storage does not require moving old files.
 
 ## Project Structure
 

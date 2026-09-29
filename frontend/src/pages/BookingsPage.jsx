@@ -8,6 +8,7 @@ import AddressActions from "../components/AddressActions.jsx";
 import { canRequestCancellation, getCancellationLockMessage } from "../utils/bookingCancellation.js";
 import StatusChangeConfirmation from "../components/StatusChangeConfirmation.jsx";
 import RevisionRequestModal from "../components/RevisionRequestModal.jsx";
+import RequestBookingModal from "../components/RequestBookingModal.jsx";
 
 const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined"];
 
@@ -87,7 +88,7 @@ function StatusDot({ status }) {
 export default function BookingsPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("All");
-  const { bookings, isLoading, error, requestCancellation, requestRevision, submitReview, respondToProviderUpdate, refreshBookings, confirmCashSettlement } = useBookings();
+  const { bookings, isLoading, error, requestCancellation, requestRevision, submitReview, respondToProviderUpdate, refreshBookings, confirmCashSettlement, createBooking } = useBookings();
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("createdAt");
   const [cancelingId, setCancelingId] = useState(null);
@@ -99,6 +100,7 @@ export default function BookingsPage() {
   const [reviewText, setReviewText] = useState("");
   const [reviewPhotos, setReviewPhotos] = useState([]);
   const [reviewSuccessOpen, setReviewSuccessOpen] = useState(false);
+  const [rebookingBooking, setRebookingBooking] = useState(null);
 
   const stats = useMemo(() => {
     const total = bookings.length;
@@ -434,8 +436,10 @@ export default function BookingsPage() {
                               Rate Provider
                             </button>
                           )}
-                          <button onClick={() => navigate("/explore")} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50">Book Again</button>
                         </>
+                      )}
+                      {(isCompletedLikeStatus(booking.status) || booking.status === "Cancelled") && (
+                        <button type="button" onClick={() => setRebookingBooking(booking)} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50">Rebook</button>
                       )}
                       {booking.status === "Cancellation Requested" && booking.cancellationRequestedBy === "provider" && (
                         <>
@@ -561,6 +565,25 @@ export default function BookingsPage() {
             </div>
           </section>
         </div>
+      )}
+
+      {rebookingBooking && (
+        <RequestBookingModal
+          key={rebookingBooking.id}
+          provider={{
+            _id: rebookingBooking.providerId,
+            fullName: rebookingBooking.worker,
+            professions: [rebookingBooking.cred].filter(Boolean),
+            address: rebookingBooking.address,
+          }}
+          initialValues={{
+            task: rebookingBooking.description || rebookingBooking.task,
+            offer: rebookingBooking.offeredPrice ?? rebookingBooking.offer ?? "",
+            urgency: rebookingBooking.urgency || "Flexible",
+          }}
+          onClose={() => setRebookingBooking(null)}
+          onSubmit={createBooking}
+        />
       )}
 
       {/* Booking Detail Modal */}

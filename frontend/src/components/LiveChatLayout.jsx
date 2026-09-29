@@ -188,6 +188,61 @@ function mergeMessages(current, incoming) {
   return [...merged.values()].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt) || a.id.localeCompare(b.id));
 }
 
+function ChatPhoto({ photo, requestHeaders }) {
+  const [source, setSource] = useState(photo.startsWith("/uploads/") ? photo : "");
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    if (photo.startsWith("/uploads/")) {
+      setSource(photo);
+      setLoadError(false);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    let objectUrl = "";
+    setSource("");
+    setLoadError(false);
+    fetch(photo, { headers: requestHeaders, signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.message || "Could not load this photo.");
+        }
+        return response.blob();
+      })
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        setSource(objectUrl);
+      })
+      .catch((error) => {
+        if (error.name !== "AbortError") setLoadError(true);
+      });
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [photo, requestHeaders]);
+
+  if (loadError) return <span className="inline-flex h-16 items-center rounded-md bg-white/10 px-3 text-xs">Photo unavailable</span>;
+  if (!source) return <span className="inline-flex h-16 w-16 animate-pulse rounded-md bg-slate-200/70" aria-label="Loading photo" />;
+  return <a href={source} target="_blank" rel="noreferrer"><img src={source} alt="Chat photo" loading="lazy" className="max-h-52 max-w-full rounded-lg object-cover" /></a>;
+}
+
+async function uploadChatPhoto(file, conversationId, requestHeaders) {
+  const formData = new FormData();
+  formData.append("conversationId", conversationId);
+  formData.append("photo", file);
+  const response = await fetch("/api/messages/photos", {
+    method: "POST",
+    headers: requestHeaders,
+    body: formData,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || "Could not upload this photo.");
+  return data.photo;
+}
+
 export default function LiveChatLayout({ role, otherRoleLabel }) {
   const navigate = useNavigate();
   const { token, role: authenticatedRole } = useAuth();
@@ -202,6 +257,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const [showArchived, setShowArchived] = useState(false);
   const [archivingConversationIds, setArchivingConversationIds] = useState(() => new Set());
   const [input, setInput] = useState("");
+  const [chatPhotos, setChatPhotos] = useState([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
@@ -245,6 +301,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const olderPageMergePendingRef = useRef(false);
   const selectedIdRef = useRef(selectedId);
   const inputRef = useRef(null);
+  const chatPhotoInputRef = useRef(null);
   const wasAtBottomRef = useRef(true);
   const previousMessageCountRef = useRef(0);
   const openingBookingRef = useRef("");
@@ -253,6 +310,10 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
 
   const requestHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
   selectedIdRef.current = selectedId;
+
+  useEffect(() => {
+    setChatPhotos([]);
+  }, [selectedId]);
 
   useLayoutEffect(() => {
     const textarea = inputRef.current;
@@ -579,22 +640,35 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
 
   const handleSend = async () => {
     const text = input.trim();
-    if (!text || !selectedId || !selectedConversation || isSending) return;
+    if ((!text && !chatPhotos.length) || !selectedId || !selectedConversation || isSending) return;
     setIsSending(true);
     setError("");
+    const uploadedPublicIds = [];
     try {
+      for (const photo of chatPhotos) {
+        const uploadedPhoto = await uploadChatPhoto(photo, selectedId, requestHeaders);
+        uploadedPublicIds.push(uploadedPhoto.publicId);
+      }
       const response = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...requestHeaders },
-        body: JSON.stringify({ conversationId: selectedId, text }),
+        body: JSON.stringify({ conversationId: selectedId, text, photos: uploadedPublicIds.map((publicId) => ({ publicId })) }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "Could not send the message.");
       wasAtBottomRef.current = true;
       setMessages((current) => current.some((message) => message.id === data.message.id) ? current : [...current, data.message]);
       setInput("");
+      setChatPhotos([]);
       await loadConversations();
     } catch (requestError) {
+      if (uploadedPublicIds.length) {
+        fetch("/api/messages/photos/cleanup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...requestHeaders },
+          body: JSON.stringify({ conversationId: selectedId, publicIds: uploadedPublicIds }),
+        }).catch(() => {});
+      }
       setError(requestError.message || "Could not send the message.");
     } finally {
       setIsSending(false);
@@ -1208,7 +1282,12 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                       ) : (
                         <div key={message.id} className={`flex ${message.isMine ? "justify-end" : "justify-start"}`}>
                           <div className={`max-w-[82%] rounded-2xl border px-4 py-2.5 text-[13px] leading-relaxed shadow-sm ${message.isMine ? "rounded-br-md border-slate-800 bg-slate-800 text-white" : "rounded-bl-md border-slate-200 bg-white text-slate-800"}`}>
-                            <p className="whitespace-pre-wrap break-words">{message.text}</p>
+                            {message.text && <p className="whitespace-pre-wrap break-words">{message.text}</p>}
+                            {message.photos?.length > 0 && (
+                              <div className={`flex flex-wrap gap-2 ${message.text ? "mt-2" : ""}`}>
+                                {message.photos.map((photo) => <ChatPhoto key={photo} photo={photo} requestHeaders={requestHeaders} />)}
+                              </div>
+                            )}
                             <time className={`mt-1 block text-right text-[10px] ${message.isMine ? "text-white/65" : "text-slate-400"}`} dateTime={message.createdAt}>{formatConversationTime(message.createdAt)}</time>
                           </div>
                         </div>
@@ -1225,12 +1304,36 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                 <div className="border-t border-gray-100 bg-gray-50 px-4 py-4 text-center text-xs text-gray-500">Restore this conversation from Archived to send messages. The digital receipt remains available above.</div>
               ) : (
                 <div className="border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
+                  {chatPhotos.length > 0 && (
+                    <div className="mb-2 flex flex-wrap gap-2" aria-label="Selected photos">
+                      {chatPhotos.map((photo, index) => (
+                        <span key={`${photo.name}-${photo.lastModified}`} className="inline-flex max-w-full items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600">
+                          <span className="max-w-40 truncate">{photo.name}</span>
+                          <button type="button" onClick={() => setChatPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index))} aria-label={`Remove ${photo.name}`} className="text-slate-500 hover:text-red-600">×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <div className="mb-2 flex flex-wrap gap-1.5">
                     {quickReplies.map((reply) => <button key={reply} type="button" onClick={() => setInput(reply)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-medium text-slate-600 transition hover:bg-slate-50">{reply}</button>)}
                   </div>
                   <form onSubmit={(event) => { event.preventDefault(); handleSend(); }} className="flex items-end gap-2 pb-1">
+                    <input ref={chatPhotoInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple className="sr-only" onChange={(event) => {
+                      const pickedPhotos = Array.from(event.target.files || []);
+                      event.target.value = "";
+                      if (pickedPhotos.some((photo) => photo.size > 4 * 1024 * 1024)) {
+                        setError("Each photo must be 4 MB or smaller.");
+                        return;
+                      }
+                      if (pickedPhotos.length > 5 - chatPhotos.length) setError("You can attach up to five photos per message.");
+                      else setError("");
+                      setChatPhotos((current) => [...current, ...pickedPhotos].slice(0, 5));
+                    }} />
+                    <button type="button" onClick={() => chatPhotoInputRef.current?.click()} disabled={isSending || chatPhotos.length >= 5} title="Attach photos" aria-label="Attach photos" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-40">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden="true"><path d="m21.4 11.1-8.5 8.5a5.5 5.5 0 0 1-7.8-7.8l9.2-9.2a3.7 3.7 0 0 1 5.2 5.2l-9.2 9.2a1.8 1.8 0 0 1-2.6-2.6l8.5-8.5" /></svg>
+                    </button>
                     <textarea ref={inputRef} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} rows={1} maxLength={2000} placeholder={`Message ${selectedConversation.name}…`} className="min-h-11 max-h-36 flex-1 resize-none overflow-y-hidden rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100" />
-                    <button type="submit" disabled={!input.trim() || isSending} className="flex h-11 shrink-0 items-center justify-center rounded-full bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40">{isSending ? "Sending…" : "Send"}</button>
+                    <button type="submit" disabled={(!input.trim() && !chatPhotos.length) || isSending} className="flex h-11 shrink-0 items-center justify-center rounded-full bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40">{isSending ? "Sending…" : "Send"}</button>
                   </form>
                 </div>
               )}

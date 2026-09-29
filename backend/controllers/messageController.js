@@ -3,6 +3,13 @@ const Booking = require("../models/Booking");
 const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
 const { ensureBookingConversation, appendBookingSystemMessage, formatAmount } = require("../services/bookingMessaging");
+const {
+  deleteChatPhoto,
+  fetchAuthenticatedChatPhoto,
+  isOwnedChatPhotoPublicId,
+  uploadChatPhoto,
+  verifyChatPhotoUploads,
+} = require("../services/cloudinaryMedia");
 const MESSAGE_PAGE_SIZE = 50;
 
 const conversationPopulate = [
@@ -71,13 +78,18 @@ function serializeConversation(conversation, role) {
 }
 
 function serializeMessage(message, currentUserId) {
+  const messageId = String(message._id || message.id);
+  const conversationId = String(message.conversationId);
   return {
-    id: String(message._id),
-    conversationId: String(message.conversationId),
+    id: messageId,
+    conversationId,
     senderId: String(message.sender?._id || message.sender),
     senderRole: message.senderRole,
     isMine: String(message.sender?._id || message.sender) === String(currentUserId),
     text: message.text,
+    photos: (message.photos || []).map((photo, index) => photo && typeof photo === "object" && photo.publicId
+      ? `/api/messages/${conversationId}/${messageId}/photos/${index}`
+      : typeof photo === "string" ? photo : ""),
     eventType: message.eventType || "",
     eventData: message.eventData || null,
     createdAt: message.createdAt,
@@ -164,7 +176,7 @@ async function handleListMessages(req, res) {
       ]);
     }
     const page = await Message.find(mongoose.trusted(messageFilter))
-      .select("conversationId sender senderRole text eventType eventData createdAt")
+      .select("conversationId sender senderRole text photos eventType eventData createdAt")
       .sort({ createdAt: -1, _id: -1 })
       .limit(MESSAGE_PAGE_SIZE + 1)
       .lean();
@@ -177,11 +189,91 @@ async function handleListMessages(req, res) {
   }
 }
 
+async function handleUploadChatPhoto(req, res) {
+  const conversationId = String(req.body.conversationId || "");
+  if (!mongoose.isValidObjectId(conversationId)) return res.status(400).json({ message: "Choose a valid conversation." });
+  if (!req.file?.buffer?.length) return res.status(400).json({ message: "Choose a photo to upload." });
+  const filter = participantFilter(req.user);
+  if (!filter) return res.status(403).json({ message: "Messaging is only available to clients and providers." });
+
+  try {
+    const conversation = await Conversation.findOne({ _id: conversationId, ...filter }).select("_id isArchivedByClient isArchivedByProvider");
+    if (!conversation) return res.status(403).json({ message: "You are not a participant in this conversation." });
+    if (req.user.role === "client" ? conversation.isArchivedByClient : conversation.isArchivedByProvider) {
+      return res.status(409).json({ message: "Restore this conversation before sending a message." });
+    }
+    const photo = await uploadChatPhoto(req.file.buffer, conversationId, String(req.user._id));
+    return res.status(201).json({ photo });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
+    console.error("Upload chat photo error:", error.message);
+    return res.status(502).json({ message: "Could not upload this photo. Check the Cloudinary configuration and try again." });
+  }
+}
+
+async function handleReadChatPhoto(req, res) {
+  const conversationId = String(req.params.conversationId || "");
+  const messageId = String(req.params.messageId || "");
+  const photoIndex = Number(req.params.photoIndex);
+  if (!mongoose.isValidObjectId(messageId) || !Number.isInteger(photoIndex) || photoIndex < 0 || photoIndex > 4) {
+    return res.status(400).json({ message: "Choose a valid chat photo." });
+  }
+  const filter = participantFilter(req.user);
+  if (!filter) return res.status(403).json({ message: "Messaging is only available to clients and providers." });
+
+  try {
+    const conversation = await Conversation.findOne({ _id: conversationId, ...filter }).select("_id");
+    if (!conversation) return res.status(403).json({ message: "You are not a participant in this conversation." });
+    const message = await Message.findOne({ _id: messageId, conversationId: conversation._id }).select("sender photos");
+    const photo = message?.photos?.[photoIndex];
+    if (!photo || typeof photo !== "object" || !photo.publicId) return res.status(404).json({ message: "Chat photo not found." });
+    const publicId = photo.publicId;
+    if (!isOwnedChatPhotoPublicId(publicId, conversationId, String(message.sender))) return res.status(404).json({ message: "Chat photo not found." });
+
+    const image = await fetchAuthenticatedChatPhoto(publicId, photo.format);
+    res.set({
+      "Cache-Control": "private, no-store",
+      "Content-Type": image.contentType,
+      "X-Content-Type-Options": "nosniff",
+    });
+    return res.status(200).send(image.body);
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
+    console.error("Read chat photo error:", error.message);
+    return res.status(502).json({ message: "Could not load this chat photo." });
+  }
+}
+
+async function handleCleanupChatPhotos(req, res) {
+  const conversationId = String(req.body.conversationId || "");
+  const publicIds = Array.isArray(req.body.publicIds) ? req.body.publicIds.slice(0, 5) : [];
+  if (!mongoose.isValidObjectId(conversationId)) return res.status(400).json({ message: "Choose a valid conversation." });
+  const filter = participantFilter(req.user);
+  if (!filter) return res.status(403).json({ message: "Messaging is only available to clients and providers." });
+
+  try {
+    const conversation = await Conversation.findOne({ _id: conversationId, ...filter }).select("_id");
+    if (!conversation) return res.status(403).json({ message: "You are not a participant in this conversation." });
+    await Promise.all(publicIds.map(async (publicId) => {
+      if (!isOwnedChatPhotoPublicId(publicId, conversationId, String(req.user._id))) return;
+      const attached = await Message.exists({ conversationId: conversation._id, "photos.publicId": publicId });
+      if (!attached) await deleteChatPhoto(publicId);
+    }));
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error("Clean up chat photos error:", error.message);
+    return res.status(502).json({ message: "Could not clean up unused chat photos." });
+  }
+}
+
 async function handleSendMessage(req, res) {
   const conversationId = String(req.body.conversationId || "");
   const text = String(req.body.text || "").trim();
+  const photos = req.body.photos === undefined ? [] : req.body.photos;
   if (!mongoose.isValidObjectId(conversationId)) return res.status(400).json({ message: "Choose a valid conversation." });
-  if (!text || text.length > 2000) return res.status(400).json({ message: "Messages must contain 1 to 2,000 characters." });
+  if (!Array.isArray(photos) || photos.length > 5 || (!text && !photos.length) || text.length > 2000) {
+    return res.status(400).json({ message: "Add a message or up to five photos. Messages can contain up to 2,000 characters." });
+  }
   const filter = participantFilter(req.user);
   if (!filter) return res.status(403).json({ message: "Messaging is only available to clients and providers." });
 
@@ -191,21 +283,24 @@ async function handleSendMessage(req, res) {
     if (req.user.role === "client" ? conversation.isArchivedByClient : conversation.isArchivedByProvider) {
       return res.status(409).json({ message: "Restore this conversation before sending a message." });
     }
+    const verifiedPhotos = await verifyChatPhotoUploads(photos, conversationId, String(req.user._id));
     const message = await Message.create({
       conversationId: conversation._id,
       sender: req.user._id,
       senderRole: req.user.role,
       text,
+      photos: verifiedPhotos,
     });
     const recipientUnreadField = req.user.role === "client" ? "unreadCountProvider" : "unreadCountClient";
     await Conversation.updateOne(
       { _id: conversation._id },
-      { $set: { lastMessage: text, lastMessageAt: message.createdAt }, $inc: { [recipientUnreadField]: 1 } }
+      { $set: { lastMessage: text || "Photo attachment", lastMessageAt: message.createdAt }, $inc: { [recipientUnreadField]: 1 } }
     );
     return res.status(201).json({ message: serializeMessage(message, req.user._id), conversation: serializeConversation(await conversation.populate(conversationPopulate), req.user.role) });
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
     console.error("Send message error:", error);
-    return res.status(500).json({ message: "Could not send the message." });
+    return res.status(502).json({ message: "Could not send the message. Check the Cloudinary configuration and try again." });
   }
 }
 
@@ -365,4 +460,4 @@ async function handleCashConfirmation(req, res) {
   }
 }
 
-module.exports = { handleListConversations, handleCreateConversation, handleListMessages, handleSendMessage, handleCashConfirmation, handleArchiveConversation, handleReportConversation };
+module.exports = { handleListConversations, handleCreateConversation, handleListMessages, handleUploadChatPhoto, handleReadChatPhoto, handleCleanupChatPhotos, handleSendMessage, handleCashConfirmation, handleArchiveConversation, handleReportConversation };

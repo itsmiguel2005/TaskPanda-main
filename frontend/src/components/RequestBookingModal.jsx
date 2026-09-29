@@ -112,15 +112,15 @@ function CalendarPicker({ selectedDate, onSelect, onClose }) {
   );
 }
 
-export default function RequestBookingModal({ provider, onClose, onSubmit }) {
+export default function RequestBookingModal({ provider, onClose, onSubmit, initialValues = {} }) {
   const navigate = useNavigate();
-  const [taskDescription, setTaskDescription] = useState("");
+  const [taskDescription, setTaskDescription] = useState(initialValues.task || "");
   const [step, setStep] = useState(1);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
   const [currentTime, setCurrentTime] = useState(() => new Date());
-  const [urgency, setUrgency] = useState("Flexible");
-  const [offer, setOffer] = useState("");
+  const [urgency, setUrgency] = useState(initialValues.urgency || "Flexible");
+  const [offer, setOffer] = useState(initialValues.offer == null ? "" : String(initialValues.offer));
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [formError, setFormError] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -220,7 +220,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit }) {
         offer: offerAmount,
         urgency,
         photos: selectedFiles,
-        address: [provider.barangay, provider.city, provider.province].filter(Boolean).join(", "),
+        address: provider.address || [provider.barangay, provider.city, provider.province].filter(Boolean).join(", "),
         termsAccepted: true,
       });
       setIsSubmitted(true);
