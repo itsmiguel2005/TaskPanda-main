@@ -986,7 +986,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
             </label>
           </div>
           {error && <p role="alert" className="border-b border-red-100 bg-red-50 px-5 py-3 text-xs text-red-700">{error}</p>}
-          <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/50 p-2 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/50 p-2 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent" style={{ scrollbarGutter: "stable" }}>
             {isLoading || openingBooking ? (
               <p className="p-5 text-sm text-gray-500">{openingBooking ? "Opening booking conversation…" : "Loading conversations…"}</p>
             ) : filteredConversations.length ? filteredConversations.map((conversation) => (
@@ -1417,7 +1417,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                 )}
 
                 {role === "client" && canRequestCancellation(selectedConversation) ? (
-                  <button type="button" onClick={() => { setActionError(""); setActionModalView("CONFIRM_CANCEL"); }} className="mt-4 border-t border-gray-100 pt-3 text-xs font-semibold text-red-700 hover:text-red-900">Cancel booking</button>
+                  <button type="button" onClick={() => { setActionError(""); setActionModalView("CONFIRM_CANCEL"); }} className="ml-2 mt-4 inline-flex min-h-9 items-center justify-center rounded-md border border-red-300 bg-white px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 focus-visible:ring-offset-2">Cancel booking</button>
                 ) : role === "client" && getCancellationLockMessage(selectedConversation) ? (
                   <p className="mt-4 border-t border-gray-100 pt-3 text-xs font-medium text-gray-500" title={getCancellationLockMessage(selectedConversation)}>{getCancellationLockMessage(selectedConversation)}</p>
                 ) : null}

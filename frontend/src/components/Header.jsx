@@ -12,15 +12,27 @@ function MenuIcon({ children, className = "h-4 w-4" }) {
   );
 }
 
-export default function Header({ logoColor = "text-primary-700", showNav = false, activeTab = "Home", role = "client", notifCount = 2 }) {
+export default function Header({ logoColor = "text-primary-700", showNav = false, activeTab = "Home", role = "client" }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const [notificationItems, setNotificationItems] = useState([]);
+  const [dismissedNotificationIds, setDismissedNotificationIds] = useState([]);
   const navigate = useNavigate();
   const location = useLocation();
   const { isLoggedIn, role: authRole, user, firstName, logout, token } = useAuth();
+  const dismissedStorageKey = `taskpanda_dismissed_notifications_${authRole || role}_${user?._id || user?.id || user?.email || "guest"}`;
   const notifRef = useRef(null);
+
+  useEffect(() => {
+    try {
+      const savedIds = JSON.parse(localStorage.getItem(dismissedStorageKey) || "[]");
+      setDismissedNotificationIds(Array.isArray(savedIds) ? savedIds : []);
+    } catch {
+      setDismissedNotificationIds([]);
+    }
+  }, [dismissedStorageKey]);
 
   useEffect(() => {
     if (!showNav || !isLoggedIn || !token || !["client", "provider"].includes(authRole)) {
@@ -53,7 +65,21 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
           ...(Array.isArray(archivedData.conversations) ? archivedData.conversations : []),
         ];
         const totalUnread = conversations.reduce((total, conversation) => total + Math.max(0, Number(conversation.unreadCount) || 0), 0);
-        if (active) setUnreadMessageCount(totalUnread);
+        const nextNotifications = conversations
+          .filter((conversation) => conversation && Number(conversation.unreadCount) > 0)
+          .sort((a, b) => new Date(b.lastMessageAt || b.updatedAt || 0) - new Date(a.lastMessageAt || a.updatedAt || 0))
+          .map((conversation) => ({
+            id: `${conversation.id}:${conversation.lastMessageAt || conversation.updatedAt || conversation.lastMessage || "latest"}`,
+            title: conversation.task || "New message",
+            detail: conversation.lastMessage || "You have a new message.",
+            from: conversation.name || "TaskPanda",
+            unreadCount: Math.max(0, Number(conversation.unreadCount) || 0),
+            href: authRole === "provider" ? `/provider/messages?conversation=${conversation.id}` : `/client/messages?conversation=${conversation.id}`,
+          }));
+        if (active) {
+          setUnreadMessageCount(totalUnread);
+          setNotificationItems(nextNotifications);
+        }
       } catch {
         // Keep the last known count when the conversation request is temporarily unavailable.
       } finally {
@@ -135,18 +161,22 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   const accountRoleLabel = authRole === "provider" ? "Provider" : authRole === "admin" ? "Admin" : "Client";
   const dashboardPath = authRole === "provider" ? "/provider-dashboard" : authRole === "admin" ? "/admin?section=dashboard" : "/dashboard";
   const profilePath = authRole === "provider" ? "/provider-profile" : "/profile";
+  const notificationList = notificationItems;
+  const visibleNotificationList = notificationList.filter((item) => !dismissedNotificationIds.includes(item.id));
+  const unreadNotificationCount = visibleNotificationList.reduce((total, item) => total + Math.max(0, Number(item.unreadCount) || 0), 0);
+  const totalNotificationCount = unreadNotificationCount;
 
   return (
     <header className="fixed inset-x-0 top-0 z-30 bg-white/80 backdrop-blur-md shadow-sm">
       <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-none items-center gap-3">
+        <div className="flex w-[180px] items-center justify-start gap-3">
           <Link to="/" className={`text-2xl font-extrabold tracking-tight ${logoColor}`}>
             <span className="text-black">Task</span>Panda
           </Link>
         </div>
 
         {showNav && (
-          <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-2 lg:flex">
+          <nav className="hidden flex-1 items-center justify-center gap-2 lg:flex">
             {navLinks.map((link) => (
               <Link
                 key={link.label}
@@ -170,7 +200,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
           </nav>
         )}
 
-        <div className="flex flex-none items-center gap-6">
+        <div className="flex w-[220px] items-center justify-end gap-6">
           {showNav && (
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
@@ -186,48 +216,62 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
               </svg>
             </button>
           )}
-          {showNav && notifCount > 0 && (
+          {showNav && (
             <div className="relative" ref={notifRef}>
               <button
                 onClick={() => setNotifOpen(!notifOpen)}
                 className="relative inline-flex items-center justify-center rounded-lg p-2 text-gray-600 hover:bg-gray-100"
-                aria-label="Notifications"
+                aria-label={`Notifications${totalNotificationCount > 0 ? `, ${totalNotificationCount} unread` : ""}`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-6 w-6">
                   <path fillRule="evenodd" d="M12 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 006 15h12a1 1 0 00.707-1.707L18 11.586V8a6 6 0 00-6-6zM10 20a2 2 0 114 0a2 2 0 01-4 0z" clipRule="evenodd" />
                 </svg>
-                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-                  {notifCount}
-                </span>
+                {totalNotificationCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                    {totalNotificationCount > 99 ? "99+" : totalNotificationCount}
+                  </span>
+                )}
               </button>
               {notifOpen && (
                 <div className="absolute right-0 mt-2 w-72 rounded-xl border border-gray-100 bg-white shadow-lg">
-                  <div className="px-4 py-3 border-b border-gray-100">
+                  <div className="border-b border-gray-100 px-4 py-3">
                     <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
                   </div>
                   <div className="max-h-64 overflow-y-auto">
-                    {role === "provider" ? (
-                      <>
-                        <Link to="/provider-bookings" onClick={() => setNotifOpen(false)} className="block px-4 py-3 hover:bg-gray-50 border-b border-gray-50">
-                          <p className="text-sm text-gray-700">New request from <span className="font-semibold">Ana Reyes</span></p>
-                          <p className="text-xs text-gray-400 mt-0.5">Leaking Pipe Fix — 2 min ago</p>
-                        </Link>
-                        <Link to="/provider-bookings" onClick={() => setNotifOpen(false)} className="block px-4 py-3 hover:bg-gray-50">
-                          <p className="text-sm text-gray-700">New request from <span className="font-semibold">Carlos Magsaysay</span></p>
-                          <p className="text-xs text-gray-400 mt-0.5">Bookshelf Assembly — 15 min ago</p>
-                        </Link>
-                      </>
+                    {visibleNotificationList.length > 0 ? (
+                      visibleNotificationList.map((item) => (
+                        <div key={item.id} className="flex items-start justify-between gap-2 border-b border-gray-50 px-4 py-3 last:border-b-0 hover:bg-gray-50">
+                          <Link to={item.href} onClick={() => setNotifOpen(false)} className="block min-w-0 flex-1">
+                            <p className="text-sm text-gray-700"><span className="font-semibold">{item.from}</span> · {item.title}</p>
+                            <p className="mt-0.5 text-xs text-gray-500">{item.detail}</p>
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setDismissedNotificationIds((current) => {
+                                if (current.includes(item.id)) return current;
+                                const next = [...current, item.id];
+                                try {
+                                  localStorage.setItem(dismissedStorageKey, JSON.stringify(next));
+                                } catch {
+                                  // Keep the dismissal for this page session if storage is unavailable.
+                                }
+                                return next;
+                              });
+                            }}
+                            className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-gray-400 transition hover:bg-gray-200 hover:text-gray-600"
+                            aria-label={`Dismiss notification from ${item.from}`}
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4" aria-hidden="true">
+                              <path d="M6 6l12 12M18 6L6 18" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))
                     ) : (
-                      <>
-                        <Link to="/bookings" onClick={() => setNotifOpen(false)} className="block px-4 py-3 hover:bg-gray-50 border-b border-gray-50">
-                          <p className="text-sm text-gray-700">Your booking <span className="font-semibold">Circuit Breaker Replacement</span> was confirmed</p>
-                          <p className="text-xs text-gray-400 mt-0.5">2 hours ago</p>
-                        </Link>
-                        <Link to="/bookings" onClick={() => setNotifOpen(false)} className="block px-4 py-3 hover:bg-gray-50">
-                          <p className="text-sm text-gray-700">Your booking <span className="font-semibold">Desktop Table Repair</span> is pending</p>
-                          <p className="text-xs text-gray-400 mt-0.5">5 hours ago</p>
-                        </Link>
-                      </>
+                      <div className="px-4 py-6 text-center text-sm text-gray-500">No new notifications.</div>
                     )}
                   </div>
                 </div>
