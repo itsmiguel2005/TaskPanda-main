@@ -22,6 +22,8 @@ function profileFromUser(user) {
     professions: user.professions || [],
     bio: user.bio || "",
     profileImage: user.profileImage || "",
+    averageRating: user.averageRating ?? 0,
+    totalReviews: user.totalReviews ?? 0,
     createdAt: user.createdAt,
   };
 }

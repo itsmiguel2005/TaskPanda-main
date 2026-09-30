@@ -387,6 +387,7 @@ export default function Dashboard() {
           id: provider.id || provider._id,
           name: provider.fullName || provider.username || "Local pro",
           cred: professions.join(" · ") || "Local service provider",
+          profileImage: provider.profileImage || "",
           rating,
           reviews,
           category,
@@ -632,8 +633,12 @@ export default function Dashboard() {
                       className={`group relative flex min-h-[190px] min-w-[260px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br ${pro.accent} p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white shadow-sm">
-                          {pro.name.charAt(0)}
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white shadow-sm overflow-hidden">
+                          {pro.profileImage ? (
+                            <img src={pro.profileImage} alt={pro.name} className="h-full w-full object-cover" />
+                          ) : (
+                            pro.name.charAt(0)
+                          )}
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-bold text-gray-900">{pro.name}</p>
@@ -767,8 +772,12 @@ export default function Dashboard() {
                   return (
                     <div key={normalizedId} className="group relative flex min-h-[190px] min-w-[260px] flex-col rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white shadow-sm">
-                          {providerName.charAt(0)}
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white shadow-sm overflow-hidden">
+                          {provider.profileImage ? (
+                            <img src={provider.profileImage} alt={providerName} className="h-full w-full object-cover" />
+                          ) : (
+                            providerName.charAt(0)
+                          )}
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-bold text-gray-900">{providerName}</p>
