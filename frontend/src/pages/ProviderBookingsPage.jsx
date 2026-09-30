@@ -89,6 +89,7 @@ function StatusBadge({ status }) {
     "Pending Request": "bg-amber-100 text-amber-700 border-amber-200",
     Confirmed: "bg-emerald-100 text-emerald-700 border-emerald-200",
     Completed: "bg-blue-100 text-blue-700 border-blue-200",
+    Settled: "bg-emerald-100 text-emerald-700 border-emerald-200",
     Cancelled: "bg-red-100 text-red-700 border-red-200",
     "Declined by Provider": "bg-rose-100 text-rose-800 border-rose-200",
     "Cancellation Requested": "bg-amber-100 text-amber-700 border-amber-200",
@@ -113,6 +114,7 @@ function StatusDot({ status }) {
     "Pending Request": "bg-amber-500",
     Confirmed: "bg-green-500",
     Completed: "bg-blue-500",
+    Settled: "bg-emerald-500",
     Cancelled: "bg-red-500",
     "Declined by Provider": "bg-rose-600",
     "Cancellation Requested": "bg-amber-500",
@@ -158,7 +160,7 @@ export default function ProviderBookingsPage() {
   const filteredManagedBookings = managedBookings.filter((booking) => {
     if (activeTab === "All") return true;
     if (activeTab === "Active") return ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status);
-    if (activeTab === "Completed") return booking.status === "Completed";
+    if (activeTab === "Completed") return ["Completed", "Settled"].includes(booking.status);
     if (activeTab === "Cancelled") return booking.status === "Cancelled";
     if (activeTab === "Declined") return booking.status === "Declined by Provider";
     return false;
@@ -177,7 +179,7 @@ export default function ProviderBookingsPage() {
     } else if (sortBy === "price") {
       result.sort((a, b) => parsePrice(b.price) - parsePrice(a.price));
     } else if (sortBy === "status") {
-      const order = { "Pending Request": 0, Confirmed: 1, "On the Way": 2, "In Progress": 3, Completed: 4, Cancelled: 5, "Declined by Provider": 6 };
+      const order = { "Pending Request": 0, Confirmed: 1, "On the Way": 2, "In Progress": 3, Completed: 4, Settled: 4, Cancelled: 5, "Declined by Provider": 6 };
       result.sort((a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99));
     }
     return result;
@@ -187,11 +189,11 @@ export default function ProviderBookingsPage() {
     total: requests.length + managedBookings.length,
     incoming: requests.length,
     active: managedBookings.filter((b) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(b.status)).length,
-    completed: managedBookings.filter((b) => b.status === "Completed").length,
+    completed: managedBookings.filter((b) => ["Completed", "Settled"].includes(b.status)).length,
     cancelled: managedBookings.filter((b) => b.status === "Cancelled").length,
     declined: managedBookings.filter((b) => b.status === "Declined by Provider").length,
     earnings: managedBookings
-      .filter((b) => b.status === "Completed")
+      .filter((b) => ["Completed", "Settled"].includes(b.status))
       .reduce((sum, b) => sum + parsePrice(b.price), 0),
   }), [requests, managedBookings]);
 
@@ -314,7 +316,7 @@ export default function ProviderBookingsPage() {
                 : tab.key === "Active"
                 ? managedBookings.filter((booking) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status)).length
                 : tab.key === "Completed"
-                ? managedBookings.filter((booking) => booking.status === "Completed").length
+                ? managedBookings.filter((booking) => ["Completed", "Settled"].includes(booking.status)).length
                 : tab.key === "Declined"
                 ? managedBookings.filter((booking) => booking.status === "Declined by Provider").length
                 : managedBookings.filter((booking) => booking.status === "Cancelled").length;
@@ -522,7 +524,7 @@ export default function ProviderBookingsPage() {
                               {update.type === "reschedule" && <p className="mt-1">Proposed: {new Date(update.proposedServiceDate).toLocaleDateString()} at {update.proposedTimeSlot}</p>}
                             </div>
                           ))}
-                          {booking.status === "Completed" && booking.clientRating != null && (
+                          {["Completed", "Settled"].includes(booking.status) && booking.clientRating != null && (
                             <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 p-3 text-sm text-amber-950">
                               <p className="font-semibold">Client review: <span aria-label={`${booking.clientRating} out of 5 stars`} className="inline-flex items-center gap-0.5">{[1, 2, 3, 4, 5].map((star) => (<span key={star} style={{ color: star <= Number(booking.clientRating || 0) ? "#fbbf24" : "#d1d5db", lineHeight: 1 }}>{"★"}</span>))}</span></p>
                               {booking.clientReview && <p className="mt-1">{booking.clientReview}</p>}
