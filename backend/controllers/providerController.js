@@ -1,10 +1,7 @@
 const User = require("../models/User");
-const mongoose = require("mongoose");
-const Booking = require("../models/Booking");
 
 const MAX_DISTANCE_KM = 100;
 const DEFAULT_LIMIT = 24;
-const ACTIVE_BOOKING_STATUSES = ["pending", "approved", "en_route", "in_progress", "cancel_requested"];
 
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -82,11 +79,11 @@ async function handleDiscoverProviders(req, res) {
                 _id: 1,
                 fullName: 1,
                 username: 1,
-                averageRating: 1,
-                totalReviews: 1,
                 profileImage: 1,
                 professions: 1,
                 bio: 1,
+                averageRating: 1,
+                totalReviews: 1,
                 province: 1,
                 city: 1,
                 barangay: 1,
@@ -125,39 +122,4 @@ async function handleDiscoverProviders(req, res) {
   }
 }
 
-async function handleProviderAvailability(req, res) {
-  const providerId = String(req.params.id || "").trim();
-  const date = String(req.query.date || "").trim();
-  const serviceDate = new Date(`${date}T00:00:00.000Z`);
-
-  if (!mongoose.isValidObjectId(providerId)) return res.status(400).json({ message: "Choose a valid provider." });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(serviceDate.getTime()) || serviceDate.toISOString().slice(0, 10) !== date) {
-    return res.status(400).json({ message: "Choose a valid service date." });
-  }
-
-  const nextDate = new Date(serviceDate);
-  nextDate.setUTCDate(nextDate.getUTCDate() + 1);
-
-  try {
-    const provider = await User.findOne({ _id: providerId, role: "provider", registrationComplete: true }).select("_id");
-    if (!provider) return res.status(404).json({ message: "Provider not found." });
-
-    const bookings = await Booking.aggregate([
-      {
-        $match: {
-          providerId: provider._id,
-          serviceDate: { $gte: serviceDate, $lt: nextDate },
-          status: { $in: ACTIVE_BOOKING_STATUSES },
-        },
-      },
-      { $project: { _id: 0, timeSlot: 1 } },
-    ]);
-
-    return res.json({ providerId: String(provider._id), date, unavailableSlots: bookings.map((booking) => booking.timeSlot) });
-  } catch (error) {
-    console.error("Provider availability error:", error);
-    return res.status(500).json({ message: "Could not load provider availability." });
-  }
-}
-
-module.exports = { handleDiscoverProviders, handleProviderAvailability, MAX_DISTANCE_KM };
+module.exports = { handleDiscoverProviders, MAX_DISTANCE_KM };

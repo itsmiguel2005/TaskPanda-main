@@ -58,7 +58,11 @@ PORT=3000
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=change-this-password
 
-# Optional SMTP settings for password-reset emails
+# Required for admin login email verification
+ADMIN_OTP_EMAIL=admin-security@example.com
+ADMIN_OTP_SECRET=generate-a-random-secret-of-at-least-32-characters
+
+# SMTP settings for password reset, verification, and admin login emails
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_SECURE=false
@@ -84,6 +88,7 @@ Do not commit `.env` or real passwords to source control. For Gmail, use an app 
 - **Request size limits:** JSON and URL-encoded bodies are limited to 10KB, with at most 100 URL-encoded parameters. Multipart uploads are limited to 5MB per file, five files, 40 fields, 10KB per field, and 45 total parts.
 - **Rate limiting:** Authentication endpoints are limited to 10 requests per IP per 15 minutes; registration availability checks to 30 per 15 minutes; booking creation to 10 per 15 minutes; and verification uploads to five per hour. Login also has account-based failed-attempt lockouts.
 - **Authentication and sessions:** Passwords and reset codes are hashed with bcrypt. Email-verification and onboarding tokens are random, stored as hashes, and expire. Account sessions use random 32-byte opaque bearer tokens stored as hashes with 30-day expiry; this app does not use JWTs or require a `JWT_SECRET`. The registration-session cookie is `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
+- **Admin sign-in:** Admin credentials require a second six-digit email code sent to `ADMIN_OTP_EMAIL`. Challenges expire after five minutes, are usable once, and lock after five invalid attempts. Codes are HMAC-hashed with `ADMIN_OTP_SECRET`; admin credential, email-send, and verification limits are stored in MongoDB and shared across instances.
 - **Authorization:** Server middleware restricts profile, booking, messaging, favorites, and verification routes by role. Booking and conversation handlers also check participant ownership before access or updates.
 - **Safer error responses:** Unexpected server and database failures return generic messages rather than stack traces or raw database errors. Unknown `/api` paths return JSON 404 responses.
 
@@ -100,6 +105,8 @@ MONGO_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/taskpanda?re
 MONGO_DB_NAME=taskpanda
 ADMIN_EMAIL=your-admin-email
 ADMIN_PASSWORD=your-strong-admin-password
+ADMIN_OTP_EMAIL=your-admin-security-email
+ADMIN_OTP_SECRET=<at-least-32-random-characters>
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_SECURE=false

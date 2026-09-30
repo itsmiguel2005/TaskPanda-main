@@ -46,19 +46,6 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
-    isVerified: {
-      type: Boolean,
-      default: false,
-    },
-    verificationStatus: {
-      type: String,
-      enum: ["unverified", "pending", "verified", "rejected"],
-      default: "unverified",
-    },
-    verificationReviewedAt: {
-      type: Date,
-      default: null,
-    },
     registrationComplete: {
       type: Boolean,
       default: true,
@@ -129,6 +116,17 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    averageRating: {
+      type: Number,
+      min: 0,
+      max: 5,
+      default: 0,
+    },
+    totalReviews: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
     accountTokens: {
       type: [{
         tokenHash: { type: String, required: true },
@@ -160,17 +158,6 @@ const userSchema = new mongoose.Schema(
       }],
       default: [],
     },
-    averageRating: {
-      type: Number,
-      default: 0,
-      min: 0,
-      max: 5,
-    },
-    totalReviews: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
     dateOfBirth: {
       type: Date,
     },
@@ -179,5 +166,6 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.index({ geoLocation: "2dsphere" });
+userSchema.index({ username: 1 });
 
 module.exports = mongoose.model("User", userSchema);

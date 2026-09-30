@@ -46,6 +46,21 @@ async function sendPasswordResetEmail(email, code) {
   });
 }
 
+async function sendAdminLoginOtpEmail(email, code) {
+  const result = await mailTransport.sendMail({
+    from: { name: "TaskPanda", address: config.mailFrom || config.smtpUser },
+    to: email,
+    subject: "Your TaskPanda admin sign-in code",
+    text: `Your TaskPanda admin sign-in code is ${code}. It expires in 5 minutes. If you did not request this code, secure your admin credentials immediately.`,
+    html: `<p>Your TaskPanda admin sign-in code is:</p><p style="font-size: 24px; font-weight: 700; letter-spacing: 4px">${code}</p><p>This code expires in 5 minutes. If you did not request this code, secure your admin credentials immediately.</p>`,
+  });
+  console.log("Admin sign-in code accepted by SMTP:", {
+    messageId: result.messageId,
+    accepted: result.accepted,
+    rejected: result.rejected,
+  });
+}
+
 async function sendEmailVerificationEmail(email, verificationUrl) {
   const result = await mailTransport.sendMail({
     from: { name: "TaskPanda", address: config.mailFrom || config.smtpUser },
@@ -61,4 +76,4 @@ async function sendEmailVerificationEmail(email, verificationUrl) {
   });
 }
 
-module.exports = { hasValidSmtpCredentials, sendPasswordResetEmail, sendEmailVerificationEmail };
+module.exports = { hasValidSmtpCredentials, sendPasswordResetEmail, sendAdminLoginOtpEmail, sendEmailVerificationEmail };

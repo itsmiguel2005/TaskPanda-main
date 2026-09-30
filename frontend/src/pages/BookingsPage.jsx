@@ -291,8 +291,10 @@ export default function BookingsPage() {
                 <div className="p-5 sm:p-6">
                   <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex items-start gap-4">
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-100 text-lg font-bold text-primary-700 shadow-inner ring-1 ring-primary-200">
-                        {booking.worker.charAt(0)}
+                      <div className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full text-lg font-bold shadow-inner ring-1 ring-primary-200 ${booking.workerProfileImage ? "bg-white" : "bg-primary-100 text-primary-700"}`}>
+                        {booking.workerProfileImage ? (
+                          <img src={booking.workerProfileImage} alt={`${booking.worker} profile`} className="h-full w-full object-cover" />
+                        ) : booking.worker.charAt(0)}
                       </div>
                       <div>
                         <h3 className="text-lg font-bold text-slate-900">
@@ -599,8 +601,10 @@ export default function BookingsPage() {
             <div className="relative">
               <div className="relative h-28 bg-gradient-to-r from-purple-500 to-indigo-600">
                 <div className="absolute -bottom-10 left-6">
-                  <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white text-2xl font-bold bg-primary-100 text-primary-700">
-                    {detailBooking.worker.charAt(0)}
+                  <div className={`flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border-4 border-white text-2xl font-bold ${detailBooking.workerProfileImage ? "bg-white" : "bg-primary-100 text-primary-700"}`}>
+                    {detailBooking.workerProfileImage ? (
+                      <img src={detailBooking.workerProfileImage} alt={`${detailBooking.worker} profile`} className="h-full w-full object-cover" />
+                    ) : detailBooking.worker.charAt(0)}
                   </div>
                 </div>
               </div>

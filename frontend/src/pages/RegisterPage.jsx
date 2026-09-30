@@ -41,17 +41,16 @@ export default function RegisterPage() {
   return (
     <Layout theme="primary">
       {(a) => (
-        <section className="flex items-center justify-center bg-white px-6 pt-16 pb-6 lg:h-full sm:px-8 md:pt-20">
-          <div className="w-full max-w-sm space-y-6">
-            <div className="flex items-center gap-2">
+        <section className="flex items-center justify-center bg-white px-6 py-10 lg:h-full sm:px-8 md:py-14">
+          <div className="w-full max-w-md space-y-7">
+            <div className="flex items-center">
               <button
                 type="button"
                 onClick={handleBack}
-                className="inline-flex items-center justify-center rounded-lg border border-primary-200 bg-primary-50 p-2 text-primary-700 hover:bg-primary-100 focus:outline-none focus:ring-2 focus:ring-primary-500/40"
-                aria-label="Back"
+                className="auth-back-link group inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-500"
               >
                 <svg
-                  className="h-5 w-5"
+                  className="h-4 w-4 shrink-0 transition-transform group-hover:-translate-x-1"
                   viewBox="0 0 24 24"
                   fill="none"
                   xmlns="http://www.w3.org/2000/svg"
@@ -65,10 +64,8 @@ export default function RegisterPage() {
                     strokeLinejoin="round"
                   />
                 </svg>
-              </button>
-              <span className="text-sm font-medium text-gray-500">
                 {sessionStorage.getItem("registerOrigin") === "login" ? "Back to login" : "Back to home"}
-              </span>
+              </button>
             </div>
 
             <div className="space-y-1 text-center">

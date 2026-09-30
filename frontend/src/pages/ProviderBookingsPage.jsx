@@ -479,8 +479,10 @@ export default function ProviderBookingsPage() {
                       <div className="p-5 sm:p-6">
                         <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
                           <div className="flex items-start gap-4">
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-100 text-lg font-bold text-primary-700 shadow-inner ring-1 ring-primary-200">
-                              {booking.client.charAt(0)}
+                            <div className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full text-lg font-bold shadow-inner ring-1 ring-primary-200 ${booking.clientProfileImage ? "bg-white" : "bg-primary-100 text-primary-700"}`}>
+                              {booking.clientProfileImage ? (
+                                <img src={booking.clientProfileImage} alt={`${booking.client} profile`} className="h-full w-full object-cover" />
+                              ) : booking.client.charAt(0)}
                             </div>
                             <div>
                               <h3 className="text-lg font-bold text-slate-900">

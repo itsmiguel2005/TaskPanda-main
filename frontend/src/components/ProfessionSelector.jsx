@@ -120,7 +120,7 @@ export default function ProfessionSelector({ value = [], onChange, placeholder =
           onFocus={() => setIsOpen(true)}
           onKeyDown={handleKeyDown}
           placeholder={value.length === 0 ? placeholder : ""}
-          className="flex-1 min-w-[120px] bg-transparent outline-none placeholder-gray-400/70 text-sm py-0.5"
+          className="auth-inline-field min-w-0 flex-1 bg-transparent px-2 py-0.5 text-sm placeholder-gray-400/70 outline-none"
         />
       </div>
 

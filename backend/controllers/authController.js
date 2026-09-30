@@ -4,13 +4,22 @@ const mongoose = require("mongoose");
 const User = require("../models/User");
 const PasswordReset = require("../models/PasswordReset");
 const AdminSession = require("../models/AdminSession");
+const AdminLoginChallenge = require("../models/AdminLoginChallenge");
 const config = require("../config/env");
 const { geocodeAddress } = require("../services/geocoder");
 const {
   hasValidSmtpCredentials,
   sendPasswordResetEmail,
+  sendAdminLoginOtpEmail,
   sendEmailVerificationEmail,
 } = require("../services/mailer");
+const {
+  generateAdminLoginCode,
+  hashAdminLoginCode,
+  hashAdminChallengeToken,
+  timingSafeHexEqual,
+  consumeAdminRateLimit,
+} = require("../services/adminLoginSecurity");
 const {
   getLoginLock,
   recordFailedLogin,
@@ -20,6 +29,12 @@ const {
 
 const hashToken = (token) => createHash("sha256").update(token).digest("hex");
 const registrationSessionCookie = "taskpanda_registration";
+const ADMIN_LOGIN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+function rejectAdminRateLimit(res, retryAfterSeconds) {
+  res.setHeader("Retry-After", String(retryAfterSeconds));
+  return res.status(429).json({ message: "Too many admin sign-in attempts. Please try again later." });
+}
 
 function formatAddress(street, barangay, city, province) {
   return [street, barangay, city, province]
@@ -655,15 +670,66 @@ async function handleLogin(req, res) {
 
     const adminEmail = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
     const adminPassword = String(process.env.ADMIN_PASSWORD || "");
-    if (adminEmail && adminPassword && identifier.toLowerCase() === adminEmail && password === adminPassword) {
-      const adminToken = randomBytes(32).toString("hex");
-      await AdminSession.create({
-        adminEmail,
-        tokenHash: hashToken(adminToken),
-        expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000),
-      });
+    if (adminEmail && adminPassword && identifier.toLowerCase() === adminEmail) {
+      const ipAddress = req.ip || req.socket?.remoteAddress || "unknown";
+      const [credentialIpLimit, credentialAccountLimit] = await Promise.all([
+        consumeAdminRateLimit("credential-ip", ipAddress, 10, 15 * 60 * 1000),
+        consumeAdminRateLimit("credential-account", adminEmail, 10, 15 * 60 * 1000),
+      ]);
+      if (!credentialIpLimit.allowed) return rejectAdminRateLimit(res, credentialIpLimit.retryAfterSeconds);
+      if (!credentialAccountLimit.allowed) return rejectAdminRateLimit(res, credentialAccountLimit.retryAfterSeconds);
+
+      if (password !== adminPassword) {
+        const attempt = recordFailedLogin(normalizedIdentifier);
+        if (attempt.lockedUntil) return loginLockResponse(res, attempt);
+        return res.status(401).json({ message: "Invalid admin credentials. Please try again." });
+      }
+
+      if (!config.adminOtpEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.adminOtpEmail)) {
+        return res.status(503).json({ message: "Admin email verification is not configured." });
+      }
+      if (config.adminOtpSecret.length < 32 || !hasValidSmtpCredentials) {
+        return res.status(503).json({ message: "Admin email verification is not configured." });
+      }
+
+      const [sendIpLimit, sendEmailLimit] = await Promise.all([
+        consumeAdminRateLimit("otp-send-ip", ipAddress, 3, 15 * 60 * 1000),
+        consumeAdminRateLimit("otp-send-email", config.adminOtpEmail, 3, 15 * 60 * 1000),
+      ]);
+      if (!sendIpLimit.allowed) return rejectAdminRateLimit(res, sendIpLimit.retryAfterSeconds);
+      if (!sendEmailLimit.allowed) return rejectAdminRateLimit(res, sendEmailLimit.retryAfterSeconds);
+
+      const code = generateAdminLoginCode();
+      const challengeToken = randomBytes(32).toString("hex");
+      const challengeTokenHash = hashAdminChallengeToken(challengeToken);
+      await AdminLoginChallenge.findOneAndUpdate(
+        { adminEmail },
+        {
+          $set: {
+            challengeTokenHash,
+            codeHash: hashAdminLoginCode(code, config.adminOtpSecret),
+            expiresAt: new Date(Date.now() + ADMIN_LOGIN_CHALLENGE_TTL_MS),
+            attempts: 0,
+            consumedAt: null,
+          },
+          $setOnInsert: { adminEmail },
+        },
+        { new: true, upsert: true }
+      );
+      try {
+        await sendAdminLoginOtpEmail(config.adminOtpEmail, code);
+      } catch (mailError) {
+        await AdminLoginChallenge.deleteOne({ adminEmail, challengeTokenHash });
+        console.error("Admin sign-in email could not be sent:", mailError.message);
+        return res.status(502).json({ message: "Could not send the admin verification code. Please try again." });
+      }
+
       clearLoginAttempts(normalizedIdentifier);
-      return res.json({ message: "Login successful.", token: adminToken, role: "admin", user: { email: adminEmail, role: "admin" } });
+      return res.json({
+        message: "A verification code was sent to the configured admin email.",
+        requiresAdminOtp: true,
+        challengeToken,
+      });
     }
 
     const user = await User.findOne({ $or: [{ email: normalizedIdentifier }, { username: identifier }] });
@@ -745,6 +811,7 @@ async function handleLogin(req, res) {
         geoLocation: user.geoLocation,
         professions: user.professions,
         bio: user.bio,
+        profileImage: user.profileImage || "",
         createdAt: user.createdAt,
         role: user.role,
         emailVerified: user.emailVerified !== false,
@@ -754,6 +821,85 @@ async function handleLogin(req, res) {
   } catch (error) {
     console.error("Login error:", error);
     return res.status(500).json({ message: "Login failed. Please try again." });
+  }
+}
+
+async function handleVerifyAdminLogin(req, res) {
+  try {
+    const challengeToken = String(req.body.challengeToken || "").trim();
+    const code = String(req.body.code || "").trim();
+    const adminEmail = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+    const ipAddress = req.ip || req.socket?.remoteAddress || "unknown";
+
+    if (!adminEmail || config.adminOtpSecret.length < 32) {
+      return res.status(503).json({ message: "Admin email verification is not configured." });
+    }
+
+    const ipLimit = await consumeAdminRateLimit("otp-verify-ip", ipAddress, 15, 15 * 60 * 1000);
+    if (!ipLimit.allowed) return rejectAdminRateLimit(res, ipLimit.retryAfterSeconds);
+
+    const now = new Date();
+    const challenge = await AdminLoginChallenge.findOne({
+      adminEmail,
+      challengeTokenHash: hashAdminChallengeToken(challengeToken),
+      expiresAt: mongoose.trusted({ $gt: now }),
+      consumedAt: null,
+      attempts: mongoose.trusted({ $lt: 5 }),
+    }).select("+codeHash");
+    if (!challenge || !/^\d{6}$/.test(code)) {
+      return res.status(400).json({ message: "The verification code is invalid or expired. Sign in again to request a new one." });
+    }
+
+    const submittedCodeHash = hashAdminLoginCode(code, config.adminOtpSecret);
+    if (!timingSafeHexEqual(challenge.codeHash, submittedCodeHash)) {
+      const updatedChallenge = await AdminLoginChallenge.findOneAndUpdate(
+        {
+          _id: challenge._id,
+          expiresAt: mongoose.trusted({ $gt: now }),
+          consumedAt: null,
+          attempts: mongoose.trusted({ $lt: 5 }),
+        },
+        { $inc: { attempts: 1 } },
+        { new: true }
+      );
+      if (!updatedChallenge || updatedChallenge.attempts >= 5) {
+        return res.status(429).json({ message: "Too many incorrect codes. Sign in again to request a new one." });
+      }
+      return res.status(400).json({ message: "The verification code is incorrect." });
+    }
+
+    const consumedChallenge = await AdminLoginChallenge.findOneAndUpdate(
+      {
+        _id: challenge._id,
+        adminEmail,
+        challengeTokenHash: hashAdminChallengeToken(challengeToken),
+        codeHash: submittedCodeHash,
+        expiresAt: mongoose.trusted({ $gt: now }),
+        consumedAt: null,
+        attempts: mongoose.trusted({ $lt: 5 }),
+      },
+      { $set: { consumedAt: now } },
+      { new: true }
+    );
+    if (!consumedChallenge) {
+      return res.status(400).json({ message: "The verification code is invalid or expired. Sign in again to request a new one." });
+    }
+
+    const adminToken = randomBytes(32).toString("hex");
+    await AdminSession.create({
+      adminEmail,
+      tokenHash: hashToken(adminToken),
+      expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000),
+    });
+    return res.json({
+      message: "Login successful.",
+      token: adminToken,
+      role: "admin",
+      user: { email: adminEmail, role: "admin" },
+    });
+  } catch (error) {
+    console.error("Admin verification error:", error);
+    return res.status(500).json({ message: "Admin verification failed. Please try again." });
   }
 }
 
@@ -833,6 +979,7 @@ module.exports = {
   handleResendVerification,
   handleCompleteRegistration,
   handleLogin,
+  handleVerifyAdminLogin,
   handleForgotPassword,
   handleResetPassword,
 };

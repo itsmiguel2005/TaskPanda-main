@@ -13,8 +13,8 @@ const {
 const MESSAGE_PAGE_SIZE = 50;
 
 const conversationPopulate = [
-  { path: "clientId", select: "fullName username email" },
-  { path: "providerId", select: "fullName username email professions" },
+  { path: "clientId", select: "fullName username email profileImage" },
+  { path: "providerId", select: "fullName username email professions profileImage" },
   { path: "bookingId", select: "repairDescription status serviceDate timeSlot offeredPrice paymentMethod cashPaidConfirmedAt cashReceivedConfirmedAt clientConfirmedCash providerConfirmedCash workCompletedAt settledAt cashReceipt completionNote completionPhotos completionSubmittedAt revisionRequests createdAt counterOffers clientRating clientReview clientReviewPhotos reviewedAt" },
 ];
 
@@ -29,6 +29,7 @@ function serializeConversation(conversation, role) {
     clientId: String(client?._id || conversation.clientId),
     providerId: String(provider?._id || conversation.providerId),
     name: other?.fullName || other?.username || other?.email || (role === "client" ? "Provider" : "Client"),
+    profileImage: other?.profileImage || "",
     cred: provider?.professions?.join(" · ") || "Service provider",
     task: booking?.repairDescription || "Service booking",
     bookingStatus: booking?.status || "",

@@ -7,23 +7,23 @@ import { useAuth } from "../context/AuthContext.jsx";
 const howItWorksClient = [
   {
     step: "01",
-    title: "Browse Services",
+    title: "Search & compare",
     description:
-      "Explore trusted local professionals across carpentry, plumbing, electrical, cleaning, and more.",
+      "Browse verified local pros by service, location, and rating before you book.",
     icon: "🔍",
   },
   {
     step: "02",
-    title: "Book a Pro",
+    title: "Request & negotiate",
     description:
-      "Choose your provider, pick a date and time, and confirm your booking in minutes.",
-    icon: "📅",
+      "Send a request, compare quotes, and use the counter-offer flow to stay protected and transparent.",
+    icon: "💬",
   },
   {
     step: "03",
-    title: "Get It Done",
+    title: "Book with confidence",
     description:
-      "Your verified expert arrives on time and delivers quality work you can trust.",
+      "Secure the right professional for the job and track progress without the usual off-platform risk.",
     icon: "✅",
   },
 ];
@@ -31,32 +31,57 @@ const howItWorksClient = [
 const howItWorksProvider = [
   {
     step: "01",
-    title: "Set Up Profile",
+    title: "Set up your profile",
     description:
-      "Create your profile, list your skills, certifications, and services you offer.",
+      "Create your profile, list your skills, and highlight credentials like TESDA NC II, diplomas, or past work.",
     icon: "👤",
   },
   {
     step: "02",
-    title: "Receive Requests",
+    title: "Receive local requests",
     description:
-      "Get matched with local job requests that fit your skills and location.",
+      "Get matched with nearby jobs that suit your availability, expertise, and service area.",
     icon: "📬",
   },
   {
     step: "03",
-    title: "Complete Jobs",
+    title: "Complete jobs securely",
     description:
-      "Accept bookings, do the work, and get paid — leave reviews from clients.",
+      "Offer pricing, communicate clearly, and finish jobs with trust-building reviews and progress updates.",
     icon: "🎉",
   },
 ];
 
 const stats = [
-  { value: "500+", label: "Bookings Completed" },
-  { value: "4.9", label: "Average Rating" },
-  { value: "150+", label: "Verified Pros" },
-  { value: "24/7", label: "Service Available" },
+  { value: "500+", label: "Bookings completed" },
+  { value: "4.9/5", label: "Average rating" },
+  { value: "150+", label: "Verified pros" },
+  { value: "24/7", label: "Local support" },
+];
+
+const trustHighlights = [
+  {
+    title: "Verified identity",
+    description: "ID-verified clients and providers help reduce fraud and build trust before any booking begins.",
+    icon: "🪪",
+  },
+  {
+    title: "Professional credentials",
+    description: "Showcase TESDA NC II, diplomas, and proven experience so homeowners can hire with confidence.",
+    icon: "🎓",
+  },
+  {
+    title: "Safer negotiation",
+    description: "Structured quotes and counter-offers keep the process clear, fair, and away from risky off-platform deals.",
+    icon: "🛡️",
+  },
+];
+
+const categoryCards = [
+  { name: "Aircon Repair", icon: "❄️", tone: "from-sky-50 to-blue-50 text-slate-700 border-sky-100" },
+  { name: "Plumbing", icon: "🚿", tone: "from-cyan-50 to-sky-50 text-slate-700 border-sky-100" },
+  { name: "Electrical", icon: "💡", tone: "from-blue-50 to-sky-50 text-slate-700 border-sky-100" },
+  { name: "IT & Gadget Repair", icon: "🖥️", tone: "from-slate-50 to-cyan-50 text-slate-700 border-sky-100" },
 ];
 
 const providers = [
@@ -67,8 +92,8 @@ const providers = [
     rating: 4.8,
     reviews: 24,
     price: "P500",
-    color: "bg-primary-100 text-primary-700",
-    banner: "from-primary-500 to-teal-700",
+    color: "bg-sky-100 text-slate-700",
+    banner: "from-slate-700 to-blue-700",
   },
   {
     name: "Maria Santos",
@@ -77,8 +102,8 @@ const providers = [
     rating: 4.6,
     reviews: 18,
     price: "P450",
-    color: "bg-accent-100 text-accent-700",
-    banner: "from-accent-500 to-blue-700",
+    color: "bg-blue-100 text-blue-700",
+    banner: "from-blue-600 to-slate-700",
   },
   {
     name: "Pedro Cruz",
@@ -87,8 +112,8 @@ const providers = [
     rating: 4.7,
     reviews: 31,
     price: "P400",
-    color: "bg-emerald-100 text-emerald-700",
-    banner: "from-emerald-500 to-teal-700",
+    color: "bg-sky-100 text-slate-700",
+    banner: "from-slate-600 to-blue-700",
   },
 ];
 
@@ -117,370 +142,443 @@ export default function LandingPage() {
   const [howTab, setHowTab] = useState("client");
   const [showVerifyPrompt, setShowVerifyPrompt] = useState(false);
 
+  const pricingSummary = [
+    { label: "Aircon tune-up", value: "₱1,299" },
+    { label: "Leak repair", value: "₱899" },
+    { label: "Electrical check", value: "₱1,580" },
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50 pt-16">
+    <div className="min-h-screen bg-sky-50/60 pt-16 text-slate-900">
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
+        :root {
+          font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+        @keyframes landingFadeUp {
+          from { opacity: 0; transform: translate3d(0, 12px, 0); }
+          to { opacity: 1; transform: translate3d(0, 0, 0); }
+        }
+        .landing-enter {
+          animation: landingFadeUp 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+        .landing-enter-1 { animation-delay: 70ms; }
+        .landing-enter-2 { animation-delay: 140ms; }
+        .landing-enter-3 { animation-delay: 210ms; }
+        .landing-interactive {
+          transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .landing-interactive:hover { transform: translateY(-1px) scale(1.02); }
+        .landing-interactive:active { transform: scale(0.98); }
+        @media (prefers-reduced-motion: reduce) {
+          .landing-enter { animation: none; }
+          .landing-interactive { transition: none; }
+          .landing-interactive:hover,
+          .landing-interactive:active { transform: none; }
+        }
+      `}</style>
+
       <Header showNav={false} />
 
-      {/* Hero Section */}
-      <section className="relative overflow-hidden">
-        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid items-center gap-8 py-12 sm:py-16 lg:grid-cols-2 lg:gap-10 lg:py-24">
-            <div className="max-w-xl animate-hero">
-              <h1 className="text-3xl font-extrabold leading-tight tracking-tight text-gray-900 sm:text-4xl lg:text-5xl">
-                Find trusted local
-                <span className="block bg-gradient-to-r from-primary-600 to-accent-600 bg-clip-text text-transparent">
-                  pros for your home
-                </span>
-              </h1>
-              <p className="mt-5 text-base leading-relaxed text-gray-600 sm:text-lg animate-fade-in-up delay-200">
-                TaskPanda connects you with certified tradespeople and trusted
-                independent local specialists. Quick, reliable, and hassle-free.
-              </p>
+      <main className="pb-20">
+        <section className="relative overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(186,230,253,0.42),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(207,250,254,0.36),_transparent_26%)]" />
+          <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="grid items-center gap-10 py-10 lg:grid-cols-[1.08fr_0.92fr] lg:gap-12 lg:py-16">
+              <div className="max-w-xl">
+                <div className="landing-enter inline-flex items-center gap-2 rounded-full border border-sky-100 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+                  <span>✨</span>
+                  Trusted local home help
+                </div>
 
-              <div className="mt-6 flex flex-wrap items-center gap-2 sm:gap-3 animate-fade-in-up delay-300">
-                {isVerified ? (
-                  <button
-                    onClick={() => navigate("/dashboard")}
-                    className="rounded-xl bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-gray-800 hover:-translate-y-0.5 sm:px-7 sm:py-3.5"
-                  >
-                    Go to Dashboard
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => {
-                        sessionStorage.setItem("registerOrigin", "landing");
-                        navigate("/register");
-                      }}
-                      className="rounded-xl bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-gray-800 hover:-translate-y-0.5 sm:px-7 sm:py-3.5"
-                    >
-                      Get Started
-                    </button>
-                    <button
-                      onClick={() => navigate("/login")}
-                      className="rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 hover:-translate-y-0.5 sm:px-7 sm:py-3.5"
-                    >
-                      Sign In
-                    </button>
-                  </>
-                )}
-              </div>
+                <h1 className="landing-enter landing-enter-1 mt-6 text-[clamp(2.8rem,4vw,5rem)] font-black leading-[0.96] tracking-[-0.07em] text-slate-900">
+                  Find trusted local
+                  <span className="block text-blue-600">
+                    pros for your home
+                  </span>
+                </h1>
 
-              <div className="mt-6 flex items-center gap-3 text-sm text-gray-500 animate-fade-in-up delay-400">
-                <div className="flex -space-x-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 text-xs font-bold text-primary-700 ring-2 ring-white">
-                    J
-                  </div>
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-100 text-xs font-bold text-accent-700 ring-2 ring-white">
-                    M
-                  </div>
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700 ring-2 ring-white">
-                    A
+                <p className="landing-enter landing-enter-2 mt-5 max-w-lg text-base leading-8 text-slate-600 sm:text-lg">
+                  TaskPanda connects homeowners with verified local specialists for repairs, upkeep, and everyday essentials—without the stress, guesswork, or risky off-platform deals.
+                </p>
+
+                <div className="landing-enter landing-enter-3 mt-7 rounded-[1.6rem] border border-sky-100 bg-white p-2.5 shadow-[0_18px_60px_rgba(15,23,42,0.06)]">
+                  <div className="grid gap-2.5 lg:grid-cols-[1.2fr_1fr_auto]">
+                    <div className="min-h-16 min-w-0 rounded-full border border-sky-100 bg-sky-50/60 px-4 py-2.5">
+                      <label className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Service
+                      </label>
+                      <div className="mt-1 flex min-w-0 items-center gap-2 text-sm font-medium text-slate-900">
+                        <span className="shrink-0">🔧</span>
+                        <span className="truncate">Aircon Repair</span>
+                      </div>
+                    </div>
+
+                    <div className="min-h-16 min-w-0 rounded-full border border-sky-100 bg-sky-50/60 px-4 py-2.5">
+                      <label className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Location
+                      </label>
+                      <div className="mt-1 flex min-w-0 items-center gap-2 text-sm font-medium text-slate-900">
+                        <span className="shrink-0">📍</span>
+                        <span className="truncate">Pantal, Dagupan City</span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => navigate("/register")}
+                      className="landing-interactive flex min-h-16 items-center justify-center rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-600"
+                    >
+                      Explore
+                    </button>
                   </div>
                 </div>
-                <span>
-                  Trusted by <strong className="text-gray-900">2,000+</strong>{" "}
-                  homeowners
-                </span>
-              </div>
-            </div>
 
-            <div className="relative animate-slide-right delay-300">
-              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-teal-700 via-slate-700 to-slate-800 px-6 py-10 sm:px-10 sm:py-12">
-                <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-white/5" />
-                <div className="pointer-events-none absolute bottom-0 left-1/2 h-32 w-32 rounded-full bg-white/5" />
-
-                <div className="relative z-10 max-w-lg">
-                  <h2 className="text-xl font-bold text-white sm:text-2xl">
-                    Why TaskPanda?
-                  </h2>
-                  <div className="mt-6 space-y-3">
+                <div className="mt-6 flex flex-wrap items-center gap-4 text-sm text-slate-600">
+                  <div className="flex -space-x-2">
                     {[
-                      { icon: "✅", text: "Verified & TESDA-certified pros" },
-                      { icon: "⚡", text: "Instant booking in minutes" },
-                      { icon: "🏡", text: "Trusted by 2,000+ homeowners" },
-                    ].map((item) => (
+                      { bg: "bg-sky-100 text-slate-700", letter: "J" },
+                      { bg: "bg-blue-100 text-blue-700", letter: "M" },
+                      { bg: "bg-sky-50 text-slate-700", letter: "A" },
+                    ].map((avatar) => (
                       <div
-                        key={item.text}
-                        className="flex items-center gap-3 rounded-lg bg-white/10 px-4 py-2.5"
+                        key={avatar.letter}
+                        className={`flex h-9 w-9 items-center justify-center rounded-full border-2 border-white text-xs font-bold shadow-sm ${avatar.bg}`}
                       >
-                        <span className="text-base">{item.icon}</span>
-                         <span className="text-sm text-teal-50">
-                           {item.text}
-                         </span>
-                       </div>
-                     ))}
-                   </div>
-                 </div>
-               </div>
-             </div>
-           </div>
-         </div>
-       </section>
-
-       {/* Stats Bar */}
-      <section className="bg-white py-8">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-              <div className="grid grid-cols-2 gap-4 sm:gap-6 md:grid-cols-4">
-            {stats.map((s, i) => (
-              <div
-                key={s.label}
-                className="flex flex-col items-center rounded-xl border border-gray-100 bg-gray-50 px-4 py-5 text-center transition hover:shadow-md animate-fade-in-up"
-                style={{ animationDelay: `${0.1 * i}s` }}
-              >
-                <span className="text-2xl font-extrabold text-gray-900 sm:text-3xl animate-fade-in-up" style={{ animationDelay: `${0.15 * i}s` }}>
-                  {s.value}
-                </span>
-                <span className="mt-1 text-xs text-gray-500 sm:text-sm">
-                  {s.label}
-                </span>
+                        {avatar.letter}
+                      </div>
+                    ))}
+                  </div>
+                  <span>
+                    Trusted by <strong className="text-slate-900">2,000+</strong> homeowners
+                  </span>
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
-      {/* Categories Section */}
-      <section className="py-16">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-8 text-center">
-            <h2 className="text-2xl font-bold text-gray-900">
-              Explore Services
-            </h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Browse services from certified local professionals
-            </p>
-          </div>
+              <div className="relative">
+                <div className="landing-enter landing-enter-2 relative overflow-hidden rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_32px_90px_rgba(15,23,42,0.08)] sm:p-7">
+                  <div className="absolute left-2 top-2 h-32 w-32 rounded-full bg-sky-100/70 blur-3xl" />
+                  <div className="absolute bottom-0 right-0 h-40 w-40 rounded-full bg-cyan-100/70 blur-3xl" />
 
-          <div className="flex flex-wrap justify-center gap-3">
-            {categories.map((cat) => (
-              <button
-                  key={cat.name}
-                  onClick={() => navigate(`/explore?service=${encodeURIComponent(cat.name)}`)}
-                  className="flex flex-col items-center gap-2 rounded-xl border border-gray-100 bg-white px-3 py-3 sm:px-5 sm:py-4 shadow-sm transition hover:shadow-md hover:border-gray-200 hover:-translate-y-1 animate-fade-in-up"
-                  style={{ width: "100px", maxWidth: "120px", animationDelay: `${0.05 * categories.indexOf(cat)}s` }}
-                >
-                <span className="text-2xl">{cat.icon}</span>
-                <span className="whitespace-nowrap text-xs font-medium text-gray-700">
-                  {cat.name}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
+                  <div className="relative rounded-[1.5rem] border border-sky-100 bg-white p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          Verified jobs nearby
+                        </p>
+                        <h2 className="mt-2 text-2xl font-black tracking-[-0.06em] text-slate-900">
+                          18 this week
+                        </h2>
+                      </div>
+                      <span className="rounded-full bg-blue-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-blue-700">
+                        Open
+                      </span>
+                    </div>
 
-      {/* How It Works */}
-      <section className="bg-white py-16">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-10 text-center">
-            <h2 className="text-2xl font-bold text-gray-900 sm:text-3xl">
-              How TaskPanda Works
-            </h2>
-            <p className="mx-auto mt-2 max-w-lg text-sm text-gray-500">
-              Simple steps for both clients and providers
-            </p>
-            <div className="mt-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
-                <button
-                  onClick={() => setHowTab("client")}
-                  className={`rounded-md px-3 py-2 text-sm font-medium transition sm:px-5 sm:py-2 ${
-                    howTab === "client"
-                      ? "bg-primary-600 text-white shadow-sm"
-                      : "text-gray-500 hover:text-gray-700"
-                  } animate-fade-in-up`}
-                >
-                  For Clients
-                </button>
-                <button
-                  onClick={() => setHowTab("provider")}
-                  className={`rounded-md px-3 py-2 text-sm font-medium transition sm:px-5 sm:py-2 ${
-                    howTab === "provider"
-                      ? "bg-green-600 text-white shadow-sm"
-                      : "text-gray-500 hover:text-gray-700"
-                  } animate-fade-in-up delay-100`}
-                >
-                  For Providers
-                </button>
+                    <div className="mt-6 rounded-[1.35rem] border border-sky-100 bg-white p-4 shadow-sm">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-2xl">
+                            🐼
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                              Panda match
+                            </p>
+                            <p className="text-base font-bold text-slate-900">
+                              Trusted & ready
+                            </p>
+                          </div>
+                        </div>
+                        <div className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-700">
+                          96% match
+                        </div>
+                      </div>
+
+                      <div className="mt-5 space-y-3">
+                        {pricingSummary.map((item) => (
+                          <div
+                            key={item.label}
+                            className="flex items-center justify-between rounded-2xl border border-sky-100 bg-sky-50/60 px-3 py-2.5"
+                          >
+                            <div>
+                              <p className="text-xs text-slate-600">{item.label}</p>
+                              <p className="text-sm font-semibold text-slate-900">{item.value}</p>
+                            </div>
+                            <span className="rounded-full bg-sky-100 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-700">
+                              Ready
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
+        </section>
 
-          <div className="grid gap-6 sm:grid-cols-3">
-            {(howTab === "client" ? howItWorksClient : howItWorksProvider).map(
-              (item, i) => (
+        <section className="py-12 sm:py-16">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="grid gap-4 md:grid-cols-4">
+              {stats.map((item, index) => (
                 <div
-                  key={item.step}
-                  className="relative rounded-2xl border border-gray-100 bg-gray-50 p-6 text-center transition hover:shadow-md hover:border-gray-200 hover:-translate-y-1 animate-fade-in-up"
-                  style={{ animationDelay: `${0.1 * i}s` }}
+                  key={item.label}
+                  className="rounded-[1.5rem] border border-sky-100 bg-white px-4 py-5 text-center shadow-[0_8px_30px_rgba(15,23,42,0.05)]"
+                  style={{ animationDelay: `${0.08 * index}s` }}
                 >
-                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-white text-2xl shadow-sm">
+                  <div className="text-3xl font-black tracking-[-0.06em] text-slate-900 sm:text-4xl">
+                    {item.value}
+                  </div>
+                  <div className="mt-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                    {item.label}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="py-16">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="mb-10 text-center">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                Built for trust
+              </p>
+              <h2 className="mt-3 text-3xl font-black tracking-[-0.06em] text-slate-900 sm:text-4xl">
+                Home service confidence from the first click
+              </h2>
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-3">
+              {trustHighlights.map((item) => (
+                <div
+                  key={item.title}
+                  className="rounded-[1.75rem] border border-sky-100 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.05)]"
+                >
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-50 text-2xl shadow-sm">
                     {item.icon}
                   </div>
-                  <span className={`mt-4 inline-block rounded-lg px-3 py-1 text-xs font-bold ${howTab === "client" ? "bg-primary-100 text-primary-700" : "bg-green-100 text-green-700"}`}>
-                    {item.step}
-                  </span>
-                  <h3 className="mt-3 text-lg font-bold text-gray-900">
+                  <h3 className="mt-5 text-xl font-bold tracking-[-0.04em] text-slate-900">
                     {item.title}
                   </h3>
-                  <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                  <p className="mt-3 text-sm leading-7 text-slate-600">
                     {item.description}
                   </p>
                 </div>
-              )
-            )}
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Featured Providers */}
-      <section className="py-16">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold text-gray-900">
-              Top-Rated Professionals
-            </h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Hand-picked experts trusted by the community
-            </p>
+        <section className="py-16">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="mb-10 flex flex-col gap-3 text-center">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                Popular services
+              </p>
+              <h2 className="text-3xl font-black tracking-[-0.06em] text-slate-900 sm:text-4xl">
+                Choose the job that needs attention
+              </h2>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {categoryCards.map((card) => (
+                <button
+                  key={card.name}
+                  onClick={() => navigate(`/explore?service=${encodeURIComponent(card.name)}`)}
+                  className={`landing-interactive rounded-[1.6rem] border bg-gradient-to-br p-5 text-left shadow-[0_16px_48px_rgba(15,23,42,0.05)] ${card.tone}`}
+                >
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/80 text-2xl shadow-sm">
+                    {card.icon}
+                  </div>
+                  <div className="mt-5 text-lg font-bold text-slate-900">{card.name}</div>
+                  <div className="mt-2 text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
+                    Book now
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
+        </section>
 
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {providers.map((p, i) => (
-              <div
-                key={p.name}
-                className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:shadow-md hover:-translate-y-1 animate-fade-in-up"
-                style={{ animationDelay: `${0.1 * i}s` }}
+        <section className="bg-white py-16">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="mb-10 text-center">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                How it works
+              </p>
+              <h2 className="mt-3 text-3xl font-black tracking-[-0.06em] text-slate-900 sm:text-4xl">
+                Clear steps, safer bookings, happier outcomes
+              </h2>
+            </div>
+
+            <div className="mx-auto mb-8 inline-flex rounded-full border border-sky-100 bg-sky-50 p-1.5 shadow-sm">
+              <button
+                onClick={() => setHowTab("client")}
+                className={`landing-interactive rounded-full px-4 py-2 text-sm font-semibold ${
+                  howTab === "client"
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
               >
-                <div className={`relative h-28 bg-gradient-to-r ${p.banner}`}>
-                  <div className="absolute -bottom-6 left-4">
-                    <div
-                      className={`flex h-14 w-14 items-center justify-center rounded-full border-4 border-white text-lg font-bold ${p.color}`}
-                    >
-                      {p.name.charAt(0)}
-                    </div>
-                  </div>
-                </div>
+                For homeowners
+              </button>
+              <button
+                onClick={() => setHowTab("provider")}
+                className={`landing-interactive rounded-full px-4 py-2 text-sm font-semibold ${
+                  howTab === "provider"
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                For providers
+              </button>
+            </div>
 
-                <div className="px-4 pb-5 pt-8">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="text-sm font-bold text-gray-900">
-                        {p.name}
-                      </h3>
-                      <p className="text-xs text-gray-500">{p.trade}</p>
-                    </div>
+            <div className="grid gap-5 lg:grid-cols-3">
+              {(howTab === "client" ? howItWorksClient : howItWorksProvider).map((item) => (
+                <div
+                  key={item.title}
+                  className="rounded-[1.8rem] border border-sky-100 bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.05)]"
+                >
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-50 text-2xl shadow-sm ring-1 ring-sky-100">
+                    {item.icon}
                   </div>
-                  <div className="mt-1.5 flex items-center gap-1.5">
-                    <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
-                      {p.cred}
-                    </span>
+                  <div className="mt-5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
+                    {item.step}
                   </div>
-                  <div className="mt-3 flex items-center justify-between">
-                    <div className="flex items-center gap-1">
-                      <StarIcon filled />
-                      <span className="text-sm font-semibold text-gray-800">
-                        {p.rating}
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        ({p.reviews} reviews)
-                      </span>
-                    </div>
-                    <span className="text-sm font-bold text-gray-900">
-                      {p.price}/hr
-                    </span>
-                  </div>
-                  <div className="mt-4 flex gap-2">
-                  <button
-                    onClick={() => {
-                      if (!isVerified) {
-                        setShowVerifyPrompt(true);
-                        return;
-                      }
-                      navigate(`/provider-profile?name=${encodeURIComponent(p.name)}&trade=${encodeURIComponent(p.trade)}`);
-                    }}
-                    className="flex-1 rounded-lg bg-gray-900 px-2 py-2 text-xs font-semibold text-white transition hover:bg-gray-800 sm:px-4"
-                  >
-                    Book Now
-                  </button>
-                  <button
-                    onClick={() => {
-                      navigate(`/provider-profile?name=${encodeURIComponent(p.name)}&trade=${encodeURIComponent(p.trade)}`);
-                    }}
-                    className="flex-1 rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 sm:px-4"
-                  >
-                    View Profile
-                  </button>
-                  </div>
+                  <h3 className="mt-3 text-xl font-bold tracking-[-0.04em] text-slate-900">
+                    {item.title}
+                  </h3>
+                  <p className="mt-3 text-sm leading-7 text-slate-600">
+                    {item.description}
+                  </p>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* CTA Section */}
-      <section className="bg-white py-16">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 px-6 py-12 sm:px-12 sm:py-16 animate-fade-in">
-            <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-white/5" />
-            <div className="pointer-events-none absolute bottom-0 left-1/2 h-32 w-32 rounded-full bg-white/5" />
-            <div className="relative z-10 flex flex-col items-center gap-5 text-center lg:flex-row lg:text-left animate-fade-in-up">
-              <div className="flex-1">
-                <h2 className="text-xl font-extrabold leading-tight tracking-tight text-white sm:text-2xl md:text-3xl lg:text-4xl">
-                  Ready to start your project?
-                </h2>
-                <p className="mt-2 text-sm text-gray-400 sm:text-base">
-                  Join thousands of homeowners who trust TaskPanda to find
-                  reliable local professionals. Get started in minutes — no
-                  commitments needed.
-                </p>
+        <section className="py-16">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="grid items-center gap-8 lg:grid-cols-[1.02fr_0.98fr]">
+              <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.05)] sm:p-7">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      Negotiation flow
+                    </p>
+                    <h3 className="mt-2 text-2xl font-black tracking-[-0.06em] text-slate-900">
+                      Transparent pricing, protected trust
+                    </h3>
+                  </div>
+                  <span className="rounded-full bg-blue-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-blue-700">
+                    Safe
+                  </span>
+                </div>
+
+                <div className="mt-8 space-y-4">
+                  {[
+                    { label: "Initial request", value: "Client posts job" },
+                    { label: "Local matches", value: "Verified pros respond" },
+                    { label: "Counter-offer", value: "Price is negotiated on-platform" },
+                    { label: "Booking complete", value: "Work begins with clear terms" },
+                  ].map((step, index) => (
+                    <div
+                      key={step.label}
+                      className="flex items-center gap-4 rounded-[1.3rem] border border-sky-100 bg-sky-50/60 px-4 py-3"
+                    >
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-slate-700">
+                        {index + 1}
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          {step.label}
+                        </div>
+                        <div className="text-sm font-semibold text-slate-900">{step.value}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="flex flex-col gap-2 sm:flex-row lg:flex-none">
-                {isVerified ? (
-                  <button
-                    onClick={() => navigate("/dashboard")}
-                    className="rounded-xl bg-white px-5 py-3 text-sm font-semibold text-gray-900 transition hover:bg-gray-100 sm:px-7 sm:py-3.5"
-                  >
-                    Go to Dashboard
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => navigate("/register")}
-                      className="rounded-xl bg-white px-5 py-3 text-sm font-semibold text-gray-900 transition hover:bg-gray-100 sm:px-7 sm:py-3.5"
-                    >
-                      Create Free Account
-                    </button>
-                    <button
-                      onClick={() => navigate("/login")}
-                      className="rounded-xl border border-gray-600 bg-transparent px-5 py-3 text-sm font-semibold text-white transition hover:bg-gray-800 sm:px-7 sm:py-3.5"
-                    >
-                      Sign In
-                    </button>
-                  </>
-                )}
+
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                  Why homeowners keep coming back
+                </p>
+                <h2 className="mt-3 text-3xl font-black tracking-[-0.06em] text-slate-900 sm:text-4xl">
+                  A better system for home services in the Philippines
+                </h2>
+                <ul className="mt-7 space-y-5 text-base text-slate-600">
+                  {[
+                    "Verified professionals with clear credentials and local accountability.",
+                    "Protected conversations and fair pricing without risky cash-only arrangements.",
+                    "Fast access to nearby experts for repairs, maintenance, and everyday home needs.",
+                  ].map((point) => (
+                    <li key={point} className="flex gap-3">
+                      <span className="mt-1 flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-700">
+                        ✓
+                      </span>
+                      <span className="leading-7">{point}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <button
+                  onClick={() => navigate("/register")}
+                  className="landing-interactive mt-8 rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  Book a service
+                </button>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+
+        <section className="px-4 pt-4 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-6xl rounded-[2.2rem] bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 p-8 text-center shadow-[0_30px_90px_rgba(15,23,42,0.18)] sm:p-12">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-200">
+              Ready when you are
+            </p>
+            <h2 className="mt-4 text-3xl font-black tracking-[-0.06em] text-white sm:text-4xl">
+              Book reliable help or grow your service business.
+            </h2>
+            <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+              <button
+                onClick={() => navigate("/register")}
+                className="landing-interactive rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-900 hover:bg-sky-50"
+              >
+                Book a service
+              </button>
+              <button
+                onClick={() => navigate("/login")}
+                className="landing-interactive rounded-full border border-white/30 bg-transparent px-6 py-3 text-sm font-semibold text-white hover:bg-white/5"
+              >
+                Sign up as a provider
+              </button>
+            </div>
+          </div>
+        </section>
+      </main>
 
       {showVerifyPrompt && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-fade-in"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           onClick={() => setShowVerifyPrompt(false)}
         >
           <div
-            className="w-full max-w-sm scale-100 rounded-2xl bg-white p-8 shadow-xl animate-scale-in"
+            className="w-full max-w-sm rounded-[2rem] bg-white p-8 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-xl">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-sky-50 text-2xl">
               🪪
             </div>
-            <h2 className="text-center text-2xl font-bold text-gray-900">
-              Verification Required
+            <h2 className="text-center text-2xl font-black tracking-[-0.06em] text-slate-900">
+              Verification required
             </h2>
-            <p className="mt-2 text-center text-sm text-gray-500">
-              You need to verify your identity with a valid ID before booking services.
+            <p className="mt-2 text-center text-sm leading-7 text-slate-600">
+              You need to verify your identity before booking a trusted helper.
             </p>
             <div className="mt-6 flex flex-col gap-3">
               <button
@@ -488,15 +586,15 @@ export default function LandingPage() {
                   setShowVerifyPrompt(false);
                   navigate("/profile/verify");
                 }}
-                className="rounded-xl bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-gray-800"
+                className="landing-interactive rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
               >
-                Verify Now
+                Verify now
               </button>
               <button
                 onClick={() => setShowVerifyPrompt(false)}
-                className="w-full text-center text-xs text-gray-400 hover:text-gray-600"
+                className="w-full text-center text-xs font-medium text-slate-500 hover:text-slate-800"
               >
-                Continue Without Verifying
+                Continue without verifying
               </button>
             </div>
           </div>

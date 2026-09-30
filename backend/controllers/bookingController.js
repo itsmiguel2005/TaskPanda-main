@@ -90,7 +90,9 @@ function serializeBooking(booking) {
     clientId: String(client?._id || booking.clientId),
     providerId: String(provider?._id || booking.providerId),
     client: client?.fullName || client?.username || client?.email || "Client",
+    clientProfileImage: client?.profileImage || "",
     worker: provider?.fullName || provider?.username || provider?.email || "Provider",
+    workerProfileImage: provider?.profileImage || "",
     cred: provider?.professions?.join(" · ") || "Service provider",
     task: repairDescription,
     description: repairDescription,
@@ -156,8 +158,8 @@ function serializeBooking(booking) {
 }
 
 const populatePaths = [
-  { path: "clientId", select: "fullName username email" },
-  { path: "providerId", select: "fullName username email professions" },
+  { path: "clientId", select: "fullName username email profileImage" },
+  { path: "providerId", select: "fullName username email professions profileImage" },
 ];
 
 async function recalculateProviderRatingSummary(providerId) {

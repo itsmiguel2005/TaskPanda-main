@@ -8,6 +8,7 @@ const {
   handleResendVerification,
   handleCompleteRegistration,
   handleLogin,
+  handleVerifyAdminLogin,
   handleForgotPassword,
   handleResetPassword,
 } = require("../controllers/authController");
@@ -62,6 +63,10 @@ router.post("/verify-email", limitAuthAttempts, body("token").isString().matches
 router.post("/resend-verification", limitAuthAttempts, emailField(), validateRequest, handleResendVerification);
 router.post("/complete-registration", limitAuthAttempts, completionValidation, validateRequest, handleCompleteRegistration);
 router.post("/login", limitAuthAttempts, loginValidation, validateRequest, handleLogin);
+router.post("/admin-login/verify", limitAuthAttempts, [
+  body("challengeToken").isString().matches(/^[a-f\d]{64}$/i),
+  body("code").isString().matches(/^\d{6}$/),
+], validateRequest, handleVerifyAdminLogin);
 router.post("/forgot-password", limitAuthAttempts, emailField(), validateRequest, handleForgotPassword);
 router.post("/reset-password", limitAuthAttempts, [
   emailField(),

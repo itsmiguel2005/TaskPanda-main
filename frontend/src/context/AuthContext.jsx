@@ -108,6 +108,11 @@ export function AuthProvider({ children }) {
     }
   }, [token, updateUser]);
 
+  useEffect(() => {
+    if (isAuthLoading || !isLoggedIn || !token || !["client", "provider"].includes(role)) return;
+    void refreshProfile();
+  }, [isAuthLoading, isLoggedIn, token, role, refreshProfile]);
+
   return (
     <AuthContext.Provider value={{ isLoggedIn, role, isVerified, user, token, isAuthLoading, login, logout, verify, updateUser, refreshProfile }}>
       {children}

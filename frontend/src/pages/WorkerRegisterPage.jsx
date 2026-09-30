@@ -176,14 +176,14 @@ export default function WorkerRegisterPage() {
         <>
         <section className="flex items-center justify-center bg-white px-6 pt-16 pb-6 lg:h-full sm:px-8 md:pt-20">
           <div className="w-full max-w-sm space-y-6">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center">
               <Link
                 to="/register"
-                className="inline-flex items-center justify-center rounded-lg border border-green-200 bg-green-50 p-2 text-green-700 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-green-500/40"
+                className="auth-back-link group inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-500"
                 aria-label="Back to role selection"
               >
                 <svg
-                  className="h-5 w-5"
+                  className="h-4 w-4 shrink-0 transition-transform group-hover:-translate-x-1"
                   viewBox="0 0 24 24"
                   fill="none"
                   xmlns="http://www.w3.org/2000/svg"
@@ -196,10 +196,8 @@ export default function WorkerRegisterPage() {
                     strokeLinejoin="round"
                   />
                  </svg>
-               </Link>
-              <span className="text-sm font-medium text-gray-500">
                 Back to role selection
-              </span>
+               </Link>
             </div>
 
             <div className="space-y-1 text-center">

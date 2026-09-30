@@ -15,6 +15,8 @@ export default function LoginPage() {
   const location = useLocation();
   const { login, logout } = useAuth();
   const [formData, setFormData] = useState({ email: "", password: "", remember: false });
+  const [adminChallengeToken, setAdminChallengeToken] = useState("");
+  const [adminOtp, setAdminOtp] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState("");
@@ -134,6 +136,12 @@ export default function LoginPage() {
         navigate(role === "provider" ? "/worker-register/name" : "/client-register/name", { replace: true });
         return;
       }
+      if (response.ok && data.requiresAdminOtp) {
+        setAdminChallengeToken(data.challengeToken || "");
+        setAdminOtp("");
+        setServerError("");
+        return;
+      }
       if (response.ok) {
         const loggedInUser = data.user || { email: formData.email, role: data.role || "client" };
         login({ ...loggedInUser, role: data.role || loggedInUser.role || "client" }, data.token, formData.remember);
@@ -154,6 +162,37 @@ export default function LoginPage() {
         setRequiresPasswordReset(Boolean(data.requiresPasswordReset));
         setLockoutSeconds(Number(data.retryAfterSeconds) || 0);
       }
+    } catch {
+      setServerError("Network error. Please check your connection and try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAdminOtpSubmit = async (event) => {
+    event.preventDefault();
+    setServerError("");
+    if (!/^\d{6}$/.test(adminOtp)) {
+      setServerError("Enter the 6-digit verification code.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await fetch("/api/auth/admin-login/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challengeToken: adminChallengeToken, code: adminOtp }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setServerError(data.message || "Unable to verify the admin code.");
+        return;
+      }
+
+      const adminUser = data.user || { email: formData.email, role: "admin" };
+      login({ ...adminUser, role: "admin" }, data.token, formData.remember);
+      navigate("/admin");
     } catch {
       setServerError("Network error. Please check your connection and try again.");
     } finally {
@@ -183,6 +222,60 @@ export default function LoginPage() {
         <>
         <section className="flex items-center justify-center bg-white px-6 pt-16 pb-6 lg:h-full sm:px-8 md:pt-20">
           <div className="w-full max-w-sm space-y-6">
+            {adminChallengeToken ? (
+              <>
+                <div className="space-y-1 text-center">
+                  <h2 className="font-bold text-2xl text-slate-900">Verify your admin sign-in</h2>
+                  <p className="text-sm leading-6 text-slate-600">
+                    Enter the 6-digit code sent to the configured admin email. The code expires in 5 minutes.
+                  </p>
+                </div>
+
+                <form onSubmit={handleAdminOtpSubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <label htmlFor="adminLoginCode" className="block text-sm font-medium text-slate-700">
+                      Verification code
+                    </label>
+                    <input
+                      id="adminLoginCode"
+                      name="adminLoginCode"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      pattern="[0-9]{6}"
+                      maxLength={6}
+                      required
+                      value={adminOtp}
+                      onChange={(event) => setAdminOtp(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="000000"
+                      className="block w-full rounded-xl border border-slate-200 bg-white px-4 py-1.5 text-center text-xl font-semibold leading-7 tracking-[0.35em] text-slate-900 placeholder:text-slate-300 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                      aria-describedby={serverError ? "adminLoginError" : undefined}
+                    />
+                  </div>
+                  {serverError && <p id="adminLoginError" className="text-sm text-red-600" role="alert">{serverError}</p>}
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || adminOtp.length !== 6}
+                    className={`w-full rounded-xl bg-gradient-to-r ${a.button} px-4 py-3 font-semibold text-white transition-opacity hover:brightness-110 focus:outline-none focus:ring-2 ${a.buttonHover} focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50`}
+                  >
+                    {isSubmitting ? "Verifying..." : "Verify and sign in"}
+                  </button>
+                </form>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminChallengeToken("");
+                    setAdminOtp("");
+                    setServerError("");
+                  }}
+                  className="w-full text-center text-sm font-medium text-slate-600 hover:text-slate-900"
+                >
+                  Back to credentials
+                </button>
+              </>
+            ) : (
+              <>
             <div className="space-y-1 text-center">
               <h2 className="font-bold text-2xl text-gray-900">Welcome Back</h2>
               <p className="text-sm text-gray-600">
@@ -355,6 +448,8 @@ export default function LoginPage() {
                 Register
               </Link>
             </div>
+              </>
+            )}
           </div>
         </section>
         {showRegistrationSuccess && (

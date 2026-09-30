@@ -127,6 +127,16 @@ function getInitial(name) {
   return String(name || "?").trim().charAt(0).toUpperCase() || "?";
 }
 
+function ConversationAvatar({ conversation, size }) {
+  return (
+    <span className={`flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full ${conversation.profileImage ? "bg-white" : "bg-primary-100 text-primary-700"} text-sm font-bold`}>
+      {conversation.profileImage ? (
+        <img src={conversation.profileImage} alt={`${conversation.name} profile`} className="h-full w-full object-cover" />
+      ) : getInitial(conversation.name)}
+    </span>
+  );
+}
+
 function normalizeStarRating(value) {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, Math.min(5, value));
@@ -1066,7 +1076,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
             ) : filteredConversations.length ? filteredConversations.map((conversation) => (
               <div key={conversation.id} className={`flex items-center rounded-xl border pr-2 transition ${selectedId === conversation.id ? "border-slate-200 bg-white shadow-sm" : "border-transparent hover:bg-white/80"}`}>
                 <button onClick={() => selectConversation(conversation.id)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-4 text-left">
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-bold text-primary-700">{getInitial(conversation.name)}</span>
+                  <ConversationAvatar conversation={conversation} size="h-11 w-11" />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center justify-between gap-2">
                       <span className="truncate text-sm font-semibold text-gray-900">{conversation.name}</span>
@@ -1101,7 +1111,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                 <button onClick={() => { setSelectedId(null); setSearchParams({}, { replace: true }); }} className="mr-1 rounded-md p-1.5 text-gray-500 hover:bg-gray-100 md:hidden" aria-label="Back to conversations">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5"><path strokeLinecap="round" strokeLinejoin="round" d="m15 18-6-6 6-6" /></svg>
                 </button>
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-bold text-primary-700">{getInitial(selectedConversation.name)}</span>
+                <ConversationAvatar conversation={selectedConversation} size="h-10 w-10" />
                 <span className="min-w-0 flex-1">
                   <span className="block max-w-[200px] truncate text-sm font-semibold text-gray-900">{selectedConversation.name}</span>
                   <span className="block max-w-[200px] truncate text-xs text-gray-500">{role === "client" ? selectedConversation.cred : otherRoleLabel}</span>
