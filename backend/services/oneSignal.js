@@ -7,14 +7,6 @@ function hasOneSignalCredentials() {
   return Boolean(config.oneSignalAppId && config.oneSignalRestApiKey);
 }
 
-function hasOneSignalEmailConfig() {
-  return Boolean(
-    hasOneSignalCredentials() &&
-    config.oneSignalEmailVerificationTemplateId &&
-    config.oneSignalPasswordResetTemplateId
-  );
-}
-
 function buildRoleFilters(roles) {
   const allowedRoles = [...new Set(roles.map((role) => String(role).trim().toLowerCase()))];
   if (!allowedRoles.length || allowedRoles.some((role) => !["client", "provider", "admin"].includes(role))) {
@@ -52,21 +44,6 @@ function buildPushPayload({ userIds = [], roles = [], title, body, url, data = {
   };
 }
 
-function buildEmailPayload({ email, templateId, customData }) {
-  if (!config.oneSignalAppId) throw new Error("ONESIGNAL_APP_ID is not configured.");
-  if (!templateId) throw new Error("The required OneSignal email template ID is not configured.");
-  if (!/^\S+@\S+\.\S+$/.test(String(email || ""))) throw new Error("A valid recipient email is required.");
-
-  return {
-    app_id: config.oneSignalAppId,
-    target_channel: "email",
-    email_to: [String(email).trim().toLowerCase()],
-    template_id: templateId,
-    custom_data: customData,
-    idempotency_key: randomUUID(),
-  };
-}
-
 async function requestOneSignal(path, { method = "POST", body } = {}) {
   if (!hasOneSignalCredentials()) throw new Error("ONESIGNAL_APP_ID and ONESIGNAL_REST_API_KEY are required.");
 
@@ -98,55 +75,14 @@ async function requestOneSignal(path, { method = "POST", body } = {}) {
   return result;
 }
 
-async function sendTemplateEmail({ email, templateId, customData }) {
-  if (!hasOneSignalEmailConfig()) throw new Error("OneSignal email credentials and both transactional template IDs must be configured.");
-  return requestOneSignal("/notifications?c=email", {
-    body: buildEmailPayload({ email, templateId, customData }),
-  });
-}
-
-async function sendPasswordResetEmail(email, code) {
-  const resetUrl = new URL("/forgot-password", `${config.appUrl}/`);
-  resetUrl.searchParams.set("email", String(email).trim().toLowerCase());
-  resetUrl.searchParams.set("code", code);
-  return sendTemplateEmail({
-    email,
-    templateId: config.oneSignalPasswordResetTemplateId,
-    customData: { otp: code, reset_url: resetUrl.toString(), expiration_minutes: 10 },
-  });
-}
-
-async function sendEmailVerificationEmail(email, verificationUrl) {
-  return sendTemplateEmail({
-    email,
-    templateId: config.oneSignalEmailVerificationTemplateId,
-    customData: { verification_url: verificationUrl, expiration_hours: 24 },
-  });
-}
-
 async function sendPushNotification(options) {
   if (!hasOneSignalCredentials()) return null;
   return requestOneSignal("/notifications", { body: buildPushPayload(options) });
 }
 
-async function listEmailTemplates(offset = 0) {
-  const query = new URLSearchParams({ app_id: config.oneSignalAppId, channel: "email", limit: "50", offset: String(offset) });
-  return requestOneSignal(`/templates?${query}`, { method: "GET" });
-}
-
-async function createEmailTemplate(template) {
-  return requestOneSignal("/templates", { body: { app_id: config.oneSignalAppId, isEmail: true, ...template } });
-}
-
 module.exports = {
-  buildEmailPayload,
   buildPushPayload,
   buildRoleFilters,
-  createEmailTemplate,
   hasOneSignalCredentials,
-  hasOneSignalEmailConfig,
-  listEmailTemplates,
-  sendEmailVerificationEmail,
-  sendPasswordResetEmail,
   sendPushNotification,
 };

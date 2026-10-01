@@ -40,8 +40,6 @@ module.exports = {
   smtpSecure: parseBoolean(process.env.SMTP_SECURE),
   oneSignalAppId: String(process.env.ONESIGNAL_APP_ID || "").trim(),
   oneSignalRestApiKey: String(process.env.ONESIGNAL_REST_API_KEY || "").trim(),
-  oneSignalEmailVerificationTemplateId: String(process.env.ONESIGNAL_EMAIL_VERIFICATION_TEMPLATE_ID || "").trim(),
-  oneSignalPasswordResetTemplateId: String(process.env.ONESIGNAL_PASSWORD_RESET_TEMPLATE_ID || "").trim(),
   corsOrigins,
   trustProxy,
   mailFrom: String(process.env.MAIL_FROM || process.env.SMTP_USER || "").replace(/\s+/g, "").trim(),

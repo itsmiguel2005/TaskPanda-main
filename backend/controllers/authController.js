@@ -9,11 +9,10 @@ const { geocodeAddress } = require("../services/geocoder");
 const {
   hasValidSmtpCredentials,
   sendAdminLoginOtpEmail,
-} = require("../services/mailer");
-const {
-  hasOneSignalEmailConfig,
   sendEmailVerificationEmail,
   sendPasswordResetEmail,
+} = require("../services/mailer");
+const {
   sendPushNotification,
 } = require("../services/oneSignal");
 const {
@@ -156,7 +155,7 @@ async function issueAccountToken(userId) {
 }
 
 async function issueEmailVerification(user, { replaceExisting = false, appUrl = config.appUrl } = {}) {
-  if (!hasOneSignalEmailConfig() || !appUrl) {
+  if (!hasValidSmtpCredentials || !appUrl) {
     throw new Error("Email verification delivery is not configured.");
   }
 
@@ -934,8 +933,8 @@ async function handleForgotPassword(req, res) {
     if (!/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ message: "Enter a valid email address." });
     const user = await User.findOne({ email });
     if (!user) return res.status(404).json({ message: "This email is not registered in the system." });
-    if (!hasOneSignalEmailConfig()) {
-      return res.status(503).json({ message: "Password reset email delivery is not configured. Set the OneSignal app, REST API key, and password reset template ID." });
+    if (!hasValidSmtpCredentials || !config.appUrl) {
+      return res.status(503).json({ message: "Password reset email delivery is not configured. Set SMTP_USER, SMTP_PASSWORD, and APP_URL." });
     }
 
     const code = String(randomInt(100000, 1000000));

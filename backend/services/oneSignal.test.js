@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const config = require("../config/env");
-const { buildEmailPayload, buildPushPayload, buildRoleFilters } = require("./oneSignal");
+const { buildPushPayload, buildRoleFilters } = require("./oneSignal");
 
 test("OneSignal push payload targets a MongoDB user external ID and preserves a deep link", () => {
   const appUrl = config.appUrl || "http://localhost:5173";
@@ -34,21 +34,3 @@ test("OneSignal push payload requires one target strategy", () => {
   assert.throws(() => buildRoleFilters(["owner"]), /supported OneSignal role/);
 });
 
-test("OneSignal transactional email uses email_to, template ID, and transient custom data", () => {
-  const previousAppId = config.oneSignalAppId;
-  config.oneSignalAppId = "test-app-id";
-  try {
-    const payload = buildEmailPayload({
-      email: "person@example.com",
-      templateId: "verification-template",
-      customData: { verification_url: "https://taskpanda.example/verify?token=secret" },
-    });
-
-    assert.deepEqual(payload.email_to, ["person@example.com"]);
-    assert.equal(payload.template_id, "verification-template");
-    assert.equal(payload.custom_data.verification_url, "https://taskpanda.example/verify?token=secret");
-    assert.equal(payload.include_email_tokens, undefined);
-  } finally {
-    config.oneSignalAppId = previousAppId;
-  }
-});
