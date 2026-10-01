@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 
 function passwordError(password) {
@@ -14,6 +14,7 @@ function passwordError(password) {
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
@@ -25,6 +26,18 @@ export default function ForgotPasswordPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    const linkedEmail = String(searchParams.get("email") || "").trim().toLowerCase();
+    const linkedCode = String(searchParams.get("code") || "").trim();
+    if (!/^\S+@\S+\.\S+$/.test(linkedEmail) || !/^\d{6}$/.test(linkedCode)) return;
+
+    setEmail(linkedEmail);
+    setCode(linkedCode);
+    setStep(2);
+    setMessage("Reset code loaded. Choose a new password.");
+    navigate("/forgot-password", { replace: true });
+  }, [navigate, searchParams]);
 
   useEffect(() => {
     if (resendCooldown <= 0) return undefined;

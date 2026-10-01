@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { promptForPushPermission } from "../services/oneSignal.js";
 
 const CONVERSATION_READ_EVENT = "taskpanda:conversation-read";
 
@@ -19,11 +20,22 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [notificationItems, setNotificationItems] = useState([]);
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState([]);
+  const [pushPromptStatus, setPushPromptStatus] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
   const { isLoggedIn, role: authRole, user, firstName, logout, token } = useAuth();
   const dismissedStorageKey = `taskpanda_dismissed_notifications_${authRole || role}_${user?._id || user?.id || user?.email || "guest"}`;
   const notifRef = useRef(null);
+
+  const handleEnablePush = async () => {
+    setPushPromptStatus("loading");
+    try {
+      setPushPromptStatus(await promptForPushPermission());
+    } catch (error) {
+      console.warn("OneSignal permission prompt failed:", error.message);
+      setPushPromptStatus("error");
+    }
+  };
 
   useEffect(() => {
     try {
@@ -274,6 +286,26 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                       <div className="px-4 py-6 text-center text-sm text-gray-500">No new notifications.</div>
                     )}
                   </div>
+                  {isLoggedIn && import.meta.env.VITE_ONESIGNAL_APP_ID && (
+                    <div className="border-t border-gray-100 px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={handleEnablePush}
+                        disabled={pushPromptStatus === "loading"}
+                        className="text-sm font-semibold text-primary-700 hover:text-primary-800 disabled:opacity-60"
+                      >
+                        {pushPromptStatus === "loading" ? "Opening browser prompt…" : "Enable browser alerts"}
+                      </button>
+                      {pushPromptStatus && pushPromptStatus !== "loading" && (
+                        <p className="mt-1 text-xs text-gray-500" role="status">
+                          {pushPromptStatus === "prompted" ? "Choose Allow in your browser to receive alerts." :
+                            pushPromptStatus === "unsupported" ? "This browser does not support push alerts." :
+                              pushPromptStatus === "unavailable" ? "Push alerts are not configured." :
+                                "Could not open the browser alert prompt. Try again."}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

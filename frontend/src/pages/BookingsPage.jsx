@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useMemo, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
 import BookingProgress from "../components/BookingProgress.jsx";
@@ -87,6 +87,8 @@ function StatusDot({ status }) {
 
 export default function BookingsPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedBookingId = searchParams.get("bookingId");
   const [activeTab, setActiveTab] = useState("All");
   const { bookings, isLoading, error, requestCancellation, requestRevision, submitReview, respondToProviderUpdate, refreshBookings, confirmCashSettlement, createBooking } = useBookings();
   const [searchQuery, setSearchQuery] = useState("");
@@ -163,6 +165,12 @@ export default function BookingsPage() {
   const cancelBookingNeedsReason = Boolean(cancelBooking && Date.now() - new Date(cancelBooking.createdAt).getTime() >= 10 * 60 * 1000);
   const revisionBooking = bookings.find((booking) => booking.id === revisioningId) || null;
   const reviewingBooking = bookings.find((b) => b.id === reviewingId);
+
+  useEffect(() => {
+    if (requestedBookingId && bookings.some((booking) => booking.id === requestedBookingId)) {
+      setDetailId(requestedBookingId);
+    }
+  }, [bookings, requestedBookingId]);
 
   const handleCancel = async () => {
     if (!cancelingId || !cancelBooking || !canRequestCancellation(cancelBooking)) {

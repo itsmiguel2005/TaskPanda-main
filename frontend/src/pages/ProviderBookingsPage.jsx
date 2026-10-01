@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useMemo, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
 import BookingProgress from "../components/BookingProgress.jsx";
@@ -132,6 +132,8 @@ function StatusDot({ status }) {
 
 export default function ProviderBookingsPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedBookingId = searchParams.get("bookingId");
   const [activeTab, setActiveTab] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const { bookings, isLoading, error, updateBookingStatus, submitCompletionProof, requestCancellation, sendProviderUpdate, confirmCashSettlement, refreshBookings } = useBookings();
@@ -210,6 +212,12 @@ export default function ProviderBookingsPage() {
     );
   }, [detailId, requests, managedBookings]);
   const cancelBooking = safeBookings.find((booking) => booking.id === cancelingId);
+
+  useEffect(() => {
+    if (requestedBookingId && safeBookings.some((booking) => booking.id === requestedBookingId)) {
+      setDetailId(requestedBookingId);
+    }
+  }, [requestedBookingId, safeBookings]);
 
   function acceptRequest(id) {
     const req = requests.find((r) => r.id === id);

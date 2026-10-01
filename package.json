@@ -6,6 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "concurrently --kill-others \"npm:start\" \"vite\"",
+    "onesignal:templates": "node scripts/provision-onesignal-email-templates.js",
     "build": "vite build",
     "check:health": "node scripts/check-health.js",
     "backfill:provider-ratings": "node scripts/backfill-provider-ratings.js",
@@ -34,6 +35,7 @@
     "ph-addresses-locations": "^1.0.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-onesignal": "^3.5.6",
     "react-router-dom": "^7.18.0",
     "recharts": "^3.10.1"
   },

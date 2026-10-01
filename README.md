@@ -47,7 +47,7 @@ The expected response contains `200` and `"mongo":"connected"`.
 
 ## Environment Variables
 
-Create a `.env` file in the project root when you need to change the database, ports, admin account, or password-reset email settings:
+Create a `.env` file in the project root when you need to change the database, ports, admin account, email delivery, or push settings:
 
 ```env
 MONGO_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/taskpanda?retryWrites=true&w=majority
@@ -62,13 +62,18 @@ ADMIN_PASSWORD=change-this-password
 ADMIN_OTP_EMAIL=admin-security@example.com
 ADMIN_OTP_SECRET=generate-a-random-secret-of-at-least-32-characters
 
-# SMTP settings for password reset, verification, and admin login emails
+# SMTP is retained for the separate admin sign-in OTP
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=your-email@example.com
 SMTP_PASSWORD=your-app-password
 MAIL_FROM=your-email@example.com
+# OneSignal transactional email and push (keep the REST key server-side)
+ONESIGNAL_APP_ID=your-onesignal-app-id
+ONESIGNAL_REST_API_KEY=your-onesignal-rest-api-key
+ONESIGNAL_EMAIL_VERIFICATION_TEMPLATE_ID=template-id-from-provisioning-command
+ONESIGNAL_PASSWORD_RESET_TEMPLATE_ID=template-id-from-provisioning-command
 # Optional public site URL for email links (recommended for custom domains)
 APP_URL=https://your-taskpanda-domain.example
 # Optional comma-separated trusted browser origins for cross-origin deployments
@@ -78,6 +83,19 @@ TRUST_PROXY=1
 ```
 
 Do not commit `.env` or real passwords to source control. For Gmail, use an app password rather than your normal account password.
+
+### OneSignal Setup
+
+1. Create a OneSignal app and configure both the Web Push platform and OneSignal Email. Verify the sender domain/address in OneSignal before sending email.
+2. Set `ONESIGNAL_APP_ID` and `ONESIGNAL_REST_API_KEY` in the root `.env`. The REST API key is server-only and must never use a `VITE_` prefix.
+3. Create the two transactional templates with `npm run onesignal:templates`. The command reuses templates named `TaskPanda Email Verification` and `TaskPanda Password Reset`, or creates them if missing, then prints their IDs.
+4. Copy the printed IDs into `ONESIGNAL_EMAIL_VERIFICATION_TEMPLATE_ID` and `ONESIGNAL_PASSWORD_RESET_TEMPLATE_ID`, then restart the backend.
+5. Put `VITE_ONESIGNAL_APP_ID=your-onesignal-app-id` in `frontend/.env.local` for Vite development. In Vercel, configure the same value as a project environment variable for each deployment environment.
+6. Configure each Web Push site URL to match its origin. Web Push requires HTTPS, except for `localhost`; the browser alert prompt is user-initiated from the app's Notifications menu.
+
+Verification and password-reset messages use OneSignal templates with transient `message.custom_data` values. The current OneSignal email API uses `email_to` for a direct transactional recipient. Reset codes are generated securely, stored only as hashes with their 10-minute expiry on the user document, and consumed atomically; the email link pre-fills the existing OTP form. Admin sign-in OTP continues to use SMTP and is configured separately above.
+
+Push users are identified with their MongoDB user ID as the OneSignal External ID and receive a `role` tag (`client`, `provider`, or `admin`) at sign-in. Booking events target the appropriate participant and link to the matching booking detail; emergency requests, revision disputes, and completed admin sign-ins also produce admin alerts. Role tags are for delivery segmentation only and must never be used as authorization.
 
 ## Security Features
 
@@ -113,11 +131,16 @@ SMTP_SECURE=false
 SMTP_USER=your-email@example.com
 SMTP_PASSWORD=your-gmail-app-password
 MAIL_FROM=your-email@example.com
+ONESIGNAL_APP_ID=your-onesignal-app-id
+ONESIGNAL_REST_API_KEY=your-onesignal-rest-api-key
+ONESIGNAL_EMAIL_VERIFICATION_TEMPLATE_ID=your-verification-template-id
+ONESIGNAL_PASSWORD_RESET_TEMPLATE_ID=your-password-reset-template-id
+VITE_ONESIGNAL_APP_ID=your-onesignal-app-id
 APP_URL=https://your-taskpanda-domain.example
 CORS_ORIGINS=https://your-taskpanda-domain.example,https://www.your-taskpanda-domain.example
 ```
 
-Email verification links use `APP_URL` when configured, or Vercel's deployment URL. Locally, they point to the Vite app at `http://localhost:5173`. New registrations stay pending until the email link is confirmed; verified users must finish onboarding before they can open the app.
+Email verification links use `APP_URL` when configured, or Vercel's deployment URL. Locally, they point to the Vite app at `http://localhost:5173`. New registrations stay pending until the email link is confirmed; verified users must finish onboarding before they can open the app. The root `.env` supplies server-only OneSignal credentials; `VITE_ONESIGNAL_APP_ID` is a public app identifier, not a secret.
 
 In Atlas Network Access, allow Vercel's connections. For an initial deployment this is commonly `0.0.0.0/0`, but use a private networking strategy or a narrower policy when your infrastructure supports it. Never commit the Atlas URI or other secrets.
 
@@ -140,6 +163,7 @@ Then open [http://localhost:3000](http://localhost:3000).
 | `npm start` | Start the Express backend on port 3000 |
 | `npm run build` | Build the frontend into `dist/` |
 | `npm run check:health` | Verify the local API and MongoDB connection |
+| `npm run onesignal:templates` | Create or reuse OneSignal verification and reset email templates |
 | `npm run backfill:provider-ratings` | Recalculate provider ratings from completed and settled bookings |
 | `npm run preview` | Preview the Vite production build |
 | `npm run watch:css` | Watch and rebuild Tailwind CSS |

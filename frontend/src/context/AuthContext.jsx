@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
+import { clearOneSignalIdentity, identifyOneSignalUser, initializeOneSignal } from "../services/oneSignal.js";
 
 const AuthContext = createContext(null);
 
@@ -31,6 +32,28 @@ export function AuthProvider({ children }) {
     }
     setIsAuthLoading(false);
   }, []);
+
+  useEffect(() => {
+    if (isAuthLoading) return undefined;
+    let active = true;
+
+    const syncOneSignalIdentity = async () => {
+      const oneSignal = await initializeOneSignal();
+      if (!active || !oneSignal) return;
+      if (!isLoggedIn || !user) {
+        if (oneSignal.User.externalId) await clearOneSignalIdentity();
+        return;
+      }
+      await identifyOneSignalUser(user, role || user.role);
+    };
+
+    syncOneSignalIdentity().catch((error) => {
+      console.warn("OneSignal identity sync failed:", error.message);
+    });
+    return () => {
+      active = false;
+    };
+  }, [isAuthLoading, isLoggedIn, role, user]);
 
   const login = useCallback((userData, authToken, remember = false) => {
     const { role } = userData;

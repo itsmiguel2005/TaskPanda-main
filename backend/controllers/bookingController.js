@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
 const { ensureBookingConversation, appendBookingSystemMessage } = require("../services/bookingMessaging");
+const { sendPushNotification } = require("../services/oneSignal");
 
 const TIME_SLOTS = new Set(["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"]);
 const PH_TIMEZONE_OFFSET_HOURS = 8;
@@ -34,6 +35,19 @@ const STATUS_LABELS = {
 
 const GRACE_PERIOD_MS = 10 * 60 * 1000;
 const CASH_SETTLEMENT_GRACE_MS = 48 * 60 * 60 * 1000;
+
+async function notifyBooking(options) {
+  try {
+    await sendPushNotification(options);
+  } catch (error) {
+    console.warn("OneSignal booking notification failed:", error.message);
+  }
+}
+
+function bookingUrl(role, bookingId) {
+  const page = role === "provider" ? "/provider-bookings" : "/bookings";
+  return `${page}?bookingId=${encodeURIComponent(String(bookingId))}`;
+}
 
 function normalizeBookingStatus(value) {
   const normalizedStatus = String(value || "").trim().toLowerCase();
@@ -322,6 +336,24 @@ async function handleCreateBooking(req, res) {
       console.error("Initial booking conversation error:", messageError);
     }
 
+    const bookingIdValue = String(booking._id);
+    await notifyBooking({
+      userIds: [String(booking.providerId)],
+      title: "New booking request",
+      body: `${req.user.fullName || "A client"} requested ${repairDescription.slice(0, 100)}.`,
+      url: bookingUrl("provider", bookingIdValue),
+      data: { event: "booking.created", bookingId: bookingIdValue },
+    });
+    if (urgency === "Emergency") {
+      await notifyBooking({
+        roles: ["admin"],
+        title: "High-priority booking needs review",
+        body: "An emergency service request was submitted.",
+        url: `/admin?section=bookings&bookingId=${encodeURIComponent(bookingIdValue)}`,
+        data: { event: "booking.emergency", bookingId: bookingIdValue },
+      });
+    }
+
     await booking.populate(populatePaths);
     return res.status(201).json({ booking: serializeBooking(booking) });
   } catch (error) {
@@ -405,6 +437,25 @@ async function handleUpdateBookingStatus(req, res) {
       });
     } catch (messageError) {
       console.error("Booking status system message error:", messageError);
+    }
+    const statusNotifications = {
+      approved: ["Booking accepted", "Your provider accepted the booking."],
+      en_route: ["Your provider is on the way", "Your provider is heading to your location."],
+      in_progress: ["Your task has started", "Your provider marked the task as started."],
+      complete: ["Task completed", "Your provider submitted completion for this task."],
+      canceled: ["Booking canceled", "Your provider canceled the booking."],
+      declined: ["Booking declined", "Your provider declined the booking request."],
+    };
+    const statusNotification = statusNotifications[status];
+    if (statusNotification) {
+      const bookingIdValue = String(booking._id);
+      await notifyBooking({
+        userIds: [String(booking.clientId?._id || booking.clientId)],
+        title: statusNotification[0],
+        body: statusNotification[1],
+        url: bookingUrl("client", bookingIdValue),
+        data: { event: `booking.${status}`, bookingId: bookingIdValue, status },
+      });
     }
     return res.json({ booking: serializeBooking(booking) });
   } catch (error) {
@@ -517,6 +568,14 @@ async function handleCreateRevisionRequest(req, res) {
     } catch (messageError) {
       console.error("Revision request system message error:", messageError);
     }
+    const bookingIdValue = String(booking._id);
+    await notifyBooking({
+      userIds: [String(booking.providerId)],
+      title: "Revision requested",
+      body: "The client requested a revision to the completed task.",
+      url: bookingUrl("provider", bookingIdValue),
+      data: { event: "booking.revision_requested", bookingId: bookingIdValue },
+    });
     await booking.populate(populatePaths);
     return res.status(201).json({ booking: serializeBooking(booking) });
   } catch (error) {
@@ -561,6 +620,25 @@ async function handleRespondToRevision(req, res) {
       );
     } catch (messageError) {
       console.error("Revision response system message error:", messageError);
+    }
+    const bookingIdValue = String(booking._id);
+    await notifyBooking({
+      userIds: [String(booking.clientId)],
+      title: action === "dispute" ? "Revision sent for review" : "Revision accepted",
+      body: action === "dispute"
+        ? "The provider disputed the revision and it needs admin review."
+        : "The provider accepted the requested revision.",
+      url: bookingUrl("client", bookingIdValue),
+      data: { event: action === "dispute" ? "booking.revision_disputed" : "booking.revision_accepted", bookingId: bookingIdValue },
+    });
+    if (action === "dispute") {
+      await notifyBooking({
+        roles: ["admin"],
+        title: "Booking dispute needs review",
+        body: "A provider disputed a client revision request.",
+        url: `/admin?section=bookings&bookingId=${encodeURIComponent(bookingIdValue)}`,
+        data: { event: "booking.disputed", bookingId: bookingIdValue },
+      });
     }
     await booking.populate(populatePaths);
     return res.json({ booking: serializeBooking(booking) });
@@ -650,6 +728,32 @@ async function handleCancellation(req, res) {
     } catch (messageError) {
       console.error("Cancellation system message error:", messageError);
     }
+    const bookingIdValue = String(booking._id);
+    const recipientId = role === "client" ? booking.providerId : booking.clientId;
+    const isCancellationRequest = booking.status === "cancel_requested";
+    const cancellationWasRejected = booking.cancellationOutcome === "rejected";
+    await notifyBooking({
+      userIds: [String(recipientId)],
+      title: isCancellationRequest
+        ? "Cancellation requested"
+        : cancellationWasRejected
+          ? "Cancellation request declined"
+          : "Booking canceled",
+      body: isCancellationRequest
+        ? "The other participant requested to cancel a booking."
+        : cancellationWasRejected
+          ? "The cancellation request was declined; the booking remains active."
+          : "The booking was canceled after a participant's request.",
+      url: bookingUrl(role === "client" ? "provider" : "client", bookingIdValue),
+      data: {
+        event: isCancellationRequest
+          ? "booking.cancellation_requested"
+          : cancellationWasRejected
+            ? "booking.cancellation_declined"
+            : "booking.canceled",
+        bookingId: bookingIdValue,
+      },
+    });
     await booking.populate(populatePaths);
     return res.json({ booking: serializeBooking(booking) });
   } catch (error) {
@@ -814,6 +918,14 @@ async function handleProviderUpdate(req, res) {
     } catch (messageError) {
       console.error("Provider update system message error:", messageError);
     }
+    const bookingIdValue = String(booking._id);
+    await notifyBooking({
+      userIds: [String(booking.clientId)],
+      title: isReschedule ? "Schedule change requested" : "Booking update",
+      body: isReschedule ? "Your provider requested a schedule change." : "Your provider sent an update about the booking.",
+      url: bookingUrl("client", bookingIdValue),
+      data: { event: isReschedule ? "booking.reschedule_requested" : "booking.provider_update", bookingId: bookingIdValue },
+    });
     await booking.populate(populatePaths);
     return res.json({ booking: serializeBooking(booking) });
   } catch (error) {
@@ -919,6 +1031,16 @@ async function handleCreateCounterOffer(req, res) {
       note: offer.note || "",
       status: "pending",
     };
+    const bookingIdValue = String(booking._id);
+    const recipientRole = req.user.role === "client" ? "provider" : "client";
+    const recipientId = recipientRole === "provider" ? booking.providerId : booking.clientId;
+    await notifyBooking({
+      userIds: [String(recipientId)],
+      title: "Booking terms updated",
+      body: `${req.user.role === "client" ? "The client" : "The provider"} proposed a change to booking terms.`,
+      url: bookingUrl(recipientRole, bookingIdValue),
+      data: { event: "booking.counter_offer", bookingId: bookingIdValue, counterOfferId: String(offer._id) },
+    });
     await appendBookingSystemMessage(
       booking,
       `${req.user.role === "client" ? "Client" : "Provider"} proposed updated booking terms.`,
@@ -973,6 +1095,16 @@ async function handleRespondToCounterOffer(req, res) {
     }
     offer.respondedAt = now;
     await booking.save();
+    const bookingIdValue = String(booking._id);
+    const proposerRole = offer.proposedBy;
+    const proposerId = proposerRole === "provider" ? booking.providerId : booking.clientId;
+    await notifyBooking({
+      userIds: [String(proposerId)],
+      title: action === "accept" ? "Counter-offer accepted" : "Counter-offer declined",
+      body: action === "accept" ? "The other participant accepted your updated booking terms." : "The other participant declined your updated booking terms.",
+      url: bookingUrl(proposerRole, bookingIdValue),
+      data: { event: `booking.counter_offer_${action === "accept" ? "accepted" : "declined"}`, bookingId: bookingIdValue, counterOfferId: String(offer._id) },
+    });
     const eventData = {
       counterOfferId: String(offer._id),
       proposedBy: offer.proposedBy,

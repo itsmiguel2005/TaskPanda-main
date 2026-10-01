@@ -1,18 +1,21 @@
 const bcrypt = require("bcryptjs");
-const { createHash, randomBytes } = require("crypto");
+const { createHash, randomBytes, randomInt } = require("crypto");
 const mongoose = require("mongoose");
 const User = require("../models/User");
-const PasswordReset = require("../models/PasswordReset");
 const AdminSession = require("../models/AdminSession");
 const AdminLoginChallenge = require("../models/AdminLoginChallenge");
 const config = require("../config/env");
 const { geocodeAddress } = require("../services/geocoder");
 const {
   hasValidSmtpCredentials,
-  sendPasswordResetEmail,
   sendAdminLoginOtpEmail,
-  sendEmailVerificationEmail,
 } = require("../services/mailer");
+const {
+  hasOneSignalEmailConfig,
+  sendEmailVerificationEmail,
+  sendPasswordResetEmail,
+  sendPushNotification,
+} = require("../services/oneSignal");
 const {
   generateAdminLoginCode,
   hashAdminLoginCode,
@@ -153,7 +156,7 @@ async function issueAccountToken(userId) {
 }
 
 async function issueEmailVerification(user, { replaceExisting = false, appUrl = config.appUrl } = {}) {
-  if (!hasValidSmtpCredentials || !appUrl) {
+  if (!hasOneSignalEmailConfig() || !appUrl) {
     throw new Error("Email verification delivery is not configured.");
   }
 
@@ -723,6 +726,17 @@ async function handleLogin(req, res) {
         console.error("Admin sign-in email could not be sent:", mailError.message);
         return res.status(502).json({ message: "Could not send the admin verification code. Please try again." });
       }
+      try {
+        await sendPushNotification({
+          roles: ["admin"],
+          title: "Admin sign-in requested",
+          body: "A new administrator verification code was requested. The code is not included in this alert.",
+          url: "/admin?section=dashboard",
+          data: { event: "admin.otp_requested" },
+        });
+      } catch (pushError) {
+        console.warn("OneSignal admin OTP alert failed:", pushError.message);
+      }
 
       clearLoginAttempts(normalizedIdentifier);
       return res.json({
@@ -891,6 +905,17 @@ async function handleVerifyAdminLogin(req, res) {
       tokenHash: hashToken(adminToken),
       expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000),
     });
+    try {
+      await sendPushNotification({
+        roles: ["admin"],
+        title: "Admin sign-in completed",
+        body: "A new administrator session was started.",
+        url: "/admin?section=dashboard",
+        data: { event: "admin.sign_in" },
+      });
+    } catch (pushError) {
+      console.warn("OneSignal admin security alert failed:", pushError.message);
+    }
     return res.json({
       message: "Login successful.",
       token: adminToken,
@@ -909,33 +934,25 @@ async function handleForgotPassword(req, res) {
     if (!/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ message: "Enter a valid email address." });
     const user = await User.findOne({ email });
     if (!user) return res.status(404).json({ message: "This email is not registered in the system." });
-
-    const code = String(Math.floor(100000 + Math.random() * 900000));
-    const codeHash = await bcrypt.hash(code, 10);
-    const allowLocalDebugCode = !process.env.VERCEL && process.env.NODE_ENV !== "production";
-    let sentMail = false;
-    if (hasValidSmtpCredentials) {
-      try {
-        await sendPasswordResetEmail(email, code);
-        sentMail = true;
-      } catch (mailError) {
-        console.warn("SMTP send failed. The request will now fail clearly instead of returning a hidden debug code.", mailError.message);
-      }
-    } else {
-      console.warn("SMTP credentials are not configured for this environment.");
+    if (!hasOneSignalEmailConfig()) {
+      return res.status(503).json({ message: "Password reset email delivery is not configured. Set the OneSignal app, REST API key, and password reset template ID." });
     }
 
-    await PasswordReset.findOneAndUpdate(
-      { email }, { email, codeHash, expiresAt: new Date(Date.now() + 10 * 60 * 1000) },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-    if (!sentMail && !allowLocalDebugCode) {
-      return res.status(500).json({ message: "Password reset email delivery is not configured for this deployment. Set SMTP_USER and SMTP_PASSWORD in Vercel, then redeploy." });
-    }
-    return res.json({
-      message: "If an account exists for that email, a reset code has been sent.",
-      ...(sentMail || !allowLocalDebugCode ? {} : { debugCode: code }),
+    const code = String(randomInt(100000, 1000000));
+    const tokenHash = await bcrypt.hash(code, 10);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    await User.updateOne({ _id: user._id }, {
+      $set: { passwordResetTokenHash: tokenHash, passwordResetExpiresAt: expiresAt },
     });
+    try {
+      await sendPasswordResetEmail(email, code);
+    } catch (error) {
+      await User.updateOne({ _id: user._id, passwordResetTokenHash: tokenHash }, {
+        $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 },
+      });
+      throw error;
+    }
+    return res.json({ message: "If an account exists for that email, a reset code has been sent." });
   } catch (error) {
     console.error("Forgot password error:", error);
     return res.status(502).json({ message: "We could not send the reset email. Please try again." });
@@ -947,11 +964,14 @@ async function handleResetPassword(req, res) {
     const email = String(req.body.email || "").trim().toLowerCase();
     const code = String(req.body.code || "").trim();
     const password = String(req.body.password || "");
-    const reset = await PasswordReset.findOne({ email });
-    if (!reset || reset.expiresAt <= new Date()) return res.status(400).json({ message: "The reset code is missing or expired." });
-    if (!/^\d{6}$/.test(code) || !(await bcrypt.compare(code, reset.codeHash))) return res.status(400).json({ message: "The reset code is incorrect." });
+    const user = await User.findOne({ email }).select("+passwordResetTokenHash +passwordResetExpiresAt");
+    if (!user?.passwordResetTokenHash || !user.passwordResetExpiresAt || user.passwordResetExpiresAt <= new Date()) {
+      return res.status(400).json({ message: "The reset code is missing or expired." });
+    }
+    if (!/^\d{6}$/.test(code) || !(await bcrypt.compare(code, user.passwordResetTokenHash))) {
+      return res.status(400).json({ message: "The reset code is incorrect." });
+    }
 
-    const user = await User.findOne({ email });
     if (!user || (await bcrypt.compare(password, user.passwordHash))) return res.status(400).json({ message: "Your new password must be different from your previous password." });
     const passwordRequirements = [];
     if (password.length < 8) passwordRequirements.push("at least 8 characters");
@@ -960,8 +980,18 @@ async function handleResetPassword(req, res) {
     if (!/[^A-Za-z0-9]/.test(password)) passwordRequirements.push("one special character");
     if (passwordRequirements.length) return res.status(400).json({ message: `Password needs ${passwordRequirements.join(", ")}.` });
 
-    await User.updateOne({ email }, { $set: { passwordHash: await bcrypt.hash(password, 10) } });
-    await PasswordReset.deleteOne({ _id: reset._id });
+    const resetResult = await User.updateOne(
+      {
+        _id: user._id,
+        passwordResetTokenHash: user.passwordResetTokenHash,
+        passwordResetExpiresAt: mongoose.trusted({ $gt: new Date() }),
+      },
+      {
+        $set: { passwordHash: await bcrypt.hash(password, 10) },
+        $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 },
+      }
+    );
+    if (!resetResult.matchedCount) return res.status(400).json({ message: "The reset code is missing or expired." });
     clearLoginAttempts(email);
     return res.json({ message: "Password reset successfully." });
   } catch (error) {
