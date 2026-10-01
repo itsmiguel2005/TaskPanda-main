@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext.jsx";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -114,10 +115,14 @@ function CalendarPicker({ selectedDate, onSelect, onClose }) {
 
 export default function RequestBookingModal({ provider, onClose, onSubmit, initialValues = {} }) {
   const navigate = useNavigate();
+  const { token } = useAuth();
   const [taskDescription, setTaskDescription] = useState(initialValues.task || "");
   const [step, setStep] = useState(1);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
+  const [bookedSlots, setBookedSlots] = useState([]);
+  const [availabilityStatus, setAvailabilityStatus] = useState("loading");
+  const [availabilityRetry, setAvailabilityRetry] = useState(0);
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [urgency, setUrgency] = useState(initialValues.urgency || "Flexible");
   const [offer, setOffer] = useState(initialValues.offer == null ? "" : String(initialValues.offer));
@@ -150,8 +155,54 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   }, []);
 
   useEffect(() => {
+    if (!provider?._id || !token) {
+      setAvailabilityStatus("loading");
+      return undefined;
+    }
+    const controller = new AbortController();
+    let active = true;
+    let isLoadingAvailability = false;
+    setAvailabilityStatus("loading");
+    const refreshAvailability = async () => {
+      if (isLoadingAvailability) return;
+      isLoadingAvailability = true;
+      try {
+        const response = await fetch(`/api/bookings/availability/${provider._id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || "Could not load provider availability.");
+        if (active) {
+          setBookedSlots(Array.isArray(data.bookedSlots) ? data.bookedSlots : []);
+          setAvailabilityStatus("loaded");
+        }
+      } catch (error) {
+        if (active && error.name !== "AbortError") setAvailabilityStatus("error");
+      } finally {
+        isLoadingAvailability = false;
+      }
+    };
+    void refreshAvailability();
+    const intervalId = window.setInterval(refreshAvailability, 5000);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearInterval(intervalId);
+    };
+  }, [provider?._id, token, availabilityRetry]);
+
+  useEffect(() => {
     if (isPastTimeSlot(selectedDate, selectedTime, currentTime)) setSelectedTime("");
   }, [currentTime, selectedDate, selectedTime]);
+
+  useEffect(() => {
+    if (availabilityStatus !== "loaded" || !selectedDate || !selectedTime) return;
+    if (bookedSlots.some((slot) => slot.date === selectedDate && slot.timeSlot === selectedTime)) {
+      setSelectedTime("");
+      setFormError("That time slot was just booked. Please choose another time.");
+    }
+  }, [availabilityStatus, bookedSlots, selectedDate, selectedTime]);
 
   if (!provider) return null;
 
@@ -204,6 +255,11 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
     if (isPastTimeSlot(selectedDate, selectedTime, new Date())) {
       setSelectedTime("");
       return setFormError("That time has passed. Please choose another time.");
+    }
+    if (availabilityStatus !== "loaded") return setFormError("Provider availability could not be confirmed. Please try again.");
+    if (bookedSlots.some((slot) => slot.date === selectedDate && slot.timeSlot === selectedTime)) {
+      setSelectedTime("");
+      return setFormError("That time slot is no longer available. Please choose another time.");
     }
     if (!Number.isFinite(offerAmount) || offerAmount < 100) return setFormError("Your offer must be at least PHP 100.");
     if (!termsAccepted) return setFormError("Please agree to the terms and cancellation policy.");
@@ -398,17 +454,20 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
               <div>
                 <p className="mb-1.5 text-sm font-medium text-gray-700">Available Time</p>
                 {!selectedDate && <p className="mb-2 text-xs text-gray-500">Choose a date to see available times.</p>}
+                {availabilityStatus === "loading" && <p className="mb-2 text-xs text-gray-500">Checking provider availability…</p>}
+                {availabilityStatus === "error" && <p role="alert" className="mb-2 text-xs text-red-600">Could not check availability. <button type="button" onClick={() => setAvailabilityRetry((retry) => retry + 1)} className="font-semibold underline">Try again</button></p>}
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {TIME_SLOTS.map((time) => {
                     const isPast = selectedDate && isPastTimeSlot(selectedDate, time, currentTime);
-                    const isDisabled = !selectedDate || isPast;
-                    const isSelected = Boolean(selectedDate) && selectedTime === time && !isPast;
+                    const isBooked = selectedDate && bookedSlots.some((slot) => slot.date === selectedDate && slot.timeSlot === time);
+                    const isDisabled = !selectedDate || isPast || isBooked || availabilityStatus !== "loaded";
+                    const isSelected = Boolean(selectedDate) && selectedTime === time && !isPast && !isBooked;
                     return (
                       <button
                         key={time}
                         type="button"
                         disabled={isDisabled}
-                        title={!selectedDate ? "Choose a date first" : isPast ? "This time has passed" : undefined}
+                        title={!selectedDate ? "Choose a date first" : isPast ? "This time has passed" : isBooked ? "This time is already booked" : availabilityStatus !== "loaded" ? "Checking availability" : undefined}
                         onClick={() => { setSelectedTime(time); setFormError(""); }}
                         className={`min-h-9 rounded-full border px-2 py-2 text-xs font-semibold transition ${
                           isSelected

@@ -120,7 +120,19 @@ async function handleListConversations(req, res) {
     const conversations = await Conversation.find(filter)
       .sort({ lastMessageAt: -1, _id: -1 })
       .populate(conversationPopulate);
-    return res.json({ conversations: conversations.map((conversation) => serializeConversation(conversation, req.user.role)) });
+    const latestMessageSenders = conversations.length
+      ? await Message.aggregate([
+        { $match: { conversationId: { $in: conversations.map((conversation) => conversation._id) } } },
+        { $sort: { createdAt: -1, _id: -1 } },
+        { $group: { _id: "$conversationId", sender: { $first: "$sender" } } },
+      ])
+      : [];
+    const senderByConversation = new Map(latestMessageSenders.map(({ _id, sender }) => [String(_id), String(sender)]));
+    const currentUserId = String(req.user._id);
+    return res.json({ conversations: conversations.map((conversation) => ({
+      ...serializeConversation(conversation, req.user.role),
+      lastMessageIsMine: senderByConversation.get(String(conversation._id)) === currentUserId,
+    })) });
   } catch (error) {
     console.error("List conversations error:", error);
     return res.status(500).json({ message: "Could not load conversations." });

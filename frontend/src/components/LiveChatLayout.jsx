@@ -405,7 +405,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
       setHasMoreMessages(false);
       return undefined;
     }
-    wasAtBottomRef.current = false;
+    wasAtBottomRef.current = true;
     previousMessageCountRef.current = 0;
     olderScrollPositionRef.current = null;
     olderPageMergePendingRef.current = false;
@@ -601,7 +601,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
         detail: { conversationId, unreadCount },
       }));
     }
-    wasAtBottomRef.current = false;
+    wasAtBottomRef.current = true;
     setSelectedId(conversationId);
     setActionMessage(null);
     setActionModalView("DETAILS");
@@ -857,6 +857,38 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     if (data) setActionMessage(null);
   };
 
+  const handleBookingRequestAction = (action) => {
+    if (!selectedConversation || role !== "provider" || selectedConversation.bookingStatus !== "pending") return;
+    setActionMessage({ eventType: "booking_request", eventData: { bookingId: selectedConversation.bookingId } });
+    setActionError("");
+    setActionModalView(action === "approve" ? "CONFIRM_APPROVE" : action === "decline" ? "CONFIRM_DECLINE" : "DETAILS");
+    setCounterFormOpen(action === "counter");
+  };
+
+  const handleCancellationResponse = async (bookingId, action) => {
+    if (!selectedConversation || role !== "provider") return;
+    setIsActionSubmitting(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/bookings/${bookingId}/cancel`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...requestHeaders },
+        body: JSON.stringify({ action }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "Could not respond to the cancellation request.");
+      await loadConversations();
+      const messagesResponse = await fetch(`/api/messages/${selectedConversation.id}`, { headers: requestHeaders });
+      const messagesData = await messagesResponse.json().catch(() => ({}));
+      if (!messagesResponse.ok) throw new Error(messagesData.message || "Cancellation updated, but the chat could not be refreshed.");
+      setMessages((current) => mergeMessages(current, messagesData.messages || []));
+    } catch (requestError) {
+      setError(requestError.message || "Could not respond to the cancellation request.");
+    } finally {
+      setIsActionSubmitting(false);
+    }
+  };
+
   const handleSupportReport = async (event) => {
     event.preventDefault();
     if (!selectedConversation) return;
@@ -1073,7 +1105,11 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
           <div className="chat-scroll-area min-h-0 flex-1 overflow-y-auto bg-slate-50/50 p-2">
             {isLoading || openingBooking ? (
               <p className="p-5 text-sm text-gray-500">{openingBooking ? "Opening booking conversation…" : "Loading conversations…"}</p>
-            ) : filteredConversations.length ? filteredConversations.map((conversation) => (
+            ) : filteredConversations.length ? filteredConversations.map((conversation) => {
+              const latestLoadedMessage = conversation.id === selectedId && messages.length ? messages[messages.length - 1] : null;
+              const previewText = latestLoadedMessage?.text || conversation.lastMessage;
+              const previewIsMine = latestLoadedMessage ? latestLoadedMessage.isMine : conversation.lastMessageIsMine;
+              return (
               <div key={conversation.id} className={`flex items-center rounded-xl border pr-2 transition ${selectedId === conversation.id ? "border-slate-200 bg-white shadow-sm" : "border-transparent hover:bg-white/80"}`}>
                 <button onClick={() => selectConversation(conversation.id)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-4 text-left">
                   <ConversationAvatar conversation={conversation} size="h-11 w-11" />
@@ -1086,7 +1122,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                       </span>
                     </span>
                     <span className="block truncate pt-0.5 text-xs text-gray-500">{conversation.task}</span>
-                    <span className="block truncate pt-0.5 text-xs text-gray-400">{conversation.lastMessage}</span>
+                    <span className="block truncate pt-0.5 text-xs text-gray-400">{previewIsMine ? "You: " : ""}{previewText}</span>
                   </span>
                 </button>
                 <button type="button" onClick={() => handleArchiveConversation(conversation)} disabled={archivingConversationIds.has(conversation.id)} aria-busy={archivingConversationIds.has(conversation.id)} aria-label={isManuallyArchivedForRole(conversation, role) ? "Restore conversation" : "Archive conversation"} title={archivingConversationIds.has(conversation.id) ? "Updating archive…" : isManuallyArchivedForRole(conversation, role) ? "Restore conversation" : "Archive conversation"} className="shrink-0 rounded-md p-2 text-gray-400 hover:bg-white hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50">
@@ -1095,7 +1131,8 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                   </svg>
                 </button>
               </div>
-            )) : (
+              );
+            }) : (
               <div className="flex flex-col items-center px-6 py-12 text-center">
                 <p className="text-sm font-semibold text-gray-700">{search ? "No matching conversations" : "No booking conversations yet"}</p>
                 <p className="mt-1 text-xs text-gray-500">Open Chat from a booking to start a conversation.</p>
@@ -1287,6 +1324,11 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                             actorName={message.isMine ? "You" : selectedConversation.name}
                             onOpen={(event) => { setActionModalView("DETAILS"); setActionMessage(event); setActionError(""); setCounterFormOpen(false); }}
                             onRespondToOffer={handleCounterOfferResponse}
+                            onRespondToCancellation={handleCancellationResponse}
+                            onBookingRequestAction={handleBookingRequestAction}
+                            isBookingRequestPending={selectedConversation.bookingStatus === "pending" && !selectedConversation.pendingCounterOffer}
+                            isCancellationPending={normalizeBookingStatus(selectedConversation.bookingStatus) === "cancel_requested"}
+                            isActionSubmitting={isActionSubmitting}
                           />
                         </div>
                       ) : (
@@ -1412,7 +1454,12 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                     if (role !== "provider" || selectedConversation.bookingStatus !== "pending") throw new Error("This booking request is no longer available to decline.");
                     return handleBookingStatusAction("declined");
                   }}
-                  onClose={() => setActionModalView("DETAILS")}
+                  onClose={() => {
+                    setActionMessage(null);
+                    setActionModalView("DETAILS");
+                    setActionError("");
+                    setCounterFormOpen(false);
+                  }}
                 />
               ) : actionModalView === "CONFIRM_APPROVE" ? (
                 <StatusChangeConfirmation
@@ -1423,7 +1470,12 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                     if (role !== "provider" || selectedConversation.bookingStatus !== "pending") throw new Error("This booking request is no longer available to approve.");
                     return handleBookingStatusAction("approved");
                   }}
-                  onClose={() => setActionModalView("DETAILS")}
+                  onClose={() => {
+                    setActionMessage(null);
+                    setActionModalView("DETAILS");
+                    setActionError("");
+                    setCounterFormOpen(false);
+                  }}
                 />
               ) : actionModalView === "CONFIRM_CANCEL" ? (
                 <StatusChangeConfirmation
@@ -1482,19 +1534,10 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                   </div>
                 )}
 
-                {selectedConversation.bookingStatus === "pending" && role === "provider" && !selectedConversation.pendingCounterOffer && (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <button type="button" disabled={isActionSubmitting} onClick={() => { setActionError(""); setActionModalView("CONFIRM_APPROVE"); }} className="rounded-md bg-primary-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Approve booking</button>
-                    <button type="button" disabled={isActionSubmitting} onClick={() => { setActionError(""); setActionModalView("CONFIRM_DECLINE"); }} className="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-50">Decline booking</button>
-                  </div>
-                )}
                 {selectedConversation.bookingStatus === "pending" && selectedConversation.pendingCounterOffer && (
                   <p className="mt-3 rounded-md bg-amber-50 p-3 text-xs text-amber-900">A counter-offer is awaiting the other participant&apos;s response.</p>
                 )}
 
-                {selectedConversation.bookingStatus === "pending" && !selectedConversation.pendingCounterOffer && (
-                  <button type="button" onClick={() => setCounterFormOpen((open) => !open)} className="mt-4 rounded-md border border-primary-200 px-3 py-2 text-xs font-semibold text-primary-700 hover:bg-primary-50">{counterFormOpen ? "Close counter-offer" : "Counter-offer terms"}</button>
-                )}
                 {counterFormOpen && selectedConversation.bookingStatus === "pending" && !selectedConversation.pendingCounterOffer && (
                   <form onSubmit={handleCounterOfferSubmit} className="mt-3 space-y-3 rounded-lg border border-gray-200 p-3">
                     <p className="text-sm font-semibold text-gray-800">Propose terms before approval</p>

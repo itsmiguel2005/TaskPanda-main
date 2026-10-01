@@ -1,19 +1,25 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
+import { readRegistrationDraft, saveRegistrationDraft } from "../utils/registrationDraft.js";
+
+const namePattern = /^[\p{L}\p{M}]+(?:[ .'-][\p{L}\p{M}]+)*$/u;
+const disallowedNameCharacters = /[^\p{L}\p{M} .'-]/gu;
 
 export default function ClientRegisterName() {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState(() => readRegistrationDraft("clientNameStep", {
     firstName: "",
     middleName: "",
     lastName: "",
-  });
+  }));
   const [error, setError] = useState("");
 
   const handleChange = (event) => {
     const { name, value } = event.target;
-    setFormData((previous) => ({ ...previous, [name]: value }));
+    const updated = { ...formData, [name]: value.replace(disallowedNameCharacters, "") };
+    setFormData(updated);
+    saveRegistrationDraft("clientNameStep", updated);
   };
 
   const handleSubmit = (event) => {
@@ -23,6 +29,10 @@ export default function ClientRegisterName() {
 
     if (!firstName || !lastName) {
       setError("First name and last name are required.");
+      return;
+    }
+    if (![firstName, formData.middleName.trim(), lastName].filter(Boolean).every((name) => namePattern.test(name))) {
+      setError("Names may contain letters, spaces, apostrophes, hyphens, and periods only.");
       return;
     }
 
@@ -42,11 +52,11 @@ export default function ClientRegisterName() {
         <section className="flex items-center justify-center bg-white px-6 pt-16 pb-6 lg:h-full sm:px-8 md:pt-20">
           <div className="w-full max-w-sm space-y-6">
             <div className="flex items-center">
-              <Link to="/login" className="auth-back-link group inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-500" aria-label="Back to login">
+              <Link to="/client-register" className="auth-back-link group inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-500" aria-label="Back to account details">
                 <svg className="h-4 w-4 shrink-0 transition-transform group-hover:-translate-x-1" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M15.75 19.5L8.25 12l7.5-7.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                Back to login
+                Back to account details
               </Link>
             </div>
 
@@ -74,6 +84,7 @@ export default function ClientRegisterName() {
                     name={name}
                     type="text"
                     required={name !== "middleName"}
+                    maxLength={80}
                     placeholder={placeholder}
                     value={formData[name]}
                     onChange={handleChange}

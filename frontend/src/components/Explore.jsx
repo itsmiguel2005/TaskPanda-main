@@ -308,10 +308,16 @@ export default function Explore() {
   };
 
   const filteredProviders = useMemo(() => {
-    return sortBy === "name"
-      ? [...providers].sort((a, b) => (a.fullName || a.username || "").localeCompare(b.fullName || b.username || ""))
-      : providers;
-  }, [providers, sortBy]);
+    return [...providers].sort((a, b) => {
+      const aIsFavorite = favoriteProviderIds.has(String(a._id));
+      const bIsFavorite = favoriteProviderIds.has(String(b._id));
+      if (aIsFavorite !== bIsFavorite) return aIsFavorite ? -1 : 1;
+      if (sortBy === "name") {
+        return (a.fullName || a.username || "").localeCompare(b.fullName || b.username || "");
+      }
+      return 0;
+    });
+  }, [providers, sortBy, favoriteProviderIds]);
 
   const activeFilters = [];
   if (appliedQuery) {

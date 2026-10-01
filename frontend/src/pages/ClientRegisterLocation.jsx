@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import PHLocationPicker from "../components/PHLocationPicker.jsx";
+import { readRegistrationDraft, saveRegistrationDraft } from "../utils/registrationDraft.js";
 
 export default function ClientRegisterLocation() {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState(() => readRegistrationDraft("clientLocationStep", {
     provinceCode: "",
     cityCode: "",
     barangayCode: "",
@@ -13,8 +14,13 @@ export default function ClientRegisterLocation() {
     city: "",
     barangay: "",
     address: "",
-  });
+    geoLocation: null,
+  }));
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    saveRegistrationDraft("clientLocationStep", formData);
+  }, [formData]);
   const handleSubmit = (e) => {
     e.preventDefault();
     setError("");
@@ -50,11 +56,11 @@ export default function ClientRegisterLocation() {
         <section className="flex items-center justify-center bg-white px-6 pt-16 pb-6 lg:h-full sm:px-8 md:pt-20">
           <div className="w-full max-w-sm space-y-6">
             <div className="flex items-center">
-              <Link to="/login" className="auth-back-link group inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-500" aria-label="Back to login">
+              <Link to="/client-register/name" className="auth-back-link group inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-500" aria-label="Back to name">
                 <svg className="h-4 w-4 shrink-0 transition-transform group-hover:-translate-x-1" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M15.75 19.5L8.25 12l7.5-7.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                Back to login
+                Back to name
               </Link>
             </div>
 
@@ -97,12 +103,6 @@ export default function ClientRegisterLocation() {
               </button>
             </form>
 
-            <div className="text-center text-sm text-gray-600">
-              Already have an account?{" "}
-              <Link to="/login" className={`font-medium ${a.link}`}>
-                Log in here
-              </Link>
-            </div>
           </div>
         </section>
         </>

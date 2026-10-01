@@ -19,6 +19,7 @@ const { validateRequest } = require("../middleware/validateRequest");
 const router = express.Router();
 const emailField = () => body("email").isString().trim().isEmail().isLength({ max: 254 });
 const passwordPattern = /^(?=\S{8,15}$)(?=.*[A-Z])(?=.*[^A-Za-z0-9]).*$/;
+const personNamePattern = /^[\p{L}\p{M}]+(?:[ .'-][\p{L}\p{M}]+)*$/u;
 
 const registrationValidation = [
   body("role").isString().isIn(["client", "provider"]),
@@ -37,16 +38,16 @@ const loginValidation = [
 ];
 
 const completionValidation = [
-  body("firstName").isString().trim().isLength({ min: 1, max: 80 }),
-  body("middleName").optional().isString().trim().isLength({ max: 80 }),
-  body("lastName").isString().trim().isLength({ min: 1, max: 80 }),
+  body("firstName").isString().trim().isLength({ min: 1, max: 80 }).withMessage("First name must be 1 to 80 characters.").matches(personNamePattern).withMessage("First name may contain letters, spaces, apostrophes, hyphens, and periods only."),
+  body("middleName").optional({ values: "falsy" }).isString().trim().isLength({ max: 80 }).withMessage("Middle name must be 80 characters or fewer.").matches(personNamePattern).withMessage("Middle name may contain letters, spaces, apostrophes, hyphens, and periods only."),
+  body("lastName").isString().trim().isLength({ min: 1, max: 80 }).withMessage("Last name must be 1 to 80 characters.").matches(personNamePattern).withMessage("Last name may contain letters, spaces, apostrophes, hyphens, and periods only."),
   body("mobileNumber").isString().matches(/^09\d{9}$/),
   body("province").isString().trim().isLength({ min: 1, max: 100 }),
   body("city").isString().trim().isLength({ min: 1, max: 100 }),
   body("barangay").isString().trim().isLength({ min: 1, max: 100 }),
   body("address").optional().isString().trim().isLength({ max: 300 }),
   body("dateOfBirth").optional().isISO8601({ strict: true }),
-  body("geoLocation").optional().isObject(),
+  body("geoLocation").optional({ values: "null" }).isObject(),
   body("geoLocation.type").optional().equals("Point"),
   body("geoLocation.coordinates").optional().isArray({ min: 2, max: 2 }),
   body("geoLocation.coordinates.*").optional().isFloat(),

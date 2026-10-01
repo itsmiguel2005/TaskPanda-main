@@ -167,6 +167,10 @@ export default function BookingsPage() {
   const reviewingBooking = bookings.find((b) => b.id === reviewingId);
 
   useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  useEffect(() => {
     if (requestedBookingId && bookings.some((booking) => booking.id === requestedBookingId)) {
       setDetailId(requestedBookingId);
     }

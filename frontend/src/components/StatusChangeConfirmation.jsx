@@ -6,6 +6,7 @@ export default function StatusChangeConfirmation({ nextStatus, onConfirm, onClos
   const normalizedStatus = String(nextStatus).toLowerCase();
   const isCancellation = normalizedStatus === "cancelled";
   const isDecline = normalizedStatus === "declined" || normalizedStatus === "declined by provider";
+  const needsCountdown = isCancellation || isDecline;
   const isApproval = normalizedStatus === "approved";
   const isDispute = normalizedStatus === "disputed";
   const [secondsLeft, setSecondsLeft] = useState(COUNTDOWN_SECONDS);
@@ -34,6 +35,7 @@ export default function StatusChangeConfirmation({ nextStatus, onConfirm, onClos
   }
 
   useEffect(() => {
+    if (!needsCountdown) return undefined;
     let cancelled = false;
     const deadline = Date.now() + COUNTDOWN_SECONDS * 1000;
     const timerId = window.setInterval(() => {
@@ -49,7 +51,7 @@ export default function StatusChangeConfirmation({ nextStatus, onConfirm, onClos
       cancelled = true;
       window.clearInterval(timerId);
     };
-  }, []);
+  }, [needsCountdown]);
 
   function closeDialog() {
     if (!isSubmitting) onClose();
@@ -75,21 +77,21 @@ export default function StatusChangeConfirmation({ nextStatus, onConfirm, onClos
           <p className="mt-2 text-sm text-gray-600">{isCancellation ? cancellationRequiresApproval ? "This booking is past the 10-minute grace period. The other participant must approve your cancellation request." : "Are you sure you want to cancel this booking? This action cannot be undone." : isDecline ? "Are you sure you want to decline this booking request? This action cannot be undone." : isApproval ? "Are you sure you want to approve this booking request? Once accepted, you are committed to completing the task." : isDispute ? "Disputing this revision will pause the booking and escalate it for manual review." : <>Are you sure you want to update this booking to <span className="font-semibold text-gray-900">{nextStatus}</span>?</>}</p>
           {children}
 
-          <div className="mt-6 text-center" role="timer" aria-live="polite" aria-atomic="true">
+          {needsCountdown && <div className="mt-6 text-center" role="timer" aria-live="polite" aria-atomic="true">
             {isSubmitting ? (
               <p className="text-sm font-semibold text-primary-700">Updating booking…</p>
             ) : error ? (
               <p role="alert" className="text-sm font-medium text-red-700">{error}</p>
             ) : (
               <>
-                <p className="text-sm text-gray-500">{isCancellation ? cancellationRequiresApproval ? "Request available in" : "Cancellation available in" : isDecline ? "Decline available in" : isApproval ? "Approval available in" : isDispute ? "Dispute available in" : "Proceed is available in"}</p>
+                <p className="text-sm text-gray-500">{isCancellation ? cancellationRequiresApproval ? "Request available in" : "Cancellation available in" : "Decline available in"}</p>
                 <p className="mt-1 text-4xl font-bold tabular-nums text-gray-900">{secondsLeft}</p>
                 <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100">
                   <div className="h-full bg-primary-600 transition-[width] duration-100" style={{ width: `${progressPercent}%` }} />
                 </div>
               </>
             )}
-          </div>
+          </div>}
 
           <div className="mt-6 flex gap-3">
             <button
@@ -103,7 +105,7 @@ export default function StatusChangeConfirmation({ nextStatus, onConfirm, onClos
             <button
               type="button"
               onClick={submitStatusUpdate}
-              disabled={secondsLeft > 0 || isSubmitting || !canConfirm}
+              disabled={(needsCountdown && secondsLeft > 0) || isSubmitting || !canConfirm}
               className="flex-1 rounded-lg bg-primary-600 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {error ? "Retry" : isSubmitting ? (isCancellation ? cancellationRequiresApproval ? "Sending request…" : "Canceling…" : isDecline ? "Declining…" : isApproval ? "Approving…" : isDispute ? "Escalating…" : "Updating…") : isCancellation ? cancellationRequiresApproval ? "Request cancellation" : "Cancel booking" : isDecline ? "Decline booking" : isApproval ? "Approve booking" : isDispute ? "Dispute revision" : "Proceed"}

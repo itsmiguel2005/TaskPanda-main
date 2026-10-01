@@ -247,6 +247,34 @@ async function handleListBookings(req, res) {
   }
 }
 
+async function handleProviderAvailability(req, res) {
+  const providerId = String(req.params.providerId || "");
+  if (!mongoose.isValidObjectId(providerId)) return res.status(400).json({ message: "Choose a valid provider." });
+  if (req.user.role !== "client") return res.status(403).json({ message: "Only clients can check provider availability." });
+
+  try {
+    const provider = await User.findOne({ _id: providerId, role: "provider", registrationComplete: true }).select("_id");
+    if (!provider) return res.status(404).json({ message: "That provider is no longer available." });
+
+    const startOfToday = new Date();
+    startOfToday.setUTCHours(0, 0, 0, 0);
+    const activeStatuses = ["pending", "approved", "en_route", "in_progress", "cancel_requested", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested"];
+    const bookings = await Booking.find({
+      providerId: provider._id,
+      serviceDate: mongoose.trusted({ $gte: startOfToday }),
+      status: mongoose.trusted({ $in: activeStatuses }),
+    }).select("serviceDate timeSlot").lean();
+
+    return res.json({ bookedSlots: bookings.map((booking) => ({
+      date: new Date(booking.serviceDate).toISOString().slice(0, 10),
+      timeSlot: booking.timeSlot,
+    })) });
+  } catch (error) {
+    console.error("Provider availability error:", error);
+    return res.status(500).json({ message: "Could not load provider availability." });
+  }
+}
+
 async function handleCreateBooking(req, res) {
   if (req.user.role !== "client") return res.status(403).json({ message: "Only clients can create bookings." });
 
@@ -724,6 +752,7 @@ async function handleCancellation(req, res) {
       await appendBookingSystemMessage(booking, cancellationMessage, req.user._id, "cancellation", {
         status: booking.status,
         cancellationOutcome: booking.cancellationOutcome || "requested",
+        cancellationRequestedBy: booking.cancellationRequestedBy || "",
       });
     } catch (messageError) {
       console.error("Cancellation system message error:", messageError);
@@ -1130,4 +1159,4 @@ async function handleRespondToCounterOffer(req, res) {
   }
 }
 
-module.exports = { handleListBookings, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks };
+module.exports = { handleListBookings, handleProviderAvailability, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks };

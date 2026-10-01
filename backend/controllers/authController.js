@@ -424,9 +424,9 @@ async function handleRegistrationStatus(req, res) {
       return res.status(401).json({ message: "Registration session expired." });
     }
 
-    if (!user.emailVerified || !user.registrationVerificationClosedAt) {
+    if (!user.emailVerified) {
       return res.json({
-        verified: user.emailVerified === true,
+        verified: false,
         verificationTabClosed: Boolean(user.registrationVerificationClosedAt),
       });
     }
@@ -437,7 +437,6 @@ async function handleRegistrationStatus(req, res) {
         ...sessionFilter,
         emailVerified: true,
         registrationComplete: false,
-        registrationVerificationClosedAt: mongoose.trusted({ $exists: true }),
         registrationResumeClaimedAt: mongoose.trusted({ $exists: false }),
       }),
       { $set: { registrationResumeClaimedAt: new Date() } },

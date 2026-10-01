@@ -7,6 +7,7 @@ const { limitBookingCreation } = require("../middleware/rateLimits");
 const { validateRequest } = require("../middleware/validateRequest");
 const {
   handleListBookings,
+  handleProviderAvailability,
   handleCreateBooking,
   handleUpdateBookingStatus,
   handleCancellation,
@@ -94,6 +95,7 @@ router.param("counterOfferId", (req, res, next, id) => {
 });
 
 router.use(requireAuth, requireRole("client", "provider"));
+router.get("/availability/:providerId", handleProviderAvailability);
 router.get("/", handleListBookings);
 router.post("/", limitBookingCreation, upload.array("photos", 5), sanitizeMongoInput, validateBookingCreation, validateRequest, handleCreateBooking);
 router.patch("/:id/status", validateBookingStatus, validateRequest, handleUpdateBookingStatus);

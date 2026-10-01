@@ -125,9 +125,11 @@ export default function VerifyEmailPage() {
         if (!response.ok) return;
         const data = await response.json();
         if (!active) return;
-        if (data.verified) {
+        if (data.verified && data.onboardingToken && data.user) {
+          resumeRegistration(data);
+        } else if (data.verified) {
           setStatus("verified");
-          setMessage("Email verified. Close the verification tab to continue registration here.");
+          setMessage("Email verified. Continue your registration in the original tab.");
         }
         if (data.verificationTabClosed && data.onboardingToken && data.user) {
           resumeRegistration(data);
@@ -146,7 +148,8 @@ export default function VerifyEmailPage() {
         setVerifiedData(payload);
         setEmail(payload.user.email || "");
         setStatus("verified");
-        setMessage("Email verified. Close the verification tab to continue registration here.");
+        setMessage("Email verified. Continue your registration in the original tab.");
+        resumeRegistration(payload);
       } else if (type === "closed") {
         resumeRegistration(payload);
       }

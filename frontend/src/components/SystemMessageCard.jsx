@@ -94,7 +94,7 @@ function renderReviewStars(rating) {
   );
 }
 
-export default function SystemMessageCard({ message, role, actorName, onOpen, onRespondToOffer }) {
+export default function SystemMessageCard({ message, role, actorName, onOpen, onRespondToOffer, onRespondToCancellation, onBookingRequestAction, isBookingRequestPending = false, isCancellationPending = false, isActionSubmitting = false }) {
   const event = message.eventData || {};
   const presentation = getEventPresentation(message);
   const cardTones = {
@@ -115,6 +115,16 @@ export default function SystemMessageCard({ message, role, actorName, onOpen, on
     && event.status === "pending"
     && event.proposedBy !== role
     && event.counterOfferId;
+  const canRespondToCancellation = role === "provider"
+    && message.eventType === "cancellation"
+    && event.status === "cancel_requested"
+    && isCancellationPending
+    && (event.cancellationRequestedBy === "client" || (!event.cancellationRequestedBy && !message.isMine))
+    && event.bookingId;
+  const canManageBookingRequest = role === "provider"
+    && message.eventType === "booking_request"
+    && isBookingRequestPending
+    && event.bookingId;
 
   return (
     <article className={`my-2 w-full max-w-xl rounded-2xl border bg-white px-3 py-3 text-sm text-slate-900 shadow-sm sm:px-4 ${cardTones[presentation.tone] || cardTones.slate}`}>
@@ -183,6 +193,15 @@ export default function SystemMessageCard({ message, role, actorName, onOpen, on
           {canRespond && <>
             <button type="button" onClick={() => onRespondToOffer(event.counterOfferId, "reject")} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50">Decline offer</button>
             <button type="button" onClick={() => onRespondToOffer(event.counterOfferId, "accept")} className="rounded-full border border-slate-900 bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-700">Accept offer</button>
+          </>}
+          {canRespondToCancellation && <>
+            <button type="button" disabled={isActionSubmitting} onClick={() => onRespondToCancellation(event.bookingId, "reject")} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Reject cancellation</button>
+            <button type="button" disabled={isActionSubmitting} onClick={() => onRespondToCancellation(event.bookingId, "approve")} className="rounded-full border border-red-600 bg-red-600 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">Approve cancellation</button>
+          </>}
+          {canManageBookingRequest && <>
+            <button type="button" disabled={isActionSubmitting} onClick={() => onBookingRequestAction("decline")} className="rounded-full border border-red-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">Decline booking</button>
+            <button type="button" disabled={isActionSubmitting} onClick={() => onBookingRequestAction("counter")} className="rounded-full border border-amber-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-amber-800 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50">Counter-offer terms</button>
+            <button type="button" disabled={isActionSubmitting} onClick={() => onBookingRequestAction("approve")} className="rounded-full border border-emerald-700 bg-emerald-700 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">Approve booking</button>
           </>}
         </div>
       </div>

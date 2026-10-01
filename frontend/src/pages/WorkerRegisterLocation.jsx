@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import PHLocationPicker from "../components/PHLocationPicker.jsx";
+import { readRegistrationDraft, saveRegistrationDraft } from "../utils/registrationDraft.js";
 
 export default function WorkerRegisterLocation() {
   console.log("[WorkerRegisterLocation] MOUNTED");
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState(() => readRegistrationDraft("workerLocationStep", {
     provinceCode: "",
     cityCode: "",
     barangayCode: "",
@@ -14,8 +15,13 @@ export default function WorkerRegisterLocation() {
     city: "",
     barangay: "",
     address: "",
-  });
+    geoLocation: null,
+  }));
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    saveRegistrationDraft("workerLocationStep", formData);
+  }, [formData]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -38,20 +44,18 @@ export default function WorkerRegisterLocation() {
       setError("Registration data is invalid. Please start again.");
       return;
     }
-    sessionStorage.setItem("workerLocationStep", JSON.stringify({
+    const locationData = {
+      provinceCode: formData.provinceCode,
+      cityCode: formData.cityCode,
+      barangayCode: formData.barangayCode,
       province: formData.province,
       city: formData.city,
       barangay: formData.barangay,
       address: formData.address,
       geoLocation: formData.geoLocation,
-    }));
-    localStorage.setItem("workerLocationStep", JSON.stringify({
-      province: formData.province,
-      city: formData.city,
-      barangay: formData.barangay,
-      address: formData.address,
-      geoLocation: formData.geoLocation,
-    }));
+    };
+    sessionStorage.setItem("workerLocationStep", JSON.stringify(locationData));
+    localStorage.setItem("workerLocationStep", JSON.stringify(locationData));
     navigate("/worker-register/dob");
   };
 
@@ -62,11 +66,11 @@ export default function WorkerRegisterLocation() {
         <section className="flex items-center justify-center bg-white px-6 pt-16 pb-6 lg:h-full sm:px-8 md:pt-20">
           <div className="w-full max-w-sm space-y-6">
             <div className="flex items-center">
-              <Link to="/login" className="auth-back-link group inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-500" aria-label="Back to login">
+              <Link to="/worker-register/name" className="auth-back-link group inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-500" aria-label="Back to name">
                 <svg className="h-4 w-4 shrink-0 transition-transform group-hover:-translate-x-1" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M15.75 19.5L8.25 12l7.5-7.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                Back to login
+                Back to name
               </Link>
             </div>
 
@@ -107,12 +111,6 @@ export default function WorkerRegisterLocation() {
               </button>
             </form>
 
-            <div className="text-center text-sm text-gray-600">
-              Already have an account?
-              <Link to="/login" className={`font-medium ${a.link}`}>
-                Log in here
-              </Link>
-            </div>
           </div>
         </section>
         </>
