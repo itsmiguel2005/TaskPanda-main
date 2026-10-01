@@ -225,7 +225,7 @@ export default function LandingPage() {
                     </div>
 
                     <button
-                      onClick={() => navigate("/register")}
+                      onClick={() => navigate("/login")}
                       className="landing-interactive flex min-h-16 items-center justify-center rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-600"
                     >
                       Explore
