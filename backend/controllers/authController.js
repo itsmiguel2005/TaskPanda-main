@@ -6,6 +6,7 @@ const AdminSession = require("../models/AdminSession");
 const AdminLoginChallenge = require("../models/AdminLoginChallenge");
 const config = require("../config/env");
 const { geocodeAddress } = require("../services/geocoder");
+const { createReferralCode, creditReferralRewards } = require("../services/rewards");
 const {
   hasValidSmtpCredentials,
   sendAdminLoginOtpEmail,
@@ -202,6 +203,7 @@ async function handleRegister(req, res) {
     const password = String(req.body.password || "");
     const fullName = String(req.body.fullName || "").trim();
     const username = String(req.body.username || "").trim();
+    const referralCode = String(req.body.referralCode || "").trim().toUpperCase();
     const firstName = String(req.body.firstName || "").trim();
     const middleName = String(req.body.middleName || "").trim();
     const lastName = String(req.body.lastName || "").trim();
@@ -243,6 +245,23 @@ async function handleRegister(req, res) {
     if (/^\S+@\S+\.\S+$/.test(username)) {
       return res.status(400).json({ message: "Username cannot be an email address." });
     }
+    if (referralCode && role !== "client") {
+      return res.status(400).json({ message: "Referral codes are available for client registrations." });
+    }
+    let referralOwner = null;
+    if (referralCode) {
+      referralOwner = await User.findOne({
+        referralCode,
+        role: "client",
+        registrationComplete: true,
+      }).select("_id email");
+      if (!referralOwner) {
+        return res.status(400).json({ message: "That referral code is not valid. Check the code and try again." });
+      }
+      if (referralOwner.email === email) {
+        return res.status(400).json({ message: "You cannot use your own referral code." });
+      }
+    }
 
     let existingEmailUser = await User.findOne({ email }).select(
       "+emailVerificationTokenHash +emailVerificationExpiresAt +emailVerificationTokens"
@@ -259,6 +278,17 @@ async function handleRegister(req, res) {
     if (existingEmailUser) {
       let canResumeRegistration = false;
       if (existingEmailUser.emailVerified === false && existingEmailUser.registrationComplete === false) {
+        if (
+          referralOwner &&
+          existingEmailUser.referredBy &&
+          String(existingEmailUser.referredBy) !== String(referralOwner._id)
+        ) {
+          return res.status(409).json({ message: "A different referral code is already attached to this registration." });
+        }
+        if (referralOwner && !existingEmailUser.referredBy) {
+          existingEmailUser.referredBy = referralOwner._id;
+          await existingEmailUser.save();
+        }
         try {
           canResumeRegistration = await bcrypt.compare(password, existingEmailUser.passwordHash);
           if (canResumeRegistration) {
@@ -281,9 +311,13 @@ async function handleRegister(req, res) {
       return res.status(409).json({ message: "This username is already taken.", field: "username" });
     }
 
+    const userId = new mongoose.Types.ObjectId();
     const user = await User.create({
+      _id: userId,
       role,
       username,
+      ...(role === "client" ? { referralCode: createReferralCode(userId) } : {}),
+      ...(referralOwner ? { referredBy: referralOwner._id } : {}),
       email,
       passwordHash: await bcrypt.hash(password, 10),
       professions: role === "provider" ? professions : [],
@@ -579,6 +613,9 @@ async function handleCompleteRegistration(req, res) {
     }
   }
 
+  user.referralCode ||= user.role === "client" ? createReferralCode(user._id) : undefined;
+  await creditReferralRewards(user);
+
   const updatedUser = await User.findOneAndUpdate(
     mongoose.trusted({
       _id: user._id,
@@ -599,6 +636,7 @@ async function handleCompleteRegistration(req, res) {
         address,
         ...(geoLocation ? { geoLocation } : {}),
         registrationComplete: true,
+        ...(user.role === "client" ? { referralCode: user.referralCode } : {}),
         ...(user.role === "provider" ? { dateOfBirth: parsedDateOfBirth } : {}),
       },
       $unset: {
@@ -649,6 +687,20 @@ async function handleCompleteRegistration(req, res) {
       bio: updatedUser.bio,
       createdAt: updatedUser.createdAt,
       role: updatedUser.role,
+      referralCode: updatedUser.referralCode,
+      stampProgress: updatedUser.stampProgress,
+      completedBookings: updatedUser.completedBookings,
+      vouchers: updatedUser.vouchers.map((voucher) => ({
+        id: String(voucher._id),
+        kind: voucher.kind,
+        title: voucher.title,
+        origin: voucher.origin,
+        amount: Number(voucher.amount || 0),
+        status: voucher.status,
+        awardedAt: voucher.awardedAt,
+        expiresAt: voucher.expiresAt || null,
+        redeemedAt: voucher.redeemedAt || null,
+      })),
       emailVerified: true,
       registrationComplete: true,
     },

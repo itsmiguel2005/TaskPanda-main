@@ -1,9 +1,16 @@
 const mongoose = require("mongoose");
+const { randomBytes } = require("crypto");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
 const { ensureBookingConversation, appendBookingSystemMessage } = require("../services/bookingMessaging");
 const { sendPushNotification } = require("../services/oneSignal");
-const { calculateDistanceKm, calculateTravelFare, calculateTotalPrice } = require("../services/bookingPricing");
+const {
+  calculateDistanceKm,
+  calculateTravelFare,
+  calculateTravelFeeDiscount,
+  calculateTotalPrice,
+} = require("../services/bookingPricing");
+const { awardSettledBookingStamp } = require("../services/rewards");
 
 const TIME_SLOTS = new Set(["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"]);
 const PH_TIMEZONE_OFFSET_HOURS = 8;
@@ -130,6 +137,9 @@ function serializeBooking(booking) {
     taskOffer: offeredPrice,
     travelDistanceKm,
     travelFee,
+    travelFeeBeforeDiscount: booking.travelFeeBeforeDiscount ?? travelFee,
+    travelFeeDiscount: booking.travelFeeDiscount ?? 0,
+    voucherId: booking.voucherId ? String(booking.voucherId) : null,
     tipAmount,
     totalPrice,
     paymentMethod: booking.paymentMethod || "cash",
@@ -315,6 +325,7 @@ async function handleCreateBooking(req, res) {
   const urgency = String(req.body.urgency || "Flexible").trim();
   const offeredPrice = Number(req.body.offeredPrice ?? req.body.offerPrice ?? req.body.offer ?? req.body.price ?? 0);
   const tipAmount = Number(req.body.tipAmount ?? 0);
+  const voucherId = String(req.body.voucherId || "").trim();
   const paymentMethod = String(req.body.paymentMethod || "cash").trim().toLowerCase();
   const termsAccepted = req.body.termsAccepted === true || req.body.termsAccepted === "true" || req.body.termsAccepted === "True";
   const safeStatus = "pending";
@@ -326,6 +337,7 @@ async function handleCreateBooking(req, res) {
   if (!TIME_SLOTS.has(timeSlot)) return res.status(400).json({ message: "Choose an available time slot." });
   if (!Number.isFinite(offeredPrice) || offeredPrice < 100) return res.status(400).json({ message: "Your offer must be at least PHP 100." });
   if (!Number.isFinite(tipAmount) || tipAmount < 0 || tipAmount > 1000000) return res.status(400).json({ message: "Enter a valid tip amount." });
+  if (voucherId && !mongoose.isValidObjectId(voucherId)) return res.status(400).json({ message: "Choose a valid travel-fee voucher." });
   if (paymentMethod !== "cash") return res.status(400).json({ message: "Cash on completion is the only supported payment method." });
   if (!["Emergency", "Flexible"].includes(urgency)) return res.status(400).json({ message: "Choose a valid urgency." });
   if (!termsAccepted) return res.status(400).json({ message: "Accept the terms and cancellation policy before submitting." });
@@ -333,7 +345,22 @@ async function handleCreateBooking(req, res) {
   try {
     const travelQuote = await getBookingTravelQuote(req.user, providerId);
     if (travelQuote.errorStatus) return res.status(travelQuote.errorStatus).json({ message: travelQuote.message });
-    const { provider, travelDistanceKm, travelFee } = travelQuote;
+    const { provider, travelDistanceKm } = travelQuote;
+    const travelFeeBeforeDiscount = travelQuote.travelFee;
+    const selectedVoucher = voucherId
+      ? (req.user.vouchers || []).find((voucher) =>
+        String(voucher._id) === voucherId &&
+        voucher.status === "active" &&
+        (!voucher.expiresAt || new Date(voucher.expiresAt) > new Date())
+      )
+      : null;
+    if (voucherId && !selectedVoucher) {
+      return res.status(409).json({ message: "That voucher is no longer available. Refresh your rewards and choose another." });
+    }
+    const travelFeeDiscount = selectedVoucher
+      ? calculateTravelFeeDiscount(travelFeeBeforeDiscount, selectedVoucher.amount)
+      : 0;
+    const travelFee = Math.max(0, travelFeeBeforeDiscount - travelFeeDiscount);
 
     const slotTimeMinutes = (() => {
       const match = String(timeSlot).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
@@ -375,23 +402,128 @@ async function handleCreateBooking(req, res) {
       return res.status(409).json({ message: "That time slot is no longer available." });
     }
 
-    const booking = await Booking.create({
-      clientId: req.user._id,
-      providerId: provider._id,
-      repairDescription,
-      address,
-      serviceDate,
-      timeSlot,
-      offeredPrice,
-      travelDistanceKm,
-      travelFee,
-      tipAmount,
-      urgency,
-      paymentMethod,
-      photoUrl: req.files?.[0] ? `/uploads/${req.files[0].filename}` : "",
-      status: safeStatus,
-      statusHistory: [{ status: "pending", at: new Date() }],
-    });
+    const reservationId = voucherId ? randomBytes(24).toString("hex") : "";
+    if (selectedVoucher) {
+      const reservedVoucher = await User.findOneAndUpdate(
+        mongoose.trusted({
+          _id: req.user._id,
+          vouchers: mongoose.trusted({
+            $elemMatch: {
+              _id: new mongoose.Types.ObjectId(voucherId),
+              status: "active",
+              $or: [
+                { expiresAt: mongoose.trusted({ $exists: false }) },
+                { expiresAt: null },
+                { expiresAt: mongoose.trusted({ $gt: new Date() }) },
+              ],
+            },
+          }),
+        }),
+        {
+          $set: {
+            "vouchers.$.status": "reserved",
+            "vouchers.$.reservationId": reservationId,
+            "vouchers.$.reservationExpiresAt": new Date(Date.now() + 2 * 60 * 1000),
+          },
+        },
+        { new: true }
+      );
+      if (!reservedVoucher) {
+        return res.status(409).json({ message: "That voucher was just used or expired. Refresh your rewards and try again." });
+      }
+    }
+
+    let booking;
+    try {
+      booking = await Booking.create({
+        clientId: req.user._id,
+        providerId: provider._id,
+        repairDescription,
+        address,
+        serviceDate,
+        timeSlot,
+        offeredPrice,
+        travelDistanceKm,
+        travelFee,
+        travelFeeBeforeDiscount,
+        travelFeeDiscount,
+        voucherId: selectedVoucher?._id,
+        voucherReservationId: reservationId || undefined,
+        tipAmount,
+        urgency,
+        paymentMethod,
+        photoUrl: req.files?.[0] ? `/uploads/${req.files[0].filename}` : "",
+        status: safeStatus,
+        statusHistory: [{ status: "pending", at: new Date() }],
+      });
+      if (selectedVoucher) {
+        const redeemedVoucher = await User.updateOne(
+          mongoose.trusted({
+            _id: req.user._id,
+            vouchers: mongoose.trusted({
+              $elemMatch: {
+                _id: selectedVoucher._id,
+                status: "reserved",
+                reservationId,
+              },
+            }),
+          }),
+          {
+            $set: {
+              "vouchers.$.status": "redeemed",
+              "vouchers.$.redeemedAt": new Date(),
+              "vouchers.$.bookingId": booking._id,
+            },
+            $unset: {
+              "vouchers.$.reservationId": 1,
+              "vouchers.$.reservationExpiresAt": 1,
+            },
+          }
+        );
+        if (!redeemedVoucher.matchedCount) {
+          const alreadyFinalized = await User.exists(
+            mongoose.trusted({
+              _id: req.user._id,
+              vouchers: mongoose.trusted({
+                $elemMatch: {
+                  _id: selectedVoucher._id,
+                  status: "redeemed",
+                  bookingId: booking._id,
+                },
+              }),
+            })
+          );
+          if (!alreadyFinalized) {
+            await Booking.deleteOne({ _id: booking._id });
+            throw new Error("The travel-fee voucher could not be finalized. Please retry the booking.");
+          }
+        }
+      }
+    } catch (error) {
+      if (booking?._id) await Booking.deleteOne({ _id: booking._id });
+      if (selectedVoucher) {
+        await User.updateOne(
+          mongoose.trusted({
+            _id: req.user._id,
+            vouchers: mongoose.trusted({
+              $elemMatch: {
+                _id: selectedVoucher._id,
+                status: "reserved",
+                reservationId,
+              },
+            }),
+          }),
+          {
+            $set: { "vouchers.$.status": "active" },
+            $unset: {
+              "vouchers.$.reservationId": 1,
+              "vouchers.$.reservationExpiresAt": 1,
+            },
+          }
+        );
+      }
+      throw error;
+    }
 
     try {
       await ensureBookingConversation(booking);
@@ -909,6 +1041,11 @@ async function processCashSettlementFallbacks() {
         },
         { new: true }
       );
+      try {
+        await awardSettledBookingStamp(booking._id);
+      } catch (stampError) {
+        console.error("Auto-settled booking loyalty stamp error:", stampError);
+      }
       try {
         await appendBookingSystemMessage(
           booking,

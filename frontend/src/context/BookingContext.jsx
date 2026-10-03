@@ -82,6 +82,7 @@ export function BookingProvider({ children }) {
       timeSlot: normalizedDetails.timeSlot || normalizedDetails.time || "",
       offeredPrice: normalizedDetails.offeredPrice ?? normalizedDetails.offerPrice ?? normalizedDetails.offer ?? 0,
       tipAmount: normalizedDetails.tipAmount ?? 0,
+      voucherId: normalizedDetails.voucherId || "",
       urgency: normalizedDetails.urgency || "Flexible",
       paymentMethod: normalizedDetails.paymentMethod || "cash",
       termsAccepted: normalizedDetails.termsAccepted ?? true,
@@ -109,6 +110,7 @@ export function BookingProvider({ children }) {
     formData.append("time", String(timeSlot));
     formData.append("offeredPrice", String(offerPrice));
     formData.append("tipAmount", String(tipAmount));
+    if (normalizedDetails.voucherId) formData.append("voucherId", String(normalizedDetails.voucherId));
     formData.append("offer", String(offerPrice));
     formData.append("price", String(offerPrice));
     formData.append("paymentMethod", paymentMethod);

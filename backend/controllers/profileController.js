@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const User = require("../models/User");
 const { geocodeAddress } = require("../services/geocoder");
 const { uploadProfileImage } = require("../services/cloudinaryMedia");
+const { ensureReferralCode } = require("../services/rewards");
 
 function profileFromUser(user) {
   return {
@@ -25,6 +26,20 @@ function profileFromUser(user) {
     averageRating: user.averageRating ?? 0,
     totalReviews: user.totalReviews ?? 0,
     createdAt: user.createdAt,
+    referralCode: user.referralCode || "",
+    stampProgress: Number(user.stampProgress || 0),
+    completedBookings: Number(user.completedBookings || 0),
+    vouchers: (user.vouchers || []).map((voucher) => ({
+      id: String(voucher._id),
+      kind: voucher.kind,
+      title: voucher.title,
+      origin: voucher.origin,
+      amount: Number(voucher.amount || 0),
+      status: voucher.status,
+      awardedAt: voucher.awardedAt,
+      expiresAt: voucher.expiresAt || null,
+      redeemedAt: voucher.redeemedAt || null,
+    })),
   };
 }
 
@@ -45,6 +60,9 @@ async function handleUploadProfilePhoto(req, res) {
 async function handleGetProfile(req, res) {
   try {
     const user = req.user;
+    if (user.role === "client" && !user.referralCode) {
+      await ensureReferralCode(user);
+    }
     return res.json({ user: profileFromUser(user) });
   } catch (error) {
     console.error("Get profile error:", error);

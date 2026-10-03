@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import ProfileSetupPanel from "../components/ProfileSetupPanel.jsx";
@@ -93,15 +93,57 @@ function ProfileSetting({ label, description, onClick, tone = "default", last = 
   );
 }
 
+function formatRewardAmount(amount) {
+  return `₱${Number(amount || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
+}
+
+function BambooStamp({ filled }) {
+  return (
+    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" className={`h-6 w-6 ${filled ? "text-emerald-800" : "text-slate-300"}`}>
+      <path d="M16 26c0-6.5.2-12.5 0-19" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M16 17c-5.8.2-9.2-2.8-9.1-7.8 5.4-.2 8.6 2.5 9.1 7.8Z" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M16 12c.3-4.5 3.2-7 8-6.8.1 4.7-2.7 7-8 6.8Z" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      {filled && <path d="M13 15 9 11m8-2 4-3" stroke="white" strokeOpacity=".78" strokeWidth="1" strokeLinecap="round" />}
+    </svg>
+  );
+}
+
 export default function ProfilePage() {
   const navigate = useNavigate();
-  const { isLoggedIn, role, isVerified, logout, user, refreshProfile } = useAuth();
+  const { isLoggedIn, role, isVerified, logout, user, token, updateUser, refreshProfile } = useAuth();
   const { bookings } = useBookings();
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [referralCodeCopied, setReferralCodeCopied] = useState(false);
+  const [referralCopyError, setReferralCopyError] = useState("");
+  const [referralCodeError, setReferralCodeError] = useState("");
+  const [loadingReferralCode, setLoadingReferralCode] = useState(false);
 
   useEffect(() => {
     refreshProfile();
   }, [refreshProfile]);
+
+  const loadReferralCode = useCallback(async () => {
+    if (!token) return;
+    setLoadingReferralCode(true);
+    setReferralCodeError("");
+    try {
+      const response = await fetch("/api/rewards", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Could not load your referral code.");
+      if (!data.referralCode) throw new Error("Your account does not have a referral code yet.");
+      updateUser({ referralCode: data.referralCode });
+    } catch (error) {
+      setReferralCodeError(error.message || "Could not load your referral code.");
+    } finally {
+      setLoadingReferralCode(false);
+    }
+  }, [token, updateUser]);
+
+  useEffect(() => {
+    if (role === "client" && !user?.referralCode) void loadReferralCode();
+  }, [loadReferralCode, role, user?.referralCode]);
 
   const roleLabel = role === "provider" ? "Service provider" : role === "admin" ? "Administrator" : "Homeowner";
   const fullName = user?.fullName || [user?.firstName, user?.middleName, user?.lastName].filter(Boolean).join(" ") || user?.username || user?.email || "Client";
@@ -109,6 +151,28 @@ export default function ProfilePage() {
   const memberSince = user?.createdAt ? new Date(user.createdAt).toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "Not available";
   const initials = fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
   const recentBookings = Array.isArray(bookings) ? bookings.slice(0, 3) : [];
+  const stampProgress = Math.max(0, Math.min(5, Number(user?.stampProgress) || 0));
+  const walletVouchers = [...(user?.vouchers || [])].sort((left, right) =>
+    new Date(right.awardedAt || 0) - new Date(left.awardedAt || 0)
+  );
+  const activeVouchers = walletVouchers.filter((voucher) =>
+    voucher.status === "active" && (!voucher.expiresAt || new Date(voucher.expiresAt) > new Date())
+  );
+
+  const copyReferralCode = async () => {
+    if (!user?.referralCode || !navigator.clipboard?.writeText) {
+      setReferralCopyError("Copying is unavailable in this browser. Select the code to copy it.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(user.referralCode);
+      setReferralCodeCopied(true);
+      setReferralCopyError("");
+      window.setTimeout(() => setReferralCodeCopied(false), 2200);
+    } catch {
+      setReferralCopyError("We couldn't copy the code. Select it and copy it manually.");
+    }
+  };
 
   const handleSignOut = () => {
     logout();
@@ -178,6 +242,101 @@ export default function ProfilePage() {
             </aside>
 
             <div className="space-y-5 lg:col-span-2">
+              <section id="rewards" className="dashboard-panel scroll-mt-24">
+                <div className="dashboard-panel-heading flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-bold text-slate-950">Vouchers &amp; rewards</h2>
+                    <p className="mt-1 text-sm text-slate-600">Small thank-yous, ready for your next trip.</p>
+                  </div>
+                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+                    {activeVouchers.length} available
+                  </span>
+                </div>
+                <div className="grid lg:grid-cols-2">
+                  <div className="p-5 sm:p-6">
+                    <h3 className="text-sm font-bold text-slate-900">Your bamboo stamp card</h3>
+                    <p className="mt-1 text-xs leading-5 text-slate-600">One stamp for every booking you complete and settle. Five stamps earn ₱50 off a future travel fee.</p>
+                    <div className="mt-5 grid grid-cols-5 gap-2" aria-label={`${stampProgress} of 5 stamps collected`}>
+                      {Array.from({ length: 5 }, (_, index) => {
+                        const filled = index < stampProgress;
+                        return (
+                          <div key={index} className={`flex min-h-[4.5rem] flex-col items-center justify-center gap-1.5 rounded-xl ${filled ? "bg-emerald-50" : "bg-slate-50"}`}>
+                            <BambooStamp filled={filled} />
+                            <span className={`text-[10px] font-semibold ${filled ? "text-emerald-800" : "text-slate-500"}`}>{filled ? "Collected" : "Stamp"}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-3 text-xs font-semibold tabular-nums text-slate-600">
+                      {stampProgress === 5 ? "5 of 5 stamps · your next booking starts a new card" : `${stampProgress} of 5 stamps · ${5 - stampProgress} to your next voucher`}
+                    </p>
+                    <div className="mt-6 border-t border-slate-100 pt-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900">Give a friend ₱50</h3>
+                          <p className="mt-1 text-xs leading-5 text-slate-600">They get a travel-fee voucher; you get one too.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={copyReferralCode}
+                          disabled={!user?.referralCode}
+                          className="dashboard-secondary-button dashboard-focus px-3 py-2 text-xs disabled:cursor-wait disabled:opacity-60"
+                        >
+                          {referralCodeCopied ? "Copied" : "Copy code"}
+                        </button>
+                      </div>
+                      <p className="mt-2 break-all rounded-lg bg-slate-50 px-3 py-2 text-sm font-bold tracking-[0.12em] text-slate-900" aria-label="Your referral code">
+                        {user?.referralCode || (loadingReferralCode ? "Loading your code…" : "Your code is not available yet.")}
+                      </p>
+                      {referralCodeError && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-amber-800" role="alert">
+                          <span>{referralCodeError}</span>
+                          <button type="button" onClick={loadReferralCode} disabled={loadingReferralCode} className="font-semibold underline underline-offset-2 disabled:opacity-60">
+                            {loadingReferralCode ? "Retrying…" : "Try again"}
+                          </button>
+                        </div>
+                      )}
+                      {referralCopyError && <p className="mt-1 text-xs text-amber-800" role="status">{referralCopyError}</p>}
+                    </div>
+                  </div>
+
+                  <div className="border-t border-slate-100 p-5 sm:p-6 lg:border-l lg:border-t-0">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <h3 className="text-sm font-bold text-slate-900">Travel-fee wallet</h3>
+                      <span className="text-xs font-medium tabular-nums text-slate-500">{activeVouchers.length} ready to use</span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-slate-600">Choose a voucher in the booking summary. It can only reduce the distance-based travel fee.</p>
+                    {activeVouchers.length ? (
+                      <ul className="mt-4 divide-y divide-slate-100">
+                        {activeVouchers.map((voucher) => (
+                          <li key={voucher.id} className="flex items-center justify-between gap-4 py-3 first:pt-0">
+                            <span className="flex min-w-0 items-center gap-3">
+                              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-800" aria-hidden="true">
+                                <BambooStamp filled />
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-semibold text-slate-900">{voucher.title}</span>
+                                <span className="mt-0.5 block text-xs text-slate-500">{voucher.kind === "milestone" ? "Stamp card reward" : "Referral reward"}</span>
+                              </span>
+                            </span>
+                            <span className="shrink-0 text-sm font-bold tabular-nums text-emerald-800">{formatRewardAmount(voucher.amount)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-4 rounded-xl bg-slate-50 px-4 py-5 text-center text-sm leading-6 text-slate-600">
+                        No vouchers just yet. Invite a friend or collect five stamps to earn your next travel-fee reward.
+                      </p>
+                    )}
+                    {walletVouchers.some((voucher) => voucher.status === "redeemed") && (
+                      <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
+                        {walletVouchers.filter((voucher) => voucher.status === "redeemed").length} voucher{walletVouchers.filter((voucher) => voucher.status === "redeemed").length === 1 ? "" : "s"} redeemed
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </section>
+
               <section className="dashboard-panel">
                 <div className="dashboard-panel-heading flex flex-wrap items-center justify-between gap-3">
                   <div>

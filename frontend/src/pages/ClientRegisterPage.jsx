@@ -9,6 +9,7 @@ export default function ClientRegisterPage() {
   const [formData, setFormData] = useState({
     username: "",
     email: "",
+    referralCode: "",
     password: "",
     confirmPassword: "",
   });
@@ -144,6 +145,7 @@ export default function ClientRegisterPage() {
           registrationPhase: "start",
           username: formData.username,
           email: formData.email,
+          referralCode: formData.referralCode.trim().toUpperCase(),
           password: formData.password,
         }),
       });
@@ -153,7 +155,11 @@ export default function ClientRegisterPage() {
         return;
       }
 
-      const step1 = { username: formData.username, email: formData.email };
+      const step1 = {
+        username: formData.username,
+        email: formData.email,
+        referralCode: formData.referralCode.trim().toUpperCase(),
+      };
       sessionStorage.setItem("clientStep1", JSON.stringify(step1));
       localStorage.removeItem("clientStep1");
       navigate(`/verify-email?email=${encodeURIComponent(formData.email)}`);
@@ -242,6 +248,35 @@ export default function ClientRegisterPage() {
                 {availability.field === "username" && !showFieldError("username") && (
                   <p className="text-xs text-red-600" role="alert">{availability.message}</p>
                 )}
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="referralCode" className="block text-sm font-medium text-gray-700">
+                  Referral Code (Optional)
+                </label>
+                <div className="relative">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary-600" aria-hidden="true">
+                    <path d="M20.5 13.5 13 21H4v-9l7.5-7.5a2.12 2.12 0 0 1 3 0l6 6a2.12 2.12 0 0 1 0 3Z" />
+                    <circle cx="15.5" cy="8.5" r="1" />
+                  </svg>
+                  <input
+                    id="referralCode"
+                    name="referralCode"
+                    type="text"
+                    autoComplete="off"
+                    maxLength={32}
+                    placeholder="e.g. TP..."
+                    value={formData.referralCode}
+                    onChange={(event) => setFormData((current) => ({
+                      ...current,
+                      referralCode: event.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ""),
+                    }))}
+                    className="block w-full rounded-lg border border-primary-200 bg-primary-50/50 py-2.5 pl-10 pr-4 text-sm uppercase tracking-wider text-gray-800 placeholder-normal-case placeholder:tracking-normal placeholder:text-gray-400/70 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
+                  />
+                </div>
+                <p className="text-xs leading-5 text-gray-500">
+                  Got a code from a friend? Enter it here to unlock travel fee vouchers!
+                </p>
               </div>
 
               <div className="space-y-2">

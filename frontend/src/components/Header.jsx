@@ -21,11 +21,14 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   const [notificationItems, setNotificationItems] = useState([]);
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState([]);
   const [pushPromptStatus, setPushPromptStatus] = useState("");
+  const [rewardToast, setRewardToast] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
-  const { isLoggedIn, role: authRole, user, firstName, logout, token } = useAuth();
+  const { isLoggedIn, role: authRole, user, firstName, logout, token, updateUser } = useAuth();
   const dismissedStorageKey = `taskpanda_dismissed_notifications_${authRole || role}_${user?._id || user?.id || user?.email || "guest"}`;
   const notifRef = useRef(null);
+  const userRef = useRef(user);
+  const shownRewardNotificationIds = useRef(new Set());
 
   const handleEnablePush = async () => {
     setPushPromptStatus("loading");
@@ -120,6 +123,90 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   }, [authRole, isLoggedIn, showNav, token]);
 
   useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  useEffect(() => {
+    if (!isLoggedIn || authRole !== "client" || !token) {
+      setRewardToast(null);
+      return undefined;
+    }
+
+    let active = true;
+    const shownIds = shownRewardNotificationIds.current;
+    const loadRewards = async () => {
+      try {
+        const headers = { Authorization: `Bearer ${token}` };
+        const [rewardsResponse, notificationResponse] = await Promise.all([
+          fetch("/api/rewards", { headers }),
+          fetch("/api/rewards/notifications", { headers }),
+        ]);
+        if (!rewardsResponse.ok || !notificationResponse.ok) {
+          throw new Error("Could not refresh rewards.");
+        }
+        const [rewards, notificationData] = await Promise.all([
+          rewardsResponse.json(),
+          notificationResponse.json(),
+        ]);
+        if (!active) return;
+        if (Array.isArray(rewards.vouchers)) {
+          const currentUser = userRef.current || {};
+          const currentSnapshot = JSON.stringify([
+            currentUser.referralCode,
+            currentUser.stampProgress,
+            currentUser.completedBookings,
+            (currentUser.vouchers || []).map((voucher) => [
+              voucher.id || voucher._id,
+              voucher.status,
+              voucher.amount,
+            ]),
+          ]);
+          const nextSnapshot = JSON.stringify([
+            rewards.referralCode,
+            rewards.stampProgress,
+            rewards.completedBookings,
+            rewards.vouchers.map((voucher) => [voucher.id, voucher.status, voucher.amount]),
+          ]);
+          if (currentSnapshot !== nextSnapshot) {
+            const updatedRewards = {
+              referralCode: rewards.referralCode,
+              stampProgress: rewards.stampProgress,
+              completedBookings: rewards.completedBookings,
+              vouchers: rewards.vouchers,
+            };
+            userRef.current = { ...currentUser, ...updatedRewards };
+            updateUser(updatedRewards);
+          }
+        }
+        const notification = (notificationData.notifications || []).find((item) => !shownIds.has(item.id));
+        if (!notification) return;
+        shownIds.add(notification.id);
+        setRewardToast(notification);
+        const readResponse = await fetch(`/api/rewards/notifications/${notification.id}/read`, {
+          method: "POST",
+          headers,
+        });
+        if (!readResponse.ok) throw new Error("Could not mark the reward notification as read.");
+      } catch (error) {
+        if (active) console.warn("Reward refresh failed:", error.message);
+      }
+    };
+
+    void loadRewards();
+    const intervalId = window.setInterval(loadRewards, 8_000);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [authRole, isLoggedIn, token, updateUser]);
+
+  useEffect(() => {
+    if (!rewardToast) return undefined;
+    const timeoutId = window.setTimeout(() => setRewardToast(null), 7000);
+    return () => window.clearTimeout(timeoutId);
+  }, [rewardToast]);
+
+  useEffect(() => {
     function handleClick(e) {
       if (notifRef.current && !notifRef.current.contains(e.target)) {
         setNotifOpen(false);
@@ -177,6 +264,9 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   const visibleNotificationList = notificationList.filter((item) => !dismissedNotificationIds.includes(item.id));
   const unreadNotificationCount = visibleNotificationList.reduce((total, item) => total + Math.max(0, Number(item.unreadCount) || 0), 0);
   const totalNotificationCount = unreadNotificationCount;
+  const availablePerkCount = (user?.vouchers || []).filter((voucher) =>
+    voucher.status === "active" && (!voucher.expiresAt || new Date(voucher.expiresAt) > new Date())
+  ).length;
 
   return (
     <header className="fixed inset-x-0 top-0 z-30 bg-white/80 backdrop-blur-md shadow-sm">
@@ -213,6 +303,25 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
         )}
 
         <div className="flex w-[220px] items-center justify-end gap-6">
+          {showNav && isLoggedIn && authRole === "client" && (
+            <Link
+              to="/profile#rewards"
+              aria-label={`Rewards${availablePerkCount ? `, ${availablePerkCount} available` : ""}`}
+              title={availablePerkCount ? `${availablePerkCount} travel-fee ${availablePerkCount === 1 ? "voucher" : "vouchers"} available` : "Vouchers and rewards"}
+              className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
+            >
+              <MenuIcon className="h-5 w-5">
+                <path d="M5 7.5h14v13H5z" />
+                <path d="M9 7.5V5.8a3 3 0 0 1 6 0v1.7M12 11v5m-2-2 2 2 2-2" />
+              </MenuIcon>
+              <span className="sr-only">Vouchers &amp; rewards</span>
+              {availablePerkCount > 0 && (
+                <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-700 px-1 text-[9px] font-bold leading-none text-white">
+                  {availablePerkCount > 99 ? "99+" : availablePerkCount}
+                </span>
+              )}
+            </Link>
+          )}
           {showNav && (
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
@@ -444,6 +553,30 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
               </Link>
             ))}
           </nav>
+        </div>
+      )}
+      {rewardToast && (
+        <div className="reward-toast fixed right-4 top-20 z-[70] w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-emerald-200 bg-white px-4 py-4 shadow-[0_18px_48px_rgba(15,23,42,0.18)]" role="status" aria-live="polite">
+          <div className="reward-toast-confetti" aria-hidden="true">
+            {Array.from({ length: 9 }, (_, index) => (
+              <span key={index} style={{ left: `${8 + ((index * 13) % 84)}%`, animationDelay: `${(index % 4) * 90}ms` }} />
+            ))}
+          </div>
+          <div className="relative flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-800">
+              <MenuIcon className="h-5 w-5"><path d="M5 7.5h14v13H5z" /><path d="M9 7.5V5.8a3 3 0 0 1 6 0v1.7M12 11v5m-2-2 2 2 2-2" /></MenuIcon>
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-slate-950">{rewardToast.title}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">{rewardToast.message}</p>
+              <Link to="/profile#rewards" onClick={() => setRewardToast(null)} className="mt-2 inline-flex text-xs font-bold text-emerald-800 underline underline-offset-2">
+                Open rewards wallet
+              </Link>
+            </div>
+            <button type="button" onClick={() => setRewardToast(null)} className="dashboard-focus rounded-md p-1 text-slate-500 hover:bg-slate-100" aria-label="Dismiss reward notification">
+              <MenuIcon className="h-4 w-4"><path d="m6 6 12 12M18 6 6 18" /></MenuIcon>
+            </button>
+          </div>
         </div>
       )}
     </header>

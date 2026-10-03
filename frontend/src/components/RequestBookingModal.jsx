@@ -177,6 +177,11 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const [urgency, setUrgency] = useState(initialValues.urgency || "Flexible");
   const [offer, setOffer] = useState(initialValues.offer == null ? "" : String(initialValues.offer));
   const [tipAmount, setTipAmount] = useState(String(initialValues.tipAmount ?? 0));
+  const [rewards, setRewards] = useState({ vouchers: [] });
+  const [rewardsStatus, setRewardsStatus] = useState("loading");
+  const [rewardsError, setRewardsError] = useState("");
+  const [rewardsRetry, setRewardsRetry] = useState(0);
+  const [selectedVoucherId, setSelectedVoucherId] = useState("");
   const [tipFeedback, setTipFeedback] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [formError, setFormError] = useState("");
@@ -201,6 +206,45 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [provider, onClose]);
+
+  useEffect(() => {
+    if (!token) {
+      setRewards({ vouchers: [] });
+      setRewardsStatus("loaded");
+      return undefined;
+    }
+    const controller = new AbortController();
+    let active = true;
+    setRewardsStatus("loading");
+    setRewardsError("");
+    fetch("/api/rewards", {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || "Could not load your vouchers.");
+        if (!Array.isArray(data.vouchers)) throw new Error("Your rewards could not be read. Refresh the page and try again.");
+        if (!active) return;
+        setRewards(data);
+        setSelectedVoucherId((currentId) => currentId && data.vouchers.some((voucher) =>
+          voucher.id === currentId &&
+          voucher.status === "active" &&
+          (!voucher.expiresAt || new Date(voucher.expiresAt) > new Date())
+        ) ? currentId : "");
+        setRewardsStatus("loaded");
+      })
+      .catch((error) => {
+        if (active && error.name !== "AbortError") {
+          setRewardsStatus("error");
+          setRewardsError(error.message || "Could not load your vouchers.");
+        }
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [token, rewardsRetry]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date()), 30_000);
@@ -284,10 +328,16 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const trade = provider.professions?.join(" · ") || provider.trade || "Service provider";
   const travelDistanceKm = travelQuote?.travelDistanceKm ?? null;
   const travelFee = travelQuote?.travelFee ?? 0;
+  const availableVouchers = (rewards.vouchers || []).filter((voucher) =>
+    voucher.status === "active" && (!voucher.expiresAt || new Date(voucher.expiresAt) > new Date())
+  );
+  const selectedVoucher = availableVouchers.find((voucher) => voucher.id === selectedVoucherId);
+  const travelFeeDiscount = selectedVoucher ? Math.min(travelFee, Number(selectedVoucher.amount) || 0) : 0;
+  const discountedTravelFee = Math.max(0, travelFee - travelFeeDiscount);
   const offerAmount = Number(offer);
   const selectedTip = Number(tipAmount);
   const safeTipAmount = Number.isFinite(selectedTip) && selectedTip >= 0 ? selectedTip : 0;
-  const totalAmount = roundCurrency(offerAmount + travelFee + safeTipAmount);
+  const totalAmount = roundCurrency(offerAmount + discountedTravelFee + safeTipAmount);
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files);
@@ -365,6 +415,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
         time: selectedTime,
         offer: offerAmount,
         tipAmount: selectedTip,
+        voucherId: selectedVoucherId,
         urgency,
         photos: selectedFiles,
         address: provider.address || [provider.barangay, provider.city, provider.province].filter(Boolean).join(", "),
@@ -374,6 +425,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
       setIsSubmitted(true);
     } catch (error) {
       setFormError(error.message || "Could not submit the booking.");
+      if (selectedVoucherId) setRewardsRetry((retry) => retry + 1);
     }
   };
 
@@ -425,7 +477,9 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
               </p>
               <dl className="mx-auto mt-5 max-w-sm space-y-2 border-y border-dashed border-gray-200 py-4 text-left text-sm">
                 <div className="flex justify-between gap-3"><dt className="text-gray-600">Task offer</dt><dd className="font-medium tabular-nums">{formatPhpAmount(submittedBooking?.offeredPrice ?? offerAmount)}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare{(submittedBooking?.travelDistanceKm ?? travelDistanceKm) == null ? "" : ` · ${Number(submittedBooking?.travelDistanceKm ?? travelDistanceKm).toFixed(2)} km`}</dt><dd className="font-medium tabular-nums">{formatPhpAmount(submittedBooking?.travelFee ?? travelFee)}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare{(submittedBooking?.travelDistanceKm ?? travelDistanceKm) == null ? "" : ` · ${Number(submittedBooking?.travelDistanceKm ?? travelDistanceKm).toFixed(2)} km`}</dt><dd className="font-medium tabular-nums">{formatPhpAmount(submittedBooking?.travelFeeBeforeDiscount ?? travelFee)}</dd></div>
+                {Number(submittedBooking?.travelFeeDiscount ?? travelFeeDiscount) > 0 && <div className="flex justify-between gap-3 text-emerald-700"><dt>Travel-fee voucher</dt><dd className="font-semibold tabular-nums">−{formatPhpAmount(submittedBooking?.travelFeeDiscount ?? travelFeeDiscount)}</dd></div>}
+                {(submittedBooking?.travelFeeDiscount ?? travelFeeDiscount) > 0 && <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare after voucher</dt><dd className="font-medium tabular-nums">{formatPhpAmount(submittedBooking?.travelFee ?? discountedTravelFee)}</dd></div>}
                 <div className="flex justify-between gap-3"><dt className="text-gray-600">Optional tip</dt><dd className="font-medium tabular-nums">{formatPhpAmount(submittedBooking?.tipAmount ?? safeTipAmount)}</dd></div>
                 <div className="flex justify-between gap-3 border-t border-gray-200 pt-2 font-bold text-gray-950"><dt>Total amount due</dt><dd className="tabular-nums">{formatPhpAmount(submittedBooking?.totalPrice ?? totalAmount)}</dd></div>
               </dl>
@@ -678,8 +732,39 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                   <dl className="space-y-2 text-sm">
                     <div className="flex justify-between gap-3"><dt className="text-gray-600">Task offer</dt><dd className="font-semibold tabular-nums text-gray-900">{formatPhpAmount(offerAmount)}</dd></div>
                     <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare <span className="block text-xs font-normal text-gray-500">{travelDistanceKm.toFixed(2)} km · ₱20 first 2 km + ₱10/km after</span></dt><dd className="font-semibold tabular-nums text-gray-900">{formatPhpAmount(travelFee)}</dd></div>
+                    {travelFeeDiscount > 0 && <div className="flex justify-between gap-3 text-emerald-700"><dt>Travel-fee voucher</dt><dd className="font-semibold tabular-nums">−{formatPhpAmount(travelFeeDiscount)}</dd></div>}
+                    {travelFeeDiscount > 0 && <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare after voucher</dt><dd className="font-semibold tabular-nums text-gray-900">{formatPhpAmount(discountedTravelFee)}</dd></div>}
                     <div className="flex justify-between gap-3"><dt className="text-gray-600">Optional tip</dt><dd className="font-semibold tabular-nums text-gray-900">{formatPhpAmount(safeTipAmount)}</dd></div>
                   </dl>
+                  <div className="mt-3 border-t border-dashed border-gray-200 pt-3">
+                    <label htmlFor="booking-voucher" className="block text-xs font-semibold text-gray-700">Vouchers &amp; rewards</label>
+                    <select
+                      id="booking-voucher"
+                      value={selectedVoucherId}
+                      onChange={(event) => setSelectedVoucherId(event.target.value)}
+                      disabled={rewardsStatus !== "loaded" || availableVouchers.length === 0}
+                      className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 disabled:bg-gray-50 disabled:text-gray-500"
+                    >
+                      <option value="">{rewardsStatus === "loading" ? "Loading your vouchers…" : "No voucher"}</option>
+                      {availableVouchers.map((voucher) => (
+                        <option key={voucher.id} value={voucher.id}>
+                          {voucher.title} · {formatPhpAmount(voucher.amount)} travel fee
+                        </option>
+                      ))}
+                    </select>
+                    {rewardsError && <p className="mt-2 text-xs text-red-700" role="alert">{rewardsError}</p>}
+                    {rewardsStatus === "error" && (
+                      <button
+                        type="button"
+                        onClick={() => setRewardsRetry((retry) => retry + 1)}
+                        className="mt-1 text-xs font-semibold text-primary-700 underline underline-offset-2"
+                      >
+                        Retry loading vouchers
+                      </button>
+                    )}
+                    {selectedVoucher && <p className="mt-1.5 text-xs text-emerald-800">Applied to the travel fee only. Your task offer and tip stay unchanged.</p>}
+                    {!selectedVoucher && rewardsStatus === "loaded" && availableVouchers.length === 0 && <p className="mt-1.5 text-xs text-gray-500">Your next travel-fee reward will appear here.</p>}
+                  </div>
                   <div className="mt-3 flex items-end justify-between border-t border-gray-200 pt-3">
                     <span className="text-sm font-semibold text-gray-700">Total amount due</span>
                     <span className="text-2xl font-bold tabular-nums text-gray-950"><AnimatedPhpAmount amount={totalAmount} /></span>

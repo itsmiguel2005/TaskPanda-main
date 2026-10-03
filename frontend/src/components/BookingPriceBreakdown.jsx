@@ -16,6 +16,8 @@ export default function BookingPriceBreakdown({
 }) {
   const taskOffer = toAmount(booking?.taskOffer ?? booking?.offeredPrice ?? booking?.offer ?? booking?.price);
   const travelFee = toAmount(booking?.travelFee);
+  const travelFeeBeforeDiscount = toAmount(booking?.travelFeeBeforeDiscount, travelFee);
+  const travelFeeDiscount = toAmount(booking?.travelFeeDiscount);
   const tipAmount = toAmount(booking?.tipAmount);
   const totalPrice = booking?.totalPrice == null
     ? taskOffer + travelFee + tipAmount
@@ -40,8 +42,17 @@ export default function BookingPriceBreakdown({
             Travel fare
             <span className="mt-0.5 block text-[10px] font-normal text-slate-500 sm:text-[11px]">{distanceText}</span>
           </dt>
-          <dd className="shrink-0 font-semibold tabular-nums text-slate-900">{formatPhpAmount(travelFee)}</dd>
+          <dd className="shrink-0 text-right font-semibold tabular-nums text-slate-900">
+            {travelFeeDiscount > 0 && <span className="mr-1.5 text-xs font-medium text-slate-400 line-through">{formatPhpAmount(travelFeeBeforeDiscount)}</span>}
+            {formatPhpAmount(travelFee)}
+          </dd>
         </div>
+        {travelFeeDiscount > 0 && (
+          <div className="flex items-start justify-between gap-3 text-emerald-800">
+            <dt>Travel-fee voucher</dt>
+            <dd className="shrink-0 font-semibold tabular-nums">−{formatPhpAmount(travelFeeDiscount)}</dd>
+          </div>
+        )}
         <div className="flex items-start justify-between gap-3">
           <dt className="text-slate-600">Optional tip</dt>
           <dd className="shrink-0 font-semibold tabular-nums text-slate-900">{formatPhpAmount(tipAmount)}</dd>

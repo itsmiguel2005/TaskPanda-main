@@ -26,6 +26,7 @@ const registrationValidation = [
   body("registrationPhase").isString().equals("start"),
   emailField(),
   body("username").isString().trim().isLength({ min: 3, max: 30 }),
+  body("referralCode").optional({ values: "falsy" }).isString().trim().isLength({ max: 32 }).matches(/^[A-Z0-9-]+$/i),
   body("password").isString().matches(passwordPattern),
   body("professions").custom((value, { req }) => req.body.role !== "provider" || (Array.isArray(value) && value.length > 0)),
   body("professions").optional().isArray({ max: 20 }),

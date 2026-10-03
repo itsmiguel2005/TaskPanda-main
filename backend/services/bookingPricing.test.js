@@ -1,6 +1,11 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { calculateDistanceKm, calculateTravelFare, calculateTotalPrice } = require("./bookingPricing");
+const {
+  calculateDistanceKm,
+  calculateTravelFare,
+  calculateTravelFeeDiscount,
+  calculateTotalPrice,
+} = require("./bookingPricing");
 
 test("distance calculation uses longitude-latitude coordinates", () => {
   assert.equal(calculateDistanceKm([121.5, 14.6], [121.5, 14.6]), 0);
@@ -15,6 +20,13 @@ test("travel fare covers the first two kilometers for the base fare", () => {
 test("travel fare prorates each kilometer beyond the base distance", () => {
   assert.equal(calculateTravelFare(2.1), 21);
   assert.equal(calculateTravelFare(3.5), 35);
+});
+
+test("vouchers only discount the travel fare and cannot make it negative", () => {
+  assert.equal(calculateTravelFeeDiscount(35, 50), 35);
+  assert.equal(calculateTravelFeeDiscount(75, 50), 50);
+  assert.equal(calculateTotalPrice(100, 75 - calculateTravelFeeDiscount(75, 50), 20), 145);
+  assert.throws(() => calculateTravelFeeDiscount(20, -1), TypeError);
 });
 
 test("booking total combines task offer, travel fare, and optional tip", () => {

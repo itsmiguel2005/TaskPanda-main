@@ -4,6 +4,7 @@ const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
 const { ensureBookingConversation, appendBookingSystemMessage, formatAmount } = require("../services/bookingMessaging");
 const { calculateTotalPrice } = require("../services/bookingPricing");
+const { awardSettledBookingStamp } = require("../services/rewards");
 const {
   deleteChatPhoto,
   fetchAuthenticatedChatPhoto,
@@ -16,7 +17,7 @@ const MESSAGE_PAGE_SIZE = 50;
 const conversationPopulate = [
   { path: "clientId", select: "fullName username email profileImage" },
   { path: "providerId", select: "fullName username email professions profileImage" },
-  { path: "bookingId", select: "repairDescription status serviceDate timeSlot offeredPrice travelDistanceKm travelFee tipAmount paymentMethod cashPaidConfirmedAt cashReceivedConfirmedAt clientConfirmedCash providerConfirmedCash workCompletedAt settledAt cashReceipt completionNote completionPhotos completionSubmittedAt revisionRequests createdAt counterOffers clientRating clientReview clientReviewPhotos reviewedAt" },
+  { path: "bookingId", select: "repairDescription status serviceDate timeSlot offeredPrice travelDistanceKm travelFee travelFeeBeforeDiscount travelFeeDiscount tipAmount paymentMethod cashPaidConfirmedAt cashReceivedConfirmedAt clientConfirmedCash providerConfirmedCash workCompletedAt settledAt cashReceipt completionNote completionPhotos completionSubmittedAt revisionRequests createdAt counterOffers clientRating clientReview clientReviewPhotos reviewedAt" },
 ];
 
 function serializeConversation(conversation, role) {
@@ -40,6 +41,8 @@ function serializeConversation(conversation, role) {
     offeredPrice: booking?.offeredPrice ?? 0,
     travelDistanceKm: booking?.travelDistanceKm ?? null,
     travelFee: booking?.travelFee ?? 0,
+    travelFeeBeforeDiscount: booking?.travelFeeBeforeDiscount ?? booking?.travelFee ?? 0,
+    travelFeeDiscount: booking?.travelFeeDiscount ?? 0,
     tipAmount: booking?.tipAmount ?? 0,
     totalPrice: calculateTotalPrice(booking?.offeredPrice ?? 0, booking?.travelFee ?? 0, booking?.tipAmount ?? 0),
     paymentMethod: booking?.paymentMethod || "cash",
@@ -498,6 +501,13 @@ async function handleCashConfirmation(req, res) {
         ? "Client confirmed that cash payment was made."
         : "Provider confirmed that cash payment was received.";
       await appendBookingSystemMessage(booking, confirmationMessage, req.user._id, "payment", { confirmation });
+    }
+    if (booking.status === "settled") {
+      try {
+        await awardSettledBookingStamp(booking._id);
+      } catch (stampError) {
+        console.error("Booking loyalty stamp error:", stampError);
+      }
     }
     if (receiptGenerated) {
       await appendBookingSystemMessage(

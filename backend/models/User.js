@@ -15,6 +15,59 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    referralCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+    },
+    referredBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    referralVoucherAwarded: {
+      type: Boolean,
+      default: false,
+    },
+    referralRewardedClientIds: {
+      type: [mongoose.Schema.Types.ObjectId],
+      default: [],
+    },
+    stampProgress: {
+      type: Number,
+      min: 0,
+      max: 5,
+      default: 0,
+    },
+    completedBookings: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    vouchers: {
+      type: [{
+        kind: { type: String, enum: ["referral", "milestone", "promotion"], required: true },
+        title: { type: String, required: true, trim: true, maxlength: 100 },
+        origin: { type: String, enum: ["referral", "stamp-card", "promotion"], required: true },
+        amount: { type: Number, required: true, min: 0 },
+        status: { type: String, enum: ["active", "reserved", "redeemed", "expired"], default: "active" },
+        awardedAt: { type: Date, default: Date.now },
+        expiresAt: { type: Date },
+        redeemedAt: { type: Date },
+        bookingId: { type: mongoose.Schema.Types.ObjectId, ref: "Booking" },
+        reservationId: { type: String, select: false },
+        reservationExpiresAt: { type: Date },
+      }],
+      default: [],
+    },
+    rewardNotifications: {
+      type: [{
+        title: { type: String, required: true, trim: true, maxlength: 100 },
+        message: { type: String, required: true, trim: true, maxlength: 240 },
+        createdAt: { type: Date, default: Date.now },
+        readAt: { type: Date },
+      }],
+      default: [],
+    },
     firstName: {
       type: String,
       default: "",
@@ -175,5 +228,6 @@ const userSchema = new mongoose.Schema(
 
 userSchema.index({ geoLocation: "2dsphere" });
 userSchema.index({ username: 1 });
+userSchema.index({ referralCode: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model("User", userSchema);
