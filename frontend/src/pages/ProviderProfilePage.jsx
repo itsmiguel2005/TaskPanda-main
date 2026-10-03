@@ -1,12 +1,40 @@
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import ProfileSetupPanel from "../components/ProfileSetupPanel.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
-import { useNavigate } from "react-router-dom";
-import { useEffect } from "react";
+
+function ProfileSetting({ label, description, onClick, last = false, tone = "default" }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`dashboard-focus flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-slate-50 focus-visible:relative ${last ? "" : "border-b border-slate-100"}`}
+    >
+      <span className="min-w-0">
+        <span className={`block text-sm font-semibold ${tone === "danger" ? "text-red-700" : "text-slate-800"}`}>{label}</span>
+        {description && <span className="mt-0.5 block text-xs leading-5 text-slate-600">{description}</span>}
+      </span>
+      <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0 text-slate-400">
+        <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+      </svg>
+    </button>
+  );
+}
+
+function StatusPill({ verified }) {
+  return (
+    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${verified ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${verified ? "bg-emerald-600" : "bg-amber-600"}`} />
+      {verified ? "Identity verified" : "Verification needed"}
+    </span>
+  );
+}
 
 export default function ProviderProfilePage() {
   const { isVerified, user, logout, refreshProfile } = useAuth();
   const navigate = useNavigate();
+
   useEffect(() => {
     refreshProfile();
   }, [refreshProfile]);
@@ -15,6 +43,8 @@ export default function ProviderProfilePage() {
   const location = user?.address || [user?.barangay, user?.city, user?.province].filter(Boolean).join(", ");
   const memberSince = user?.createdAt ? new Date(user.createdAt).toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "Not available";
   const initials = fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+  const rating = Number(user?.averageRating ?? 0);
+  const totalReviews = Number(user?.totalReviews ?? 0);
 
   const handleSignOut = () => {
     logout();
@@ -22,79 +52,194 @@ export default function ProviderProfilePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pt-16 pb-12">
+    <div>
       <Header showNav activeTab="Profile" role="provider" />
-
-      <div className="mx-auto max-w-lg px-4 sm:px-6 lg:px-8">
-        {/* User Card */}
-        <div className="rounded-2xl bg-white p-8 shadow-sm text-center">
-          <div className={`avatar-shell mx-auto h-20 w-20 border-4 border-accent-50 text-2xl font-bold ${user?.profileImage ? "bg-transparent" : "bg-accent-100 text-accent-700"}`}>
-            {user?.profileImage ? <img src={user.profileImage} alt={`${fullName} profile`} className="avatar-image" /> : initials || "?"}
-          </div>
-          <h1 className="mt-4 text-2xl font-bold text-gray-900">{fullName}</h1>
-          <p className="text-sm text-gray-500">Service Provider</p>
-          {location && <p className="mt-2 text-sm text-gray-500">{location}</p>}
-          <p className="mt-1 text-xs text-gray-400">Member since {memberSince}</p>
-          <div className="mt-3">
-            {isVerified ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
-                <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
-                Verified
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
-                Unverified
-              </span>
-            )}
-          </div>
-          <ProfileSetupPanel user={user} role="provider" onEdit={() => navigate("/profile/edit")} />
-        </div>
-
-        <div className="mt-6 rounded-2xl bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-bold text-gray-900">Services</h2>
-          {user?.professions?.length ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {user.professions.map((profession) => (
-                <span key={profession} className="rounded-full bg-accent-50 px-3 py-1 text-sm font-medium text-accent-700">{profession}</span>
-              ))}
+      <main className="dashboard-page">
+        <div className="dashboard-shell">
+          <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+            <div>
+              <h1 className="text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">Your professional profile</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Make your services, experience, and trust signals easy for local clients to understand.</p>
             </div>
-          ) : <p className="mt-2 text-sm text-gray-500">Add the services you offer to your profile.</p>}
-          {user?.bio && <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-gray-600">{user.bio}</p>}
-        </div>
-
-        <div className="mt-6 rounded-2xl bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-bold text-gray-900">Contact details</h2>
-          <dl className="mt-3 space-y-2 text-sm">
-            <div className="flex justify-between gap-4"><dt className="text-gray-500">Email</dt><dd className="break-all text-right text-gray-800">{user?.email || "Not provided"}</dd></div>
-            <div className="flex justify-between gap-4"><dt className="text-gray-500">Phone</dt><dd className="text-right text-gray-800">{user?.mobileNumber || "Not provided"}</dd></div>
-          </dl>
-        </div>
-
-        {/* Settings */}
-        <div className="mt-6 rounded-2xl bg-white shadow-sm">
-          <button type="button" onClick={() => navigate("/profile/edit")} className="flex w-full items-center justify-between px-5 py-4 border-b border-gray-100 transition hover:bg-gray-50">
-            <span className="text-sm font-medium text-gray-700">Edit Profile</span>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-gray-400">
-              <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-            </svg>
-          </button>
-          {!isVerified && (
-            <button type="button" onClick={() => navigate("/profile/verify")} className="flex w-full items-center justify-between px-5 py-4 border-b border-gray-100 transition hover:bg-gray-50">
-              <span className="text-sm font-medium text-amber-600">Verify Identity</span>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-amber-400">
-                <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-              </svg>
+            <button type="button" onClick={() => navigate("/profile/edit")} className="dashboard-primary-button dashboard-focus inline-flex items-center justify-center px-4 py-2.5 text-sm">
+              Edit profile
             </button>
-          )}
-          <button type="button" onClick={handleSignOut} className="flex w-full items-center justify-between px-5 py-4 transition hover:bg-red-50">
-            <span className="text-sm font-medium text-gray-700">Sign Out</span>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-gray-400">
-              <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-            </svg>
-          </button>
+          </div>
+
+          <section className="dashboard-panel p-5 sm:p-7">
+            <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+              <div className="flex min-w-0 items-center gap-4 sm:gap-5">
+                <div className={`avatar-shell h-20 w-20 border-4 border-blue-50 text-2xl font-bold sm:h-24 sm:w-24 ${user?.profileImage ? "bg-transparent" : "bg-blue-100 text-blue-800"}`}>
+                  {user?.profileImage ? <img src={user.profileImage} alt={`${fullName} profile`} className="avatar-image" /> : initials || "?"}
+                </div>
+                <div className="min-w-0">
+                  <h2 className="break-words text-xl font-extrabold tracking-tight text-slate-950 sm:text-2xl">{fullName}</h2>
+                  <p className="mt-1 text-sm font-medium text-slate-600">Local service provider{user?.username ? ` · @${user.username}` : ""}</p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <StatusPill verified={isVerified} />
+                    {location && <span className="text-xs font-medium text-slate-600">{location}</span>}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 border-t border-slate-100 pt-4 md:border-l md:border-t-0 md:pl-6 md:pt-0">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-50 text-amber-700" aria-hidden="true">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                    <path d="m10 1.5 2.47 5.01 5.53.8-4 3.9.94 5.5L10 14.11l-4.94 2.6.94-5.5-4-3.9 5.53-.8L10 1.5Z" />
+                  </svg>
+                </div>
+                <div>
+                  {totalReviews > 0 ? (
+                    <>
+                      <p className="text-xl font-extrabold tabular-nums text-slate-950">{Number.isFinite(rating) ? rating.toFixed(1) : "0.0"} <span className="text-sm font-bold text-slate-500">/ 5</span></p>
+                      <p className="text-xs text-slate-600">{totalReviews} {totalReviews === 1 ? "review" : "reviews"}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-bold text-slate-950">New to TaskPanda</p>
+                      <p className="text-xs text-slate-600">Your reviews will appear here.</p>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 border-t border-slate-100 pt-4">
+              <p className="text-xs text-slate-600">Member since <span className="font-semibold text-slate-800">{memberSince}</span></p>
+              <ProfileSetupPanel user={user} role="provider" onEdit={() => navigate("/profile/edit")} />
+            </div>
+          </section>
+
+          <div className="mt-5 grid gap-5 lg:grid-cols-2">
+            <section className="dashboard-panel">
+              <div className="dashboard-panel-heading flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold text-slate-950">Services & experience</h2>
+                  <p className="mt-1 text-sm text-slate-600">What you do and where you work.</p>
+                </div>
+                <button type="button" onClick={() => navigate("/profile/edit")} className="dashboard-focus rounded-lg px-2 py-1 text-sm font-semibold text-blue-700 transition hover:text-blue-900 focus-visible:outline-blue-600">Edit</button>
+              </div>
+              <div className="space-y-5 p-5 sm:p-6">
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Trades & services</h3>
+                  {user?.professions?.length ? (
+                    <ul className="mt-3 flex flex-wrap gap-2">
+                      {user.professions.map((profession) => (
+                        <li key={profession} className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-900">{profession}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-600">Add your services so nearby clients can find the right help.</p>
+                  )}
+                </div>
+                <div className="border-t border-slate-100 pt-4">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Service area</h3>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{location || "Add your service location"}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-600">Your private map pin helps match you with nearby service requests.</p>
+                </div>
+                {user?.bio && (
+                  <div className="border-t border-slate-100 pt-4">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">About your work</h3>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{user.bio}</p>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="dashboard-panel">
+              <div className="dashboard-panel-heading">
+                <h2 className="text-base font-bold text-slate-950">Verification & credentials</h2>
+                <p className="mt-1 text-sm text-slate-600">Build client confidence with verified account details.</p>
+              </div>
+              <div className="p-5 sm:p-6">
+                <div className="flex items-start gap-3">
+                  <span aria-hidden="true" className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${isVerified ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                    {isVerified ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" className="h-4 w-4">
+                        <path d="m4 10 4 4 8-8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" className="h-4 w-4">
+                        <path d="M10 6v4m0 3h.01M10 2.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                      </svg>
+                    )}
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">{isVerified ? "Identity verification complete" : "Verify your identity"}</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      {isVerified
+                        ? "Your identity has been verified. You can include a trade certificate when submitting verification."
+                        : "Submit a valid ID and optionally add a trade certificate such as TESDA NC II."}
+                    </p>
+                  </div>
+                </div>
+                {!isVerified && (
+                  <button type="button" onClick={() => navigate("/profile/verify")} className="dashboard-secondary-button dashboard-focus mt-5 w-full px-4 py-2.5 text-sm sm:w-auto">
+                    Start verification
+                  </button>
+                )}
+              </div>
+            </section>
+
+            <section className="dashboard-panel">
+              <div className="dashboard-panel-heading">
+                <h2 className="text-base font-bold text-slate-950">Pricing & travel</h2>
+                <p className="mt-1 text-sm text-slate-600">Know how the booking total is put together.</p>
+              </div>
+              <div className="p-5 sm:p-6">
+                <div className="rounded-xl bg-slate-50 p-4">
+                  <p className="text-sm font-semibold text-slate-900">Set your service offer per request</p>
+                  <p className="mt-1.5 text-sm leading-6 text-slate-600">Task pricing is agreed for each booking. Travel fare is calculated from the client-to-provider distance: ₱20 for the first 2 km, then ₱10 per additional kilometer.</p>
+                </div>
+                <p className="mt-3 text-xs leading-5 text-slate-600">The travel estimate is shown to clients when they request a booking; it is not a profile-wide rate setting.</p>
+              </div>
+            </section>
+
+            <section className="dashboard-panel">
+              <div className="dashboard-panel-heading">
+                <h2 className="text-base font-bold text-slate-950">Availability</h2>
+                <p className="mt-1 text-sm text-slate-600">Booking times are checked against your schedule.</p>
+              </div>
+              <div className="p-5 sm:p-6">
+                <p className="text-sm leading-6 text-slate-700">Clients can request open time slots. Active and pending bookings automatically block the same date and time from being booked again.</p>
+                <button type="button" onClick={() => navigate("/provider-bookings")} className="dashboard-focus mt-4 inline-flex items-center gap-2 rounded-lg text-sm font-semibold text-blue-700 transition hover:text-blue-900 focus-visible:outline-blue-600">
+                  Review your bookings
+                  <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                    <path fillRule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.69L10.22 5.03a.75.75 0 1 1 1.06-1.06l5.5 5.5a.75.75 0 0 1 0 1.06l-5.5 5.5a.75.75 0 1 1-1.06-1.06l4.22-4.22H3.75A.75.75 0 0 1 3 10Z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+            </section>
+
+            <section className="dashboard-panel">
+              <div className="dashboard-panel-heading">
+                <h2 className="text-base font-bold text-slate-950">Contact details</h2>
+                <p className="mt-1 text-sm text-slate-600">Your account contact information.</p>
+              </div>
+              <dl className="grid gap-4 p-5 sm:grid-cols-2 sm:p-6">
+                <div className="min-w-0">
+                  <dt className="text-xs font-semibold uppercase tracking-wider text-slate-500">Email</dt>
+                  <dd className="mt-1 break-all text-sm font-medium text-slate-900">{user?.email || "Not provided"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-wider text-slate-500">Mobile</dt>
+                  <dd className="mt-1 text-sm font-medium text-slate-900">{user?.mobileNumber || "Not provided"}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section className="dashboard-panel lg:col-span-2">
+              <div className="dashboard-panel-heading">
+                <h2 className="text-base font-bold text-slate-950">Account settings</h2>
+                <p className="mt-1 text-sm text-slate-600">Manage your provider profile and account access.</p>
+              </div>
+              <ProfileSetting label="Edit professional profile" description="Update your services, bio, contact information, or service area." onClick={() => navigate("/profile/edit")} />
+              {!isVerified && <ProfileSetting label="Verify identity" description="Submit your ID and optional trade certificate." onClick={() => navigate("/profile/verify")} />}
+              <ProfileSetting label="Provider bookings" description="View requests and manage your schedule." onClick={() => navigate("/provider-bookings")} />
+              <ProfileSetting label="Messages" description="Continue conversations with clients." onClick={() => navigate("/provider-messages")} />
+              <ProfileSetting label="Sign out" description="Sign out of this device." onClick={handleSignOut} last tone="danger" />
+            </section>
+          </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import PHLocationPicker from "../components/PHLocationPicker.jsx";
+import ProfessionSelector from "../components/ProfessionSelector.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 
 const getFormFromUser = (user = {}) => ({
@@ -17,7 +18,7 @@ const getFormFromUser = (user = {}) => ({
   barangayCode: "",
   geoLocation: user.geoLocation || null,
   bio: user.bio || "",
-  professions: (user.professions || []).join(", "),
+  professions: Array.isArray(user.professions) ? [...user.professions] : [],
 });
 
 const comparableForm = ({ provinceCode, cityCode, barangayCode, ...values }) => values;
@@ -31,7 +32,7 @@ function validateForm(form, role) {
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errors.email = "Invalid email format";
   if (form.phone && !/^09\d{9}$/.test(form.phone)) errors.phone = "Enter an 11-digit number starting with 09";
   if (!form.province || !form.city || !form.barangay) errors.location = "Select your province, city, and barangay";
-  if (role === "provider" && !form.professions.split(",").some((profession) => profession.trim())) errors.professions = "Add at least one service you offer";
+  if (role === "provider" && !form.professions.some((profession) => profession.trim())) errors.professions = "Add at least one service you offer";
   if (form.bio.length > 500) errors.bio = "Maximum 500 characters";
   return errors;
 }
@@ -120,6 +121,20 @@ export default function EditProfilePage() {
       setErrors((prev) => {
         const next = { ...prev };
         delete next[name];
+        return next;
+      });
+    }
+  };
+
+  const handleProfessionsChange = (professions) => {
+    const nextForm = { ...form, professions };
+    setForm(nextForm);
+    setDirty(JSON.stringify(comparableForm(nextForm)) !== initialFormRef.current);
+    setServerError("");
+    if (errors.professions) {
+      setErrors((previous) => {
+        const next = { ...previous };
+        delete next.professions;
         return next;
       });
     }
@@ -222,7 +237,7 @@ export default function EditProfilePage() {
           barangay: form.barangay,
           geoLocation: form.geoLocation || undefined,
           bio: form.bio,
-          professions: form.professions.split(",").map((profession) => profession.trim()).filter(Boolean),
+          professions: form.professions.map((profession) => profession.trim()).filter(Boolean),
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -291,35 +306,42 @@ export default function EditProfilePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pt-16 pb-12">
+    <div>
       <Header showNav activeTab="Profile" role={role === "provider" ? "provider" : undefined} />
 
-      <div className="mx-auto max-w-lg px-4 sm:px-6 lg:px-8">
+      <main className="dashboard-page">
+      <div className="dashboard-shell max-w-3xl">
         <button
           onClick={handleCancel}
-          className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 transition hover:text-gray-700"
+          className="dashboard-focus mb-5 inline-flex items-center gap-2 rounded-lg px-2 py-1 text-sm font-semibold text-slate-600 transition hover:text-slate-950 focus-visible:outline-blue-600"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-            <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+            <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
           </svg>
           Back to Profile
         </button>
 
-        <div className="rounded-2xl bg-white p-8 shadow-sm text-center">
+        <div className="dashboard-panel flex flex-col items-center gap-4 p-5 text-center sm:flex-row sm:text-left">
           <input ref={photoInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" onChange={handleProfilePhotoChange} />
-          <button type="button" onClick={() => photoInputRef.current?.click()} disabled={isUploadingPhoto} aria-label="Choose profile photo" title="Choose profile photo" className={`avatar-shell group relative mx-auto h-20 w-20 border-4 border-primary-50 text-2xl font-bold disabled:cursor-wait ${photoPreview || profileImage ? "bg-transparent text-transparent" : "bg-primary-100 text-primary-700"}`}>
+          <button type="button" onClick={() => photoInputRef.current?.click()} disabled={isUploadingPhoto} aria-label="Choose profile photo" title="Choose profile photo" className={`avatar-shell group relative h-20 w-20 shrink-0 border-4 border-sky-50 text-2xl font-bold disabled:cursor-wait ${photoPreview || profileImage ? "bg-transparent text-transparent" : "bg-sky-100 text-sky-800"}`}>
             {photoPreview || profileImage
               ? <img src={photoPreview || profileImage} alt="Profile" className="avatar-image" />
               : <span>{form.fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?"}</span>}
             <span aria-hidden="true" className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 text-[10px] font-semibold text-white opacity-0 transition-opacity group-hover:bg-black/40 group-hover:opacity-100">{isUploadingPhoto ? "Uploading" : "Edit photo"}</span>
           </button>
-          <p className="mt-2 text-xs text-gray-500">{isUploadingPhoto ? "Uploading photo..." : "Click to choose a profile photo"}</p>
-          {photoError && <p role="alert" className="mt-1 text-xs text-red-600">{photoError}</p>}
-          <h1 className="mt-6 text-2xl font-bold text-gray-900">{user?.fullName && user?.username ? "Edit Profile" : "Set Up Your Profile"}</h1>
-          <p className="text-sm text-gray-500">{role === "provider" ? "Add your service details so clients know what you offer." : "Add your personal and location details."}</p>
+          <div className="min-w-0">
+            <h1 className="text-xl font-extrabold tracking-tight text-slate-950">{user?.fullName && user?.username ? "Edit profile" : "Set up your profile"}</h1>
+            <p className="mt-1 text-sm leading-6 text-slate-600">{role === "provider" ? "Add your service details so local clients know what you offer." : "Keep your personal and location details up to date."}</p>
+            <p className="mt-2 text-xs text-slate-600">{isUploadingPhoto ? "Uploading photo..." : "Choose a profile photo"}</p>
+            {photoError && <p role="alert" className="mt-1 text-xs font-medium text-red-700">{photoError}</p>}
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+        <form onSubmit={handleSubmit} className="dashboard-panel profile-form mt-5 space-y-5 p-5 sm:p-8">
+          <div className="border-b border-slate-100 pb-4">
+            <h2 className="text-base font-bold text-slate-950">Personal information</h2>
+            <p className="mt-1 text-sm text-slate-600">Fields marked with <span className="font-semibold text-red-700">*</span> are required.</p>
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700">
               Full Name <span className="text-red-500">*</span>
@@ -368,17 +390,20 @@ export default function EditProfilePage() {
 
           {role === "provider" && (
             <div>
-              <label className="block text-sm font-medium text-gray-700">Services / professions</label>
-              <input
-                type="text"
-                name="professions"
-                value={form.professions}
-                onChange={handleChange}
-                className="mt-1 w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-                placeholder="Carpentry, plumbing"
-                aria-invalid={Boolean(errors.professions)}
-              />
-              {errors.professions ? <p className="mt-1 text-xs text-red-500">{errors.professions}</p> : <p className="mt-1 text-xs text-gray-400">Separate each service with a comma.</p>}
+              <label htmlFor="professions" className="block text-sm font-medium text-gray-700">Profession / Trade</label>
+              <div className="mt-1.5">
+                <ProfessionSelector
+                  id="professions"
+                  tone="blue"
+                  value={form.professions}
+                  onChange={handleProfessionsChange}
+                  placeholder="Type or select a profession..."
+                  invalid={Boolean(errors.professions)}
+                />
+              </div>
+              {errors.professions
+                ? <p className="mt-1 text-xs font-medium text-red-700">{errors.professions}</p>
+                : <p className="mt-1 text-xs text-slate-600">Choose from the list or type a custom trade. Press Enter to add.</p>}
             </div>
           )}
 
@@ -433,18 +458,18 @@ export default function EditProfilePage() {
 
           {serverError && <p className="text-sm text-red-600" role="alert">{serverError}</p>}
 
-          <div className="flex gap-3">
+          <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
             <button
               type="button"
               onClick={handleCancel}
-              className="flex-1 rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+              className="dashboard-secondary-button dashboard-focus w-full px-5 py-3 text-sm sm:w-auto sm:min-w-32"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSaving || (!dirty && !selectedPhoto)}
-              className="flex-1 rounded-xl bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+              className="dashboard-primary-button dashboard-focus w-full px-5 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-40"
             >
               {isSaving ? "Saving..." : "Save Changes"}
             </button>
@@ -458,6 +483,7 @@ export default function EditProfilePage() {
           <button type="button" onClick={dismissSavedToast} className="text-green-600 hover:text-green-900" aria-label="Dismiss notification">×</button>
         </div>
       )}
+      </main>
     </div>
   );
 }

@@ -92,6 +92,32 @@
     outline-offset: 2px;
   }
 
+  .profile-form input:not([type="checkbox"]):not([type="file"]):not(.auth-inline-field),
+  .profile-form select,
+  .profile-form textarea {
+    min-height: 2.875rem;
+    border-color: #cbd5e1;
+    border-radius: 0.75rem;
+    background-color: #fff;
+    transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+  }
+
+  .profile-form input:not([type="checkbox"]):not([type="file"]):not(.auth-inline-field):focus,
+  .profile-form select:focus,
+  .profile-form textarea:focus {
+    border-color: var(--taskpanda-blue);
+    outline: 2px solid rgba(37, 99, 235, 0.18);
+    outline-offset: 1px;
+  }
+
+  .profile-form input[readonly]:not(.auth-inline-field) {
+    background-color: #f8fafc;
+  }
+
+  .profile-form textarea {
+    min-height: 7rem;
+  }
+
   .avatar-shell {
     display: flex;
     align-items: center;
