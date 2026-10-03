@@ -24,7 +24,7 @@ export default function BookingPriceBreakdown({
     : toAmount(booking.totalPrice, taskOffer + travelFee + tipAmount);
   const distanceText = booking?.travelDistanceKm == null
     ? "Distance not recorded"
-    : `${Number(booking.travelDistanceKm).toFixed(2)} km · ₱20 first 2 km + ₱10/km after`;
+    : `${Number(booking.travelDistanceKm).toFixed(2)} km · distance-based rate`;
 
   return (
     <section aria-label="Price breakdown" className={`rounded-xl border border-sky-100 bg-slate-50/80 p-4 ${className}`.trim()}>

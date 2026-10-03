@@ -296,7 +296,12 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
           throw new Error("The server returned an invalid travel quote. Refresh the page and retry.");
         }
         if (active) {
-          setTravelQuote({ travelDistanceKm: data.travelDistanceKm, travelFee: data.travelFee });
+          setTravelQuote({
+            travelDistanceKm: data.travelDistanceKm,
+            travelFee: data.travelFee,
+            travelBaseFee: data.travelBaseFee,
+            travelFeePerKm: data.travelFeePerKm,
+          });
           setTravelQuoteStatus("loaded");
           setBookedSlots(Array.isArray(data.bookedSlots) ? data.bookedSlots : []);
           setAvailabilityStatus("loaded");
@@ -338,6 +343,9 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const trade = provider.professions?.join(" · ") || provider.trade || "Service provider";
   const travelDistanceKm = travelQuote?.travelDistanceKm ?? null;
   const travelFee = travelQuote?.travelFee ?? 0;
+  const travelFeeDescription = travelQuote
+    ? `${formatPhpAmount(travelQuote.travelBaseFee)} base + ${formatPhpAmount(travelQuote.travelFeePerKm)}/km`
+    : "distance-based rate";
   const availableVouchers = (rewards.vouchers || []).filter((voucher) =>
     voucher.status === "active" && (!voucher.expiresAt || new Date(voucher.expiresAt) > new Date())
   );
@@ -753,7 +761,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                   <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Price breakdown</p>
                   <dl className="space-y-2 text-sm">
                     <div className="flex justify-between gap-3"><dt className="text-gray-600">Task offer</dt><dd className="font-semibold tabular-nums text-gray-900">{formatPhpAmount(offerAmount)}</dd></div>
-                    <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare <span className="block text-xs font-normal text-gray-500">{travelDistanceKm.toFixed(2)} km · ₱20 first 2 km + ₱10/km after</span></dt><dd className="font-semibold tabular-nums text-gray-900">{formatPhpAmount(travelFee)}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare <span className="block text-xs font-normal text-gray-500">{travelDistanceKm.toFixed(2)} km · {travelFeeDescription}</span></dt><dd className="font-semibold tabular-nums text-gray-900">{formatPhpAmount(travelFee)}</dd></div>
                     {travelFeeDiscount > 0 && <div className="flex justify-between gap-3 text-emerald-700"><dt>Travel-fee voucher</dt><dd className="font-semibold tabular-nums">−{formatPhpAmount(travelFeeDiscount)}</dd></div>}
                     {travelFeeDiscount > 0 && <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare after voucher</dt><dd className="font-semibold tabular-nums text-gray-900">{formatPhpAmount(discountedTravelFee)}</dd></div>}
                     <div className="flex justify-between gap-3"><dt className="text-gray-600">Optional tip</dt><dd className="font-semibold tabular-nums text-gray-900">{formatPhpAmount(safeTipAmount)}</dd></div>

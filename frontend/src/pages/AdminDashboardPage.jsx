@@ -4,6 +4,9 @@ import Header from "../components/Header.jsx";
 
 const AdminDashboardOverview = lazy(() => import("../components/AdminDashboardOverview.jsx"));
 const AdminUsersManagement = lazy(() => import("../components/AdminUsersManagement.jsx"));
+const AdminTransactionsPanel = lazy(() => import("../components/AdminTransactionsPanel.jsx"));
+const AdminRewardsAnalytics = lazy(() => import("../components/AdminRewardsAnalytics.jsx"));
+const AdminSystemSettings = lazy(() => import("../components/AdminSystemSettings.jsx"));
 
 const verifications = [
   { id: 1, user: "Johhny Cruz", email: "johny@taskpanda.com", type: "ID Front + Back", idNumber: "PH-1234-5678-9012", certificate: "TEC-2024-0042", idFrontFile: "id-front-johny.jpg", idBackFile: "id-back-johny.jpg", submitted: "10 min ago", status: "Pending" },
@@ -72,6 +75,24 @@ export default function AdminDashboardPage() {
         {section === "users" && (
           <Suspense fallback={<div className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-600">Loading user management…</div>}>
             <AdminUsersManagement />
+          </Suspense>
+        )}
+
+        {section === "transactions" && (
+          <Suspense fallback={<div className="mt-6 rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-600">Loading financial ledger…</div>}>
+            <AdminTransactionsPanel />
+          </Suspense>
+        )}
+
+        {section === "rewards" && (
+          <Suspense fallback={<div className="mt-6 rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-600">Loading voucher analytics…</div>}>
+            <AdminRewardsAnalytics />
+          </Suspense>
+        )}
+
+        {section === "settings" && (
+          <Suspense fallback={<div className="mt-6 rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-600">Loading global settings…</div>}>
+            <AdminSystemSettings />
           </Suspense>
         )}
 
@@ -187,7 +208,7 @@ export default function AdminDashboardPage() {
         )}
 
         {/* System Info */}
-        <div className={section === "dashboard" || section === "users" ? "hidden" : "mt-6"}>
+        <div className={["dashboard", "users", "transactions", "rewards", "settings"].includes(section) ? "hidden" : "mt-6"}>
           <div className="rounded-2xl bg-white shadow-sm">
             <div className="border-b border-gray-100 px-5 py-4">
               <h2 className="text-base font-semibold text-gray-900">System Info</h2>

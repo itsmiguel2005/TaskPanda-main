@@ -11,6 +11,7 @@ const {
   calculateTotalPrice,
 } = require("../services/bookingPricing");
 const { awardSettledBookingStamp } = require("../services/rewards");
+const { getGlobalSettings } = require("../services/systemSettings");
 const {
   canArriveForSameDayBooking,
   getBookingRequestExpiration,
@@ -300,6 +301,8 @@ async function handleProviderAvailability(req, res) {
       })),
       travelDistanceKm: travelQuote.travelDistanceKm,
       travelFee: travelQuote.travelFee,
+      travelBaseFee: travelQuote.travelBaseFee,
+      travelFeePerKm: travelQuote.travelFeePerKm,
     });
   } catch (error) {
     console.error("Provider availability error:", error);
@@ -307,7 +310,7 @@ async function handleProviderAvailability(req, res) {
   }
 }
 
-async function getBookingTravelQuote(client, providerId) {
+async function getBookingTravelQuote(client, providerId, settings) {
   const provider = await User.findOne({
     _id: providerId,
     role: "provider",
@@ -323,11 +326,38 @@ async function getBookingTravelQuote(client, providerId) {
   }
 
   const travelDistanceKm = Math.round(calculatedDistanceKm * 100) / 100;
-  return { provider, travelDistanceKm, travelFee: calculateTravelFare(travelDistanceKm) };
+  const travelSettings = settings || await getGlobalSettings();
+  if (travelDistanceKm > travelSettings.maxTravelDistanceKm) {
+    return {
+      errorStatus: 400,
+      message: `This provider is beyond the current ${travelSettings.maxTravelDistanceKm} km travel limit.`,
+    };
+  }
+  return {
+    provider,
+    travelDistanceKm,
+    travelFee: calculateTravelFare(travelDistanceKm, {
+      baseFee: travelSettings.travelBaseFee,
+      feePerKm: travelSettings.travelFeePerKm,
+    }),
+    travelBaseFee: travelSettings.travelBaseFee,
+    travelFeePerKm: travelSettings.travelFeePerKm,
+  };
 }
 
 async function handleCreateBooking(req, res) {
   if (req.user.role !== "client") return res.status(403).json({ message: "Only clients can create bookings." });
+
+  let settings;
+  try {
+    settings = req.systemSettings || await getGlobalSettings();
+  } catch (error) {
+    console.error("Booking settings lookup error:", error);
+    return res.status(503).json({ message: "Booking settings are temporarily unavailable. Please try again." });
+  }
+  if (settings.maintenanceMode) {
+    return res.status(503).json({ message: "New bookings are temporarily paused while we perform maintenance. Please try again shortly." });
+  }
 
   const providerId = String(req.body.providerId || req.body.provider || "").trim();
   const repairDescription = String(req.body.repairDescription || req.body.description || req.body.task || req.body.serviceDetails || "").trim();
@@ -356,7 +386,7 @@ async function handleCreateBooking(req, res) {
 
   try {
     await processExpiredBookingRequests();
-    const travelQuote = await getBookingTravelQuote(req.user, providerId);
+    const travelQuote = await getBookingTravelQuote(req.user, providerId, settings);
     if (travelQuote.errorStatus) return res.status(travelQuote.errorStatus).json({ message: travelQuote.message });
     const { provider, travelDistanceKm } = travelQuote;
     const travelFeeBeforeDiscount = travelQuote.travelFee;

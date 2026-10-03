@@ -5,6 +5,7 @@ const upload = require("../storage/upload");
 const { sanitizeMongoInput } = require("../middleware/sanitizeMongoInput");
 const { limitBookingCreation } = require("../middleware/rateLimits");
 const { validateRequest } = require("../middleware/validateRequest");
+const { getGlobalSettings } = require("../services/systemSettings");
 const {
   handleListBookings,
   handleProviderAvailability,
@@ -22,6 +23,20 @@ const {
 } = require("../controllers/bookingController");
 
 const router = express.Router();
+
+async function checkBookingMaintenance(req, res, next) {
+  try {
+    const settings = await getGlobalSettings();
+    if (settings.maintenanceMode) {
+      return res.status(503).json({ message: "New bookings are temporarily paused while we perform maintenance. Please try again shortly." });
+    }
+    req.systemSettings = settings;
+    return next();
+  } catch (error) {
+    console.error("Booking settings lookup error:", error);
+    return res.status(503).json({ message: "Booking settings are temporarily unavailable. Please try again." });
+  }
+}
 
 const validateBookingCreation = [
   body("providerId").optional().isMongoId(),
@@ -102,7 +117,7 @@ router.get("/", handleListBookings);
 router.post("/", (req, _res, next) => {
   req.bookingRequestReceivedAt = new Date();
   next();
-}, limitBookingCreation, upload.array("photos", 5), sanitizeMongoInput, validateBookingCreation, validateRequest, handleCreateBooking);
+}, limitBookingCreation, checkBookingMaintenance, upload.array("photos", 5), sanitizeMongoInput, validateBookingCreation, validateRequest, handleCreateBooking);
 router.patch("/:id/status", validateBookingStatus, validateRequest, handleUpdateBookingStatus);
 router.post("/:id/completion", upload.array("photos", 5), sanitizeMongoInput, body("completionNote").optional().isString().isLength({ max: 2000 }), validateRequest, handleSubmitCompletion);
 router.post("/:id/revisions", upload.array("photos", 5), sanitizeMongoInput, body("note").isString().isLength({ min: 1, max: 1000 }), validateRequest, handleCreateRevisionRequest);

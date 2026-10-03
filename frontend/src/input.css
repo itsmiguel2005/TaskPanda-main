@@ -27,6 +27,42 @@
     padding: 1.5rem 1rem;
   }
 
+  .admin-ledger-scroll {
+    overflow-x: scroll;
+    scrollbar-color: #64748b #e2e8f0;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    -ms-overflow-style: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .admin-ledger-scroll:focus-visible {
+    outline: 2px solid #1d4ed8;
+    outline-offset: -2px;
+  }
+
+  .admin-ledger-scroll::-webkit-scrollbar {
+    display: block;
+    width: 8px;
+    height: 8px;
+  }
+
+  .admin-ledger-scroll::-webkit-scrollbar-track {
+    background: #e2e8f0;
+    border-radius: 9999px;
+  }
+
+  .admin-ledger-scroll::-webkit-scrollbar-thumb {
+    background: #64748b;
+    border: 2px solid #e2e8f0;
+    border-radius: 9999px;
+  }
+
+  .admin-ledger-scroll::-webkit-scrollbar-thumb:hover {
+    background: #334155;
+  }
+
   .dashboard-panel {
     overflow: hidden;
     border: 1px solid var(--taskpanda-line);

@@ -27,13 +27,18 @@ function roundCurrency(amount) {
   return Math.round((amount + Number.EPSILON) * 100) / 100;
 }
 
-function calculateTravelFare(distanceKm) {
+function calculateTravelFare(distanceKm, { baseFee = 20, feePerKm = 10 } = {}) {
   const distance = Number(distanceKm);
   if (!Number.isFinite(distance) || distance < 0) {
     throw new TypeError("Travel distance must be a non-negative number.");
   }
+  const base = Number(baseFee);
+  const perKilometer = Number(feePerKm);
+  if (!Number.isFinite(base) || base < 0 || !Number.isFinite(perKilometer) || perKilometer < 0) {
+    throw new TypeError("Travel fee rates must be non-negative numbers.");
+  }
 
-  return roundCurrency(20 + Math.max(0, distance - 2) * 10);
+  return roundCurrency(base + distance * perKilometer);
 }
 
 function calculateTravelFeeDiscount(travelFare, voucherAmount) {

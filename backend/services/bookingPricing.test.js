@@ -12,20 +12,23 @@ test("distance calculation uses longitude-latitude coordinates", () => {
   assert.ok(Math.abs(calculateDistanceKm([0, 0], [1, 0]) - 111.195) < 0.01);
 });
 
-test("travel fare covers the first two kilometers for the base fare", () => {
+test("travel fare applies the configured base plus the per-kilometer rate", () => {
   assert.equal(calculateTravelFare(0), 20);
-  assert.equal(calculateTravelFare(2), 20);
+  assert.equal(calculateTravelFare(2), 40);
 });
 
-test("travel fare prorates each kilometer beyond the base distance", () => {
-  assert.equal(calculateTravelFare(2.1), 21);
-  assert.equal(calculateTravelFare(3.5), 35);
+test("travel fare accepts adjusted global rates", () => {
+  assert.equal(calculateTravelFare(2.1), 41);
+  assert.equal(calculateTravelFare(3.5), 55);
+  assert.equal(calculateTravelFare(3.5, { baseFee: 25, feePerKm: 8 }), 53);
+  assert.throws(() => calculateTravelFare(3.5, { baseFee: -1, feePerKm: 8 }), TypeError);
 });
 
 test("vouchers only discount the travel fare and cannot make it negative", () => {
   assert.equal(calculateTravelFeeDiscount(35, 50), 35);
   assert.equal(calculateTravelFeeDiscount(75, 50), 50);
-  assert.equal(calculateTotalPrice(100, 75 - calculateTravelFeeDiscount(75, 50), 20), 145);
+  const voucherDeduction = calculateTravelFeeDiscount(75, 50);
+  assert.equal(calculateTotalPrice(100, 75 - voucherDeduction, 20), 145);
   assert.throws(() => calculateTravelFeeDiscount(20, -1), TypeError);
 });
 
