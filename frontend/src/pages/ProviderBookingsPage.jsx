@@ -3,7 +3,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import BookingStatusBadge from "../components/BookingStatusBadge.jsx";
 import BookingPriceBreakdown from "../components/BookingPriceBreakdown.jsx";
+import MessagePhoto from "../components/MessagePhoto.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 import BookingProgress from "../components/BookingProgress.jsx";
 import StatusChangeConfirmation from "../components/StatusChangeConfirmation.jsx";
 import CompletionProofModal from "../components/CompletionProofModal.jsx";
@@ -91,6 +93,8 @@ export default function ProviderBookingsPage() {
   const [searchParams] = useSearchParams();
   const requestedBookingId = searchParams.get("bookingId");
   const [activeTab, setActiveTab] = useState("All");
+  const { token } = useAuth();
+  const requestHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
   const [searchQuery, setSearchQuery] = useState("");
   const { bookings, isLoading, error, updateBookingStatus, submitCompletionProof, requestCancellation, sendProviderUpdate, confirmCashSettlement, refreshBookings } = useBookings();
   const [sortBy, setSortBy] = useState("createdAt");
@@ -376,7 +380,7 @@ export default function ProviderBookingsPage() {
                           </p>
                           {req.photoUrls?.length > 0 && (
                             <div className="mt-3 flex gap-2">
-                              {req.photoUrls.map((url) => <img key={url} src={url} alt="Repair item" className="h-16 w-16 rounded-lg object-cover" />)}
+                              {req.photoUrls.map((url) => <MessagePhoto key={url} photo={url} requestHeaders={requestHeaders} alt="Repair item" imageClassName="h-16 w-16 rounded-lg object-cover" />)}
                             </div>
                           )}
                         </div>
@@ -496,14 +500,14 @@ export default function ProviderBookingsPage() {
                               {booking.clientReview && <p className="mt-1">{booking.clientReview}</p>}
                               {booking.clientReviewPhotos?.length > 0 && (
                                 <div className="mt-2 flex flex-wrap gap-2">
-                                  {booking.clientReviewPhotos.map((photo) => <a key={photo} href={photo} target="_blank" rel="noreferrer"><img src={photo} alt="Client review attachment" className="h-14 w-14 rounded-md object-cover" /></a>)}
+                                  {booking.clientReviewPhotos.map((photo) => <MessagePhoto key={photo} photo={photo} requestHeaders={requestHeaders} alt="Client review attachment" imageClassName="h-14 w-14 rounded-md object-cover" />)}
                                 </div>
                               )}
                             </div>
                           )}
                           {booking.photoUrls?.length > 0 && (
                             <div className="mt-3 flex gap-2">
-                              {booking.photoUrls.map((url) => <img key={url} src={url} alt="Repair item" className="h-16 w-16 rounded-lg object-cover" />)}
+                              {booking.photoUrls.map((url) => <MessagePhoto key={url} photo={url} requestHeaders={requestHeaders} alt="Repair item" imageClassName="h-16 w-16 rounded-lg object-cover" />)}
                             </div>
                           )}
                         </div>

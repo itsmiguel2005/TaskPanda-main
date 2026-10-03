@@ -3,7 +3,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import BookingStatusBadge from "../components/BookingStatusBadge.jsx";
 import BookingPriceBreakdown from "../components/BookingPriceBreakdown.jsx";
+import MessagePhoto from "../components/MessagePhoto.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 import BookingProgress from "../components/BookingProgress.jsx";
 import BookingHistory from "../components/BookingHistory.jsx";
 import AddressActions from "../components/AddressActions.jsx";
@@ -41,6 +43,8 @@ export default function BookingsPage() {
   const [searchParams] = useSearchParams();
   const requestedBookingId = searchParams.get("bookingId");
   const [activeTab, setActiveTab] = useState("All");
+  const { token } = useAuth();
+  const requestHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
   const { bookings, isLoading, error, requestCancellation, requestRevision, submitReview, respondToProviderUpdate, refreshBookings, confirmCashSettlement, createBooking } = useBookings();
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("createdAt");
@@ -289,14 +293,6 @@ export default function BookingsPage() {
                           {isCompletedLikeStatus(booking.status) && booking.clientRating == null && (
                             <p className="mt-2 rounded-md bg-blue-50 px-3 py-2 text-xs font-medium text-blue-800">Task complete. Share a review of your service.</p>
                           )}
-                          {booking.clientRating != null && (
-                            <p className="mt-2 text-xs font-medium text-amber-700">Your review: <span className="inline-flex items-center gap-0.5">{[1, 2, 3, 4, 5].map((star) => (<span key={star} style={{ color: star <= Number(booking.clientRating || 0) ? "#fbbf24" : "#d1d5db", lineHeight: 1 }}>{"★"}</span>))}</span>{booking.clientReview ? ` · ${booking.clientReview}` : ""}</p>
-                          )}
-                          {booking.clientReviewPhotos?.length > 0 && (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {booking.clientReviewPhotos.map((photo) => <a key={photo} href={photo} target="_blank" rel="noreferrer"><img src={photo} alt="Photo attached to your review" className="h-16 w-16 rounded-md object-cover" /></a>)}
-                            </div>
-                          )}
                           {booking.providerUpdates?.map((update) => (
                             <div key={update.id} className="mt-3 rounded-md border border-cyan-100 bg-cyan-50 p-3 text-xs text-cyan-950">
                               <p className="font-semibold">Provider update{update.type === "reschedule" ? " · Time change requested" : ""}</p>
@@ -314,12 +310,30 @@ export default function BookingsPage() {
                               )}
                             </div>
                           ))}
+                    <BookingPriceBreakdown booking={booking} className="mt-4" />
+                    {booking.clientRating != null && (
+                      <section aria-label="Your review" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                        <p className="font-semibold">
+                          Your review:{" "}
+                          <span aria-label={`${booking.clientRating} out of 5 stars`} className="inline-flex items-center gap-0.5">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <span key={star} style={{ color: star <= Number(booking.clientRating || 0) ? "#fbbf24" : "#d1d5db", lineHeight: 1 }}>{"★"}</span>
+                            ))}
+                          </span>
+                        </p>
+                        {booking.clientReview && <p className="mt-1 leading-relaxed">{booking.clientReview}</p>}
+                        {booking.clientReviewPhotos?.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {booking.clientReviewPhotos.map((photo) => <MessagePhoto key={photo} photo={photo} requestHeaders={requestHeaders} alt="Photo attached to your review" imageClassName="h-16 w-16 rounded-md object-cover" />)}
+                          </div>
+                        )}
+                      </section>
+                    )}
                     {booking.photoUrls?.length > 0 && (
-                      <div className="mt-3 flex gap-2">
-                        {booking.photoUrls.map((url) => <img key={url} src={url} alt="Repair item" className="h-16 w-16 rounded-lg object-cover" />)}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {booking.photoUrls.map((url) => <MessagePhoto key={url} photo={url} requestHeaders={requestHeaders} alt="Repair item" imageClassName="h-16 w-16 rounded-lg object-cover" />)}
                       </div>
                     )}
-                    <BookingPriceBreakdown booking={booking} className="mt-4" />
                     </div>
                     <div className="space-y-3 border-t border-sky-100 pt-4 text-sm text-slate-700 md:border-l md:border-t-0 md:pl-4 md:pt-0">
                     <div className="flex items-start gap-2">
