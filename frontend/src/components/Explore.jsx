@@ -612,8 +612,9 @@ export default function Explore() {
                 return (
                   <div
                     key={provider._id}
-                    className="overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)]"
+                    className="relative flex h-full flex-col justify-between overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)]"
                   >
+                    <ProviderStreak streak={provider.onTimeStreak} className="absolute right-3 top-3 z-10 max-w-[calc(100%-1.5rem)]" />
                     <div className="h-40 overflow-hidden bg-sky-50">
                       {provider.profileImage ? (
                         <img
@@ -630,7 +631,7 @@ export default function Explore() {
                         </div>
                       )}
                     </div>
-                    <div className="px-4 py-4 sm:px-5">
+                    <div className="flex flex-1 flex-col px-4 py-4 sm:px-5">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
                           <h3 className="truncate text-sm font-bold text-slate-900">
@@ -672,8 +673,6 @@ export default function Explore() {
                         <span className="font-semibold text-slate-900">{hasRatings ? rating.toFixed(1) : "New"}</span>
                         <span className="text-xs text-slate-500">({hasRatings ? reviews : 0} reviews)</span>
                       </div>
-                      <ProviderStreak streak={provider.onTimeStreak} className="mt-2" />
-
                       <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-slate-600">
                         {provider.bio || "This provider has not added an introduction yet."}
                       </p>
@@ -691,7 +690,7 @@ export default function Explore() {
                         </div>
                       </div>
 
-                      <div className="mt-3 grid grid-cols-2 gap-2">
+                      <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
                         <button
                           type="button"
                           onClick={() => setViewingProvider(provider)}

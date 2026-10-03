@@ -635,8 +635,9 @@ export default function Dashboard() {
                   return (
                     <div
                       key={`${pro.name}-${pro.category}`}
-                      className={`group relative flex min-h-[190px] min-w-[260px] flex-col overflow-hidden rounded-xl border border-sky-100 bg-gradient-to-br ${pro.accent} p-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)]`}
+                      className={`group relative flex min-h-[190px] min-w-[260px] flex-col justify-between overflow-hidden rounded-xl border border-sky-100 bg-gradient-to-br ${pro.accent} p-4 pt-12 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)]`}
                     >
+                      <ProviderStreak streak={pro.onTimeStreak} className="absolute right-3 top-3 z-10" />
                       <div className="flex items-center gap-3">
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white shadow-sm overflow-hidden">
                           {pro.profileImage ? (
@@ -672,15 +673,13 @@ export default function Dashboard() {
                         </div>
                         <span className="text-[11px] font-medium text-gray-500">{hasRatings ? `${pro.reviews} reviews` : "No ratings yet"}</span>
                       </div>
-                      <ProviderStreak streak={pro.onTimeStreak} className="mt-2" />
-
                       <div className="mt-4 flex items-center justify-start gap-2">
                         <span className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-gray-700">
                           {pro.category}
                         </span>
                       </div>
 
-                      <div className="mt-4 flex gap-2">
+                      <div className="mt-auto flex gap-2 pt-4">
                         <button
                           type="button"
                           onClick={() => navigate("/explore")}
@@ -776,7 +775,8 @@ export default function Dashboard() {
                   const hasRatings = rating > 0 && reviews > 0;
 
                   return (
-                    <div key={normalizedId} className="group relative flex min-h-[190px] min-w-[260px] flex-col rounded-xl border border-sky-100 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)]">
+                    <div key={normalizedId} className="group relative flex min-h-[190px] min-w-[260px] flex-col justify-between rounded-xl border border-sky-100 bg-white p-4 pt-12 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)]">
+                      <ProviderStreak streak={provider.onTimeStreak} className="absolute right-3 top-3 z-10" />
                       <div className="flex items-center gap-3">
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white shadow-sm overflow-hidden">
                           {provider.profileImage ? (
@@ -810,13 +810,11 @@ export default function Dashboard() {
                         </div>
                         <span className="text-[11px] font-medium text-gray-500">{hasRatings ? `${reviews} reviews` : "No ratings yet"}</span>
                       </div>
-                      <ProviderStreak streak={provider.onTimeStreak} className="mt-2" />
-
                       <div className="mt-4 flex items-center justify-start gap-2">
                         <span className="rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-blue-950">{category}</span>
                       </div>
 
-                      <div className="mt-4 flex gap-2">
+                      <div className="mt-auto flex gap-2 pt-4">
                         <button type="button" onClick={() => navigate("/explore")} className="dashboard-primary-button dashboard-focus flex-1 px-3 py-2 text-xs">Book now</button>
                         <button type="button" onClick={() => navigate("/profile")} className="dashboard-secondary-button dashboard-focus flex-1 px-3 py-2 text-xs">View profile</button>
                       </div>
