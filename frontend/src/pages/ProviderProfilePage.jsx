@@ -91,6 +91,12 @@ export default function ProviderProfilePage() {
                   </div>
                 </div>
                 {location && <p className="mt-3 text-xs leading-5 text-slate-600">{location}</p>}
+                {!isVerified && verificationStatus === "rejected" && user?.verificationRejectionReason && (
+                  <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50/80 px-3.5 py-3 text-sm leading-6 text-rose-900">
+                    <span className="font-bold">Review feedback: </span>
+                    {user.verificationRejectionReason}
+                  </p>
+                )}
                 <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
                   <p className="text-xs text-slate-600">Member since</p>
                   <p className="text-right text-xs font-semibold text-slate-900">{memberSince}</p>
@@ -104,7 +110,7 @@ export default function ProviderProfilePage() {
                   </span>
                   {totalReviews > 0 && <span className="text-xs text-slate-600">{totalReviews} {totalReviews === 1 ? "review" : "reviews"}</span>}
                 </div>
-                <ProfileSetupPanel user={user} role="provider" onEdit={() => navigate("/profile/edit")} />
+                <ProfileSetupPanel user={user} role="provider" verified={isVerified} onEdit={() => navigate("/profile/edit")} />
               </section>
 
               <section className="dashboard-panel">

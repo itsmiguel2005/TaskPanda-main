@@ -10,7 +10,7 @@ const {
   calculateTravelFeeDiscount,
   calculateTotalPrice,
 } = require("../services/bookingPricing");
-const { awardSettledBookingStamp } = require("../services/rewards");
+const { awardSettledBookingStamp, restoreVoucherForBooking } = require("../services/rewards");
 const { getGlobalSettings } = require("../services/systemSettings");
 const {
   canArriveForSameDayBooking,
@@ -976,6 +976,12 @@ async function handleCancellation(req, res) {
     const isParticipant = String(booking[`${role}Id`]) === String(req.user._id);
     if (!isParticipant) return res.status(403).json({ message: "You can only manage cancellations for your bookings." });
 
+    if (normalizeBookingStatus(booking.status) === "canceled") {
+      await restoreVoucherForBooking(booking);
+      await booking.populate(populatePaths);
+      return res.json({ booking: serializeBooking(booking) });
+    }
+
     if (action === "request") {
       if (!["pending", "approved"].includes(normalizeBookingStatus(booking.status))) {
         return res.status(400).json({ message: "Cannot cancel a booking once the provider is on the way or work has started." });
@@ -1022,6 +1028,9 @@ async function handleCancellation(req, res) {
     }
 
     await booking.save();
+    if (normalizeBookingStatus(booking.status) === "canceled") {
+      await restoreVoucherForBooking(booking);
+    }
     const actorLabel = role === "client" ? "Client" : "Provider";
     const cancellationMessage = booking.status === "cancel_requested"
       ? `${actorLabel} requested to cancel the booking: ${reason}`

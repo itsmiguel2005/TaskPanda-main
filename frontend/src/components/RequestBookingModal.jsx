@@ -19,6 +19,26 @@ function roundCurrency(amount) {
   return Math.round((amount + Number.EPSILON) * 100) / 100;
 }
 
+function ProviderAvatar({ name, profileImage }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+
+  return (
+    <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-800 text-sm font-bold text-white">
+      {profileImage && !imageFailed ? (
+        <img
+          src={profileImage}
+          alt={`${name} profile`}
+          className="h-full w-full object-cover"
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        initials
+      )}
+    </div>
+  );
+}
+
 function isPastTimeSlot(dateValue, timeValue, now) {
   if (!dateValue || !timeValue) return false;
 
@@ -472,9 +492,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
 
         {/* Provider Summary Card */}
         <div className="mx-6 mb-5 flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-800 text-sm font-bold text-white">
-            {name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}
-          </div>
+          <ProviderAvatar key={provider._id || name} name={name} profileImage={provider.profileImage} />
           <div>
             <p className="text-sm font-semibold text-gray-900">{name}</p>
             <p className="text-xs text-gray-500">{trade}</p>

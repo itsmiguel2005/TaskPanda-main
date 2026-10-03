@@ -244,7 +244,7 @@ export default function ProfilePage() {
                     <dd className="break-all text-right font-medium text-slate-900">{user?.username ? `@${user.username}` : "Not set"}</dd>
                   </div>
                 </dl>
-                <ProfileSetupPanel user={user} role="client" onEdit={() => navigate("/profile/edit")} />
+                <ProfileSetupPanel user={user} role="client" verified={isVerified} onEdit={() => navigate("/profile/edit")} />
               </section>
 
               <section className="dashboard-panel">

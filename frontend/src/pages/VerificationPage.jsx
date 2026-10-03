@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 
 const MAX_ID_IMAGE_SIZE = 2 * 1024 * 1024;
 
-function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove }) {
+function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove, disabled }) {
   const inputRef = useRef(null);
   return (
     <div>
@@ -16,6 +16,7 @@ function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove })
         type="button"
         aria-label={`${label}: ${file ? "replace image" : "choose image"}`}
         onClick={() => inputRef.current?.click()}
+        disabled={disabled}
         className="dashboard-focus mt-2 flex w-full items-center gap-4 rounded-2xl border border-dashed border-sky-300 bg-sky-50/55 p-4 text-left transition hover:border-sky-500 hover:bg-sky-50"
       >
         {preview ? (
@@ -39,12 +40,13 @@ function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove })
         name={name}
         accept={accept}
         className="hidden"
+        disabled={disabled}
         onChange={onSelect}
       />
       {file && (
         <div className="mt-2 flex items-center justify-between">
           <p className="text-xs text-gray-500 truncate max-w-[200px]">{file.name}</p>
-          <button type="button" onClick={onRemove} className="dashboard-focus rounded text-xs font-semibold text-rose-700 underline underline-offset-2 hover:text-rose-900">Remove</button>
+          <button type="button" onClick={onRemove} disabled={disabled} className="dashboard-focus rounded text-xs font-semibold text-rose-700 underline underline-offset-2 hover:text-rose-900 disabled:cursor-not-allowed disabled:opacity-60">Remove</button>
         </div>
       )}
     </div>
@@ -141,6 +143,7 @@ export default function VerificationPage() {
         <div className="dashboard-shell max-w-lg">
           <button
             onClick={() => navigate(profilePath)}
+            disabled={uploading}
             className="dashboard-focus mb-5 inline-flex items-center gap-2 rounded-lg px-2 py-1 text-sm font-semibold text-slate-600 transition hover:text-slate-950 focus-visible:outline-blue-600"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
@@ -183,6 +186,7 @@ export default function VerificationPage() {
             preview={idFrontPreview}
             onSelect={handleFileSelect(setIdFrontFile, setIdFrontPreview)}
             onRemove={handleRemove(setIdFrontFile, setIdFrontPreview)}
+            disabled={uploading || submitted}
           />
 
           <ImageUpload
@@ -193,7 +197,28 @@ export default function VerificationPage() {
             preview={idBackPreview}
             onSelect={handleFileSelect(setIdBackFile, setIdBackPreview)}
             onRemove={handleRemove(setIdBackFile, setIdBackPreview)}
+            disabled={uploading || submitted}
           />
+
+          {uploading && (
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-left" role="status" aria-live="polite">
+              <div className="flex items-center gap-3">
+                <svg className="h-5 w-5 shrink-0 animate-spin text-sky-800" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                </svg>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Submitting your ID securely</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-700">
+                    We’re uploading both images, checking your ID, and saving your submission. This can take a little while; keep this page open.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-sky-100" aria-hidden="true">
+                <div className="h-full w-1/3 rounded-full bg-sky-700 motion-safe:animate-pulse" />
+              </div>
+            </div>
+          )}
 
           {error && (
             <p className="text-sm text-red-600" role="alert">{error}</p>
@@ -203,13 +228,14 @@ export default function VerificationPage() {
             <button
               type="button"
               onClick={() => navigate(profilePath)}
+              disabled={uploading || submitted}
               className="dashboard-focus flex-1 rounded-xl border border-slate-300 bg-white/80 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-white"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={uploading}
+              disabled={uploading || submitted}
               className="dashboard-focus flex-1 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white shadow-[0_8px_20px_rgba(15,23,42,0.15)] transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {uploading ? "Uploading..." : "Submit Verification"}

@@ -1,4 +1,4 @@
-export default function ProfileSetupPanel({ user, role, onEdit }) {
+export default function ProfileSetupPanel({ user, role, verified, onEdit }) {
   const requirements = [
     { label: "Profile photo", complete: Boolean(user?.profileImage?.trim()) },
     { label: "Full name", complete: Boolean(user?.fullName?.trim()) },
@@ -6,6 +6,7 @@ export default function ProfileSetupPanel({ user, role, onEdit }) {
     { label: "Service location", complete: Boolean(user?.province && user?.city && user?.barangay) },
     { label: "Bio", complete: Boolean(user?.bio?.trim()) },
     ...(role === "provider" ? [{ label: "Services offered", complete: Boolean(user?.professions?.some((profession) => String(profession).trim())) }] : []),
+    { label: "Verified", complete: Boolean(verified ?? user?.isVerified ?? user?.verificationStatus === "verified") },
   ];
   const completed = requirements.filter((requirement) => requirement.complete).length;
   const percentage = Math.round((completed / requirements.length) * 100);

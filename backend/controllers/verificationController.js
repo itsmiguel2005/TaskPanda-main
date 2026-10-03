@@ -37,11 +37,21 @@ async function handleSubmitVerification(req, res) {
       await removeUploadedFiles(uploadedFiles);
       return res.status(400).json({ message: "Trade certificates must be 200 characters or fewer." });
     }
-    const ocrResult = await performOCRVerification(front.path, getProfileName(req.user));
-    const frontImage = await uploadVerificationImage(await fs.readFile(front.path), String(req.user._id), "front");
-    uploadedCloudImages.push(frontImage.publicId);
-    const backImage = await uploadVerificationImage(await fs.readFile(back.path), String(req.user._id), "back");
-    uploadedCloudImages.push(backImage.publicId);
+
+    const [ocrOutcome, frontUpload, backUpload] = await Promise.allSettled([
+      performOCRVerification(front.path, getProfileName(req.user)),
+      fs.readFile(front.path).then((buffer) => uploadVerificationImage(buffer, String(req.user._id), "front")),
+      fs.readFile(back.path).then((buffer) => uploadVerificationImage(buffer, String(req.user._id), "back")),
+    ]);
+    for (const upload of [frontUpload, backUpload]) {
+      if (upload.status === "fulfilled") uploadedCloudImages.push(upload.value.publicId);
+    }
+    const failedOperation = [ocrOutcome, frontUpload, backUpload].find((result) => result.status === "rejected");
+    if (failedOperation) throw failedOperation.reason;
+
+    const ocrResult = ocrOutcome.value;
+    const frontImage = frontUpload.value;
+    const backImage = backUpload.value;
     const verificationDetails = {
       idFrontUrl: `/api/v1/admin/verifications/${req.user._id}/documents/front`,
       idBackUrl: `/api/v1/admin/verifications/${req.user._id}/documents/back`,

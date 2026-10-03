@@ -59,6 +59,17 @@ function selectBestOCRCandidate(candidates, userName) {
     )[0] || null;
 }
 
+function formatOCRResult(candidate) {
+  const { confidence, nameMatch } = candidate;
+  return {
+    ocrConfidence: confidence,
+    nameMatchAccuracy: Math.round(nameMatch.accuracy * 100),
+    matchedNameParts: nameMatch.matchedParts,
+    totalNameParts: nameMatch.totalParts,
+    autoVerified: shouldAutoVerify(confidence, nameMatch.accuracy, nameMatch.totalParts),
+  };
+}
+
 async function getWorker() {
   if (!workerPromise) {
     workerPromise = (async () => {
@@ -116,6 +127,14 @@ async function performOCRVerification(imagePath, userName) {
         await worker.setParameters({ tessedit_pageseg_mode: mode });
         const { data } = await worker.recognize(imagePath, { rotateAuto: true });
         candidates.push({ confidence: data.confidence, text: data.text });
+        const currentBest = selectBestOCRCandidate(candidates, userName);
+        if (shouldAutoVerify(
+          currentBest.confidence,
+          currentBest.nameMatch.accuracy,
+          currentBest.nameMatch.totalParts
+        )) {
+          return formatOCRResult(currentBest);
+        }
       } catch (error) {
         modeErrors.push(error);
       }
@@ -129,15 +148,7 @@ async function performOCRVerification(imagePath, userName) {
     }
 
     const bestCandidate = selectBestOCRCandidate(candidates, userName);
-    const { confidence, nameMatch } = bestCandidate;
-
-    return {
-      ocrConfidence: confidence,
-      nameMatchAccuracy: Math.round(nameMatch.accuracy * 100),
-      matchedNameParts: nameMatch.matchedParts,
-      totalNameParts: nameMatch.totalParts,
-      autoVerified: shouldAutoVerify(confidence, nameMatch.accuracy, nameMatch.totalParts),
-    };
+    return formatOCRResult(bestCandidate);
   } catch (error) {
     console.warn("Verification OCR failed; routing submission for manual review:", error.message);
     return {

@@ -8,7 +8,7 @@ function validBookings(value) {
 }
 
 export function BookingProvider({ children }) {
-  const { token, isLoggedIn } = useAuth();
+  const { token, isLoggedIn, refreshProfile } = useAuth();
   const [bookings, setBookings] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -209,8 +209,9 @@ export function BookingProvider({ children }) {
     if (!data.booking?.id) throw new Error("The server returned an invalid cancellation response. Restart the backend and try again.");
     setBookings((current) => validBookings(current.map((booking) => booking.id === id ? data.booking : booking)));
     notifySync({ type: "booking-updated", bookingId: id });
+    if (data.booking.statusCode === "canceled") await refreshProfile();
     return data.booking;
-  }, [notifySync, token]);
+  }, [notifySync, refreshProfile, token]);
 
   const submitReview = useCallback(async (id, rating, review, photos = []) => {
     const bookingId = String(id || "");

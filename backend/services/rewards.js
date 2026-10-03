@@ -151,6 +151,33 @@ async function recoverExpiredVoucherReservations(userId) {
   }
 }
 
+async function restoreVoucherForBooking(booking) {
+  if (!booking?.voucherId || !booking?._id || !booking?.clientId) return false;
+
+  const clientId = booking.clientId._id || booking.clientId;
+  const result = await User.updateOne(
+    mongoose.trusted({
+      _id: clientId,
+      vouchers: mongoose.trusted({
+        $elemMatch: {
+          _id: booking.voucherId,
+          status: "redeemed",
+          bookingId: booking._id,
+        },
+      }),
+    }),
+    {
+      $set: { "vouchers.$.status": "active" },
+      $unset: {
+        "vouchers.$.bookingId": 1,
+        "vouchers.$.redeemedAt": 1,
+      },
+    }
+  );
+
+  return result.modifiedCount === 1;
+}
+
 async function awardSettledBookingStamp(bookingId) {
   const stampAwardedAt = new Date();
   const booking = await Booking.findOneAndUpdate(
@@ -242,5 +269,6 @@ module.exports = {
   ensureReferralCode,
   creditReferralRewards,
   recoverExpiredVoucherReservations,
+  restoreVoucherForBooking,
   awardSettledBookingStamp,
 };
