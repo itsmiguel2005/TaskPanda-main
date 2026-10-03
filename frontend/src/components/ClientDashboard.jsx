@@ -7,6 +7,7 @@ import BookingPriceBreakdown from "./BookingPriceBreakdown.jsx";
 import BookingProgress from "./BookingProgress.jsx";
 import BookingHistory from "./BookingHistory.jsx";
 import AddressActions from "./AddressActions.jsx";
+import ProviderStreak from "./ProviderStreak.jsx";
 import { canRequestCancellation, getCancellationLockMessage } from "../utils/bookingCancellation.js";
 import StatusChangeConfirmation from "./StatusChangeConfirmation.jsx";
 
@@ -397,6 +398,7 @@ export default function Dashboard() {
           rating,
           reviews,
           category,
+          onTimeStreak: provider.onTimeStreak,
           accent: index === 0 ? "from-sky-50 via-white to-white" : index === 1 ? "from-cyan-50 via-white to-white" : "from-blue-50 via-white to-white",
         };
       });
@@ -406,7 +408,9 @@ export default function Dashboard() {
           provider.name === nextProviders[index].name &&
           provider.category === nextProviders[index].category &&
           provider.rating === nextProviders[index].rating &&
-          provider.reviews === nextProviders[index].reviews
+          provider.reviews === nextProviders[index].reviews &&
+          provider.onTimeStreak?.count === nextProviders[index].onTimeStreak?.count &&
+          provider.onTimeStreak?.milestone === nextProviders[index].onTimeStreak?.milestone
         ));
         return sameSnapshot ? current : nextProviders;
       });
@@ -665,6 +669,7 @@ export default function Dashboard() {
                         </div>
                         <span className="text-[11px] font-medium text-gray-500">{hasRatings ? `${pro.reviews} reviews` : "No ratings yet"}</span>
                       </div>
+                      <ProviderStreak streak={pro.onTimeStreak} className="mt-2" />
 
                       <div className="mt-4 flex items-center justify-start gap-2">
                         <span className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-gray-700">
@@ -802,6 +807,7 @@ export default function Dashboard() {
                         </div>
                         <span className="text-[11px] font-medium text-gray-500">{hasRatings ? `${reviews} reviews` : "No ratings yet"}</span>
                       </div>
+                      <ProviderStreak streak={provider.onTimeStreak} className="mt-2" />
 
                       <div className="mt-4 flex items-center justify-start gap-2">
                         <span className="rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-blue-950">{category}</span>

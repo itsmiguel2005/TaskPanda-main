@@ -12,6 +12,7 @@ import CompletionProofModal from "../components/CompletionProofModal.jsx";
 import RevisionReviewPanel from "../components/RevisionReviewPanel.jsx";
 import BookingHistory from "../components/BookingHistory.jsx";
 import AddressActions from "../components/AddressActions.jsx";
+import PandaSwipeRefresh from "../components/PandaSwipeRefresh.jsx";
 import { canRequestCancellation, getCancellationLockMessage, requiresCancellationApproval } from "../utils/bookingCancellation.js";
 
 const STATUS_ACTIONS = {
@@ -336,6 +337,12 @@ export default function ProviderBookingsPage() {
           </div>
         )}
 
+        <PandaSwipeRefresh
+          disabled={isLoading}
+          onRefresh={async () => {
+            await refreshBookings(undefined, false);
+          }}
+        >
         {/* Incoming Requests */}
         {showIncoming && (
           <div className="mb-8">
@@ -647,6 +654,7 @@ export default function ProviderBookingsPage() {
             )}
           </div>
         )}
+        </PandaSwipeRefresh>
       </div>
 
       {/* Accept Confirmation Modal */}

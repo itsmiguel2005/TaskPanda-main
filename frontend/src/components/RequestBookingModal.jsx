@@ -34,6 +34,43 @@ function isPastTimeSlot(dateValue, timeValue, now) {
   return slotMinutes <= now.getHours() * 60 + now.getMinutes();
 }
 
+function AnimatedPhpAmount({ amount }) {
+  const [displayAmount, setDisplayAmount] = useState(amount);
+  const displayAmountRef = useRef(amount);
+
+  useEffect(() => {
+    const start = displayAmountRef.current;
+    const reducedMotion = Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    if (reducedMotion || start === amount) {
+      displayAmountRef.current = amount;
+      setDisplayAmount(amount);
+      return undefined;
+    }
+
+    let frameId = 0;
+    const startTime = performance.now();
+    const duration = 180;
+    const animate = (now) => {
+      const progress = Math.min(1, (now - startTime) / duration);
+      const eased = 1 - (1 - progress) ** 3;
+      const nextAmount = start + (amount - start) * eased;
+      displayAmountRef.current = nextAmount;
+      setDisplayAmount(nextAmount);
+      if (progress < 1) frameId = window.requestAnimationFrame(animate);
+      else displayAmountRef.current = amount;
+    };
+    frameId = window.requestAnimationFrame(animate);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [amount]);
+
+  return (
+    <>
+      <span className="sr-only" aria-live="polite" aria-atomic="true">{formatPhpAmount(amount)}</span>
+      <span aria-hidden="true">{formatPhpAmount(displayAmount)}</span>
+    </>
+  );
+}
+
 function CalendarPicker({ selectedDate, onSelect, onClose }) {
   const selectedDateParts = selectedDate ? selectedDate.split("-").map(Number) : null;
   const [viewDate, setViewDate] = useState(selectedDateParts
@@ -140,6 +177,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const [urgency, setUrgency] = useState(initialValues.urgency || "Flexible");
   const [offer, setOffer] = useState(initialValues.offer == null ? "" : String(initialValues.offer));
   const [tipAmount, setTipAmount] = useState(String(initialValues.tipAmount ?? 0));
+  const [tipFeedback, setTipFeedback] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [formError, setFormError] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -644,7 +682,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                   </dl>
                   <div className="mt-3 flex items-end justify-between border-t border-gray-200 pt-3">
                     <span className="text-sm font-semibold text-gray-700">Total amount due</span>
-                    <span className="text-2xl font-bold tabular-nums text-gray-950">{formatPhpAmount(totalAmount)}</span>
+                    <span className="text-2xl font-bold tabular-nums text-gray-950"><AnimatedPhpAmount amount={totalAmount} /></span>
                   </div>
                 </div>
               </section>
@@ -655,8 +693,9 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                   {TIP_PRESETS.map((amount) => {
                     const isSelected = selectedTip === amount;
                     return (
-                      <button key={amount} type="button" aria-pressed={isSelected} onClick={() => setTipAmount(String(amount))} className={`rounded-full border px-3.5 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 ${isSelected ? "border-primary-700 bg-primary-700 text-white" : "border-gray-300 bg-white text-gray-700 hover:border-primary-400 hover:bg-primary-50"}`}>
-                        {amount === 0 ? "No tip" : formatPhpAmount(amount)}
+                      <button key={amount} type="button" aria-pressed={isSelected} onClick={() => { setTipAmount(String(amount)); setTipFeedback(`${amount}-${Date.now()}`); }} className={`tip-preset rounded-full border px-3.5 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 active:scale-[0.97] ${isSelected ? "is-selected border-primary-700 bg-primary-700 text-white" : "border-gray-300 bg-white text-gray-700 hover:border-primary-400 hover:bg-primary-50"}`}>
+                        {tipFeedback.startsWith(`${amount}-`) && <span key={tipFeedback} className="tip-ripple" aria-hidden="true" />}
+                        <span className="relative z-10">{amount === 0 ? "No tip" : formatPhpAmount(amount)}</span>
                       </button>
                     );
                   })}

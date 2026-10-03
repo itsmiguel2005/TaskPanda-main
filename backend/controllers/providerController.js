@@ -1,4 +1,5 @@
 const User = require("../models/User");
+const { getProviderStreaks } = require("../services/providerStreak");
 
 const MAX_DISTANCE_KM = 100;
 const DEFAULT_LIMIT = 24;
@@ -109,8 +110,12 @@ async function handleDiscoverProviders(req, res) {
       },
     ]);
 
+    const providerStreaks = await getProviderStreaks(result.providers.map((provider) => provider._id));
     return res.json({
-      providers: result.providers,
+      providers: result.providers.map((provider) => ({
+        ...provider,
+        onTimeStreak: providerStreaks.get(String(provider._id)) || { count: 0, milestone: null, nextMilestone: 5 },
+      })),
       total: result.metadata[0]?.total || 0,
       page,
       limit,

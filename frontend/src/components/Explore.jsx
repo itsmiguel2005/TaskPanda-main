@@ -2,7 +2,9 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import Header from "./Header.jsx";
 import ProviderModal from "./ProviderModal.jsx";
+import ProviderStreak from "./ProviderStreak.jsx";
 import RequestBookingModal from "./RequestBookingModal.jsx";
+import PandaSwipeRefresh from "./PandaSwipeRefresh.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
 
@@ -347,6 +349,33 @@ export default function Explore() {
     return `Showing providers ${minKm}–${maxKm} km away${appliedQuery ? ` matching “${appliedQuery}”` : ""}`;
   };
 
+  const refreshProviders = async () => {
+    if (!searchCoordinates?.coordinates) return;
+    setLoading(true);
+    setSearchError("");
+    const [longitude, latitude] = searchCoordinates.coordinates;
+    const params = new URLSearchParams({
+      longitude: String(longitude),
+      latitude: String(latitude),
+      minKm: String(minKm),
+      maxKm: String(maxKm),
+    });
+    if (appliedQuery) params.set("q", appliedQuery);
+    if (selectedCategories.size) params.set("categories", [...selectedCategories].join(","));
+    if (tesdaOnly) params.set("credential", "tesda");
+    try {
+      const response = await fetch(`/api/providers?${params}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "Could not refresh nearby professionals.");
+      setProviders(data.providers || []);
+      setTotalProviders(data.total || 0);
+    } catch (requestError) {
+      setSearchError(requestError.message || "Could not refresh nearby professionals.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="dashboard-page">
       <Header showNav activeTab="Explore" />
@@ -543,6 +572,10 @@ export default function Explore() {
           {searchError && <p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">{searchError}</p>}
 
           {/* Provider Grid */}
+          <PandaSwipeRefresh
+            disabled={!searchCoordinates || loading}
+            onRefresh={refreshProviders}
+          >
           {!searchCoordinates ? (
             <div className="rounded-xl border border-dashed border-sky-200 bg-white py-12 text-center">
               <p className="text-base font-semibold text-slate-900">Set a search location to see nearby professionals</p>
@@ -624,6 +657,7 @@ export default function Explore() {
                         <span className="font-semibold text-slate-900">{hasRatings ? rating.toFixed(1) : "New"}</span>
                         <span className="text-xs text-slate-500">({hasRatings ? reviews : 0} reviews)</span>
                       </div>
+                      <ProviderStreak streak={provider.onTimeStreak} className="mt-2" />
 
                       <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-slate-600">
                         {provider.bio || "This provider has not added an introduction yet."}
@@ -682,6 +716,7 @@ export default function Explore() {
               </button>
             </div>
           )}
+          </PandaSwipeRefresh>
         </div>
       </div>
 

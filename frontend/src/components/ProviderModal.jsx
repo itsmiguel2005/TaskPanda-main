@@ -1,3 +1,5 @@
+import ProviderStreak from "./ProviderStreak.jsx";
+
 export default function ProviderModal({ provider, onClose, onBook, isFavorite = false, onToggleFavorite }) {
   if (!provider) return null;
   const name = provider.fullName || provider.username || "Provider";
@@ -48,6 +50,7 @@ export default function ProviderModal({ provider, onClose, onBook, isFavorite = 
             )}
           </div>
           <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">{provider.bio || "This provider has not added an introduction yet."}</p>
+          <ProviderStreak streak={provider.onTimeStreak} variant="profile" />
 
           <div className="border-t border-sky-100 pt-4">
             <h3 className="dashboard-kicker">TESDA certification</h3>

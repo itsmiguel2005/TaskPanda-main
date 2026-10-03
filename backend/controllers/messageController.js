@@ -180,8 +180,18 @@ async function handleListMessages(req, res) {
   if (!filter) return res.status(403).json({ message: "Messaging is only available to clients and providers." });
 
   try {
-    const conversation = await Conversation.findOne({ _id: conversationId, ...filter }).select("_id");
+    const conversation = await Conversation.findOne({ _id: conversationId, ...filter })
+      .select("_id bookingId clientTypingUntil providerTypingUntil");
     if (!conversation) return res.status(403).json({ message: "You are not a participant in this conversation." });
+    const remoteTypingField = req.user.role === "client" ? "providerTypingUntil" : "clientTypingUntil";
+    const remoteTypingUntil = conversation[remoteTypingField];
+    const remoteTyping = Boolean(remoteTypingUntil && remoteTypingUntil.getTime() > Date.now());
+    const staleTypingFields = ["clientTypingUntil", "providerTypingUntil"]
+      .filter((field) => conversation[field] && conversation[field].getTime() <= Date.now());
+    await Promise.all(staleTypingFields.map((field) => Conversation.updateOne(
+      { _id: conversation._id, [field]: conversation[field] },
+      { $unset: { [field]: 1 } },
+    )));
     const readAtField = req.user.role === "client" ? "lastReadAtClient" : "lastReadAtProvider";
     const unreadCountField = req.user.role === "client" ? "unreadCountClient" : "unreadCountProvider";
     await Conversation.updateOne({ _id: conversation._id }, { $set: { [readAtField]: new Date(), [unreadCountField]: 0 } });
@@ -200,10 +210,49 @@ async function handleListMessages(req, res) {
       .lean();
     const hasMore = page.length > MESSAGE_PAGE_SIZE;
     const messages = page.slice(0, MESSAGE_PAGE_SIZE).reverse();
-    return res.json({ hasMore, messages: messages.map((message) => serializeMessage(message, req.user._id)) });
+    return res.json({
+      hasMore,
+      remoteTyping,
+      remoteTypingUntil: remoteTyping ? remoteTypingUntil.getTime() : null,
+      messages: messages.map((message) => serializeMessage(message, req.user._id)),
+    });
   } catch (error) {
     console.error("List messages error:", error);
     return res.status(500).json({ message: "Could not load messages." });
+  }
+}
+
+async function handleCounterOfferTyping(req, res) {
+  const conversationId = String(req.params.conversationId || "");
+  if (!mongoose.isValidObjectId(conversationId)) return res.status(400).json({ message: "Choose a valid conversation." });
+  if (!["client", "provider"].includes(req.user.role)) return res.status(403).json({ message: "Messaging is only available to clients and providers." });
+  if (typeof req.body?.typing !== "boolean") return res.status(400).json({ message: "Typing state must be true or false." });
+
+  const typingField = req.user.role === "client" ? "clientTypingUntil" : "providerTypingUntil";
+  const archivedField = req.user.role === "client" ? "isArchivedByClient" : "isArchivedByProvider";
+  const filter = participantFilter(req.user);
+  try {
+    const conversation = await Conversation.findOne({ _id: conversationId, ...filter })
+      .select("_id bookingId isArchivedByClient isArchivedByProvider");
+    if (!conversation) return res.status(403).json({ message: "You are not a participant in this conversation." });
+    if (conversation[archivedField]) return res.status(409).json({ message: "Restore this conversation before updating typing status." });
+    if (req.body.typing) {
+      const booking = await Booking.findById(conversation.bookingId).select("status counterOffers");
+      const hasPendingOffer = booking?.counterOffers?.some((offer) => offer.status === "pending");
+      if (booking?.status !== "pending" || hasPendingOffer) {
+        return res.status(409).json({ message: "Counter-offer composition is no longer available for this booking." });
+      }
+      await Conversation.updateOne(
+        { _id: conversation._id },
+        { $set: { [typingField]: new Date(Date.now() + 8000) } },
+      );
+    } else {
+      await Conversation.updateOne({ _id: conversation._id }, { $unset: { [typingField]: 1 } });
+    }
+    return res.json({ typing: req.body.typing });
+  } catch (error) {
+    console.error("Counter-offer typing update error:", error);
+    return res.status(500).json({ message: "Could not update typing status." });
   }
 }
 
@@ -478,4 +527,4 @@ async function handleCashConfirmation(req, res) {
   }
 }
 
-module.exports = { handleListConversations, handleCreateConversation, handleListMessages, handleUploadChatPhoto, handleReadChatPhoto, handleCleanupChatPhotos, handleSendMessage, handleCashConfirmation, handleArchiveConversation, handleReportConversation };
+module.exports = { handleListConversations, handleCreateConversation, handleListMessages, handleCounterOfferTyping, handleUploadChatPhoto, handleReadChatPhoto, handleCleanupChatPhotos, handleSendMessage, handleCashConfirmation, handleArchiveConversation, handleReportConversation };

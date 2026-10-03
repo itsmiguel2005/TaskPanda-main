@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Favorite = require("../models/Favorite");
 const User = require("../models/User");
+const { getProviderStreaks } = require("../services/providerStreak");
 
 async function handleGetClientFavorites(req, res) {
   try {
@@ -11,6 +12,8 @@ async function handleGetClientFavorites(req, res) {
         select: "_id fullName username professions bio city province barangay isVerified verificationStatus averageRating totalReviews profileImage tesdaCertificates",
       });
 
+    const availableFavorites = favorites.filter((favorite) => favorite.providerId);
+    const providerStreaks = await getProviderStreaks(availableFavorites.map((favorite) => favorite.providerId._id));
     const payload = favorites
       .filter((favorite) => favorite.providerId)
       .map((favorite) => ({
@@ -29,6 +32,7 @@ async function handleGetClientFavorites(req, res) {
         totalReviews: favorite.providerId.totalReviews || 0,
         profileImage: favorite.providerId.profileImage || "",
         tesdaCertificates: favorite.providerId.tesdaCertificates || [],
+        onTimeStreak: providerStreaks.get(String(favorite.providerId._id)) || { count: 0, milestone: null, nextMilestone: 5 },
       }));
 
     return res.json({ favorites: payload });

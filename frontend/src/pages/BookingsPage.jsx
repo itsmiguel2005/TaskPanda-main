@@ -13,6 +13,7 @@ import { canRequestCancellation, getCancellationLockMessage } from "../utils/boo
 import StatusChangeConfirmation from "../components/StatusChangeConfirmation.jsx";
 import RevisionRequestModal from "../components/RevisionRequestModal.jsx";
 import RequestBookingModal from "../components/RequestBookingModal.jsx";
+import PandaSwipeRefresh from "../components/PandaSwipeRefresh.jsx";
 
 const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined"];
 
@@ -243,7 +244,13 @@ export default function BookingsPage() {
         </div>
 
         {/* Bookings List */}
-        <div className="space-y-4">
+        <PandaSwipeRefresh
+          disabled={isLoading}
+          className="space-y-4"
+          onRefresh={async () => {
+            await refreshBookings(undefined, false);
+          }}
+        >
           {filteredBookings.length > 0 ? (
             filteredBookings.map((booking) => (
               <div
@@ -464,7 +471,7 @@ export default function BookingsPage() {
               )}
             </div>
           )}
-        </div>
+        </PandaSwipeRefresh>
       </div>
 
       {/* Cancel Confirmation Modal */}

@@ -12,6 +12,8 @@ const conversationSchema = new mongoose.Schema(
     isArchivedByProvider: { type: Boolean, default: false },
     lastReadAtClient: { type: Date },
     lastReadAtProvider: { type: Date },
+    clientTypingUntil: { type: Date },
+    providerTypingUntil: { type: Date },
     unreadCountClient: { type: Number, min: 0, default: 0 },
     unreadCountProvider: { type: Number, min: 0, default: 0 },
     supportReports: [{

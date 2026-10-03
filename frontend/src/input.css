@@ -151,6 +151,139 @@
     width: 0;
     height: 0;
   }
+
+  .panda-swipe-surface {
+    position: relative;
+    touch-action: pan-y;
+  }
+
+  .panda-swipe-indicator {
+    position: absolute;
+    z-index: 10;
+    top: -2.75rem;
+    left: 0;
+    right: 0;
+    height: 2.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    overflow: hidden;
+    color: #1e3a8a;
+    font-size: 0.75rem;
+    font-weight: 700;
+    opacity: 0;
+    transform: translateY(var(--panda-pull-distance, 0));
+    transition: opacity 120ms ease-out, transform 140ms ease-out;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .panda-swipe-indicator.is-visible {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .panda-swipe-indicator.is-pulling {
+    transition: none;
+  }
+
+  .panda-swipe-panda {
+    display: inline-flex;
+    width: 2rem;
+    height: 1.75rem;
+    flex: 0 0 auto;
+    transform-origin: 40% 100%;
+  }
+
+  .panda-swipe-panda svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  .panda-swipe-panda.is-chewing {
+    animation: panda-chew 520ms ease-in-out infinite;
+  }
+
+  .panda-swipe-panda.is-chewing svg > path:first-child {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: bamboo-sway 520ms ease-in-out infinite;
+  }
+
+  .panda-swipe-controls {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.5rem;
+    transform: translateY(var(--panda-pull-distance, 0));
+    transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .panda-swipe-controls.is-pulling {
+    transition: none;
+  }
+
+  .panda-swipe-button {
+    min-height: 2rem;
+    border-radius: 0.625rem;
+    padding: 0.25rem 0.625rem;
+    color: #1e3a8a;
+    font-size: 0.75rem;
+    font-weight: 700;
+    transition: background-color 140ms ease-out;
+  }
+
+  .panda-swipe-button:hover {
+    background: #eff6ff;
+  }
+
+  .panda-swipe-button:disabled {
+    cursor: wait;
+    opacity: 0.6;
+  }
+
+  .panda-swipe-content {
+    transform: translateY(var(--panda-pull-distance, 0));
+    transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .panda-swipe-content.is-pulling {
+    transition: none;
+  }
+
+  .tip-preset {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    transform-origin: center;
+  }
+
+  .tip-preset.is-selected {
+    animation: tip-preset-scale 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .tip-ripple {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.52) 0 8%, transparent 10% 100%);
+    animation: tip-preset-ripple 280ms ease-out both;
+    pointer-events: none;
+  }
+
+  .counter-typing-dot {
+    animation: counter-typing-pulse 820ms ease-in-out infinite;
+  }
+
+  .counter-typing-dot:nth-child(2) {
+    animation-delay: 120ms;
+  }
+
+  .counter-typing-dot:nth-child(3) {
+    animation-delay: 240ms;
+  }
 }
 
 @layer base {
@@ -194,6 +327,49 @@
 @keyframes fadeInPage {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+@keyframes panda-chew {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50% { transform: translateY(-2px) rotate(-3deg); }
+}
+
+@keyframes bamboo-sway {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(7deg); }
+}
+
+@keyframes tip-preset-scale {
+  0% { transform: scale(0.94); }
+  68% { transform: scale(1.015); }
+  100% { transform: scale(1); }
+}
+
+@keyframes tip-preset-ripple {
+  from { opacity: 0.65; transform: scale(0.45); }
+  to { opacity: 0; transform: scale(2.4); }
+}
+
+@keyframes counter-typing-pulse {
+  0%, 60%, 100% { opacity: 0.55; }
+  30% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panda-swipe-indicator,
+  .panda-swipe-controls,
+  .panda-swipe-button,
+  .panda-swipe-content {
+    transition-duration: 0.01ms;
+  }
+
+  .panda-swipe-panda.is-chewing,
+  .panda-swipe-panda.is-chewing svg > path:first-child,
+  .tip-preset.is-selected,
+  .tip-ripple,
+  .counter-typing-dot {
+    animation: none;
+  }
 }
 
 @keyframes fadeInUp {

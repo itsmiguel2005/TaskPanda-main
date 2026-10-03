@@ -27,7 +27,7 @@ export function BookingProvider({ children }) {
   const fetchBookings = useCallback(async (signal, silent = false) => {
     if (!isLoggedIn || !token) {
       setBookings([]);
-      return;
+      return false;
     }
     if (!silent) setIsLoading(true);
     try {
@@ -51,8 +51,10 @@ export function BookingProvider({ children }) {
       if (didChange) {
         notifySync({ type: "bookings-fetched", count: nextBookings.length });
       }
+      return true;
     } catch (requestError) {
       if (requestError.name !== "AbortError") setError(requestError.message || "Could not load bookings.");
+      return false;
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
