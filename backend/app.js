@@ -11,6 +11,7 @@ const bookingRoutes = require("./routes/bookingRoutes");
 const messageRoutes = require("./routes/messageRoutes");
 const clientRoutes = require("./routes/clientRoutes");
 const rewardsRoutes = require("./routes/rewardsRoutes");
+const broadcastRoutes = require("./routes/broadcastRoutes");
 
 const app = express();
 
@@ -35,6 +36,7 @@ app.use("/api/providers", providerRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/client", clientRoutes);
 app.use("/api/rewards", rewardsRoutes);
+app.use("/api/broadcasts", broadcastRoutes);
 app.use("/api", messageRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api", healthRoutes);

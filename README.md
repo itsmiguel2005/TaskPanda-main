@@ -88,9 +88,11 @@ Do not commit `.env` or real passwords to source control. For Gmail, use an app 
 
 Email verification, password reset, and admin sign-in codes use SMTP. For Gmail, use an app password and configure `SMTP_USER`, `SMTP_PASSWORD`, and `MAIL_FROM`. Password reset codes are stored only as hashes with their 10-minute expiry on the user document, consumed atomically, and delivered with a link that pre-fills the existing OTP form.
 
-For push, create a OneSignal app and configure Web Push. Set `ONESIGNAL_APP_ID` and the server-only `ONESIGNAL_REST_API_KEY` in the root `.env`; set `VITE_ONESIGNAL_APP_ID` to the same App ID. Vite loads root `.env` but exposes only variables prefixed with `VITE_` to browser code. Configure the OneSignal site URL to match the public app origin. Web Push requires HTTPS except for `localhost`; users opt in from the app's Notifications menu.
+For push, create a OneSignal app and configure Web Push. Set `ONESIGNAL_APP_ID` and the server-only `ONESIGNAL_REST_API_KEY` in the root `.env`; set `VITE_ONESIGNAL_APP_ID` to the same App ID. Use the App API key from the OneSignal dashboard as `ONESIGNAL_REST_API_KEY`; the server sends it with `Authorization: Key ...`. Vite loads root `.env` but exposes only variables prefixed with `VITE_` to browser code. Configure the OneSignal site URL to match the public app origin. Web Push requires HTTPS except for `localhost`; users opt in from the app's Notifications menu.
 
 Push users are identified with their MongoDB user ID as the OneSignal External ID and receive a `role` tag (`client`, `provider`, or `admin`) at sign-in. Booking events target the appropriate participant and link to the matching booking detail; emergency requests, revision disputes, and completed admin sign-ins also produce admin alerts. Role tags are for delivery segmentation only and must never be used as authorization.
+
+Urgent admin broadcasts are stored for clients and providers in the in-app notification bell. OneSignal browser push is sent as an additional delivery channel when eligible subscriptions are available.
 
 ## Security Features
 

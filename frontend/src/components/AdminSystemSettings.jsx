@@ -200,23 +200,23 @@ function AdminSystemSettings() {
       <form onSubmit={sendBroadcast} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
           <h2 className="text-sm font-bold text-slate-950">Urgent broadcast</h2>
-          <p className="mt-1 text-xs leading-5 text-slate-600">Send a push notification to all clients and providers. Delivery requires OneSignal to be configured.</p>
+          <p className="mt-1 text-xs leading-5 text-slate-600">Post an alert to the in-app notification bell for every client and provider. Browser push is sent when OneSignal is available.</p>
         </div>
         <div className="grid gap-4 px-4 py-5 sm:px-5">
           <label className="block text-sm font-semibold text-slate-800">
             Notification title
-            <input value={broadcastTitle} onChange={(event) => setBroadcastTitle(event.target.value)} maxLength={100} required disabled={!broadcastConfigured || isBroadcasting} className="dashboard-focus mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-950 placeholder:text-slate-500 disabled:bg-slate-50" placeholder="e.g. Service update" />
+            <input value={broadcastTitle} onChange={(event) => setBroadcastTitle(event.target.value)} maxLength={100} required disabled={isBroadcasting} className="dashboard-focus mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-950 placeholder:text-slate-500 disabled:bg-slate-50" placeholder="e.g. Service update" />
             <span className="mt-1 block text-right text-[11px] font-normal text-slate-600">{broadcastTitle.length}/100</span>
           </label>
           <label className="block text-sm font-semibold text-slate-800">
             Message
-            <textarea value={broadcastMessage} onChange={(event) => setBroadcastMessage(event.target.value)} maxLength={240} required rows={3} disabled={!broadcastConfigured || isBroadcasting} className="dashboard-focus mt-1.5 w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal leading-5 text-slate-950 placeholder:text-slate-500 disabled:bg-slate-50" placeholder="Share a concise, actionable service announcement." />
+            <textarea value={broadcastMessage} onChange={(event) => setBroadcastMessage(event.target.value)} maxLength={240} required rows={3} disabled={isBroadcasting} className="dashboard-focus mt-1.5 w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-normal leading-5 text-slate-950 placeholder:text-slate-500 disabled:bg-slate-50" placeholder="Share a concise, actionable service announcement." />
             <span className="mt-1 block text-right text-[11px] font-normal text-slate-600">{broadcastMessage.length}/240</span>
           </label>
-          {!broadcastConfigured && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">Push delivery is not configured. Add OneSignal credentials to enable urgent broadcasts.</p>}
+          {!broadcastConfigured && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">Push delivery is not configured. Broadcasts will still appear in the in-app notification bell.</p>}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-slate-600">Recipients: every registered client and provider.</p>
-            <button type="submit" disabled={!broadcastConfigured || isBroadcasting || !broadcastTitle.trim() || !broadcastMessage.trim()} className="dashboard-focus inline-flex h-10 items-center justify-center rounded-xl bg-rose-700 px-4 text-sm font-semibold text-white transition hover:bg-rose-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-900">{isBroadcasting ? "Sending…" : "Send urgent broadcast"}</button>
+            <button type="submit" disabled={isBroadcasting || !broadcastTitle.trim() || !broadcastMessage.trim()} className="dashboard-focus inline-flex h-10 items-center justify-center rounded-xl bg-rose-700 px-4 text-sm font-semibold text-white transition hover:bg-rose-800 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-900">{isBroadcasting ? "Sending…" : "Send urgent broadcast"}</button>
           </div>
         </div>
       </form>

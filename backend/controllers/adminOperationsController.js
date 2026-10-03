@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const Booking = require("../models/Booking");
+const Broadcast = require("../models/Broadcast");
 const User = require("../models/User");
 const { getTransactionAmounts } = require("../services/financialLedger");
 const { hasOneSignalCredentials, sendPushNotification } = require("../services/oneSignal");
@@ -296,25 +297,49 @@ async function handleUpdateAdminSystemSettings(req, res) {
 }
 
 async function handleAdminBroadcast(req, res) {
-  if (!hasOneSignalCredentials()) {
-    return res.status(503).json({ message: "Urgent broadcasts are unavailable because push delivery is not configured." });
-  }
-
   try {
-    const result = await sendPushNotification({
-      roles: ["client", "provider"],
+    const broadcast = await Broadcast.create({
       title: req.body.title,
-      body: req.body.message,
-      name: "TaskPanda urgent broadcast",
-      data: { event: "system.broadcast", sentBy: req.adminEmail },
+      message: req.body.message,
+      createdBy: req.adminEmail,
     });
-    if (!result?.id) {
-      return res.status(502).json({ message: "The broadcast was not created by the push notification service." });
+
+    if (!hasOneSignalCredentials()) {
+      return res.status(201).json({
+        message: "Broadcast added to the in-app notifications. Push delivery is not configured.",
+        broadcastId: String(broadcast._id),
+      });
     }
-    return res.json({ message: "Urgent broadcast sent to clients and providers.", notificationId: result.id });
+
+    try {
+      const result = await sendPushNotification({
+        roles: ["client", "provider"],
+        title: req.body.title,
+        body: req.body.message,
+        name: "TaskPanda urgent broadcast",
+        data: { event: "system.broadcast", broadcastId: String(broadcast._id), sentBy: req.adminEmail },
+      });
+      if (!result?.id) {
+        return res.status(201).json({
+          message: "Broadcast added to the in-app notifications, but OneSignal did not find any push subscriptions to notify.",
+          broadcastId: String(broadcast._id),
+        });
+      }
+      return res.status(201).json({
+        message: "Broadcast added to in-app notifications and sent as a browser push notification.",
+        notificationId: result.id,
+        broadcastId: String(broadcast._id),
+      });
+    } catch (pushError) {
+      console.error("Admin urgent broadcast push delivery error:", pushError);
+      return res.status(201).json({
+        message: `Broadcast added to in-app notifications, but push delivery failed: ${pushError.message || "Unknown OneSignal error."}`,
+        broadcastId: String(broadcast._id),
+      });
+    }
   } catch (error) {
     console.error("Admin urgent broadcast error:", error);
-    return res.status(502).json({ message: error.message || "Could not send the urgent broadcast." });
+    return res.status(500).json({ message: "Could not save the urgent broadcast." });
   }
 }
 

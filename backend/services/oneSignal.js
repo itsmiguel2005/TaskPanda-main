@@ -7,6 +7,12 @@ function hasOneSignalCredentials() {
   return Boolean(config.oneSignalAppId && config.oneSignalRestApiKey);
 }
 
+function getOneSignalAuthHeader() {
+  const apiKey = String(config.oneSignalRestApiKey || "").trim();
+  if (!apiKey) return "";
+  return `Key ${apiKey.replace(/^(?:Basic|Key)\s+/i, "")}`;
+}
+
 function buildRoleFilters(roles) {
   const allowedRoles = [...new Set(roles.map((role) => String(role).trim().toLowerCase()))];
   if (!allowedRoles.length || allowedRoles.some((role) => !["client", "provider", "admin"].includes(role))) {
@@ -50,7 +56,7 @@ async function requestOneSignal(path, { method = "POST", body } = {}) {
   const response = await fetch(`${API_URL}${path}`, {
     method,
     headers: {
-      Authorization: `Key ${config.oneSignalRestApiKey}`,
+      Authorization: getOneSignalAuthHeader(),
       "Content-Type": "application/json; charset=utf-8",
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
@@ -70,7 +76,9 @@ async function requestOneSignal(path, { method = "POST", body } = {}) {
     throw new Error(`OneSignal request failed (${response.status})${summary ? `: ${summary}` : ""}.`);
   }
   if (path.startsWith("/notifications") && !result.id) {
-    throw new Error("OneSignal accepted the request but did not create a message for the target.");
+    const errors = Array.isArray(result.errors) ? result.errors : [];
+    const summary = errors.map((error) => typeof error === "string" ? error : error.title).filter(Boolean).join("; ");
+    throw new Error(`No eligible push subscriptions matched the broadcast. Ask a client or provider to enable browser alerts, then try again.${summary ? ` OneSignal: ${summary}` : ""}`);
   }
   return result;
 }
@@ -83,6 +91,7 @@ async function sendPushNotification(options) {
 module.exports = {
   buildPushPayload,
   buildRoleFilters,
+  getOneSignalAuthHeader,
   hasOneSignalCredentials,
   sendPushNotification,
 };
