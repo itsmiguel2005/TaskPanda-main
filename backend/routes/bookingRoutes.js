@@ -99,7 +99,10 @@ router.param("counterOfferId", (req, res, next, id) => {
 router.use(requireAuth, requireRole("client", "provider"));
 router.get("/availability/:providerId", handleProviderAvailability);
 router.get("/", handleListBookings);
-router.post("/", limitBookingCreation, upload.array("photos", 5), sanitizeMongoInput, validateBookingCreation, validateRequest, handleCreateBooking);
+router.post("/", (req, _res, next) => {
+  req.bookingRequestReceivedAt = new Date();
+  next();
+}, limitBookingCreation, upload.array("photos", 5), sanitizeMongoInput, validateBookingCreation, validateRequest, handleCreateBooking);
 router.patch("/:id/status", validateBookingStatus, validateRequest, handleUpdateBookingStatus);
 router.post("/:id/completion", upload.array("photos", 5), sanitizeMongoInput, body("completionNote").optional().isString().isLength({ max: 2000 }), validateRequest, handleSubmitCompletion);
 router.post("/:id/revisions", upload.array("photos", 5), sanitizeMongoInput, body("note").isString().isLength({ min: 1, max: 1000 }), validateRequest, handleCreateRevisionRequest);

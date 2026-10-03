@@ -60,6 +60,24 @@ async function handleUploadProfilePhoto(req, res) {
 async function handleGetProfile(req, res) {
   try {
     const user = req.user;
+    const coordinates = user.geoLocation?.coordinates;
+    if (
+      user.role === "client" &&
+      (!Array.isArray(coordinates) || coordinates.length !== 2) &&
+      user.barangay &&
+      user.city &&
+      user.province
+    ) {
+      const registeredLocation = await geocodeAddress(user.address || "", {
+        barangay: user.barangay,
+        city: user.city,
+        province: user.province,
+      });
+      if (registeredLocation) {
+        user.geoLocation = registeredLocation;
+        await user.save();
+      }
+    }
     if (user.role === "client" && !user.referralCode) {
       await ensureReferralCode(user);
     }

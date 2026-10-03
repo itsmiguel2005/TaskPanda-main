@@ -187,16 +187,26 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const [formError, setFormError] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submittedBooking, setSubmittedBooking] = useState(null);
+  const [countdownNow, setCountdownNow] = useState(() => new Date());
   const [showCalendar, setShowCalendar] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [photoPreviews, setPhotoPreviews] = useState([]);
   const fileInputRef = useRef(null);
+  const requestExpiresInSeconds = submittedBooking?.requestExpiresAt
+    ? Math.max(0, Math.ceil((new Date(submittedBooking.requestExpiresAt).getTime() - countdownNow.getTime()) / 1000))
+    : null;
 
   useEffect(() => {
     const nextPreviews = selectedFiles.map((file) => URL.createObjectURL(file));
     setPhotoPreviews(nextPreviews);
     return () => nextPreviews.forEach((preview) => URL.revokeObjectURL(preview));
   }, [selectedFiles]);
+
+  useEffect(() => {
+    if (!isSubmitted || !submittedBooking?.requestExpiresAt) return undefined;
+    const timer = window.setInterval(() => setCountdownNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, [isSubmitted, submittedBooking?.requestExpiresAt]);
 
   useEffect(() => {
     if (!provider) return undefined;
@@ -421,6 +431,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
         address: provider.address || [provider.barangay, provider.city, provider.province].filter(Boolean).join(", "),
         termsAccepted: true,
       });
+      setCountdownNow(new Date());
       setSubmittedBooking(booking || null);
       setIsSubmitted(true);
     } catch (error) {
@@ -475,6 +486,17 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
               <p className="mt-2 text-sm leading-relaxed text-gray-600">
                 Your request has been sent to the provider. They can accept or counter your task offer.
               </p>
+              {requestExpiresInSeconds != null ? (
+                <p className={`mt-4 rounded-xl border px-4 py-3 text-sm font-medium ${requestExpiresInSeconds === 0 ? "border-rose-200 bg-rose-50 text-rose-800" : "border-amber-200 bg-amber-50 text-amber-900"}`} role="timer" aria-live="off">
+                  {requestExpiresInSeconds === 0
+                    ? "This same-day request has expired."
+                    : <>Same-day request · provider must accept within <span className="font-bold tabular-nums">{Math.floor(requestExpiresInSeconds / 60)}:{String(requestExpiresInSeconds % 60).padStart(2, "0")}</span>.</>}
+                </p>
+              ) : (
+                <p className="mt-4 rounded-xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm font-medium text-blue-950">
+                  Future-dated request · no 15-minute expiry applies.
+                </p>
+              )}
               <dl className="mx-auto mt-5 max-w-sm space-y-2 border-y border-dashed border-gray-200 py-4 text-left text-sm">
                 <div className="flex justify-between gap-3"><dt className="text-gray-600">Task offer</dt><dd className="font-medium tabular-nums">{formatPhpAmount(submittedBooking?.offeredPrice ?? offerAmount)}</dd></div>
                 <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare{(submittedBooking?.travelDistanceKm ?? travelDistanceKm) == null ? "" : ` · ${Number(submittedBooking?.travelDistanceKm ?? travelDistanceKm).toFixed(2)} km`}</dt><dd className="font-medium tabular-nums">{formatPhpAmount(submittedBooking?.travelFeeBeforeDiscount ?? travelFee)}</dd></div>

@@ -15,7 +15,7 @@ import RevisionRequestModal from "../components/RevisionRequestModal.jsx";
 import RequestBookingModal from "../components/RequestBookingModal.jsx";
 import PandaSwipeRefresh from "../components/PandaSwipeRefresh.jsx";
 
-const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined"];
+const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined", "Expired"];
 
 function isCompletedLikeStatus(status) {
   return status === "Completed" || status === "Settled";
@@ -67,7 +67,8 @@ export default function BookingsPage() {
     const completed = bookings.filter((b) => isCompletedLikeStatus(b.status)).length;
     const cancelled = bookings.filter((b) => b.status === "Cancelled").length;
     const declined = bookings.filter((b) => ["Declined", "Declined by Provider"].includes(b.status)).length;
-    return { total, pending, active, completed, cancelled, declined };
+    const expired = bookings.filter((b) => b.status === "Expired").length;
+    return { total, pending, active, completed, cancelled, declined, expired };
   }, [bookings]);
 
   const filteredBookings = useMemo(() => {
@@ -80,7 +81,8 @@ export default function BookingsPage() {
         || (activeTab === "Active" && ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status))
         || (activeTab === "Completed" && isCompletedLikeStatus(booking.status))
         || (activeTab === "Cancelled" && booking.status === "Cancelled")
-        || (activeTab === "Declined" && booking.status === "Declined by Provider");
+        || (activeTab === "Declined" && booking.status === "Declined by Provider")
+        || (activeTab === "Expired" && booking.status === "Expired");
       return matchesSearch && matchesTab;
     });
     const sorted = [...result];
@@ -110,6 +112,7 @@ export default function BookingsPage() {
     Completed: stats.completed,
     Cancelled: stats.cancelled,
     Declined: stats.declined,
+    Expired: stats.expired,
   };
 
   const detailBooking = bookings.find((b) => b.id === detailId) || null;

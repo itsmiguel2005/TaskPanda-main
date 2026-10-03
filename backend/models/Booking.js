@@ -65,10 +65,11 @@ const bookingSchema = new mongoose.Schema(
     }],
     status: {
       type: String,
-      enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "declined", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Cancelled", "Completed", "Settled"],
+      enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "declined", "expired", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Cancelled", "Completed", "Settled"],
       default: "pending",
       index: true,
     },
+    requestExpiresAt: { type: Date, default: undefined, index: true },
     cancellationReason: { type: String, default: "", trim: true, maxlength: 500 },
     cancellationRequestedBy: { type: String, enum: ["client", "provider"], default: undefined },
     cancellationRequestedAt: { type: Date },
@@ -81,7 +82,7 @@ const bookingSchema = new mongoose.Schema(
     clientReviewPhotos: { type: [String], default: [] },
     reviewedAt: { type: Date },
     statusHistory: [{
-      status: { type: String, enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "declined"] },
+      status: { type: String, enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "declined", "expired"] },
       at: { type: Date, default: Date.now },
     }],
     providerUpdates: [{

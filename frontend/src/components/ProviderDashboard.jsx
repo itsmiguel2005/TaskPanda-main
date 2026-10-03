@@ -7,6 +7,7 @@ import BookingPriceBreakdown from "../components/BookingPriceBreakdown.jsx";
 import StatusChangeConfirmation from "./StatusChangeConfirmation.jsx";
 import CompletionProofModal from "./CompletionProofModal.jsx";
 import { canRequestCancellation, requiresCancellationApproval } from "../utils/bookingCancellation.js";
+import { canArriveForSameDayBooking } from "../utils/bookingArrival.js";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -56,6 +57,7 @@ function StatusBadge({ status }) {
     "Cancellation Requested": "bg-amber-50 text-amber-700 border-amber-200",
     Cancelled: "bg-red-50 text-red-700 border-red-200",
     "Declined by Provider": "bg-rose-50 text-rose-800 border-rose-200",
+    Expired: "bg-slate-100 text-slate-700 border-slate-200",
   };
   return (
     <span className={`inline-flex items-center rounded-full border px-3 py-0.5 text-xs font-semibold ${map[status] ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
@@ -137,11 +139,12 @@ const FILTERS = [
   { key: "Settled", label: "Settled" },
   { key: "Cancelled", label: "Cancelled" },
   { key: "Declined by Provider", label: "Declined" },
+  { key: "Expired", label: "Expired" },
 ];
 
 // ─── Incoming Request card ───────────────────────────────────────────────────
 
-function RequestCard({ booking, onAccept, onDecline, onOpenConversation }) {
+function RequestCard({ booking, onAccept, onDecline, onOpenConversation, currentTime }) {
   const clientName = booking.client || booking.clientName || booking.worker || "Client";
   // Use pre-formatted date string from API + raw timeSlot string — avoids UTC offset conversion bug
   const requestedDate = booking.date || (booking.serviceDate ? new Date(booking.serviceDate).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" }) : "");
@@ -149,6 +152,11 @@ function RequestCard({ booking, onAccept, onDecline, onOpenConversation }) {
   const address = booking.address || booking.location || "";
   const urgency = booking.urgency || "Flexible";
   const totalPrice = booking.totalPrice ?? booking.offeredPrice ?? booking.offer ?? 0;
+  const requestExpiresAt = booking.requestExpiresAt ? new Date(booking.requestExpiresAt).getTime() : null;
+  const secondsRemaining = requestExpiresAt == null ? null : Math.max(0, Math.ceil((requestExpiresAt - currentTime.getTime()) / 1000));
+  const requestExpired = secondsRemaining === 0;
+  const arrivalFeasible = canArriveForSameDayBooking(booking, currentTime);
+  const acceptDisabled = requestExpired || !arrivalFeasible;
 
   return (
     <div className="border-b border-sky-100/80 px-4 py-5 last:border-b-0 sm:px-5">
@@ -205,20 +213,36 @@ function RequestCard({ booking, onAccept, onDecline, onOpenConversation }) {
         </div>
       </div>
 
+      {secondsRemaining != null && (
+        <p className={`mt-3 text-sm font-semibold tabular-nums ${requestExpired ? "text-rose-700" : "text-amber-800"}`} role="timer" aria-live="off">
+          {requestExpired
+            ? "Request expired"
+            : `Same-day request · expires in ${Math.floor(secondsRemaining / 60)}:${String(secondsRemaining % 60).padStart(2, "0")}`}
+        </p>
+      )}
+      {!arrivalFeasible && (
+        <p id={`arrival-notice-${booking.id}`} className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900" role="status">
+          Arrival time missed—please request a schedule adjustment
+        </p>
+      )}
+
       <BookingPriceBreakdown booking={booking} className="mt-4" />
 
       <div className="mt-4 grid grid-cols-2 gap-2 sm:max-w-sm">
           <button
             type="button"
             onClick={() => onAccept(booking.id)}
-            className="dashboard-primary-button dashboard-focus px-4 py-2.5 text-sm"
+            disabled={acceptDisabled}
+            aria-describedby={!arrivalFeasible ? `arrival-notice-${booking.id}` : undefined}
+            className="dashboard-primary-button dashboard-focus px-4 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
           >
             Accept
           </button>
           <button
             type="button"
             onClick={() => onDecline(booking.id)}
-            className="dashboard-secondary-button dashboard-focus px-4 py-2.5 text-sm"
+            disabled={requestExpired}
+            className="dashboard-secondary-button dashboard-focus px-4 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
           >
             Decline
           </button>
@@ -247,7 +271,7 @@ const STATUS_PROGRESS_INDEX = {
 
 function JobProgressTracker({ status, onAdvanceStatus }) {
   const activeIndex = STATUS_PROGRESS_INDEX[status] ?? -1;
-  const isTerminal = ["Cancelled", "Declined by Provider"].includes(status);
+  const isTerminal = ["Cancelled", "Declined by Provider", "Expired"].includes(status);
 
   return (
     <div className="mt-4" role="progressbar" aria-label="Job progress">
@@ -320,7 +344,7 @@ function JobCard({
     "Professional Service";
   const urgency = booking.urgency || "";
   // X (dismiss) button only for terminal statuses
-  const isDismissable = ["Settled", "Cancelled", "Declined by Provider"].includes(booking.status);
+  const isDismissable = ["Settled", "Cancelled", "Declined by Provider", "Expired"].includes(booking.status);
 
   // Determine primary action state button
   // "In Progress" → Mark Complete opens the proof modal (not a simple status advance)
@@ -471,6 +495,7 @@ export default function ProviderDashboard() {
   const [activeFilter, setActiveFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [acceptingId, setAcceptingId] = useState(null);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
   const [statusChange, setStatusChange] = useState(null);
   const [cancelingBooking, setCancelingBooking] = useState(null);
   const [cancellationReason, setCancellationReason] = useState("");
@@ -478,6 +503,11 @@ export default function ProviderDashboard() {
   const [completionBooking, setCompletionBooking] = useState(null);
   // Fresh provider stats fetched directly (user object from localStorage may be stale)
   const [providerStats, setProviderStats] = useState({ rating: 0, reviews: 0 });
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const providerProfession = useMemo(() => {
     if (Array.isArray(user?.professions) && user.professions.length > 0) {
@@ -571,7 +601,7 @@ export default function ProviderDashboard() {
   );
 
   const stats = useMemo(() => {
-    const activeJobs = jobs.filter((j) => !["Completed", "Settled", "Cancelled", "Declined by Provider"].includes(j.status)).length;
+    const activeJobs = jobs.filter((j) => !["Completed", "Settled", "Cancelled", "Declined by Provider", "Expired"].includes(j.status)).length;
     const completedJobs = jobs.filter((j) => ["Completed", "Settled"].includes(j.status)).length;
     const earnings = jobs
       .filter((j) => ["Completed", "Settled"].includes(j.status))
@@ -592,7 +622,8 @@ export default function ProviderDashboard() {
     const settled = visibleBookings.filter((b) => b.status === "Settled").length;
     const cancelled = visibleBookings.filter((b) => b.status === "Cancelled").length;
     const declined = visibleBookings.filter((b) => b.status === "Declined by Provider").length;
-    return { All: total, "Pending Request": pending, Active: active, Completed: completed, Settled: settled, Cancelled: cancelled, "Declined by Provider": declined };
+    const expired = visibleBookings.filter((b) => b.status === "Expired").length;
+    return { All: total, "Pending Request": pending, Active: active, Completed: completed, Settled: settled, Cancelled: cancelled, "Declined by Provider": declined, Expired: expired };
   }, [bookings, dismissedBookingIds]);
 
   // ── filtered job list ─────────────────────────────────────────────────────
@@ -627,6 +658,11 @@ export default function ProviderDashboard() {
   }, [acceptingId, updateBookingStatus]);
 
   const pendingRequest = requests.find((r) => r.id === acceptingId);
+  const pendingRequestExpired = !pendingRequest || Boolean(pendingRequest.requestExpiresAt
+    && new Date(pendingRequest.requestExpiresAt).getTime() <= currentTime.getTime());
+  const pendingArrivalFeasible = pendingRequest
+    ? canArriveForSameDayBooking(pendingRequest, currentTime)
+    : false;
 
   return (
     <div className="dashboard-page">
@@ -755,7 +791,7 @@ export default function ProviderDashboard() {
                 ) : (
                   <div>
                     {requests.map((req) => (
-                      <RequestCard key={req.id} booking={req} onAccept={handleAccept} onDecline={handleDecline} onOpenConversation={(bookingId) => navigate(`/provider/messages?bookingId=${bookingId}`)} />
+                      <RequestCard key={req.id} booking={req} onAccept={handleAccept} onDecline={handleDecline} onOpenConversation={(bookingId) => navigate(`/provider/messages?bookingId=${bookingId}`)} currentTime={currentTime} />
                     ))}
                   </div>
                 )}
@@ -925,11 +961,21 @@ export default function ProviderDashboard() {
                   ? `Accept ${pendingRequest.client || pendingRequest.clientName || "this client"}'s request for "${pendingRequest.task || "this service"}"?`
                   : "Accept this booking request?"}
               </p>
+              {pendingRequestExpired && (
+                <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-800" role="alert">
+                  This booking request has expired.
+                </p>
+              )}
+              {!pendingRequestExpired && !pendingArrivalFeasible && (
+                <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900" role="alert">
+                  Arrival time missed—please request a schedule adjustment
+                </p>
+              )}
               <div className="mt-6 flex gap-3">
                 <button type="button" onClick={() => setAcceptingId(null)} className="dashboard-secondary-button dashboard-focus flex-1 py-2.5 text-sm">
                   Cancel
                 </button>
-                <button type="button" onClick={confirmAccept} className="dashboard-primary-button dashboard-focus flex-1 py-2.5 text-sm">
+                <button type="button" onClick={confirmAccept} disabled={pendingRequestExpired || !pendingArrivalFeasible} className="dashboard-primary-button dashboard-focus flex-1 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50">
                   Accept
                 </button>
               </div>

@@ -69,7 +69,7 @@ function CheckBox({ label, count, checked, onChange }) {
 
 export default function Explore() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user, refreshProfile } = useAuth();
+  const { user } = useAuth();
   const { createBooking } = useBookings();
   const [viewingProvider, setViewingProvider] = useState(null);
   const [bookingProvider, setBookingProvider] = useState(null);
@@ -89,10 +89,6 @@ export default function Explore() {
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
   const { token } = useAuth();
-
-  useEffect(() => {
-    refreshProfile();
-  }, [refreshProfile]);
 
   useEffect(() => {
     const coordinates = user?.geoLocation?.coordinates;
@@ -195,6 +191,7 @@ export default function Explore() {
   }, [searchCoordinates, appliedQuery, selectedCategories, tesdaOnly, minKm, maxKm]);
 
   const visibleCats = showAllCats ? filterCategories : filterCategories.slice(0, 4);
+  const registeredLocationLabel = [user?.barangay, user?.city, user?.province].filter(Boolean).join(", ");
 
   const toggleCategory = (name) => {
     setSelectedCategories((prev) => {
@@ -416,10 +413,22 @@ export default function Explore() {
                 <button type="button" onClick={handleUseCurrentLocation} className="dashboard-focus rounded text-sm font-semibold text-blue-700 underline-offset-4 hover:text-blue-900 hover:underline">
                   {searchCoordinates ? "Update search location" : "Use my current location"}
                 </button>
-                {searchCoordinates && <span className="text-xs text-slate-500">Nearby search is active</span>}
+                {searchCoordinates && (
+                  <span className="text-xs text-slate-600">
+                    {registeredLocationLabel
+                      ? `Showing providers near ${registeredLocationLabel}`
+                      : "Nearby search is active"}
+                  </span>
+                )}
               </div>
               {locationError && <p className="mt-2 text-sm text-red-700" role="alert">{locationError}</p>}
-              {!searchCoordinates && <p className="mt-2 text-xs text-slate-600">Set a nearby-search pin in your profile or use your current location.</p>}
+              {!searchCoordinates && (
+                <p className="mt-2 text-xs text-slate-600">
+                  {registeredLocationLabel
+                    ? `We couldn’t map your registered location (${registeredLocationLabel}). Set a nearby-search pin in your profile or use your current location.`
+                    : "Set a nearby-search pin in your profile or use your current location."}
+                </p>
+              )}
             </div>
             <div className="hidden items-end justify-center lg:flex" aria-hidden="true">
               <img src="/assets/Panda Cropped.png" alt="" className="h-36 w-32 object-contain object-bottom" />
@@ -578,8 +587,14 @@ export default function Explore() {
           >
           {!searchCoordinates ? (
             <div className="rounded-xl border border-dashed border-sky-200 bg-white py-12 text-center">
-              <p className="text-base font-semibold text-slate-900">Set a search location to see nearby professionals</p>
-              <p className="mt-1 text-sm text-slate-600">Use current location or save a nearby-search pin in your profile.</p>
+              <p className="text-base font-semibold text-slate-900">
+                {registeredLocationLabel ? "We couldn’t map your registered location yet" : "Set a search location to see nearby professionals"}
+              </p>
+              <p className="mt-1 text-sm text-slate-600">
+                {registeredLocationLabel
+                  ? `Your address is ${registeredLocationLabel}. Update your nearby-search pin in your profile or use your current location.`
+                  : "Use current location or save a nearby-search pin in your profile."}
+              </p>
             </div>
           ) : loading && filteredProviders.length === 0 ? (
             <div className="rounded-xl border border-sky-100 bg-white py-12 text-center text-sm text-slate-600">Searching nearby professionals...</div>

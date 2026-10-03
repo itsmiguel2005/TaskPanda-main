@@ -11,6 +11,10 @@ const {
   calculateTotalPrice,
 } = require("../services/bookingPricing");
 const { awardSettledBookingStamp } = require("../services/rewards");
+const {
+  canArriveForSameDayBooking,
+  getBookingRequestExpiration,
+} = require("../services/bookingLifecycle");
 
 const TIME_SLOTS = new Set(["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"]);
 const PH_TIMEZONE_OFFSET_HOURS = 8;
@@ -39,6 +43,7 @@ const STATUS_LABELS = {
   disputed: "Disputed",
   closed: "Completed",
   settled: "Settled",
+  expired: "Expired",
 };
 
 const GRACE_PERIOD_MS = 10 * 60 * 1000;
@@ -168,6 +173,7 @@ function serializeBooking(booking) {
     photoUrls,
     status: STATUS_LABELS[statusCode] || "Pending Request",
     statusCode,
+    requestExpiresAt: booking.requestExpiresAt || null,
     cancellationReason: booking.cancellationReason || "",
     cancellationRequestedBy: booking.cancellationRequestedBy || "",
     cancellationRequestedAt: booking.cancellationRequestedAt || null,
@@ -240,13 +246,13 @@ async function handleListBookings(req, res) {
     if (requestedClientId && !mongoose.isValidObjectId(requestedClientId)) return res.status(400).json({ message: "Invalid clientId filter." });
     if (requestedProviderId && !mongoose.isValidObjectId(requestedProviderId)) return res.status(400).json({ message: "Invalid providerId filter." });
     const normalizedStatus = normalizeBookingStatus(requestedStatus);
-    if (requestedStatus && !["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "declined", "complete", "in_revision", "disputed", "closed", "settled"].includes(normalizedStatus)) return res.status(400).json({ message: "Invalid status filter." });
+    if (requestedStatus && !["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "declined", "expired", "complete", "in_revision", "disputed", "closed", "settled"].includes(normalizedStatus)) return res.status(400).json({ message: "Invalid status filter." });
 
     const filter = {};
     if (normalizedStatus) {
       filter.status = normalizedStatus;
     } else {
-      filter.status = mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "declined", "complete", "in_revision", "disputed", "closed", "settled", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Declined by Provider", "Cancelled", "Completed", "Settled"] });
+      filter.status = mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "declined", "expired", "complete", "in_revision", "disputed", "closed", "settled", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Declined by Provider", "Cancelled", "Completed", "Settled", "Expired"] });
     }
     if (req.user.role === "provider") {
       filter.providerId = req.user._id;
@@ -343,6 +349,7 @@ async function handleCreateBooking(req, res) {
   if (!termsAccepted) return res.status(400).json({ message: "Accept the terms and cancellation policy before submitting." });
 
   try {
+    await processExpiredBookingRequests();
     const travelQuote = await getBookingTravelQuote(req.user, providerId);
     if (travelQuote.errorStatus) return res.status(travelQuote.errorStatus).json({ message: travelQuote.message });
     const { provider, travelDistanceKm } = travelQuote;
@@ -435,6 +442,8 @@ async function handleCreateBooking(req, res) {
 
     let booking;
     try {
+      const submittedAt = req.bookingRequestReceivedAt || new Date();
+      const requestExpiresAt = getBookingRequestExpiration(serviceDate, submittedAt);
       booking = await Booking.create({
         clientId: req.user._id,
         providerId: provider._id,
@@ -454,7 +463,8 @@ async function handleCreateBooking(req, res) {
         paymentMethod,
         photoUrl: req.files?.[0] ? `/uploads/${req.files[0].filename}` : "",
         status: safeStatus,
-        statusHistory: [{ status: "pending", at: new Date() }],
+        requestExpiresAt: requestExpiresAt || undefined,
+        statusHistory: [{ status: "pending", at: submittedAt }],
       });
       if (selectedVoucher) {
         const redeemedVoucher = await User.updateOne(
@@ -587,6 +597,23 @@ async function handleUpdateBookingStatus(req, res) {
   if (status === "complete") return res.status(400).json({ message: "Submit a completion note through the completion proof form." });
     if (status === "settled") return res.status(400).json({ message: "Settled bookings are managed automatically after cash confirmation." });
   try {
+    if (status === "approved" || status === "declined") {
+      const now = new Date();
+      const expiredBooking = await Booking.findOneAndUpdate(
+        {
+          _id: bookingId,
+          providerId: req.user._id,
+          status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
+          requestExpiresAt: mongoose.trusted({ $lte: now }),
+        },
+        {
+          $set: { status: "expired" },
+          $push: { statusHistory: { status: "expired", at: now } },
+        },
+        { new: true }
+      );
+      if (expiredBooking) return res.status(409).json({ message: "This booking request has expired." });
+    }
     if (status === "en_route") {
       const pendingReschedule = await Booking.exists({
         _id: bookingId,
@@ -606,13 +633,62 @@ async function handleUpdateBookingStatus(req, res) {
     };
     const currentStatuses = allowedPreviousStatuses[status];
     const filter = { _id: bookingId, providerId: req.user._id, status: mongoose.trusted({ $in: currentStatuses }) };
-    const now = new Date();
+    let now = new Date();
+    if (status === "approved") {
+      const pendingBooking = await Booking.findOne({
+        _id: bookingId,
+        providerId: req.user._id,
+        status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
+      }).select("serviceDate timeSlot travelDistanceKm requestExpiresAt");
+      if (!pendingBooking) return res.status(404).json({ message: "Booking not found or it has already been updated." });
+      now = new Date();
+      if (pendingBooking.requestExpiresAt && pendingBooking.requestExpiresAt <= now) {
+        await Booking.findOneAndUpdate(
+          {
+            _id: bookingId,
+            providerId: req.user._id,
+            status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
+            requestExpiresAt: mongoose.trusted({ $lte: now }),
+          },
+          {
+            $set: { status: "expired" },
+            $push: { statusHistory: { status: "expired", at: now } },
+          }
+        );
+        return res.status(409).json({ message: "This booking request has expired." });
+      }
+      if (!canArriveForSameDayBooking(
+        pendingBooking.serviceDate,
+        pendingBooking.timeSlot,
+        pendingBooking.travelDistanceKm,
+        now
+      )) {
+        return res.status(409).json({ message: "Arrival time missed—please request a schedule adjustment" });
+      }
+      filter.$or = mongoose.trusted([
+        { requestExpiresAt: mongoose.trusted({ $exists: false }) },
+        { requestExpiresAt: null },
+        { requestExpiresAt: mongoose.trusted({ $gt: now }) },
+      ]);
+    } else if (status === "declined") {
+      now = new Date();
+      filter.$or = mongoose.trusted([
+        { requestExpiresAt: mongoose.trusted({ $exists: false }) },
+        { requestExpiresAt: null },
+        { requestExpiresAt: mongoose.trusted({ $gt: now }) },
+      ]);
+    }
     const booking = await Booking.findOneAndUpdate(
       filter,
       { $set: { status }, $push: { statusHistory: { status, at: now } } },
       { new: true }
     ).populate(populatePaths);
-    if (!booking) return res.status(404).json({ message: "Booking not found or it has already been updated." });
+    if (!booking) {
+      if (status === "approved" || status === "declined") {
+        return res.status(409).json({ message: "This booking request has expired or has already been updated." });
+      }
+      return res.status(404).json({ message: "Booking not found or it has already been updated." });
+    }
     const systemMessages = {
       approved: "Booking approved. The provider is preparing for the task.",
       en_route: "Provider is on the way to your location.",
@@ -1325,4 +1401,19 @@ async function handleRespondToCounterOffer(req, res) {
   }
 }
 
-module.exports = { handleListBookings, handleProviderAvailability, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks };
+async function processExpiredBookingRequests() {
+  const now = new Date();
+  const result = await Booking.updateMany(
+    {
+      status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
+      requestExpiresAt: mongoose.trusted({ $lte: now }),
+    },
+    {
+      $set: { status: "expired" },
+      $push: { statusHistory: { status: "expired", at: now } },
+    }
+  );
+  return result.modifiedCount;
+}
+
+module.exports = { handleListBookings, handleProviderAvailability, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks, processExpiredBookingRequests };

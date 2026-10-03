@@ -41,6 +41,7 @@ function StatusBadge({ status }) {
     "Cancellation Requested": "bg-amber-100 text-amber-700 border-amber-200",
     Cancelled: "bg-red-100 text-red-700 border-red-200",
     "Declined by Provider": "bg-rose-100 text-rose-800 border-rose-200",
+    Expired: "bg-slate-100 text-slate-700 border-slate-200",
   };
   return (
     <span
@@ -139,7 +140,7 @@ export default function Dashboard() {
   }, [user?.geoLocation?.coordinates]);
   const visibleTopRatedProviders = useMemo(() => topRatedProviders, [topRatedProviders]);
 
-  const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined"];
+  const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined", "Expired"];
   const dashboardDismissableStatuses = new Set(["Completed", "Settled", "Cancelled", "Declined by Provider"]);
   const nonDismissedBookingList = bookingList.filter((booking) => !dismissedBookingIds.includes(booking.id));
 
@@ -162,6 +163,7 @@ export default function Dashboard() {
     ).length,
     Cancelled: nonDismissedBookingList.filter((b) => b.status === "Cancelled").length,
     Declined: nonDismissedBookingList.filter((b) => b.status === "Declined by Provider").length,
+    Expired: nonDismissedBookingList.filter((b) => b.status === "Expired").length,
   };
 
   const scroll = (direction) => {
@@ -193,6 +195,7 @@ export default function Dashboard() {
     if (activeTab === "Active") return ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status);
     if (activeTab === "Completed") return booking.status === "Completed";
     if (activeTab === "Cancelled") return booking.status === "Cancelled";
+    if (activeTab === "Expired") return booking.status === "Expired";
     return booking.status === "Declined by Provider";
   });
 
@@ -900,6 +903,7 @@ export default function Dashboard() {
                           Completed: "No completed bookings yet.",
                           Cancelled: "No cancelled bookings.",
                           Declined: "No requests have been declined by a provider.",
+                          Expired: "No expired requests.",
                         }[activeTab] || "No bookings in this view."}
                   </p>
                   {hasDismissedBookings && (
