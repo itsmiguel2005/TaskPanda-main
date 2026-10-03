@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header.jsx";
+import BookingStatusBadge from "../components/BookingStatusBadge.jsx";
+import BookingPriceBreakdown from "../components/BookingPriceBreakdown.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
 import BookingProgress from "../components/BookingProgress.jsx";
 import BookingHistory from "../components/BookingHistory.jsx";
@@ -14,15 +16,6 @@ const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined"];
 
 function isCompletedLikeStatus(status) {
   return status === "Completed" || status === "Settled";
-}
-
-function formatBookingTotal(booking) {
-  const amount = Number(booking.totalPrice ?? booking.offeredPrice ?? booking.offer);
-  return Number.isFinite(amount) ? `₱${amount.toLocaleString("en-PH", { maximumFractionDigits: 2 })}` : String(booking.price || "").replace(/^P/, "₱");
-}
-
-function formatPhpAmount(amount) {
-  return `₱${Number(amount || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
 }
 
 function canRequestRevision(booking) {
@@ -41,52 +34,6 @@ function revisionLimitReached(booking) {
   return isCompletedLikeStatus(booking?.status)
     && !booking.cashReceipt?.receiptNumber
     && (booking.revisionRequests || []).length >= 2;
-}
-
-function StatusBadge({ status }) {
-  const colors = {
-    "Pending Request": "bg-amber-100 text-amber-700 border-amber-200",
-    Confirmed: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    "On the Way": "bg-cyan-100 text-cyan-800 border-cyan-200",
-    "In Progress": "bg-violet-100 text-violet-700 border-violet-200",
-    Completed: "bg-blue-100 text-blue-700 border-blue-200",
-    Settled: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    Cancelled: "bg-red-100 text-red-700 border-red-200",
-    "Declined by Provider": "bg-rose-100 text-rose-800 border-rose-200",
-    "Cancellation Requested": "bg-amber-100 text-amber-700 border-amber-200",
-    "In Revision": "bg-amber-100 text-amber-800 border-amber-200",
-    Disputed: "bg-rose-100 text-rose-700 border-rose-200",
-  };
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-[0.01em] ${
-        colors[status] || "bg-slate-100 text-slate-700 border-slate-200"
-      }`}
-    >
-      {status}
-    </span>
-  );
-}
-
-function StatusDot({ status }) {
-  const colors = {
-    "Pending Request": "bg-amber-500",
-    Confirmed: "bg-green-500",
-    "On the Way": "bg-cyan-500",
-    "In Progress": "bg-purple-500",
-    Completed: "bg-blue-500",
-    Settled: "bg-emerald-500",
-    Cancelled: "bg-red-500",
-    "Declined by Provider": "bg-rose-600",
-    "Cancellation Requested": "bg-amber-500",
-  };
-  return (
-    <span
-      className={`inline-block h-2 w-2 rounded-full ${
-        colors[status] || "bg-gray-400"
-      }`}
-    />
-  );
 }
 
 export default function BookingsPage() {
@@ -135,11 +82,7 @@ export default function BookingsPage() {
     if (sortBy === "createdAt") {
       sorted.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
     } else if (sortBy === "price") {
-      sorted.sort(
-        (a, b) =>
-          parseInt(b.price.replace(/[^0-9]/g, "")) -
-          parseInt(a.price.replace(/[^0-9]/g, ""))
-      );
+      sorted.sort((a, b) => Number(b.totalPrice ?? b.offeredPrice ?? 0) - Number(a.totalPrice ?? a.offeredPrice ?? 0));
     } else if (sortBy === "status") {
       const order = {
         "Pending Request": 0,
@@ -236,18 +179,17 @@ export default function BookingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-16 text-slate-800">
+    <div className="dashboard-page text-slate-800">
       <Header showNav activeTab="Bookings" />
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="dashboard-shell max-w-6xl">
         <div className="mb-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-600">Your activity</p>
-          <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">My Bookings</h1>
-          <p className="mt-2 text-sm text-slate-500">
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">My bookings</h1>
+          <p className="mt-2 text-sm text-slate-600">
             View and manage your service bookings in one place.
           </p>
         </div>
-        {error && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-        {isLoading && <p className="mb-4 text-sm text-slate-500">Loading bookings...</p>}
+        {error && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+        {isLoading && <p className="mb-4 text-sm text-slate-600">Loading bookings...</p>}
 
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-6">
           {[
@@ -260,26 +202,26 @@ export default function BookingsPage() {
           ].map((s) => (
             <div
               key={s.label}
-              className={`rounded-2xl border ${s.tone} px-4 py-3 text-center shadow-sm`}
+              className={`dashboard-stat ${s.tone} text-center`}
             >
-              <p className="text-2xl font-bold tracking-tight">{s.value}</p>
-              <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-current/75">{s.label}</p>
+              <p className="text-2xl font-extrabold tabular-nums tracking-tight">{s.value}</p>
+              <p className="dashboard-kicker mt-1 text-current/75">{s.label}</p>
             </div>
           ))}
         </div>
 
         <div className="mb-4 space-y-3">
-          <div className="grid grid-cols-2 gap-2 pb-1 sm:grid-cols-3 lg:grid-cols-6">
+          <div role="group" aria-label="Filter bookings" className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">
             {tabs.map((tab) => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`flex min-h-10 w-full items-center justify-center gap-2 rounded-xl px-2 py-2 text-xs font-semibold transition sm:text-sm ${activeTab === tab ? "bg-slate-900 text-white shadow-sm" : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"}`}>
+              <button key={tab} type="button" aria-pressed={activeTab === tab} onClick={() => setActiveTab(tab)} className={`dashboard-focus flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition sm:text-sm ${activeTab === tab ? "bg-slate-900 text-white shadow-sm" : "border border-sky-100 bg-white text-slate-700 hover:bg-sky-50 hover:text-blue-950"}`}>
                 {tab}
-                <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${activeTab === tab ? "bg-white/15 text-white" : "bg-slate-100 text-slate-500"}`}>{tabCounts[tab]}</span>
+                <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${activeTab === tab ? "bg-white/15 text-white" : "bg-sky-50 text-blue-950"}`}>{tabCounts[tab]}</span>
               </button>
             ))}
           </div>
           <label className="relative block w-full">
             <span className="sr-only">Search bookings</span>
-            <input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search provider or repair" className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20" />
+            <input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search provider or repair" className="dashboard-focus w-full rounded-xl border border-sky-100 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-800 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20" />
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
           </label>
         </div>
@@ -288,7 +230,7 @@ export default function BookingsPage() {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+            className="dashboard-focus rounded-xl border border-sky-100 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
           >
             <option value="createdAt">Submitted: Newest</option>
             <option value="price">Sort: Price</option>
@@ -302,27 +244,26 @@ export default function BookingsPage() {
             filteredBookings.map((booking) => (
               <div
                 key={booking.id}
-                className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                className="overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
               >
                 <div className="p-5 sm:p-6">
-                  <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex flex-col gap-4 border-b border-sky-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex items-start gap-4">
-                      <div className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full text-lg font-bold shadow-inner ring-1 ring-primary-200 ${booking.workerProfileImage ? "bg-white" : "bg-primary-100 text-primary-700"}`}>
+                      <div className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full text-lg font-bold ring-1 ring-sky-200 ${booking.workerProfileImage ? "bg-white" : "bg-sky-50 text-blue-950"}`}>
                         {booking.workerProfileImage ? (
                           <img src={booking.workerProfileImage} alt={`${booking.worker} profile`} className="h-full w-full object-cover" />
                         ) : booking.worker.charAt(0)}
                       </div>
                       <div>
-                        <h3 className="text-lg font-bold text-slate-900">
+                        <h3 className="text-lg font-bold tracking-tight text-slate-900">
                           {booking.worker}
                         </h3>
                         <p className="text-sm text-slate-500">{booking.cred}</p>
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2">
-                      <StatusDot status={booking.status} />
-                      <StatusBadge status={booking.status} />
-                      <button onClick={() => navigate(`/client/messages?bookingId=${booking.id}`)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">Chat</button>
+                      <BookingStatusBadge status={booking.status} />
+                      <button onClick={() => navigate(`/client/messages?bookingId=${booking.id}`)} className="dashboard-secondary-button dashboard-focus px-3 py-1.5 text-xs">{booking.status === "Pending Request" ? "Negotiate" : "Chat"}</button>
                     </div>
                   </div>
                   <div className="mt-4">
@@ -331,10 +272,10 @@ export default function BookingsPage() {
 
                   <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.5fr)_minmax(15rem,1fr)]">
                     <div className="min-w-0">
-                    <h4 className="text-base font-bold text-slate-800">
+                    <h4 className="text-base font-bold text-slate-900">
                       {booking.task}
                     </h4>
-                    <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                    <p className="mt-1 text-sm leading-relaxed text-slate-600">
                       {booking.description}
                     </p>
                           {booking.status === "Cancellation Requested" && booking.cancellationExpiresAt && (
@@ -378,8 +319,9 @@ export default function BookingsPage() {
                         {booking.photoUrls.map((url) => <img key={url} src={url} alt="Repair item" className="h-16 w-16 rounded-lg object-cover" />)}
                       </div>
                     )}
+                    <BookingPriceBreakdown booking={booking} className="mt-4" />
                     </div>
-                    <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                    <div className="space-y-3 border-t border-sky-100 pt-4 text-sm text-slate-700 md:border-l md:border-t-0 md:pl-4 md:pt-0">
                     <div className="flex items-start gap-2">
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -418,17 +360,16 @@ export default function BookingsPage() {
                     </span>
                   </div>
                   </div>
-                  <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+                  <div className="mt-5 border-y border-sky-100 py-3">
                     <BookingHistory events={booking.statusHistory} />
                   </div>
 
-                  <div className="mt-5 flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div><span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Total</span><span className="text-2xl font-bold text-slate-900">{formatBookingTotal(booking)}</span></div>
+                  <div className="mt-5 flex flex-col-reverse gap-2 border-t border-sky-100 pt-4 sm:flex-row sm:items-center sm:justify-end">
                     <div className="flex flex-wrap gap-2">
                       {canRequestCancellation(booking) ? (
                         <button
                           onClick={() => setCancelingId(booking.id)}
-                          className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                          className="dashboard-focus rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-800"
                         >
                           Cancel
                         </button>
@@ -490,11 +431,11 @@ export default function BookingsPage() {
             ))
           ) : (
             <div className="rounded-xl border border-dashed border-gray-300 bg-white py-16 text-center">
-              <p className="text-4xl mb-3">📋</p>
-              <p className="text-base font-semibold text-gray-700">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto mb-3 h-10 w-10 text-slate-300"><path strokeLinecap="round" strokeLinejoin="round" d="M8 6.75h8M8 10.75h8M8 14.75h5M5.75 3.75h12.5a1.5 1.5 0 011.5 1.5v13.5a1.5 1.5 0 01-1.5 1.5H5.75a1.5 1.5 0 01-1.5-1.5V5.25a1.5 1.5 0 011.5-1.5z" /></svg>
+              <p className="text-base font-semibold text-slate-800">
                 No bookings found
               </p>
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-1 text-sm text-slate-500">
                 {activeTab !== "All"
                   ? `You have no ${activeTab.toLowerCase()} bookings`
                   : "No bookings yet"}
@@ -502,7 +443,7 @@ export default function BookingsPage() {
               {activeTab !== "All" && (
                 <button
                   onClick={() => setActiveTab("All")}
-                  className="mt-4 rounded-lg bg-purple-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-purple-700"
+                  className="dashboard-primary-button dashboard-focus mt-4 px-5 py-2 text-sm"
                 >
                   View All Bookings
                 </button>
@@ -607,100 +548,70 @@ export default function BookingsPage() {
       {/* Booking Detail Modal */}
       {detailBooking && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/45 p-3 backdrop-blur-[2px] sm:p-4"
           onClick={() => setDetailId(null)}
         >
-          <div
-            className="w-full max-w-md rounded-2xl bg-white shadow-xl"
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="client-booking-detail-title"
+            className="w-full max-w-xl overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.2)]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="relative">
-              <div className="relative h-28 bg-gradient-to-r from-purple-500 to-indigo-600">
-                <div className="absolute -bottom-10 left-6">
-                  <div className={`flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border-4 border-white text-2xl font-bold ${detailBooking.workerProfileImage ? "bg-white" : "bg-primary-100 text-primary-700"}`}>
-                    {detailBooking.workerProfileImage ? (
-                      <img src={detailBooking.workerProfileImage} alt={`${detailBooking.worker} profile`} className="h-full w-full object-cover" />
-                    ) : detailBooking.worker.charAt(0)}
-                  </div>
-                </div>
+            <div className="flex items-start gap-4 border-b border-sky-100 bg-gradient-to-br from-sky-50 via-white to-white px-5 py-5 sm:px-6">
+              <div className={`flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full text-lg font-bold ring-1 ring-sky-200 ${detailBooking.workerProfileImage ? "bg-white" : "bg-sky-100 text-blue-950"}`}>
+                {detailBooking.workerProfileImage ? (
+                  <img src={detailBooking.workerProfileImage} alt={`${detailBooking.worker} profile`} className="h-full w-full object-cover" />
+                ) : detailBooking.worker.charAt(0)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 id="client-booking-detail-title" className="text-lg font-extrabold tracking-tight text-slate-900">{detailBooking.worker}</h2>
+                <p className="mt-0.5 text-sm text-slate-600">{detailBooking.cred}</p>
+                <div className="mt-2"><BookingStatusBadge status={detailBooking.status} /></div>
               </div>
               <button
                 onClick={() => setDetailId(null)}
-                className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/80 text-gray-500 transition hover:bg-white hover:text-gray-700"
+                className="dashboard-focus flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-white hover:text-slate-900"
                 aria-label="Close"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  className="h-5 w-5"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M5.47 5.47a.75.75 0 011.06 0L12 10.94l5.47-5.47a.75.75 0 111.06 1.06L13.06 12l5.47 5.47a.75.75 0 11-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 01-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 010-1.06z"
-                    clipRule="evenodd"
-                  />
-                </svg>
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5"><path strokeLinecap="round" d="m6 6 12 12M18 6 6 18" /></svg>
               </button>
             </div>
-            <div className="px-6 pt-12 pb-6">
-              <h2 className="text-xl font-bold text-gray-900">
-                {detailBooking.worker}
-              </h2>
-              <p className="text-sm text-gray-500">{detailBooking.cred}</p>
-              <div className="mt-3 flex items-center gap-2">
-                <StatusDot status={detailBooking.status} />
-                <StatusBadge status={detailBooking.status} />
-              </div>
-
-              <div className="mt-4 space-y-3 text-sm">
-                <div className="flex justify-between border-b border-gray-100 pb-2">
-                  <span className="text-gray-500">Service</span>
-                  <span className="font-medium text-gray-800">
-                    {detailBooking.task}
-                  </span>
+            <div className="max-h-[calc(100vh-8rem)] overflow-y-auto p-5 sm:p-6">
+              <BookingProgress status={detailBooking.status} />
+              <div className="mt-4 grid gap-3 rounded-xl border border-sky-100 bg-white p-4 text-sm sm:grid-cols-2">
+                <div>
+                  <p className="dashboard-kicker">Service</p>
+                  <p className="mt-1 font-semibold text-slate-900">{detailBooking.task}</p>
                 </div>
-                <div className="flex justify-between border-b border-gray-100 pb-2">
-                  <span className="text-gray-500">Date &amp; Time</span>
-                  <span className="font-medium text-gray-800">
-                    {detailBooking.date} at {detailBooking.time}
-                  </span>
+                <div>
+                  <p className="dashboard-kicker">Scheduled</p>
+                  <p className="mt-1 font-semibold text-slate-900">{detailBooking.date} at {detailBooking.time}</p>
                 </div>
-                <div className="flex justify-between border-b border-gray-100 pb-2">
-                  <span className="text-gray-500">Address</span>
-                  <span className="font-medium text-gray-800">
-                    {detailBooking.address}
-                  </span>
+                <div className="sm:col-span-2">
+                  <p className="dashboard-kicker">Service address</p>
+                  <div className="mt-1 text-slate-700"><AddressActions address={detailBooking.address} /></div>
                 </div>
-                <section className="rounded-xl border border-gray-200 bg-gray-50/70 p-4">
-                  <h3 className="text-sm font-semibold text-gray-900">Price breakdown</h3>
-                  <dl className="mt-3 space-y-2 text-sm">
-                    <div className="flex justify-between gap-3"><dt className="text-gray-600">Task offer</dt><dd className="font-medium tabular-nums text-gray-900">{formatPhpAmount(detailBooking.offeredPrice ?? detailBooking.offer)}</dd></div>
-                    <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare <span className="block text-xs text-gray-500">{detailBooking.travelDistanceKm == null ? "Distance not recorded" : `${Number(detailBooking.travelDistanceKm).toFixed(2)} km · ₱20 first 2 km + ₱10/km after`}</span></dt><dd className="font-medium tabular-nums text-gray-900">{formatPhpAmount(detailBooking.travelFee)}</dd></div>
-                    <div className="flex justify-between gap-3"><dt className="text-gray-600">Optional tip</dt><dd className="font-medium tabular-nums text-gray-900">{formatPhpAmount(detailBooking.tipAmount)}</dd></div>
-                  </dl>
-                  <div className="mt-3 flex justify-between gap-3 border-t border-gray-200 pt-3"><dt className="font-semibold text-gray-800">Total amount due</dt><dd className="font-bold tabular-nums text-gray-950">{formatPhpAmount(detailBooking.totalPrice ?? detailBooking.offeredPrice ?? detailBooking.offer)}</dd></div>
-                </section>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Description</span>
-                  <span className="text-right text-gray-700">
-                    {detailBooking.description}
-                  </span>
+                <div className="sm:col-span-2">
+                  <p className="dashboard-kicker">Task details</p>
+                  <p className="mt-1 leading-relaxed text-slate-700">{detailBooking.description}</p>
                 </div>
               </div>
+              <BookingPriceBreakdown booking={detailBooking} className="mt-4" />
+              <BookingHistory events={detailBooking.statusHistory} />
 
-              <div className="mt-6 flex gap-2">
+              <div className="mt-5 flex flex-wrap gap-2">
                 <button
                   onClick={() => {
                     setDetailId(null);
                     navigate(`/client/messages?bookingId=${detailBooking.id}`);
                   }}
-                  className="flex-1 rounded-lg bg-purple-600 py-2.5 text-sm font-semibold text-white transition hover:bg-purple-700"
+                  className="dashboard-primary-button dashboard-focus min-h-11 flex-1 px-4 py-2.5 text-sm"
                 >
                   Chat Provider
                 </button>
                 {canRequestRevision(detailBooking) && (
-                  <button type="button" onClick={() => { setDetailId(null); setRevisioningId(detailBooking.id); }} className="flex-1 rounded-lg border border-amber-200 bg-amber-50 py-2.5 text-sm font-semibold text-amber-900 hover:bg-amber-100">Request Revision</button>
+                  <button type="button" onClick={() => { setDetailId(null); setRevisioningId(detailBooking.id); }} className="dashboard-focus min-h-11 flex-1 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900 hover:bg-amber-100">Request Revision</button>
                 )}
                 {canRequestCancellation(detailBooking) ? (
                   <button
@@ -708,16 +619,16 @@ export default function BookingsPage() {
                       setDetailId(null);
                       setCancelingId(detailBooking.id);
                     }}
-                    className="flex-1 rounded-lg border border-gray-200 bg-white py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                    className="dashboard-focus min-h-11 flex-1 rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50"
                   >
                     Cancel
                   </button>
                 ) : detailBooking.status !== "Completed" && getCancellationLockMessage(detailBooking) && (
-                  <button type="button" disabled title={getCancellationLockMessage(detailBooking)} className="flex-1 cursor-not-allowed rounded-lg bg-gray-100 py-2.5 text-sm font-medium text-gray-500">Cancellation locked</button>
+                  <button type="button" disabled title={getCancellationLockMessage(detailBooking)} className="min-h-11 flex-1 cursor-not-allowed rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-500">Cancellation locked</button>
                 )}
               </div>
             </div>
-          </div>
+          </section>
         </div>
       )}
     </div>

@@ -1,23 +1,38 @@
+function toAmount(value, fallback = 0) {
+  const amount = typeof value === "number" ? value : Number(String(value ?? "").replace(/[^\d.-]/g, ""));
+  return Number.isFinite(amount) ? amount : fallback;
+}
+
 function formatPhpAmount(value) {
-  const amount = Number(value);
+  const amount = toAmount(value);
   return `₱${(Number.isFinite(amount) ? amount : 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
 }
 
-export default function BookingPriceBreakdown({ booking, className = "" }) {
-  const taskOffer = Number(booking?.taskOffer ?? booking?.offeredPrice ?? booking?.offer ?? 0);
-  const travelFee = Number(booking?.travelFee ?? 0);
-  const tipAmount = Number(booking?.tipAmount ?? 0);
-  const totalPrice = Number(booking?.totalPrice ?? taskOffer + travelFee + tipAmount);
+export default function BookingPriceBreakdown({
+  booking,
+  className = "",
+  taskLabel = "Task offer",
+  totalLabel = "Total amount due",
+}) {
+  const taskOffer = toAmount(booking?.taskOffer ?? booking?.offeredPrice ?? booking?.offer ?? booking?.price);
+  const travelFee = toAmount(booking?.travelFee);
+  const tipAmount = toAmount(booking?.tipAmount);
+  const totalPrice = booking?.totalPrice == null
+    ? taskOffer + travelFee + tipAmount
+    : toAmount(booking.totalPrice, taskOffer + travelFee + tipAmount);
   const distanceText = booking?.travelDistanceKm == null
     ? "Distance not recorded"
     : `${Number(booking.travelDistanceKm).toFixed(2)} km · ₱20 first 2 km + ₱10/km after`;
 
   return (
-    <section aria-label="Price breakdown" className={`border-t border-sky-100 pt-3 ${className}`.trim()}>
-      <h3 className="dashboard-kicker">Price breakdown</h3>
-      <dl className="mt-2 space-y-1.5 text-xs sm:text-sm">
+    <section aria-label="Price breakdown" className={`rounded-xl border border-sky-100 bg-slate-50/80 p-4 ${className}`.trim()}>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Price breakdown</h3>
+        <span className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-slate-500 ring-1 ring-slate-200">Cost summary</span>
+      </div>
+      <dl className="mt-3 space-y-2.5 text-xs sm:text-sm">
         <div className="flex items-start justify-between gap-3">
-          <dt className="text-slate-600">Task offer</dt>
+          <dt className="text-slate-600">{taskLabel}</dt>
           <dd className="shrink-0 font-semibold tabular-nums text-slate-900">{formatPhpAmount(taskOffer)}</dd>
         </div>
         <div className="flex items-start justify-between gap-3">
@@ -31,8 +46,8 @@ export default function BookingPriceBreakdown({ booking, className = "" }) {
           <dt className="text-slate-600">Optional tip</dt>
           <dd className="shrink-0 font-semibold tabular-nums text-slate-900">{formatPhpAmount(tipAmount)}</dd>
         </div>
-        <div className="flex items-center justify-between gap-3 border-t border-sky-100 pt-2 text-sm">
-          <dt className="font-bold text-slate-800">Total amount due</dt>
+        <div className="flex items-center justify-between gap-3 border-t border-dashed border-sky-200 pt-3 text-sm">
+          <dt className="font-bold text-slate-800">{totalLabel}</dt>
           <dd className="shrink-0 text-base font-extrabold tabular-nums text-slate-950">{formatPhpAmount(totalPrice)}</dd>
         </div>
       </dl>

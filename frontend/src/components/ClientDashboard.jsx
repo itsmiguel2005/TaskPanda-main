@@ -882,12 +882,6 @@ export default function Dashboard() {
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-7 top-[1.125rem] h-4 w-4 text-gray-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
             </label>
             <div className="max-h-[520px] overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
-              {hasDismissedBookings && (
-                <div className="mb-3 flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2 text-[11px] text-gray-600">
-                  <span>{dismissedBookingIds.length} hidden</span>
-                  <button type="button" onClick={handleRestoreDismissedBookings} className="dashboard-focus rounded font-semibold text-blue-700 underline-offset-2 hover:text-blue-800 hover:underline">Restore</button>
-                </div>
-              )}
               {filteredBookings.length === 0 ? (
                 <div className="py-8 text-center">
                   <p className="text-sm font-medium text-gray-500">

@@ -11,17 +11,15 @@ export default function BookingProgress({ status }) {
   if (activeIndex === undefined) return null;
 
   return (
-    <div className="mt-4" role="progressbar" aria-label="Booking progress" aria-valuemin={0} aria-valuemax={3} aria-valuenow={activeIndex} aria-valuetext={status}>
-      <ol className="grid grid-cols-4 gap-1">
-        {STEPS.map((step, index) => (
-          <li key={step} className="min-w-0">
-            <span className={`mb-1 block h-1.5 rounded-full ${index <= activeIndex ? "bg-primary-600" : "bg-gray-200"}`} />
-            <span className={`block truncate text-[10px] ${index === activeIndex ? "font-semibold text-gray-900" : index < activeIndex ? "text-gray-600" : "text-gray-400"}`}>
-              {step}
-            </span>
-          </li>
-        ))}
-      </ol>
-    </div>
+    <ol aria-label="Booking progress" className="mt-4 grid grid-cols-4 gap-1">
+      {STEPS.map((step, index) => (
+        <li key={step} aria-current={index === activeIndex ? "step" : undefined} className="min-w-0">
+          <span className={`mb-1 block h-1.5 rounded-full transition-colors duration-200 ${index <= activeIndex ? "bg-blue-600" : "bg-slate-200"}`} />
+          <span className={`block truncate text-[10px] ${index === activeIndex ? "font-bold text-slate-900" : index < activeIndex ? "font-medium text-slate-600" : "text-slate-400"}`}>
+            {step}
+          </span>
+        </li>
+      ))}
+    </ol>
   );
 }

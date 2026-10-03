@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header.jsx";
+import BookingStatusBadge from "../components/BookingStatusBadge.jsx";
+import BookingPriceBreakdown from "../components/BookingPriceBreakdown.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
 import BookingProgress from "../components/BookingProgress.jsx";
 import StatusChangeConfirmation from "../components/StatusChangeConfirmation.jsx";
@@ -75,59 +77,13 @@ const tabs = [
 ];
 
 function parsePrice(priceStr) {
-  const num = parseInt(priceStr.replace(/[^0-9]/g, ""), 10);
-  return isNaN(num) ? 0 : num;
+  const amount = Number(String(priceStr ?? "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(amount) ? amount : 0;
 }
 
-function formatBookingTotal(booking) {
-  const amount = Number(booking.totalPrice ?? booking.offeredPrice ?? booking.offer);
-  return Number.isFinite(amount) ? `₱${amount.toLocaleString("en-PH", { maximumFractionDigits: 2 })}` : String(booking.price || "").replace(/^P/, "₱");
-}
-
-function StatusBadge({ status }) {
-  const colors = {
-    "Pending Request": "bg-amber-100 text-amber-700 border-amber-200",
-    Confirmed: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    Completed: "bg-blue-100 text-blue-700 border-blue-200",
-    Settled: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    Cancelled: "bg-red-100 text-red-700 border-red-200",
-    "Declined by Provider": "bg-rose-100 text-rose-800 border-rose-200",
-    "Cancellation Requested": "bg-amber-100 text-amber-700 border-amber-200",
-    "In Revision": "bg-amber-100 text-amber-800 border-amber-200",
-    Disputed: "bg-rose-100 text-rose-700 border-rose-200",
-    "In Progress": "bg-violet-100 text-violet-700 border-violet-200",
-    "On the Way": "bg-cyan-100 text-cyan-800 border-cyan-200",
-  };
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-[0.01em] ${
-        colors[status] || "bg-slate-100 text-slate-700 border-slate-200"
-      }`}
-    >
-      {status}
-    </span>
-  );
-}
-
-function StatusDot({ status }) {
-  const colors = {
-    "Pending Request": "bg-amber-500",
-    Confirmed: "bg-green-500",
-    Completed: "bg-blue-500",
-    Settled: "bg-emerald-500",
-    Cancelled: "bg-red-500",
-    "Declined by Provider": "bg-rose-600",
-    "Cancellation Requested": "bg-amber-500",
-    "In Progress": "bg-purple-500",
-    "On the Way": "bg-cyan-500",
-  };
-  return (
-    <span
-      className={`inline-block h-2 w-2 rounded-full ${
-        colors[status] || "bg-gray-400"
-      }`}
-    />
-  );
+function formatPhpAmount(value) {
+  const amount = Number(value);
+  return `₱${(Number.isFinite(amount) ? amount : 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
 }
 
 export default function ProviderBookingsPage() {
@@ -196,7 +152,7 @@ export default function ProviderBookingsPage() {
     declined: managedBookings.filter((b) => b.status === "Declined by Provider").length,
     earnings: managedBookings
       .filter((b) => ["Completed", "Settled"].includes(b.status))
-      .reduce((sum, b) => sum + parsePrice(b.price), 0),
+      .reduce((sum, booking) => sum + Number(booking.totalPrice ?? parsePrice(booking.price)), 0),
   }), [requests, managedBookings]);
 
   const showIncoming = activeTab === "All" || activeTab === "Incoming Requests";
@@ -282,19 +238,18 @@ export default function ProviderBookingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-16 text-slate-800">
+    <div className="dashboard-page text-slate-800">
       <Header showNav activeTab="Bookings" role="provider" />
 
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="dashboard-shell max-w-6xl">
         <div className="mb-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-600">Provider dashboard</p>
-          <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">Manage Bookings</h1>
-          <p className="mt-2 text-sm text-slate-500">
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Manage bookings</h1>
+          <p className="mt-2 text-sm text-slate-600">
             View incoming requests and manage your jobs.
           </p>
         </div>
-        {error && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-        {isLoading && <p className="mb-4 text-sm text-slate-500">Loading bookings...</p>}
+        {error && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+        {isLoading && <p className="mb-4 text-sm text-slate-600">Loading bookings...</p>}
 
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-7">
           {[
@@ -304,17 +259,17 @@ export default function ProviderBookingsPage() {
             { label: "Completed", value: stats.completed, tone: "bg-blue-50 text-blue-700 border-blue-100" },
             { label: "Cancelled", value: stats.cancelled, tone: "bg-rose-50 text-rose-700 border-rose-100" },
             { label: "Declined", value: stats.declined, tone: "bg-rose-50 text-rose-800 border-rose-100" },
-            { label: "Earnings", value: `₱${stats.earnings.toLocaleString()}`, tone: "bg-white text-slate-700 border-slate-200" },
+            { label: "Earnings", value: formatPhpAmount(stats.earnings), tone: "bg-white text-slate-700 border-slate-200" },
           ].map((s) => (
-            <div key={s.label} className={`rounded-2xl border ${s.tone} px-3 py-3 text-center shadow-sm`}>
-              <p className="text-2xl font-bold tracking-tight">{s.value}</p>
-              <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-current/75">{s.label}</p>
+            <div key={s.label} className={`dashboard-stat ${s.tone} px-3 text-center ${s.label === "Earnings" ? "col-span-2 sm:col-span-1" : ""}`}>
+              <p className="text-2xl font-extrabold tabular-nums tracking-tight">{s.value}</p>
+              <p className="dashboard-kicker mt-1 text-current/75">{s.label}</p>
             </div>
           ))}
         </div>
 
         <div className="mb-4 space-y-3">
-          <div className="grid grid-cols-2 gap-2 pb-1 sm:grid-cols-3 lg:grid-cols-6">
+          <div role="group" aria-label="Filter bookings" className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">
           {tabs.map((tab) => {
             const count =
               tab.key === "All"
@@ -331,11 +286,13 @@ export default function ProviderBookingsPage() {
             return (
               <button
                 key={tab.key}
+                type="button"
+                aria-pressed={activeTab === tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`relative flex min-h-10 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-2 py-2 text-xs font-semibold transition sm:text-sm ${
+                className={`dashboard-focus relative flex min-h-10 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 text-xs font-semibold transition sm:text-sm ${
                   activeTab === tab.key
                     ? "bg-slate-900 text-white shadow-sm"
-                    : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+                    : "border border-sky-100 bg-white text-slate-700 hover:bg-sky-50 hover:text-blue-950"
                 }`}
               >
                 {tab.label}
@@ -343,7 +300,7 @@ export default function ProviderBookingsPage() {
                   className={`inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${
                     activeTab === tab.key
                       ? "bg-white/15 text-white"
-                      : "bg-slate-100 text-slate-500"
+                      : "bg-sky-50 text-blue-950"
                   }`}
                 >
                   {count}
@@ -354,7 +311,7 @@ export default function ProviderBookingsPage() {
           </div>
           <label className="relative block w-full">
             <span className="sr-only">Search bookings</span>
-            <input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search client or repair" className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20" />
+            <input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search client or repair" className="dashboard-focus w-full rounded-xl border border-sky-100 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-800 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20" />
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
           </label>
         </div>
@@ -380,9 +337,9 @@ export default function ProviderBookingsPage() {
           <div className="mb-8">
             {requests.length > 0 ? (
               <>
-                <h2 className="mb-4 text-lg font-semibold text-gray-900">
-                  Incoming Requests
-                  <span className="ml-2 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-amber-100 px-2 text-xs font-medium text-amber-700">
+                <h2 className="mb-4 text-lg font-bold tracking-tight text-slate-900">
+                  Incoming requests
+                  <span className="ml-2 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-blue-100 px-2 text-xs font-semibold text-blue-800">
                     {requests.length}
                   </span>
                 </h2>
@@ -390,31 +347,31 @@ export default function ProviderBookingsPage() {
                   {sortedRequests.map((req) => (
                     <div
                       key={req.id}
-                      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                      className="overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
                     >
-                      <div className="p-5 sm:p-6">
-                        <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="p-4 sm:p-6">
+                        <div className="flex flex-col gap-4 border-b border-sky-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
                           <div className="flex items-start gap-4">
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-100 text-lg font-bold text-amber-700 ring-1 ring-amber-200">
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-sky-50 text-lg font-bold text-blue-950 ring-1 ring-sky-200">
                               {req.client.charAt(0)}
                             </div>
                             <div>
-                              <h3 className="text-lg font-bold text-slate-900">
+                              <h3 className="text-lg font-bold tracking-tight text-slate-900">
                                 {req.client}
                               </h3>
-                              <p className="text-sm text-slate-500">
+                              <p className="text-sm text-slate-600">
                                 New booking request
                               </p>
                             </div>
                           </div>
-                          <StatusBadge status="Pending Request" />
+                          <BookingStatusBadge status="Pending Request" />
                         </div>
 
                         <div className="mt-4">
-                          <h4 className="text-base font-bold text-slate-800">
+                          <h4 className="text-base font-bold text-slate-900">
                             {req.task}
                           </h4>
-                          <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                          <p className="mt-1 text-sm leading-relaxed text-slate-600">
                             {req.description}
                           </p>
                           {req.photoUrls?.length > 0 && (
@@ -441,12 +398,13 @@ export default function ProviderBookingsPage() {
                           </div>
                         </div>
 
-                        <div className="mt-5 flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                        <BookingPriceBreakdown booking={req} className="mt-4" />
+
+                        <div className="mt-5 flex flex-col-reverse gap-2 border-t border-sky-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex items-center gap-3">
-                            <span className="text-2xl font-bold text-slate-900">{req.price}</span>
                             <button
                               onClick={() => setDetailId(req.id)}
-                              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                              className="dashboard-secondary-button dashboard-focus px-3 py-2 text-xs"
                             >
                               Details
                             </button>
@@ -454,13 +412,13 @@ export default function ProviderBookingsPage() {
                           <div className="flex gap-2">
                             <button
                               onClick={() => setRejectingId(req.id)}
-                              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                              className="rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
                             >
                               Decline
                             </button>
                             <button
                               onClick={() => acceptRequest(req.id)}
-                              className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-700"
+                              className="dashboard-primary-button dashboard-focus px-4 py-2.5 text-sm"
                             >
                               Accept
                             </button>
@@ -484,12 +442,12 @@ export default function ProviderBookingsPage() {
                   {sortedBookings.map((booking) => (
                     <div
                       key={booking.id}
-                      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                      className="overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
                     >
-                      <div className="p-5 sm:p-6">
-                        <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="p-4 sm:p-6">
+                        <div className="flex flex-col gap-4 border-b border-sky-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
                           <div className="flex items-start gap-4">
-                            <div className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full text-lg font-bold shadow-inner ring-1 ring-primary-200 ${booking.clientProfileImage ? "bg-white" : "bg-primary-100 text-primary-700"}`}>
+                            <div className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full text-lg font-bold ring-1 ring-sky-200 ${booking.clientProfileImage ? "bg-white" : "bg-sky-50 text-blue-950"}`}>
                               {booking.clientProfileImage ? (
                                 <img src={booking.clientProfileImage} alt={`${booking.client} profile`} className="h-full w-full object-cover" />
                               ) : booking.client.charAt(0)}
@@ -498,25 +456,25 @@ export default function ProviderBookingsPage() {
                               <h3 className="text-lg font-bold text-slate-900">
                                 {booking.client}
                               </h3>
-                              <p className="text-sm text-slate-500">Submitted {booking.createdAt ? new Date(booking.createdAt).toLocaleString() : ""}</p>
+                              <p className="text-sm text-slate-600">Submitted {booking.createdAt ? new Date(booking.createdAt).toLocaleString() : ""}</p>
                             </div>
                           </div>
                           <div className="flex flex-wrap items-center justify-end gap-2">
-                            <StatusDot status={booking.status} />
-                            <StatusBadge status={booking.status} />
-                            <button onClick={() => navigate(`/provider/messages?bookingId=${booking.id}`)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">Chat</button>
+                            <BookingStatusBadge status={booking.status} />
+                            <button onClick={() => navigate(`/provider/messages?bookingId=${booking.id}`)} className="dashboard-secondary-button dashboard-focus px-3 py-1.5 text-xs">Chat</button>
                           </div>
                         </div>
 
                         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.5fr)_minmax(15rem,1fr)]">
                           <div className="min-w-0">
                           <BookingProgress status={booking.status} />
-                          <h4 className="mt-4 text-base font-bold text-slate-800">
+                          <h4 className="mt-4 text-base font-bold text-slate-900">
                             {booking.task}
                           </h4>
-                          <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                          <p className="mt-1 text-sm leading-relaxed text-slate-600">
                             {booking.description}
                           </p>
+                          <BookingPriceBreakdown booking={booking} className="mt-4" taskLabel="Agreed task price" />
                           {booking.status === "Cancellation Requested" && booking.cancellationExpiresAt && (
                             <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                               Cancellation requested. Response due {new Date(booking.cancellationExpiresAt).toLocaleString()}.
@@ -550,7 +508,7 @@ export default function ProviderBookingsPage() {
                           )}
                         </div>
 
-                          <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                          <div className="space-y-3 border-t border-sky-100 pt-4 text-sm text-slate-700 md:border-l md:border-t-0 md:pl-4 md:pt-0">
                           <div className="flex items-start gap-2">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="mt-0.5 h-4 w-4 text-slate-400">
                               <path fillRule="evenodd" d="M19.5 6.75a3 3 0 00-6 0v7.5a3 3 0 006 0V6.75zM3.75 9.75a3 3 0 016 0v7.5a3 3 0 01-6 0V9.75zM15.75 2.25a3 3 0 016 0v7.5a3 3 0 01-6 0V2.25z" clipRule="evenodd" />
@@ -570,16 +528,15 @@ export default function ProviderBookingsPage() {
                           </span>
                           </div>
                         </div>
-                        <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+                        <div className="mt-5 border-y border-sky-100 py-3">
                           <BookingHistory events={booking.statusHistory} />
                         </div>
 
-                        <div className="mt-5 flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="mt-5 flex flex-col-reverse gap-2 border-t border-sky-100 pt-4 sm:flex-row sm:items-center sm:justify-end">
                           <div className="flex items-center gap-3">
-                            <span><span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Total</span><span className="text-2xl font-bold text-slate-900">{formatBookingTotal(booking)}</span></span>
                             <button
                               onClick={() => setDetailId(booking.id)}
-                              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                              className="dashboard-secondary-button dashboard-focus px-3 py-2 text-xs"
                             >
                               {booking.status === "In Revision" ? "Review revision" : "Details"}
                             </button>
@@ -590,7 +547,7 @@ export default function ProviderBookingsPage() {
                                 onClick={() => STATUS_ACTIONS[booking.status].status === "complete"
                                   ? setCompletionBookingId(booking.id)
                                   : setStatusChange({ bookingId: booking.id, ...STATUS_ACTIONS[booking.status] })}
-                                className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-700"
+                                className="dashboard-primary-button dashboard-focus px-4 py-2.5 text-sm"
                               >
                                 {STATUS_ACTIONS[booking.status].buttonLabel}
                               </button>
@@ -605,7 +562,7 @@ export default function ProviderBookingsPage() {
                                   setIsRescheduleRequest(false);
                                   setProviderUpdateError("");
                                 }}
-                                className="rounded-lg border border-cyan-200 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 transition hover:bg-cyan-100"
+                                className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-blue-950 transition hover:bg-sky-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                               >
                                 Send Update
                               </button>
@@ -623,7 +580,7 @@ export default function ProviderBookingsPage() {
                             {canRequestCancellation(booking) ? (
                               <button
                                 onClick={() => { setCancelingId(booking.id); setCancellationReason(""); }}
-                                className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                                className="dashboard-focus rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-800"
                               >
                                 Cancel
                               </button>
@@ -659,9 +616,9 @@ export default function ProviderBookingsPage() {
 
         {visibleBookingCount === 0 && !isLoading && (
           <div className="rounded-xl border border-dashed border-gray-300 bg-white py-16 text-center">
-            <p className="text-4xl mb-3">📋</p>
-            <p className="text-base font-semibold text-gray-700">No bookings found</p>
-            <p className="mt-1 text-sm text-gray-500">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto mb-3 h-10 w-10 text-slate-300"><path strokeLinecap="round" strokeLinejoin="round" d="M8 6.75h8M8 10.75h8M8 14.75h5M5.75 3.75h12.5a1.5 1.5 0 011.5 1.5v13.5a1.5 1.5 0 01-1.5 1.5H5.75a1.5 1.5 0 01-1.5-1.5V5.25a1.5 1.5 0 011.5-1.5z" /></svg>
+            <p className="text-base font-semibold text-slate-800">No bookings found</p>
+            <p className="mt-1 text-sm text-slate-500">
               {activeTab === "Incoming Requests"
                 ? "New client requests will appear here."
                 : activeTab === "Active"
@@ -679,7 +636,7 @@ export default function ProviderBookingsPage() {
             {activeTab !== "All" && (
               <button
                 onClick={() => setActiveTab("All")}
-                className="mt-4 rounded-lg bg-purple-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-purple-700"
+                className="dashboard-primary-button dashboard-focus mt-4 px-5 py-2 text-sm"
               >
                 View All
               </button>
@@ -691,7 +648,7 @@ export default function ProviderBookingsPage() {
       {/* Accept Confirmation Modal */}
       {acceptingId && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/45 p-3 backdrop-blur-[2px] sm:p-4"
           onClick={() => setAcceptingId(null)}
         >
           <div
@@ -811,17 +768,20 @@ export default function ProviderBookingsPage() {
       {/* Detail Modal */}
       {detailItem && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/45 p-3 backdrop-blur-[2px] sm:p-4"
           onClick={() => setDetailId(null)}
         >
           <div
-            className="w-full max-w-md rounded-2xl bg-white shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="provider-booking-detail-title"
+            className="max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto rounded-2xl border border-sky-100 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.2)]"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="relative">
-              <div className="relative h-28 bg-gradient-to-r from-primary-500 to-primary-700">
-                <div className="absolute -bottom-10 left-6">
-                  <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white text-2xl font-bold bg-primary-100 text-primary-700">
+              <div className="relative h-14 bg-gradient-to-br from-sky-50 via-white to-white">
+                <div className="absolute -bottom-7 left-5">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full border-4 border-white text-lg font-bold bg-sky-100 text-blue-950">
                     {detailItem.client.charAt(0)}
                   </div>
                 </div>
@@ -836,47 +796,43 @@ export default function ProviderBookingsPage() {
                 </svg>
               </button>
             </div>
-            <div className="px-6 pt-12 pb-6">
-              <h2 className="text-xl font-bold text-gray-900">{detailItem.client}</h2>
+            <div className="px-5 pt-9 pb-5 sm:px-6 sm:pb-6">
+              <h2 id="provider-booking-detail-title" className="text-xl font-bold text-slate-900">{detailItem.client}</h2>
               <p className="text-sm text-gray-500">{detailItem.task}</p>
               <div className="mt-3 flex items-center gap-2">
-                {detailItem.status ? (
-                  <>
-                    <StatusDot status={detailItem.status} />
-                    <StatusBadge status={detailItem.status} />
-                  </>
-                ) : (
-                  <StatusBadge status="Pending Request" />
-                )}
+                <BookingStatusBadge status={detailItem.status || "Pending Request"} />
               </div>
+              {detailItem.status && <BookingProgress status={detailItem.status} />}
 
-              <div className="mt-4 space-y-3 text-sm">
-                <div className="flex justify-between border-b border-gray-100 pb-2">
-                  <span className="text-gray-500">Description</span>
-                  <span className="text-right text-gray-700">{detailItem.description}</span>
+              <div className="mt-4 grid gap-3 rounded-xl border border-sky-100 bg-white p-4 text-sm sm:grid-cols-2">
+                <div>
+                  <p className="dashboard-kicker">Scheduled</p>
+                  <p className="mt-1 font-semibold text-slate-900">{detailItem.date} at {detailItem.time}</p>
                 </div>
-                <div className="flex justify-between border-b border-gray-100 pb-2">
-                  <span className="text-gray-500">Address</span>
-                  <span className="font-medium text-gray-800">{detailItem.address}</span>
+                <div>
+                  <p className="dashboard-kicker">Service address</p>
+                  <div className="mt-1 text-slate-700"><AddressActions address={detailItem.address} /></div>
                 </div>
-                <div className="flex justify-between border-b border-gray-100 pb-2">
-                  <span className="text-gray-500">Date &amp; Time</span>
-                  <span className="font-medium text-gray-800">{detailItem.date} at {detailItem.time}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Price</span>
-                  <span className="font-bold text-gray-900">{detailItem.price}</span>
+                <div className="sm:col-span-2">
+                  <p className="dashboard-kicker">Task details</p>
+                  <p className="mt-1 leading-relaxed text-slate-700">{detailItem.description}</p>
                 </div>
               </div>
+              <BookingPriceBreakdown
+                booking={detailItem}
+                className="mt-4"
+                taskLabel={detailItem.status === "Pending Request" ? "Task offer" : "Agreed task price"}
+              />
+              <BookingHistory events={detailItem.statusHistory} />
               <RevisionReviewPanel booking={detailItem} />
 
-              <div className="mt-6 flex gap-2">
+              <div className="mt-5 flex flex-wrap gap-2">
                 <button
                   onClick={() => {
                     setDetailId(null);
                     navigate(`/provider/messages?bookingId=${detailItem.id}`);
                   }}
-                  className="flex-1 rounded-lg bg-purple-600 py-2.5 text-sm font-semibold text-white transition hover:bg-purple-700"
+                  className="dashboard-primary-button dashboard-focus min-h-11 flex-1 px-4 py-2.5 text-sm"
                 >
                   Chat Client
                 </button>
@@ -887,7 +843,7 @@ export default function ProviderBookingsPage() {
                       setCancelingId(detailItem.id);
                       setCancellationReason("");
                     }}
-                    className="flex-1 rounded-lg border border-gray-200 bg-white py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                    className="dashboard-focus min-h-11 flex-1 rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50"
                   >
                     Cancel
                   </button>
