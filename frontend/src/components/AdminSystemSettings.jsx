@@ -10,6 +10,39 @@ const DEFAULT_SETTINGS = {
   maintenanceMode: false,
 };
 
+const BROADCAST_TEMPLATES = [
+  {
+    id: "scheduled-maintenance",
+    title: "Scheduled maintenance",
+    message: "TaskPanda will undergo scheduled maintenance. Some features may be temporarily unavailable. Please check back soon for updates.",
+  },
+  {
+    id: "service-interruption",
+    title: "Service interruption",
+    message: "We’re currently addressing a service interruption affecting TaskPanda. We apologize for the inconvenience and will share updates as soon as we can.",
+  },
+  {
+    id: "severe-weather",
+    title: "Weather and safety advisory",
+    message: "Severe weather may affect travel and scheduled services. Please prioritize your safety and contact the other party through TaskPanda if plans need to change.",
+  },
+  {
+    id: "booking-update",
+    title: "Booking availability update",
+    message: "There may be delays in booking responses while we work through current requests. Thank you for your patience and for keeping your booking details up to date.",
+  },
+  {
+    id: "payment-reminder",
+    title: "Payment safety reminder",
+    message: "Please confirm payment details only through your TaskPanda booking. Never share passwords or verification codes with anyone.",
+  },
+  {
+    id: "security-advisory",
+    title: "Account security advisory",
+    message: "For your security, use a unique password and never share your sign-in or verification codes. Contact TaskPanda support if you notice unusual account activity.",
+  },
+];
+
 function AdminSystemSettings() {
   const { token, logout } = useAuth();
   const navigate = useNavigate();
@@ -18,6 +51,7 @@ function AdminSystemSettings() {
   const [broadcastConfigured, setBroadcastConfigured] = useState(false);
   const [broadcastTitle, setBroadcastTitle] = useState("");
   const [broadcastMessage, setBroadcastMessage] = useState("");
+  const [broadcastTemplateSearch, setBroadcastTemplateSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
@@ -66,6 +100,21 @@ function AdminSystemSettings() {
     || Number(draft.travelFeePerKm) !== Number(savedSettings.travelFeePerKm)
     || draft.maintenanceMode !== savedSettings.maintenanceMode
   );
+
+  const filteredBroadcastTemplates = BROADCAST_TEMPLATES.filter((template) => (
+    `${template.title} ${template.message}`.toLowerCase().includes(broadcastTemplateSearch.trim().toLowerCase())
+  ));
+  const selectedBroadcastTemplate = BROADCAST_TEMPLATES.find((template) => (
+    template.title === broadcastTitle && template.message === broadcastMessage
+  ));
+
+  const selectBroadcastTemplate = (template) => {
+    setBroadcastTitle(template.title);
+    setBroadcastMessage(template.message);
+    setBroadcastTemplateSearch("");
+    setError("");
+    setNotice("");
+  };
 
   const updateDraft = (key, value) => {
     setNotice("");
@@ -203,6 +252,55 @@ function AdminSystemSettings() {
           <p className="mt-1 text-xs leading-5 text-slate-600">Post an alert to the in-app notification bell for every client and provider. Browser push is sent when OneSignal is available.</p>
         </div>
         <div className="grid gap-4 px-4 py-5 sm:px-5">
+          <fieldset disabled={isBroadcasting} className="min-w-0 space-y-3 disabled:opacity-70">
+            <legend className="text-sm font-semibold text-slate-800">Choose a ready-made announcement</legend>
+            <p className="text-xs leading-5 text-slate-600">Search and select one to fill in the title and message. You can edit either field before sending.</p>
+            <label className="relative block">
+              <span className="sr-only">Search announcement templates</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden="true">
+                <circle cx="10.8" cy="10.8" r="6.8" />
+                <path d="m16 16 4.5 4.5" />
+              </svg>
+              <input
+                type="search"
+                value={broadcastTemplateSearch}
+                onChange={(event) => setBroadcastTemplateSearch(event.target.value)}
+                aria-label="Search announcement templates"
+                className="dashboard-focus h-11 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3 text-sm font-normal text-slate-950 placeholder:text-slate-500"
+                placeholder="Search maintenance, weather, booking…"
+              />
+            </label>
+            {filteredBroadcastTemplates.length > 0 ? (
+              <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label="Announcement templates">
+                {filteredBroadcastTemplates.map((template) => {
+                  const isSelected = selectedBroadcastTemplate?.id === template.id;
+                  return (
+                    <button
+                      key={template.id}
+                      type="button"
+                      onClick={() => selectBroadcastTemplate(template)}
+                      aria-pressed={isSelected}
+                      className={`dashboard-focus min-w-0 rounded-xl border px-3 py-3 text-left transition ${
+                        isSelected
+                          ? "border-blue-700 bg-blue-50 ring-1 ring-blue-700"
+                          : "border-slate-200 bg-white hover:border-blue-300 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold text-slate-900">{template.title}</span>
+                        {isSelected && <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-blue-800">Selected</span>}
+                      </span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-600">{template.message}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700" role="status">
+                No announcement templates match “{broadcastTemplateSearch}”. Try another search or write a custom announcement below.
+              </p>
+            )}
+          </fieldset>
           <label className="block text-sm font-semibold text-slate-800">
             Notification title
             <input value={broadcastTitle} onChange={(event) => setBroadcastTitle(event.target.value)} maxLength={100} required disabled={isBroadcasting} className="dashboard-focus mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-950 placeholder:text-slate-500 disabled:bg-slate-50" placeholder="e.g. Service update" />

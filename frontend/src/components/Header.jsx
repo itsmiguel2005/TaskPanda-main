@@ -315,15 +315,15 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
 
   return (
     <header className="fixed inset-x-0 top-0 z-30 bg-white/80 backdrop-blur-md shadow-sm">
-      <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
-        <div className="flex w-[180px] items-center justify-start gap-3">
+      <div className="container mx-auto flex h-16 items-center justify-between gap-2 px-4 sm:px-6 lg:px-8">
+        <div className="flex min-w-0 shrink-0 items-center justify-start gap-3">
           <Link to="/" className={`text-2xl font-extrabold tracking-tight ${logoColor}`}>
             <span className="text-black">Task</span>Panda
           </Link>
         </div>
 
         {showNav && (
-          <nav className={`hidden flex-1 items-center justify-center gap-2 ${role === "admin" ? "xl:flex" : "lg:flex"}`}>
+          <nav className="hidden min-w-0 flex-1 items-center justify-center gap-1 2xl:flex">
             {navLinks.map((link) => (
               <Link
                 key={link.label}
@@ -347,13 +347,13 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
           </nav>
         )}
 
-        <div className="flex w-[220px] items-center justify-end gap-6">
+        <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-3 xl:gap-4">
           {showNav && isLoggedIn && authRole === "client" && (
             <Link
               to="/profile#rewards"
               aria-label={`Rewards${availablePerkCount ? `, ${availablePerkCount} available` : ""}`}
               title={availablePerkCount ? `${availablePerkCount} travel-fee ${availablePerkCount === 1 ? "voucher" : "vouchers"} available` : "Vouchers and rewards"}
-              className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
+              className="relative hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 sm:inline-flex"
             >
               <MenuIcon className="h-5 w-5">
                 <path d="M5 7.5h14v13H5z" />
@@ -370,8 +370,9 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
           {showNav && (
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
-              className={`inline-flex items-center justify-center rounded-lg p-2 text-gray-600 hover:bg-gray-100 ${role === "admin" ? "xl:hidden" : "lg:hidden"}`}
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg p-2 text-gray-600 hover:bg-gray-100 2xl:hidden"
               aria-label="Toggle navigation"
+              aria-expanded={mobileOpen}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-6 w-6">
                 {mobileOpen ? (
@@ -386,8 +387,9 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
             <div className="relative" ref={notifRef}>
               <button
                 onClick={() => setNotifOpen(!notifOpen)}
-                className="relative inline-flex items-center justify-center rounded-lg p-2 text-gray-600 hover:bg-gray-100"
+                className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg p-2 text-gray-600 hover:bg-gray-100"
                 aria-label={`Notifications${totalNotificationCount > 0 ? `, ${totalNotificationCount} unread` : ""}`}
+                aria-expanded={notifOpen}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-6 w-6">
                   <path fillRule="evenodd" d="M12 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 006 15h12a1 1 0 00.707-1.707L18 11.586V8a6 6 0 00-6-6zM10 20a2 2 0 114 0a2 2 0 01-4 0z" clipRule="evenodd" />
@@ -502,9 +504,10 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
             <div className="relative">
               <button
                 onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-3 text-sm"
+                className="flex min-h-11 min-w-11 items-center justify-center gap-0 rounded-lg text-sm sm:gap-3"
+                aria-expanded={dropdownOpen}
               >
-                <span className="hidden whitespace-nowrap text-gray-600 sm:inline">Good morning, {firstNameOnly}!</span>
+                <span className="hidden whitespace-nowrap text-gray-600 2xl:inline">Good morning, {firstNameOnly}!</span>
                 <div className={`avatar-shell h-8 w-8 border border-slate-200 bg-slate-100 text-sm font-bold ${user?.profileImage ? "bg-transparent" : "bg-primary-100 text-primary-700"}`}>
                   {user?.profileImage ? <img src={user.profileImage} alt={`${displayName} profile`} className="avatar-image" /> : displayName.charAt(0).toUpperCase()}
                 </div>
@@ -512,7 +515,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                   xmlns="http://www.w3.org/2000/svg"
                   viewBox="0 0 24 24"
                   fill="currentColor"
-                  className="h-4 w-4 text-gray-400"
+                  className="hidden h-4 w-4 text-gray-400 sm:block"
                 >
                   <path
                     fillRule="evenodd"
@@ -608,7 +611,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
         </div>
       </div>
       {mobileOpen && showNav && (
-        <div className={`absolute inset-x-0 top-16 z-20 border-b border-gray-200 bg-white px-4 py-3 shadow-lg ${role === "admin" ? "xl:hidden" : "lg:hidden"}`}>
+        <div className="absolute inset-x-0 top-16 z-20 border-b border-gray-200 bg-white px-4 py-3 shadow-lg 2xl:hidden">
           <nav className="flex flex-col gap-1">
             {navLinks.map((link) => (
               <Link
@@ -631,6 +634,25 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                 )}
               </Link>
             ))}
+            {authRole === "client" && (
+              <Link
+                to="/profile#rewards"
+                onClick={() => setMobileOpen(false)}
+                aria-label={`Rewards wallet${availablePerkCount ? `, ${availablePerkCount} available` : ""}`}
+                className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50 hover:text-gray-900"
+              >
+                <MenuIcon className="h-5 w-5 text-emerald-800">
+                  <path d="M5 7.5h14v13H5z" />
+                  <path d="M9 7.5V5.8a3 3 0 0 1 6 0v1.7M12 11v5m-2-2 2 2 2-2" />
+                </MenuIcon>
+                <span>Rewards wallet</span>
+                {availablePerkCount > 0 && (
+                  <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-700 px-1.5 text-[10px] font-bold leading-none text-white">
+                    {availablePerkCount > 99 ? "99+" : availablePerkCount}
+                  </span>
+                )}
+              </Link>
+            )}
           </nav>
         </div>
       )}
