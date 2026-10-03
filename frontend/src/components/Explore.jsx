@@ -34,6 +34,19 @@ const sortOptions = [
   { value: "name", label: "Name A–Z" },
 ];
 const FAVORITES_SYNC_EVENT = "taskpanda:favorites-sync";
+const MINIMUM_TASK_OFFER = 100;
+
+function formatPhpAmount(value) {
+  const amount = Number(value);
+  return `₱${(Number.isFinite(amount) ? amount : 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
+}
+
+function estimateTravelFare(distanceKm) {
+  const distance = Number(distanceKm);
+  if (!Number.isFinite(distance) || distance < 0) return null;
+  const fare = 20 + Math.max(0, distance - 2) * 10;
+  return Math.round((fare + Number.EPSILON) * 100) / 100;
+}
 
 function CheckBox({ label, count, checked, onChange }) {
   return (
@@ -42,11 +55,11 @@ function CheckBox({ label, count, checked, onChange }) {
         type="checkbox"
         checked={checked}
         onChange={onChange}
-        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+        className="h-4 w-4 rounded border-sky-300 text-blue-600 focus:ring-blue-500"
       />
-      <span className="flex-1 text-sm text-gray-700">{label}</span>
+      <span className="flex-1 text-sm text-slate-700">{label}</span>
       {count !== undefined && (
-        <span className="text-xs text-gray-400">[{count}]</span>
+        <span className="text-xs tabular-nums text-slate-500">[{count}]</span>
       )}
     </label>
   );
@@ -335,69 +348,66 @@ export default function Explore() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pt-16">
+    <div className="dashboard-page">
       <Header showNav activeTab="Explore" />
 
-      <div className="mx-auto mt-6 grid max-w-7xl grid-cols-1 gap-6 px-4 pb-10 sm:px-6 lg:grid-cols-[16rem_minmax(0,1fr)] lg:px-8">
+      <div className="dashboard-shell mt-6 grid grid-cols-1 gap-6 pb-10 lg:grid-cols-[16rem_minmax(0,1fr)]">
         {/* Hero Search Section */}
         <div className="relative lg:col-start-2 lg:row-start-1">
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-teal-700 via-slate-700 to-slate-800 px-6 py-10 sm:px-10 sm:py-12">
-          <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-white/5" />
-          <div className="pointer-events-none absolute bottom-0 left-1/2 h-32 w-32 rounded-full bg-white/5" />
-          <div className="pointer-events-none absolute -bottom-4 -right-2 hidden h-48 w-40 overflow-hidden sm:block md:right-8">
-            <img
-              src="/assets/Panda Cropped.png"
-              alt="TaskPanda mascot"
-              className="h-full w-full object-contain"
-            />
-          </div>
+          <div className="dashboard-panel grid gap-5 px-5 py-6 sm:px-8 sm:py-8 lg:grid-cols-[minmax(0,1fr)_9rem]">
+            <div className="min-w-0 max-w-2xl">
+              <p className="dashboard-kicker">Local services, matched to you</p>
+              <h1 className="mt-2 text-3xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-4xl">
+                Discover local <span className="text-blue-600">professionals</span>
+              </h1>
+              <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base sm:leading-7">
+                Search nearby tradespeople by name, service, or location.
+              </p>
 
-          <div className="relative z-10 max-w-lg">
-            <h1 className="text-3xl font-extrabold leading-tight tracking-tight text-white sm:text-4xl">
-              Discover Local Professionals
-            </h1>
-            <p className="mt-3 text-base leading-relaxed text-teal-100/80">
-              Find nearby professionals by name, trade, or location.
-            </p>
-
-            <div className="mt-6 flex items-center overflow-hidden rounded-xl bg-white shadow-lg" style={{ scrollbarGutter: "auto" }}>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearch();
-                }}
-                placeholder="Name, service (e.g. IT repair), or location"
-                className="flex-1 px-4 py-3 text-sm text-gray-800 placeholder-gray-400 outline-none"
-              />
-              <button
-                type="button"
-                onClick={handleSearch}
-                className="shrink-0 bg-purple-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-purple-700"
-              >
-                Search
-              </button>
+              <div className="mt-5 flex min-w-0 items-center overflow-hidden rounded-xl border border-sky-100 bg-sky-50/60 p-1.5 shadow-sm">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSearch();
+                  }}
+                  placeholder="Name, service, or location"
+                  className="min-w-0 flex-1 bg-transparent px-3 py-3 text-sm text-slate-800 placeholder-slate-400 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+                />
+                <button
+                  type="button"
+                  onClick={handleSearch}
+                  className="dashboard-primary-button dashboard-focus shrink-0 px-5 py-3 text-sm"
+                >
+                  Search
+                </button>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                <button type="button" onClick={handleUseCurrentLocation} className="dashboard-focus rounded text-sm font-semibold text-blue-700 underline-offset-4 hover:text-blue-900 hover:underline">
+                  {searchCoordinates ? "Update search location" : "Use my current location"}
+                </button>
+                {searchCoordinates && <span className="text-xs text-slate-500">Nearby search is active</span>}
+              </div>
+              {locationError && <p className="mt-2 text-sm text-red-700" role="alert">{locationError}</p>}
+              {!searchCoordinates && <p className="mt-2 text-xs text-slate-600">Set a nearby-search pin in your profile or use your current location.</p>}
             </div>
-            <button type="button" onClick={handleUseCurrentLocation} className="mt-3 text-sm font-semibold text-white underline underline-offset-4">
-              {searchCoordinates ? "Update search location" : "Use my current location"}
-            </button>
-            {locationError && <p className="mt-2 text-sm text-amber-100" role="alert">{locationError}</p>}
-            {!searchCoordinates && <p className="mt-1 text-xs text-teal-100/80">Set a nearby-search pin in your profile or use your current location.</p>}
+            <div className="hidden items-end justify-center lg:flex" aria-hidden="true">
+              <img src="/assets/Panda Cropped.png" alt="" className="h-36 w-32 object-contain object-bottom" />
+            </div>
           </div>
-        </div>
       </div>
 
         {/* Left Sidebar */}
         <aside className="w-full shrink-0 lg:col-start-1 lg:row-start-1 lg:row-span-2">
-          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm lg:sticky lg:top-20">
+          <div className="dashboard-panel p-4 sm:p-5 lg:sticky lg:top-20">
             <div className="mb-5 flex items-center justify-between">
-              <h2 className="text-base font-bold text-gray-900">
+              <h2 className="text-base font-bold tracking-tight text-slate-900">
                 Browse Filters
               </h2>
               <button
                 onClick={clearFilters}
-                className="text-sm font-medium text-purple-600 hover:text-purple-800"
+                className="dashboard-focus rounded text-sm font-semibold text-blue-700 underline-offset-2 hover:text-blue-900 hover:underline"
               >
                 Reset All
               </button>
@@ -405,7 +415,7 @@ export default function Explore() {
 
             {/* Qualification */}
             <div className="mb-5">
-              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <h3 className="dashboard-kicker mb-3">
                 Qualification
               </h3>
               <div className="space-y-2.5">
@@ -419,7 +429,7 @@ export default function Explore() {
 
             {/* Service Category */}
             <div className="mb-5">
-              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <h3 className="dashboard-kicker mb-3">
                 Service Category
               </h3>
               <div className="space-y-2.5">
@@ -435,7 +445,7 @@ export default function Explore() {
               {filterCategories.length >= 4 && (
                 <button
                   onClick={() => setShowAllCats(!showAllCats)}
-                  className="mt-2 text-sm font-medium text-purple-600 hover:text-purple-800"
+                  className="dashboard-focus mt-2 rounded text-sm font-semibold text-blue-700 underline-offset-2 hover:text-blue-900 hover:underline"
                 >
                   {showAllCats
                     ? "Show less"
@@ -446,13 +456,13 @@ export default function Explore() {
 
             {/* Distance range */}
             <div className="mb-5">
-              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <h3 className="dashboard-kicker mb-3">
                 Distance range
               </h3>
-              <p className="mb-3 text-sm font-semibold text-gray-800">0–{Number(maxKm).toFixed(1)} km</p>
+              <p className="mb-3 text-sm font-semibold tabular-nums text-slate-800">0–{Number(maxKm).toFixed(1)} km</p>
               <div className="relative mx-2 h-8">
-                <div className="absolute left-0 right-0 top-3 h-1 rounded bg-gray-200" />
-                <div className="absolute top-3 h-1 rounded bg-primary-600" style={{ left: '0%', right: `${100 - (maxKm / 100) * 100}%` }} />
+                <div className="absolute left-0 right-0 top-3 h-1 rounded bg-sky-100" />
+                <div className="absolute top-3 h-1 rounded bg-blue-600" style={{ left: '0%', right: `${100 - (maxKm / 100) * 100}%` }} />
                 <label className="sr-only" htmlFor="max-distance">Maximum distance</label>
                 <input
                   id="max-distance"
@@ -462,11 +472,11 @@ export default function Explore() {
                   step="0.5"
                   value={maxKm}
                   onChange={(event) => setMaxKm(Math.max(0.5, Number(event.target.value)))}
-                  className="absolute inset-0 z-10 h-7 w-full appearance-none bg-transparent accent-primary-700 pointer-events-auto"
+                  className="absolute inset-0 z-10 h-7 w-full appearance-none bg-transparent accent-blue-700 pointer-events-auto"
                   style={{ pointerEvents: "auto" }}
                 />
               </div>
-              <div className="mt-1 flex justify-between text-xs text-gray-400"><span>Min 0 km</span><span>Max {Number(maxKm).toFixed(1)} km</span></div>
+              <div className="mt-1 flex justify-between text-xs text-slate-500"><span>Min 0 km</span><span>Max {Number(maxKm).toFixed(1)} km</span></div>
             </div>
           </div>
         </aside>
@@ -476,18 +486,18 @@ export default function Explore() {
           {/* Results Header */}
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
-              <p className="text-lg font-bold text-gray-900">
+              <p className="text-lg font-bold tracking-tight text-slate-900">
                 {totalProviders}{" "}
                 {totalProviders === 1 ? "Professional" : "Professionals"}{" "}
                 Found
               </p>
-              <p className="text-sm text-gray-500">{resultsSubtitle()}</p>
+              <p className="text-sm text-slate-600">{resultsSubtitle()}</p>
             </div>
             <div className="shrink-0">
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 outline-none focus:border-purple-500"
+                className="dashboard-focus rounded-lg border border-sky-100 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400"
               >
                 {sortOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -504,12 +514,12 @@ export default function Explore() {
               {activeFilters.map((f) => (
                 <span
                   key={`${f.type}-${f.value}`}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-purple-50 px-3 py-1 text-xs font-medium text-purple-700"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-xs font-semibold text-blue-950"
                 >
                   {f.label}
                   <button
                     onClick={() => removeFilter(f.type, f.value)}
-                    className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full hover:bg-purple-200"
+                    className="dashboard-focus ml-0.5 flex h-4 w-4 items-center justify-center rounded-full hover:bg-sky-200"
                     aria-label={`Remove ${f.label}`}
                   >
                     <svg
@@ -530,16 +540,16 @@ export default function Explore() {
             </div>
           )}
 
-          {searchError && <p className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{searchError}</p>}
+          {searchError && <p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">{searchError}</p>}
 
           {/* Provider Grid */}
           {!searchCoordinates ? (
-            <div className="rounded-xl border border-dashed border-gray-300 bg-white py-12 text-center">
-              <p className="text-base font-semibold text-gray-800">Set a search location to see nearby professionals</p>
-              <p className="mt-1 text-sm text-gray-500">Use current location or save a nearby-search pin in your profile.</p>
+            <div className="rounded-xl border border-dashed border-sky-200 bg-white py-12 text-center">
+              <p className="text-base font-semibold text-slate-900">Set a search location to see nearby professionals</p>
+              <p className="mt-1 text-sm text-slate-600">Use current location or save a nearby-search pin in your profile.</p>
             </div>
           ) : loading && filteredProviders.length === 0 ? (
-            <div className="rounded-xl border border-gray-100 bg-white py-12 text-center text-sm text-gray-500">Searching nearby professionals...</div>
+            <div className="rounded-xl border border-sky-100 bg-white py-12 text-center text-sm text-slate-600">Searching nearby professionals...</div>
           ) : filteredProviders.length > 0 ? (
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
               {filteredProviders.map((provider) => {
@@ -547,13 +557,16 @@ export default function Explore() {
                 const rating = Number(provider?.averageRating ?? 0);
                 const reviews = Number(provider?.totalReviews ?? 0);
                 const hasRatings = rating > 0 && reviews > 0;
+                const travelEstimate = estimateTravelFare(provider.distanceKm);
+                const distance = Number(provider.distanceKm);
+                const distanceLabel = Number.isFinite(distance) ? `${distance.toFixed(2)} km` : "Distance unavailable";
 
                 return (
                   <div
                     key={provider._id}
-                    className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition hover:shadow-md"
+                    className="overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)]"
                   >
-                    <div className="h-40 overflow-hidden bg-slate-200">
+                    <div className="h-40 overflow-hidden bg-sky-50">
                       {provider.profileImage ? (
                         <img
                           src={provider.profileImage}
@@ -569,20 +582,20 @@ export default function Explore() {
                         </div>
                       )}
                     </div>
-                    <div className="px-4 py-4">
+                    <div className="px-4 py-4 sm:px-5">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <h3 className="truncate text-sm font-bold text-gray-900">
+                          <h3 className="truncate text-sm font-bold text-slate-900">
                             {provider.fullName || provider.username || "Provider"}
                           </h3>
-                          <p className="text-xs text-gray-500">{provider.professions?.join(" · ") || "Service provider"}</p>
+                          <p className="text-xs text-slate-600">{provider.professions?.join(" · ") || "Service provider"}</p>
                         </div>
                         {token && (
                           <button
                             type="button"
                             aria-label={favoriteProviderIds.has(String(provider._id)) ? "Remove from favorites" : "Add to favorites"}
                             onClick={() => toggleFavorite(provider._id)}
-                            className={`flex h-8 w-8 items-center justify-center rounded-full border transition ${favoriteProviderIds.has(String(provider._id)) ? "border-rose-200 bg-rose-100 text-rose-600" : "border-gray-200 bg-white text-gray-500 hover:border-rose-200 hover:text-rose-600"}`}
+                            className={`dashboard-focus flex h-9 w-9 items-center justify-center rounded-full border transition ${favoriteProviderIds.has(String(provider._id)) ? "border-rose-200 bg-rose-100 text-rose-600" : "border-sky-100 bg-white text-slate-500 hover:border-rose-200 hover:text-rose-600"}`}
                           >
                             <svg viewBox="0 0 24 24" fill={favoriteProviderIds.has(String(provider._id)) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
                               <path d="M12 21.35 10.55 20C5.4 15.36 2 12.28 2 8.5A4.5 4.5 0 0 1 6.5 4c1.74 0 3.41.81 4.5 2.09A6.12 6.12 0 0 1 15.5 4 4.5 4.5 0 0 1 20 8.5c0 3.78-3.4 6.86-8.55 11.5L12 21.35Z" />
@@ -595,8 +608,8 @@ export default function Explore() {
                         {(provider.tesdaCertificates || []).map((certificate) => (
                           <span key={`${provider._id}-${certificate.trade}`} className="inline-flex items-center rounded border border-green-200 bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-800">TESDA · {certificate.trade}</span>
                         ))}
-                        <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
-                          {[provider.barangay, provider.city, provider.province].filter(Boolean).join(", ") || "Nearby"} · {provider.distanceKm} km
+                        <span className="inline-flex items-center rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-blue-950">
+                          {[provider.barangay, provider.city, provider.province].filter(Boolean).join(", ") || "Nearby"}
                         </span>
                       </div>
 
@@ -608,26 +621,39 @@ export default function Explore() {
                             </span>
                           ))}
                         </div>
-                        <span className="font-semibold text-gray-900">{hasRatings ? rating.toFixed(1) : "New"}</span>
-                        <span className="text-xs text-gray-500">({hasRatings ? reviews : 0} reviews)</span>
+                        <span className="font-semibold text-slate-900">{hasRatings ? rating.toFixed(1) : "New"}</span>
+                        <span className="text-xs text-slate-500">({hasRatings ? reviews : 0} reviews)</span>
                       </div>
 
-                      <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-gray-500">
+                      <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-slate-600">
                         {provider.bio || "This provider has not added an introduction yet."}
                       </p>
 
-                      <div className="mt-3 flex justify-end gap-2">
+                      <div className="mt-4 grid grid-cols-2 divide-x divide-sky-100 border-y border-sky-100 py-3">
+                        <div className="min-w-0 pr-2.5">
+                          <p className="dashboard-kicker text-blue-900">Task offer</p>
+                          <p className="mt-1 text-sm font-bold tabular-nums text-slate-900">From {formatPhpAmount(MINIMUM_TASK_OFFER)}</p>
+                        </div>
+                        <div className="min-w-0 pl-2.5">
+                          <p className="dashboard-kicker text-blue-900">Travel estimate</p>
+                          <p className="mt-1 text-sm font-bold tabular-nums text-slate-900">{travelEstimate == null ? "Unavailable" : formatPhpAmount(travelEstimate)}</p>
+                          <p className="mt-0.5 text-[10px] leading-4 text-blue-950">{distanceLabel} · ₱20 base + ₱10/km after 2 km</p>
+                          <p className="mt-0.5 text-[10px] leading-4 text-slate-500">Approximate; confirmed in request</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-2 gap-2">
                         <button
                           type="button"
                           onClick={() => setViewingProvider(provider)}
-                          className="rounded-lg bg-purple-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-purple-700"
+                          className="dashboard-secondary-button dashboard-focus px-3 py-2 text-xs"
                         >
                           View Profile
                         </button>
                         <button
                           type="button"
                           onClick={() => setBookingProvider(provider)}
-                          className="rounded-lg border border-purple-200 px-4 py-1.5 text-xs font-semibold text-purple-700 transition hover:bg-purple-50"
+                          className="dashboard-primary-button dashboard-focus px-3 py-2 text-xs"
                         >
                           Book
                         </button>
@@ -638,19 +664,19 @@ export default function Explore() {
               })}
             </div>
           ) : loading ? (
-            <div className="rounded-xl border border-gray-100 bg-white py-12 text-center text-sm text-gray-500">Updating results...</div>
+            <div className="rounded-xl border border-sky-100 bg-white py-12 text-center text-sm text-slate-600">Updating results...</div>
           ) : searchError ? null : (
-            <div className="rounded-xl border border-dashed border-gray-300 bg-white py-16 text-center">
+            <div className="rounded-xl border border-dashed border-sky-200 bg-white py-16 text-center">
               <p className="text-4xl mb-3">🔍</p>
-              <p className="text-base font-semibold text-gray-700">
+              <p className="text-base font-semibold text-slate-900">
                 No professionals found
               </p>
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-1 text-sm text-slate-600">
                 Try a different name, service, location, or distance range.
               </p>
               <button
                 onClick={clearFilters}
-                className="mt-4 rounded-lg bg-purple-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-purple-700"
+                className="dashboard-primary-button dashboard-focus mt-4 px-5 py-2.5 text-sm"
               >
                 Clear all filters
               </button>
@@ -664,6 +690,10 @@ export default function Explore() {
           onClose={() => setViewingProvider(null)}
           isFavorite={viewingProvider ? favoriteProviderIds.has(String(viewingProvider._id)) : false}
           onToggleFavorite={() => viewingProvider && toggleFavorite(viewingProvider._id)}
+          onBook={() => {
+            setBookingProvider(viewingProvider);
+            setViewingProvider(null);
+          }}
         />
         <RequestBookingModal
           provider={bookingProvider}
