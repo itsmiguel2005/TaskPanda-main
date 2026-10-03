@@ -9,6 +9,15 @@ const MONTHS = [
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const TIME_SLOTS = ["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"];
+const TIP_PRESETS = [0, 20, 50, 100];
+
+function formatPhpAmount(amount) {
+  return `₱${Number(amount || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
+}
+
+function roundCurrency(amount) {
+  return Math.round((amount + Number.EPSILON) * 100) / 100;
+}
 
 function isPastTimeSlot(dateValue, timeValue, now) {
   if (!dateValue || !timeValue) return false;
@@ -123,12 +132,18 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const [bookedSlots, setBookedSlots] = useState([]);
   const [availabilityStatus, setAvailabilityStatus] = useState("loading");
   const [availabilityRetry, setAvailabilityRetry] = useState(0);
+  const [travelQuote, setTravelQuote] = useState(null);
+  const [travelQuoteStatus, setTravelQuoteStatus] = useState("loading");
+  const [travelQuoteError, setTravelQuoteError] = useState("");
+  const [travelQuoteRetry, setTravelQuoteRetry] = useState(0);
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [urgency, setUrgency] = useState(initialValues.urgency || "Flexible");
   const [offer, setOffer] = useState(initialValues.offer == null ? "" : String(initialValues.offer));
+  const [tipAmount, setTipAmount] = useState(String(initialValues.tipAmount ?? 0));
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [formError, setFormError] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [submittedBooking, setSubmittedBooking] = useState(null);
   const [showCalendar, setShowCalendar] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [photoPreviews, setPhotoPreviews] = useState([]);
@@ -157,12 +172,17 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   useEffect(() => {
     if (!provider?._id || !token) {
       setAvailabilityStatus("loading");
+      setTravelQuote(null);
+      setTravelQuoteStatus("loading");
       return undefined;
     }
     const controller = new AbortController();
     let active = true;
     let isLoadingAvailability = false;
     setAvailabilityStatus("loading");
+    setTravelQuote(null);
+    setTravelQuoteError("");
+    setTravelQuoteStatus("loading");
     const refreshAvailability = async () => {
       if (isLoadingAvailability) return;
       isLoadingAvailability = true;
@@ -173,12 +193,28 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.message || "Could not load provider availability.");
+        if (
+          typeof data.travelDistanceKm !== "number" ||
+          !Number.isFinite(data.travelDistanceKm) ||
+          typeof data.travelFee !== "number" ||
+          !Number.isFinite(data.travelFee) ||
+          data.travelDistanceKm < 0 ||
+          data.travelFee < 0
+        ) {
+          throw new Error("The server returned an invalid travel quote. Refresh the page and retry.");
+        }
         if (active) {
+          setTravelQuote({ travelDistanceKm: data.travelDistanceKm, travelFee: data.travelFee });
+          setTravelQuoteStatus("loaded");
           setBookedSlots(Array.isArray(data.bookedSlots) ? data.bookedSlots : []);
           setAvailabilityStatus("loaded");
         }
       } catch (error) {
-        if (active && error.name !== "AbortError") setAvailabilityStatus("error");
+        if (active && error.name !== "AbortError") {
+          setAvailabilityStatus("error");
+          setTravelQuoteError(error.message || "Could not calculate the travel fare.");
+          setTravelQuoteStatus("error");
+        }
       } finally {
         isLoadingAvailability = false;
       }
@@ -190,7 +226,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
       controller.abort();
       window.clearInterval(intervalId);
     };
-  }, [provider?._id, token, availabilityRetry]);
+  }, [provider?._id, token, availabilityRetry, travelQuoteRetry]);
 
   useEffect(() => {
     if (isPastTimeSlot(selectedDate, selectedTime, currentTime)) setSelectedTime("");
@@ -208,6 +244,12 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
 
   const name = provider.fullName || provider.username || provider.name || "Provider";
   const trade = provider.professions?.join(" · ") || provider.trade || "Service provider";
+  const travelDistanceKm = travelQuote?.travelDistanceKm ?? null;
+  const travelFee = travelQuote?.travelFee ?? 0;
+  const offerAmount = Number(offer);
+  const selectedTip = Number(tipAmount);
+  const safeTipAmount = Number.isFinite(selectedTip) && selectedTip >= 0 ? selectedTip : 0;
+  const totalAmount = roundCurrency(offerAmount + travelFee + safeTipAmount);
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files);
@@ -232,40 +274,50 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
     setFormError("");
   };
 
+  const validateRequestDetails = () => {
+    if (!taskDescription.trim()) return setFormError("Please describe the item or issue you want repaired."), false;
+    if (!selectedDate) return setFormError("Please select a service date."), false;
+    if (!selectedTime) return setFormError("Please select an available time."), false;
+    if (isPastTimeSlot(selectedDate, selectedTime, new Date())) {
+      setSelectedTime("");
+      return setFormError("That time has passed. Please choose another time."), false;
+    }
+    if (availabilityStatus !== "loaded") return setFormError("Provider availability could not be confirmed. Please try again."), false;
+    if (bookedSlots.some((slot) => slot.date === selectedDate && slot.timeSlot === selectedTime)) {
+      setSelectedTime("");
+      return setFormError("That time slot is no longer available. Please choose another time."), false;
+    }
+    if (travelQuoteStatus !== "loaded" || travelDistanceKm == null) return setFormError("The travel quote is not ready. Retry it above before reviewing."), false;
+    if (!Number.isFinite(offerAmount) || offerAmount < 100) return setFormError("Your offer must be at least PHP 100."), false;
+    if (!Number.isFinite(selectedTip) || selectedTip < 0 || selectedTip > 1000000) return setFormError("Enter a valid tip amount."), false;
+    if (!termsAccepted) return setFormError("Please agree to the terms and cancellation policy."), false;
+    setFormError("");
+    return true;
+  };
+
   const handleNextStep = () => {
-    if (!taskDescription.trim()) {
-      setFormError("Please describe the item or issue you want repaired.");
+    if (step === 1) {
+      if (!taskDescription.trim()) {
+        setFormError("Please describe the item or issue you want repaired.");
+        return;
+      }
+      setFormError("");
+      setStep(2);
       return;
     }
-    setFormError("");
-    setStep(2);
+    if (validateRequestDetails()) setStep(3);
   };
 
   const handlePreviousStep = () => {
     setFormError("");
     setShowCalendar(false);
-    setStep(1);
+    setStep((currentStep) => Math.max(1, currentStep - 1));
   };
 
   const handleSubmit = async () => {
-    const offerAmount = Number(offer);
-    if (!taskDescription.trim()) return setFormError("Please describe the item or issue you want repaired.");
-    if (!selectedDate) return setFormError("Please select a service date.");
-    if (!selectedTime) return setFormError("Please select an available time.");
-    if (isPastTimeSlot(selectedDate, selectedTime, new Date())) {
-      setSelectedTime("");
-      return setFormError("That time has passed. Please choose another time.");
-    }
-    if (availabilityStatus !== "loaded") return setFormError("Provider availability could not be confirmed. Please try again.");
-    if (bookedSlots.some((slot) => slot.date === selectedDate && slot.timeSlot === selectedTime)) {
-      setSelectedTime("");
-      return setFormError("That time slot is no longer available. Please choose another time.");
-    }
-    if (!Number.isFinite(offerAmount) || offerAmount < 100) return setFormError("Your offer must be at least PHP 100.");
-    if (!termsAccepted) return setFormError("Please agree to the terms and cancellation policy.");
-    setFormError("");
+    if (!validateRequestDetails()) return;
     try {
-      await onSubmit?.({
+      const booking = await onSubmit?.({
         providerId: provider._id,
         worker: name,
         cred: trade,
@@ -274,11 +326,13 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
         date: selectedDate,
         time: selectedTime,
         offer: offerAmount,
+        tipAmount: selectedTip,
         urgency,
         photos: selectedFiles,
         address: provider.address || [provider.barangay, provider.city, provider.province].filter(Boolean).join(", "),
         termsAccepted: true,
       });
+      setSubmittedBooking(booking || null);
       setIsSubmitted(true);
     } catch (error) {
       setFormError(error.message || "Could not submit the booking.");
@@ -329,8 +383,14 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
               </div>
               <h3 className="mt-4 text-xl font-bold text-gray-900">Offer Submitted</h3>
               <p className="mt-2 text-sm leading-relaxed text-gray-600">
-                Your offer of PHP {Number(offer).toLocaleString()} with Cash on Completion has been sent to the provider. They have to accept or counter.
+                Your request has been sent to the provider. They can accept or counter your task offer.
               </p>
+              <dl className="mx-auto mt-5 max-w-sm space-y-2 border-y border-dashed border-gray-200 py-4 text-left text-sm">
+                <div className="flex justify-between gap-3"><dt className="text-gray-600">Task offer</dt><dd className="font-medium tabular-nums">{formatPhpAmount(submittedBooking?.offeredPrice ?? offerAmount)}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare{(submittedBooking?.travelDistanceKm ?? travelDistanceKm) == null ? "" : ` · ${Number(submittedBooking?.travelDistanceKm ?? travelDistanceKm).toFixed(2)} km`}</dt><dd className="font-medium tabular-nums">{formatPhpAmount(submittedBooking?.travelFee ?? travelFee)}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-gray-600">Optional tip</dt><dd className="font-medium tabular-nums">{formatPhpAmount(submittedBooking?.tipAmount ?? safeTipAmount)}</dd></div>
+                <div className="flex justify-between gap-3 border-t border-gray-200 pt-2 font-bold text-gray-950"><dt>Total amount due</dt><dd className="tabular-nums">{formatPhpAmount(submittedBooking?.totalPrice ?? totalAmount)}</dd></div>
+              </dl>
               <div className="mt-6 flex gap-3">
                 <button type="button" onClick={() => { onClose(); navigate("/"); }} className="flex-1 rounded-lg border border-gray-300 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50">
                   Return Home
@@ -342,14 +402,13 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
             </div>
           ) : (
             <>
-          <div aria-label={`Step ${step} of 2`} className="space-y-2">
+          <div aria-label={`Step ${step} of 3`} className="space-y-2">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Step {step} of 2</p>
-              <p className="text-xs font-medium text-gray-500">{step === 1 ? "Task details & media" : "Scheduling & confirmation"}</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Step {step} of 3</p>
+              <p className="text-xs font-medium text-gray-500">{step === 1 ? "Task details & media" : step === 2 ? "Scheduling & offer" : "Review request"}</p>
             </div>
-            <div className="grid grid-cols-2 gap-2" aria-hidden="true">
-              <span className={`h-1 rounded-full ${step >= 1 ? "bg-primary-600" : "bg-gray-200"}`} />
-              <span className={`h-1 rounded-full ${step >= 2 ? "bg-primary-600" : "bg-gray-200"}`} />
+            <div className="grid grid-cols-3 gap-2" aria-hidden="true">
+              {[1, 2, 3].map((stepNumber) => <span key={stepNumber} className={`h-1 rounded-full ${step >= stepNumber ? "bg-primary-600" : "bg-gray-200"}`} />)}
             </div>
           </div>
 
@@ -417,7 +476,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
             <button type="button" onClick={handleNextStep} className="flex-1 rounded-full bg-gray-900 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800">Next</button>
           </div>
             </div>
-          ) : (
+          ) : step === 2 ? (
             <div className="space-y-4">
 
           {/* Schedule */}
@@ -527,6 +586,9 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
             </span>
           </div>
 
+          {travelQuoteStatus === "loading" && <p className="text-xs text-gray-500" role="status">Calculating your distance-based travel fare…</p>}
+          {travelQuoteStatus === "error" && <p className="text-xs text-red-700" role="alert">{travelQuoteError} <button type="button" onClick={() => setTravelQuoteRetry((retry) => retry + 1)} className="font-semibold underline underline-offset-2">Retry</button></p>}
+
           <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs leading-relaxed text-gray-700">
             <input
               type="checkbox"
@@ -550,12 +612,67 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
             </button>
             <button
               type="button"
-              onClick={handleSubmit}
+              onClick={handleNextStep}
               className="flex-1 rounded-full bg-gray-900 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800"
             >
-              Request Booking
+              Review request
             </button>
           </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <section className="rounded-xl border border-gray-200 bg-white px-4 py-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3 border-b border-dashed border-gray-200 pb-3">
+                  <div className="min-w-0">
+                    <h3 className="text-base font-bold text-gray-900">Request summary</h3>
+                    <p className="mt-1 text-xs text-gray-500">Review the task, schedule, and full amount before sending.</p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">Cash on completion</span>
+                </div>
+                <dl className="space-y-2.5 py-3 text-sm">
+                  <div className="flex justify-between gap-3"><dt className="text-gray-500">Service</dt><dd className="max-w-[65%] text-right font-medium text-gray-900">{trade}</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-gray-500">Task</dt><dd className="max-w-[65%] whitespace-pre-wrap text-right font-medium text-gray-900">{taskDescription.trim()}</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-gray-500">Schedule</dt><dd className="text-right font-medium text-gray-900">{formatDate(selectedDate)} · {selectedTime}</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-gray-500">Urgency</dt><dd className="font-medium text-gray-900">{urgency}</dd></div>
+                </dl>
+                <div className="border-t border-dashed border-gray-200 pt-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Price breakdown</p>
+                  <dl className="space-y-2 text-sm">
+                    <div className="flex justify-between gap-3"><dt className="text-gray-600">Task offer</dt><dd className="font-semibold tabular-nums text-gray-900">{formatPhpAmount(offerAmount)}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare <span className="block text-xs font-normal text-gray-500">{travelDistanceKm.toFixed(2)} km · ₱20 first 2 km + ₱10/km after</span></dt><dd className="font-semibold tabular-nums text-gray-900">{formatPhpAmount(travelFee)}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-gray-600">Optional tip</dt><dd className="font-semibold tabular-nums text-gray-900">{formatPhpAmount(safeTipAmount)}</dd></div>
+                  </dl>
+                  <div className="mt-3 flex items-end justify-between border-t border-gray-200 pt-3">
+                    <span className="text-sm font-semibold text-gray-700">Total amount due</span>
+                    <span className="text-2xl font-bold tabular-nums text-gray-950">{formatPhpAmount(totalAmount)}</span>
+                  </div>
+                </div>
+              </section>
+
+              <fieldset>
+                <legend className="text-sm font-semibold text-gray-800">Add a tip <span className="font-normal text-gray-500">(optional)</span></legend>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {TIP_PRESETS.map((amount) => {
+                    const isSelected = selectedTip === amount;
+                    return (
+                      <button key={amount} type="button" aria-pressed={isSelected} onClick={() => setTipAmount(String(amount))} className={`rounded-full border px-3.5 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 ${isSelected ? "border-primary-700 bg-primary-700 text-white" : "border-gray-300 bg-white text-gray-700 hover:border-primary-400 hover:bg-primary-50"}`}>
+                        {amount === 0 ? "No tip" : formatPhpAmount(amount)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <label htmlFor="booking-tip" className="mt-3 block text-xs font-medium text-gray-600">Or enter a custom amount</label>
+                <div className="relative mt-1">
+                  <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-gray-500">₱</span>
+                  <input id="booking-tip" type="number" min="0" max="1000000" step="0.01" value={tipAmount} onChange={(event) => setTipAmount(event.target.value)} className="w-full rounded-lg border border-gray-300 py-2.5 pl-8 pr-3 text-sm tabular-nums text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20" />
+                </div>
+              </fieldset>
+
+              {formError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>}
+              <div className="flex gap-3 border-t border-gray-100 pt-4">
+                <button type="button" onClick={handlePreviousStep} className="flex-1 rounded-full border border-gray-300 bg-white py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50">Back</button>
+                <button type="button" onClick={handleSubmit} className="flex-1 rounded-full bg-gray-900 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800">Confirm request</button>
+              </div>
             </div>
           )}
             </>

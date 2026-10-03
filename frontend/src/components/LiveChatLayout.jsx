@@ -8,7 +8,6 @@ import CompletionProofModal from "./CompletionProofModal.jsx";
 import { canRequestCancellation, getCancellationLockMessage } from "../utils/bookingCancellation.js";
 
 const MAX_MESSAGE_INPUT_HEIGHT = 144;
-const COUNTER_OFFER_TIME_SLOTS = ["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"];
 const CONVERSATION_READ_EVENT = "taskpanda:conversation-read";
 
 function getLocalDateInputValue(date) {
@@ -17,20 +16,6 @@ function getLocalDateInputValue(date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-function isPastCounterOfferSlot(dateValue, timeValue, now) {
-  if (!dateValue || !timeValue) return false;
-  const [year, month, day] = dateValue.split("-").map(Number);
-  const selectedDay = new Date(year, month - 1, day);
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  if (selectedDay < today) return true;
-  if (selectedDay > today) return false;
-
-  const [time, period] = timeValue.split(" ");
-  const [hour, minute] = time.split(":").map(Number);
-  const slotMinutes = (hour % 12 + (period === "PM" ? 12 : 0)) * 60 + minute;
-  return slotMinutes <= now.getHours() * 60 + now.getMinutes();
 }
 
 function formatConversationTime(value) {
@@ -277,10 +262,6 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const [actionError, setActionError] = useState("");
   const [counterFormOpen, setCounterFormOpen] = useState(false);
   const [counterOfferPrice, setCounterOfferPrice] = useState("");
-  const [counterOfferDate, setCounterOfferDate] = useState("");
-  const [counterOfferTime, setCounterOfferTime] = useState("");
-  const [counterOfferNow, setCounterOfferNow] = useState(() => new Date());
-  const [counterOfferScope, setCounterOfferScope] = useState("");
   const [counterOfferNote, setCounterOfferNote] = useState("");
   const [cancelReason, setCancelReason] = useState("");
   const [supportReportOpen, setSupportReportOpen] = useState(false);
@@ -450,13 +431,6 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   }, [authenticatedRole, requestHeaders, role, selectedId, token]);
 
   const selectedConversation = conversations.find((conversation) => conversation?.id === selectedId) || null;
-  const currentBookingDate = selectedConversation?.serviceDate
-    ? getLocalDateInputValue(new Date(selectedConversation.serviceDate))
-    : "";
-  const counterOfferEffectiveDate = counterOfferDate || currentBookingDate;
-  const counterOfferEffectiveTime = counterOfferTime || selectedConversation?.timeSlot || "";
-  const counterOfferScheduleIsPast = Boolean(counterOfferDate || counterOfferTime)
-    && isPastCounterOfferSlot(counterOfferEffectiveDate, counterOfferEffectiveTime, counterOfferNow);
   const currentBookingIdKey = selectedConversation ? String(selectedConversation.bookingId || "") : "";
   const currentReviewDetails = useMemo(() => {
     if (!selectedConversation) return { hasReview: false, rating: null, review: "", reviewPhotos: [] };
@@ -816,40 +790,18 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const handleCounterOfferSubmit = async (event) => {
     event.preventDefault();
     if (!selectedConversation) return;
-    const proposedDate = counterOfferDate || currentBookingDate;
-    const proposedTime = counterOfferTime || selectedConversation.timeSlot;
-    if ((counterOfferDate || counterOfferTime) && isPastCounterOfferSlot(proposedDate, proposedTime, new Date())) {
-      setCounterOfferTime("");
-      setActionError("That time has passed. Choose another time slot.");
-      return;
-    }
     setActionError("");
     const data = await postChatApiAction(`/api/bookings/${selectedConversation.bookingId}/counter-offers`, "POST", {
       proposedPrice: counterOfferPrice,
-      proposedServiceDate: counterOfferDate,
-      proposedTimeSlot: counterOfferTime,
-      proposedRepairDescription: counterOfferScope,
       note: counterOfferNote,
     });
     if (data) {
       setCounterFormOpen(false);
       setCounterOfferPrice("");
-      setCounterOfferDate("");
-      setCounterOfferTime("");
-      setCounterOfferScope("");
       setCounterOfferNote("");
       setActionMessage(null);
     }
   };
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setCounterOfferNow(new Date()), 30_000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    if (counterOfferTime && isPastCounterOfferSlot(counterOfferEffectiveDate, counterOfferTime, counterOfferNow)) setCounterOfferTime("");
-  }, [counterOfferEffectiveDate, counterOfferNow, counterOfferTime]);
 
   const handleCounterOfferResponse = async (counterOfferId, action) => {
     if (!selectedConversation) return;
@@ -1223,7 +1175,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
               <section className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-white/95 px-4 py-2.5 backdrop-blur sm:px-5">
                 <button type="button" onClick={() => { setActionModalView("DETAILS"); setActionMessage({ eventType: "booking_request", eventData: { bookingId: selectedConversation.bookingId } }); setActionError(""); }} className="min-w-0 max-w-[62%] text-left hover:opacity-80">
                   <p className="truncate text-xs font-semibold text-gray-800">{selectedConversation.task}</p>
-                  <p className="truncate text-[11px] text-gray-500">Service total: ₱{Number(selectedConversation.offeredPrice || 0).toLocaleString("en-PH")} · Cash on Completion · Status: {getStatusLabel(selectedConversation.bookingStatus)}</p>
+                  <p className="truncate text-[11px] text-gray-500">Total due: ₱{Number(selectedConversation.totalPrice || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })} · Task ₱{Number(selectedConversation.offeredPrice || 0).toLocaleString("en-PH")} · Travel ₱{Number(selectedConversation.travelFee || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}</p>
                   <span className="text-[10px] font-semibold text-primary-700">View booking actions</span>
                 </button>
                 {role === "provider" && providerStatusButtons.length > 0 && (
@@ -1261,7 +1213,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                   ) : (
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="text-xs text-emerald-950">
-                        <p className="font-semibold">Cash on Completion · ₱{Number(selectedConversation.offeredPrice || 0).toLocaleString("en-PH")}</p>
+                        <p className="font-semibold">Cash on Completion · ₱{Number(selectedConversation.totalPrice || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}</p>
                         <p className="mt-0.5">
                           {role === "client"
                             ? (ownCashConfirmation ? "Your confirmation is saved." : "Confirm once you have paid the provider.")
@@ -1504,7 +1456,10 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                 </div>
                 <dl className="mt-4 grid grid-cols-2 gap-3 rounded-lg bg-gray-50 p-3 text-sm">
                   <div><dt className="text-xs text-gray-500">Status</dt><dd className="font-semibold text-gray-800">{selectedConversation.bookingStatus || "Pending"}</dd></div>
-                  <div><dt className="text-xs text-gray-500">Agreed price</dt><dd className="font-semibold text-gray-800">₱{Number(selectedConversation.offeredPrice || 0).toLocaleString("en-PH")}</dd></div>
+                  <div><dt className="text-xs text-gray-500">Task offer</dt><dd className="font-semibold text-gray-800">₱{Number(selectedConversation.offeredPrice || 0).toLocaleString("en-PH")}</dd></div>
+                  <div><dt className="text-xs text-gray-500">Travel fare{selectedConversation.travelDistanceKm == null ? "" : ` · ${Number(selectedConversation.travelDistanceKm).toFixed(2)} km`}</dt><dd className="font-semibold text-gray-800">₱{Number(selectedConversation.travelFee || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}</dd></div>
+                  <div><dt className="text-xs text-gray-500">Optional tip</dt><dd className="font-semibold text-gray-800">₱{Number(selectedConversation.tipAmount || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}</dd></div>
+                  <div><dt className="text-xs font-semibold text-gray-700">Total amount due</dt><dd className="font-bold text-gray-950">₱{Number(selectedConversation.totalPrice || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}</dd></div>
                   <div className="col-span-2"><dt className="text-xs text-gray-500">Appointment</dt><dd className="font-semibold text-gray-800">{selectedConversation.serviceDate ? new Date(selectedConversation.serviceDate).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "long", day: "numeric", year: "numeric" }) : "Date pending"} {selectedConversation.timeSlot}</dd></div>
                   <div className="col-span-2"><dt className="text-xs text-gray-500">Payment</dt><dd className="font-semibold text-gray-800">Cash on Completion</dd></div>
                 </dl>
@@ -1528,8 +1483,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                 {actionMessage.eventType === "counter_offer" && actionMessage.eventData && (
                   <div className="mt-4 rounded-lg border border-cyan-100 bg-cyan-50 p-3 text-sm text-cyan-950">
                     <p className="font-semibold">Counter-offer from {actionMessage.eventData.proposedBy === role ? "you" : selectedConversation.name}</p>
-                    <p className="mt-1">₱{Number(actionMessage.eventData.proposedPrice || 0).toLocaleString("en-PH")} · {new Date(actionMessage.eventData.proposedServiceDate).toLocaleDateString()} at {actionMessage.eventData.proposedTimeSlot}</p>
-                    {actionMessage.eventData.proposedRepairDescription && <p className="mt-1">Scope: {actionMessage.eventData.proposedRepairDescription}</p>}
+                    <p className="mt-1">Task offer: ₱{Number(actionMessage.eventData.proposedPrice || 0).toLocaleString("en-PH")}</p>
                     {actionMessage.eventData.note && <p className="mt-1">{actionMessage.eventData.note}</p>}
                   </div>
                 )}
@@ -1540,35 +1494,18 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
 
                 {counterFormOpen && selectedConversation.bookingStatus === "pending" && !selectedConversation.pendingCounterOffer && (
                   <form onSubmit={handleCounterOfferSubmit} className="mt-3 space-y-3 rounded-lg border border-gray-200 p-3">
-                    <p className="text-sm font-semibold text-gray-800">Propose terms before approval</p>
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <label className="text-xs font-medium text-gray-700">New price (PHP)
+                    <p className="text-sm font-semibold text-gray-800">Counter the task offer</p>
+                    <p className="text-xs text-gray-500">Travel fare and tip stay unchanged during price negotiation.</p>
+                    <div className="grid grid-cols-1 gap-3">
+                      <label className="text-xs font-medium text-gray-700">New task offer (PHP)
                         <input type="number" min="100" step="1" value={counterOfferPrice} onChange={(event) => setCounterOfferPrice(event.target.value)} placeholder={`Current ₱${Number(selectedConversation.offeredPrice || 0).toLocaleString("en-PH")}`} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-                      </label>
-                      <label className="text-xs font-medium text-gray-700">New service date
-                        <input type="date" value={counterOfferDate} min={getLocalDateInputValue(counterOfferNow)} onChange={(event) => { setCounterOfferDate(event.target.value); setCounterOfferTime(""); setActionError(""); }} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-                      </label>
-                      <label className="text-xs font-medium text-gray-700">New time slot
-                        <select value={counterOfferTime} onChange={(event) => setCounterOfferTime(event.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm">
-                          <option value="" disabled={isPastCounterOfferSlot(counterOfferEffectiveDate, selectedConversation.timeSlot, counterOfferNow)}>
-                            Keep current time{isPastCounterOfferSlot(counterOfferEffectiveDate, selectedConversation.timeSlot, counterOfferNow) ? " (Passed)" : ""}
-                          </option>
-                          {COUNTER_OFFER_TIME_SLOTS.map((slot) => {
-                            const isPast = isPastCounterOfferSlot(counterOfferEffectiveDate, slot, counterOfferNow);
-                            return <option key={slot} value={slot} disabled={isPast}>{slot}{isPast ? " (Passed)" : ""}</option>;
-                          })}
-                        </select>
-                      </label>
-                      <label className="text-xs font-medium text-gray-700">Task scope
-                        <input type="text" maxLength={2000} value={counterOfferScope} onChange={(event) => setCounterOfferScope(event.target.value)} placeholder="Optional change" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
                       </label>
                     </div>
                     <label className="block text-xs font-medium text-gray-700">Note
-                      <textarea maxLength={500} rows={2} value={counterOfferNote} onChange={(event) => setCounterOfferNote(event.target.value)} placeholder="Explain your proposed changes" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+                      <textarea maxLength={500} rows={2} value={counterOfferNote} onChange={(event) => setCounterOfferNote(event.target.value)} placeholder="Add context for your task-price counter" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
                     </label>
                     {actionError && <p role="alert" className="text-xs text-red-700">{actionError}</p>}
-                    {counterOfferScheduleIsPast && !actionError && <p role="alert" className="text-xs text-red-700">The unchanged appointment time has passed. Choose a future time slot.</p>}
-                    <button type="submit" disabled={isActionSubmitting || counterOfferScheduleIsPast || (!counterOfferPrice && !counterOfferDate && !counterOfferTime && !counterOfferScope.trim() && !counterOfferNote.trim())} className="rounded-md bg-primary-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{isActionSubmitting ? "Sending…" : "Send counter-offer"}</button>
+                    <button type="submit" disabled={isActionSubmitting || !counterOfferPrice} className="rounded-md bg-primary-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{isActionSubmitting ? "Sending…" : "Send counter-offer"}</button>
                   </form>
                 )}
 

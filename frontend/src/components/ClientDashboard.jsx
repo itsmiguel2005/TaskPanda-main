@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
 import Header from "./Header.jsx";
+import BookingPriceBreakdown from "./BookingPriceBreakdown.jsx";
 import BookingProgress from "./BookingProgress.jsx";
 import BookingHistory from "./BookingHistory.jsx";
 import AddressActions from "./AddressActions.jsx";
@@ -23,12 +24,17 @@ function hasMutualSettlement(booking) {
   return Boolean((booking?.clientConfirmedCash || booking?.cashPaidConfirmedAt) && (booking?.providerConfirmedCash || booking?.cashReceivedConfirmedAt));
 }
 
+function formatPhpAmount(value) {
+  const amount = Number(value);
+  return `₱${(Number.isFinite(amount) ? amount : 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
+}
+
 function StatusBadge({ status }) {
   const colors = {
     "Pending Request": "bg-amber-100 text-amber-700 border-amber-200",
     Confirmed: "bg-green-100 text-green-700 border-green-200",
     "On the Way": "bg-cyan-100 text-cyan-800 border-cyan-200",
-    "In Progress": "bg-purple-100 text-purple-700 border-purple-200",
+    "In Progress": "bg-blue-100 text-blue-700 border-blue-200",
     Completed: "bg-blue-100 text-blue-700 border-blue-200",
     Settled: "bg-emerald-100 text-emerald-700 border-emerald-200",
     "Cancellation Requested": "bg-amber-100 text-amber-700 border-amber-200",
@@ -391,7 +397,7 @@ export default function Dashboard() {
           rating,
           reviews,
           category,
-          accent: index === 0 ? "from-amber-100 via-orange-50 to-white" : index === 1 ? "from-teal-100 via-cyan-50 to-white" : "from-violet-100 via-fuchsia-50 to-white",
+          accent: index === 0 ? "from-sky-50 via-white to-white" : index === 1 ? "from-cyan-50 via-white to-white" : "from-blue-50 via-white to-white",
         };
       });
 
@@ -486,7 +492,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pt-16">
+    <div className="dashboard-page">
       <Header showNav activeTab="Home" />
 
       {enRouteBooking && (
@@ -498,52 +504,44 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="mx-auto grid max-w-[1600px] grid-cols-1 gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[1fr_420px] lg:px-8">
+      <div className="dashboard-shell grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
         <div className="space-y-8">
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-teal-700 via-slate-700 to-slate-800 px-6 py-10 sm:px-10 sm:py-12">
-            <div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-white/5" />
-            <div className="pointer-events-none absolute bottom-0 left-1/2 h-32 w-32 rounded-full bg-white/5" />
-            <div className="pointer-events-none absolute right-1/4 top-1/4 h-16 w-16 rounded-full bg-white/5" />
-
-            <div className="pointer-events-none absolute -bottom-4 -right-2 hidden h-48 w-40 overflow-hidden sm:block md:right-8">
-              <img
-                src="/assets/Panda Cropped.png"
-                alt="TaskPanda mascot"
-                className="h-full w-full object-contain"
-              />
-            </div>
-
-            <div className="relative z-10 max-w-lg">
-              <h1 className="text-3xl font-extrabold leading-tight tracking-tight text-white sm:text-4xl md:text-5xl">
-                Find trusted local pros for your home
+          <div className="dashboard-panel grid items-center gap-5 px-5 py-6 sm:px-8 sm:py-8 lg:grid-cols-[minmax(0,1fr)_10rem]">
+            <div className="max-w-2xl">
+              <p className="dashboard-kicker">Your home service dashboard</p>
+              <h1 className="mt-2 text-3xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-4xl">
+                Find trusted local <span className="text-blue-600">pros for your home</span>
               </h1>
-              <p className="mt-4 text-base leading-relaxed text-teal-100/80 sm:text-lg">
+              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base sm:leading-7">
                 TaskPanda connects with certified tradespeople and trusted
                 independent local specialists.
               </p>
 
-              <div className="mt-8 flex items-center overflow-hidden rounded-xl bg-white shadow-lg" style={{ scrollbarGutter: "auto" }}>
+              <div className="mt-5 flex min-w-0 items-center overflow-hidden rounded-xl border border-sky-100 bg-sky-50/60 p-1.5 shadow-sm">
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search for carpentry, plumbing, cleaning, or electrical services..."
-                  className="flex-1 px-5 py-3.5 text-sm text-gray-800 placeholder-gray-400/70 outline-none"
+                  className="min-w-0 flex-1 bg-transparent px-3 py-3 text-sm text-slate-800 placeholder-slate-400 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
                 />
-                <button className="shrink-0 bg-gray-800 px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-gray-900">
+                <button className="dashboard-primary-button dashboard-focus shrink-0 px-5 py-3 text-sm">
                   Search
                 </button>
               </div>
+            </div>
+            <div className="hidden items-end justify-center lg:flex" aria-hidden="true">
+              <img src="/assets/Panda Cropped.png" alt="" className="h-36 w-32 object-contain object-bottom" />
             </div>
           </div>
 
           <section>
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Explore Categories</h2>
+              <h2 className="text-xl font-bold tracking-tight text-slate-900">Explore Categories</h2>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => scrollCategories("left")}
-                  className="rounded-full border border-gray-200 bg-white p-1.5 text-gray-500 transition hover:bg-gray-50 hover:text-gray-700"
+                  className="dashboard-secondary-button dashboard-focus rounded-full p-1.5 text-slate-500 hover:text-slate-800"
                   aria-label="Scroll left"
                 >
                   <svg
@@ -558,7 +556,7 @@ export default function Dashboard() {
                 </button>
                 <button
                   onClick={() => scrollCategories("right")}
-                  className="rounded-full border border-gray-200 bg-white p-1.5 text-gray-500 transition hover:bg-gray-50 hover:text-gray-700"
+                  className="dashboard-secondary-button dashboard-focus rounded-full p-1.5 text-slate-500 hover:text-slate-800"
                   aria-label="Scroll right"
                 >
                   <svg
@@ -577,7 +575,7 @@ export default function Dashboard() {
                     e.preventDefault();
                     navigate("/explore");
                   }}
-                  className="text-sm font-medium text-primary-600 hover:text-primary-800"
+                  className="text-sm font-semibold text-blue-700 underline-offset-4 hover:text-blue-800 hover:underline"
                 >
                   View All
                 </a>
@@ -592,7 +590,7 @@ export default function Dashboard() {
                 <div
                   key={cat.name}
                   onClick={() => navigate(`/explore?service=${encodeURIComponent(cat.name)}`)}
-                  className="flex shrink-0 cursor-pointer flex-col items-center gap-2 rounded-xl border border-gray-100 bg-white px-5 py-4 shadow-sm transition hover:shadow-md w-[120px]"
+                  className="flex w-[120px] shrink-0 cursor-pointer flex-col items-center gap-2 rounded-xl border border-sky-100 bg-white px-5 py-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_12px_28px_rgba(15,23,42,0.07)]"
                 >
                   <span className="text-2xl">{cat.icon}</span>
                   <span className="whitespace-nowrap text-xs font-medium text-gray-700">
@@ -603,16 +601,16 @@ export default function Dashboard() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5" style={{ contain: "layout paint" }}>
+          <section className="min-w-0" style={{ contain: "layout paint" }}>
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-600">Trusted picks</p>
-                <h2 className="mt-1 text-xl font-bold text-gray-900">Top Rated Local Pros</h2>
+                <p className="dashboard-kicker">Trusted picks</p>
+                <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-900">Top Rated Local Pros</h2>
               </div>
               <button
                 type="button"
                 onClick={() => navigate("/explore")}
-                className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-100"
+                className="dashboard-secondary-button dashboard-focus px-3 py-1.5 text-xs"
               >
                 Explore all
               </button>
@@ -630,7 +628,7 @@ export default function Dashboard() {
                   return (
                     <div
                       key={`${pro.name}-${pro.category}`}
-                      className={`group relative flex min-h-[190px] min-w-[260px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br ${pro.accent} p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md`}
+                      className={`group relative flex min-h-[190px] min-w-[260px] flex-col overflow-hidden rounded-xl border border-sky-100 bg-gradient-to-br ${pro.accent} p-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)]`}
                     >
                       <div className="flex items-center gap-3">
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white shadow-sm overflow-hidden">
@@ -678,7 +676,7 @@ export default function Dashboard() {
                         <button
                           type="button"
                           onClick={() => navigate("/explore")}
-                          className="flex-1 rounded-xl bg-primary-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-primary-700"
+                          className="dashboard-primary-button dashboard-focus flex-1 px-3 py-2 text-xs"
                         >
                           Book now
                         </button>
@@ -694,7 +692,7 @@ export default function Dashboard() {
                   );
                 })
               ) : (
-                <div className="flex min-h-[200px] w-full items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 text-center">
+                <div className="flex min-h-[200px] w-full items-center justify-center rounded-xl border border-dashed border-sky-200 bg-sky-50/50 px-4 text-center">
                   <div>
                     <p className="text-base font-semibold text-gray-700">No nearby providers yet</p>
                     <p className="mt-1 text-sm text-gray-500">Trusted local pros will appear here once they are available.</p>
@@ -710,11 +708,11 @@ export default function Dashboard() {
 
           <section>
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Your Favourites</h2>
+              <h2 className="text-xl font-bold tracking-tight text-slate-900">Your favourites</h2>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => scroll("left")}
-                  className="rounded-full border border-gray-200 bg-white p-1.5 text-gray-500 transition hover:bg-gray-50 hover:text-gray-700"
+                  className="dashboard-secondary-button dashboard-focus rounded-full p-1.5 text-slate-500 hover:text-slate-800"
                   aria-label="Scroll left"
                 >
                   <svg
@@ -729,7 +727,7 @@ export default function Dashboard() {
                 </button>
                 <button
                   onClick={() => scroll("right")}
-                  className="rounded-full border border-gray-200 bg-white p-1.5 text-gray-500 transition hover:bg-gray-50 hover:text-gray-700"
+                  className="dashboard-secondary-button dashboard-focus rounded-full p-1.5 text-slate-500 hover:text-slate-800"
                   aria-label="Scroll right"
                 >
                   <svg
@@ -748,7 +746,7 @@ export default function Dashboard() {
                     e.preventDefault();
                     navigate("/explore");
                   }}
-                  className="text-sm font-medium text-primary-600 hover:text-primary-800"
+                  className="text-sm font-semibold text-blue-700 underline-offset-4 hover:text-blue-800 hover:underline"
                 >
                   View All
                 </a>
@@ -770,7 +768,7 @@ export default function Dashboard() {
                   const hasRatings = rating > 0 && reviews > 0;
 
                   return (
-                    <div key={normalizedId} className="group relative flex min-h-[190px] min-w-[260px] flex-col rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+                    <div key={normalizedId} className="group relative flex min-h-[190px] min-w-[260px] flex-col rounded-xl border border-sky-100 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)]">
                       <div className="flex items-center gap-3">
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white shadow-sm overflow-hidden">
                           {provider.profileImage ? (
@@ -780,8 +778,8 @@ export default function Dashboard() {
                           )}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-bold text-gray-900">{providerName}</p>
-                          <p className="truncate text-xs text-gray-600">{professions.join(" · ") || "Service provider"}</p>
+                          <p className="truncate text-sm font-bold text-slate-900">{providerName}</p>
+                          <p className="truncate text-xs text-slate-600">{professions.join(" · ") || "Service provider"}</p>
                         </div>
                         <button
                           type="button"
@@ -806,18 +804,18 @@ export default function Dashboard() {
                       </div>
 
                       <div className="mt-4 flex items-center justify-start gap-2">
-                        <span className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-gray-700">{category}</span>
+                        <span className="rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-blue-950">{category}</span>
                       </div>
 
                       <div className="mt-4 flex gap-2">
-                        <button type="button" onClick={() => navigate("/explore")} className="flex-1 rounded-xl bg-primary-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-primary-700">Book now</button>
-                        <button type="button" onClick={() => navigate("/profile")} className="flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50">View profile</button>
+                        <button type="button" onClick={() => navigate("/explore")} className="dashboard-primary-button dashboard-focus flex-1 px-3 py-2 text-xs">Book now</button>
+                        <button type="button" onClick={() => navigate("/profile")} className="dashboard-secondary-button dashboard-focus flex-1 px-3 py-2 text-xs">View profile</button>
                       </div>
                     </div>
                   );
                 })
               ) : (
-                <div className="flex min-w-full items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50 px-6 py-10 text-center text-sm text-gray-500">
+                <div className="flex min-w-full items-center justify-center rounded-xl border border-dashed border-sky-200 bg-sky-50/50 px-6 py-10 text-center text-sm text-blue-950">
                   Save a provider as a favorite to see them here.
                 </div>
               )}
@@ -826,41 +824,41 @@ export default function Dashboard() {
       </div>
 
       <aside className="w-full shrink-0 lg:w-[420px]">
-          <div className="sticky top-20 min-w-0 rounded-2xl border border-gray-200 bg-white shadow-sm shadow-gray-200/80">
+          <div className="sticky top-20 min-w-0 border-y border-sky-100 bg-white/80">
             {/* Summary */}
-            <div className="grid grid-cols-2 gap-px bg-gray-100">
+            <div className="grid grid-cols-2 divide-x divide-sky-100 border-b border-sky-100">
               {[
                 { label: "Active", value: tabCounts.Active, color: "bg-white" },
                 { label: "Completed", value: tabCounts.Completed, color: "bg-white" },
               ].map((s) => (
-                <div key={s.label} className={`${s.color} px-4 py-3 text-center`}>
-                  <p className="text-lg font-bold text-gray-900">{s.value}</p>
-                  <p className="text-[11px] font-medium text-gray-500">{s.label}</p>
+                <div key={s.label} className="px-4 py-3 text-center">
+                  <p className="text-2xl font-extrabold tabular-nums text-slate-900">{s.value}</p>
+                  <p className="dashboard-kicker mt-1">{s.label}</p>
                 </div>
               ))}
             </div>
-            <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-              <h2 className="text-base font-bold text-gray-900">
+            <div className="flex items-center justify-between border-b border-sky-100 px-5 py-4">
+              <h2 className="text-base font-bold tracking-tight text-slate-900">
                 Active Bookings
               </h2>
               <button
                 onClick={() => navigate("/bookings")}
-                className="text-sm font-medium text-primary-600 hover:text-primary-800"
+                className="text-sm font-semibold text-blue-700 underline-offset-4 hover:text-blue-800 hover:underline"
               >
                 See All &gt;
               </button>
             </div>
             {error && <p role="alert" className="border-b border-red-100 px-5 py-3 text-xs text-red-700">{error}</p>}
             {isLoading && <p className="border-b border-gray-100 px-5 py-3 text-xs text-gray-500">Loading bookings...</p>}
-            <div className="flex w-full min-w-0 gap-1 overflow-x-auto border-b border-gray-100 px-5 py-3">
+            <div className="flex w-full min-w-0 gap-1 overflow-x-auto border-b border-sky-100 px-5 py-3">
               {tabs.map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
                   className={`relative shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition ${
                     activeTab === tab
-                      ? "bg-gray-900 text-white"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      ? "bg-slate-900 text-white"
+                      : "bg-sky-50 text-blue-950 hover:bg-sky-100"
                   }`}
                 >
                   <span className="flex items-center gap-1.5">
@@ -869,7 +867,7 @@ export default function Dashboard() {
                       className={`inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[9px] font-bold ${
                         activeTab === tab
                           ? "bg-white/20 text-white"
-                          : "bg-gray-200 text-gray-500"
+                          : "bg-white text-slate-500"
                       }`}
                     >
                       {tabCounts[tab] ?? 0}
@@ -880,14 +878,14 @@ export default function Dashboard() {
             </div>
             <label className="relative block px-4 pt-3">
               <span className="sr-only">Search bookings</span>
-              <input type="search" value={bookingSearchQuery} onChange={(event) => setBookingSearchQuery(event.target.value)} placeholder="Search provider or repair" className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20" />
+              <input type="search" value={bookingSearchQuery} onChange={(event) => setBookingSearchQuery(event.target.value)} placeholder="Search provider or repair" className="w-full rounded-lg border border-sky-100 bg-white py-2 pl-9 pr-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20" />
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-7 top-[1.125rem] h-4 w-4 text-gray-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
             </label>
             <div className="max-h-[520px] overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
               {hasDismissedBookings && (
                 <div className="mb-3 flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2 text-[11px] text-gray-600">
                   <span>{dismissedBookingIds.length} hidden</span>
-                  <button type="button" onClick={handleRestoreDismissedBookings} className="font-semibold text-primary-600 hover:text-primary-700">Restore</button>
+                  <button type="button" onClick={handleRestoreDismissedBookings} className="dashboard-focus rounded font-semibold text-blue-700 underline-offset-2 hover:text-blue-800 hover:underline">Restore</button>
                 </div>
               )}
               {filteredBookings.length === 0 ? (
@@ -905,7 +903,7 @@ export default function Dashboard() {
                         }[activeTab] || "No bookings in this view."}
                   </p>
                   {hasDismissedBookings && (
-                    <button type="button" onClick={handleRestoreDismissedBookings} className="mt-3 text-xs font-semibold text-primary-600 hover:text-primary-700">Restore dismissed bookings</button>
+                    <button type="button" onClick={handleRestoreDismissedBookings} className="dashboard-focus mt-3 rounded text-xs font-semibold text-blue-700 underline-offset-2 hover:text-blue-800 hover:underline">Restore dismissed bookings</button>
                   )}
                 </div>
               ) : (
@@ -915,15 +913,15 @@ export default function Dashboard() {
                   return (
                     <div
                       key={booking.id}
-                      className="mb-3 min-w-0 rounded-2xl border border-gray-200 bg-gray-50 p-4 shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-gray-300 hover:bg-white hover:shadow-md active:translate-y-0"
+                      className="mb-3 min-w-0 rounded-xl border border-sky-100 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)] active:translate-y-0"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
                           <StatusBadge status={booking.status} />
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
-                          <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-bold tracking-[0.04em] text-white">
-                            {booking.price}
+                          <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-bold tabular-nums text-blue-950 ring-1 ring-inset ring-sky-100">
+                            {formatPhpAmount(booking.totalPrice ?? booking.offeredPrice ?? booking.offer)}
                           </span>
                           {canDismissBooking && (
                             <button
@@ -942,8 +940,8 @@ export default function Dashboard() {
                       </div>
                       <BookingProgress status={booking.status} />
                       <div className="mt-3 flex items-center gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-100 text-xs font-bold text-primary-700">
-                          {booking.worker.charAt(0)}
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-sky-100 bg-sky-50 text-xs font-bold text-blue-950">
+                            {booking.workerProfileImage ? <img src={booking.workerProfileImage} alt={`${booking.worker} profile`} className="h-full w-full object-cover" /> : booking.worker.charAt(0)}
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-semibold text-gray-900">
@@ -952,7 +950,7 @@ export default function Dashboard() {
                           <p className="truncate text-xs text-gray-500">{booking.cred}</p>
                         </div>
                       </div>
-                      <div className="mt-3 border-t border-gray-200 pt-2.5">
+                      <div className="mt-3 border-t border-sky-100 pt-2.5">
                         <p className="break-words text-sm font-medium leading-relaxed text-gray-800">
                           {booking.task}
                         </p>
@@ -993,6 +991,7 @@ export default function Dashboard() {
                         ))}
                         <div className="mt-2 break-words text-xs text-gray-600"><AddressActions address={booking.address} /></div>
                       </div>
+                      <BookingPriceBreakdown booking={booking} className="mt-3" />
                       {booking.statusHistory?.length > 0 && (
                         <div className="mt-3">
                           <button
@@ -1022,7 +1021,7 @@ export default function Dashboard() {
                       <div className="mt-3 flex gap-2">
                         <button
                           onClick={() => navigate(`/client/messages?bookingId=${booking.id}`)}
-                          className="flex-1 rounded-xl bg-primary-600 py-2.5 text-[11px] font-semibold text-white transition-all duration-200 ease-out hover:bg-primary-700 active:scale-[0.98]"
+                          className="dashboard-primary-button dashboard-focus flex-1 py-2.5 text-[11px]"
                         >
                           Chat
                         </button>
@@ -1041,7 +1040,7 @@ export default function Dashboard() {
                           onClick={() => navigate(booking.status === "Completed" && !booking.clientRating && hasMutualSettlement(booking) ? "/bookings" : "/profile")}
                           className="flex-1 rounded-xl border border-gray-200 bg-white py-2.5 text-[11px] font-semibold text-gray-700 transition-all duration-200 ease-out hover:bg-gray-50 hover:border-gray-300 active:scale-[0.98]"
                         >
-                          {booking.status === "Completed" && !booking.clientRating && hasMutualSettlement(booking) ? "Rate Provider" : booking.status === "Completed" && !booking.clientRating ? "Settlement pending" : "View Profile"}
+                          {booking.status === "Pending Request" ? "Negotiate" : booking.status === "Completed" && !booking.clientRating && hasMutualSettlement(booking) ? "Rate Provider" : booking.status === "Completed" && !booking.clientRating ? "Settlement pending" : "View Profile"}
                         </button>
                       </div>
                     </div>

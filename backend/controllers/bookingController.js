@@ -3,6 +3,7 @@ const Booking = require("../models/Booking");
 const User = require("../models/User");
 const { ensureBookingConversation, appendBookingSystemMessage } = require("../services/bookingMessaging");
 const { sendPushNotification } = require("../services/oneSignal");
+const { calculateDistanceKm, calculateTravelFare, calculateTotalPrice } = require("../services/bookingPricing");
 
 const TIME_SLOTS = new Set(["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"]);
 const PH_TIMEZONE_OFFSET_HOURS = 8;
@@ -95,6 +96,10 @@ function serializeBooking(booking) {
   const serviceDate = booking.serviceDate || booking.date || booking.createdAt;
   const timeSlot = booking.timeSlot || booking.time || "";
   const offeredPrice = booking.offeredPrice ?? booking.offer ?? 0;
+  const travelDistanceKm = booking.travelDistanceKm ?? null;
+  const travelFee = booking.travelFee ?? 0;
+  const tipAmount = booking.tipAmount ?? 0;
+  const totalPrice = calculateTotalPrice(offeredPrice, travelFee, tipAmount);
   const photoUrls = booking.photoUrl ? [booking.photoUrl] : [];
   const statusHistory = booking.statusHistory?.length
     ? booking.statusHistory.map((event) => ({ status: STATUS_LABELS[event.status] || event.status, at: event.at }))
@@ -119,9 +124,14 @@ function serializeBooking(booking) {
     serviceDate: new Date(serviceDate).toISOString(),
     time: timeSlot,
     timeSlot,
-    price: `P${Number(offeredPrice).toLocaleString()}`,
+    price: `P${totalPrice.toLocaleString("en-PH", { maximumFractionDigits: 2 })}`,
     offer: offeredPrice,
     offeredPrice,
+    taskOffer: offeredPrice,
+    travelDistanceKm,
+    travelFee,
+    tipAmount,
+    totalPrice,
     paymentMethod: booking.paymentMethod || "cash",
     cashPaidConfirmedAt: booking.cashPaidConfirmedAt || null,
     cashReceivedConfirmedAt: booking.cashReceivedConfirmedAt || null,
@@ -253,7 +263,9 @@ async function handleProviderAvailability(req, res) {
   if (req.user.role !== "client") return res.status(403).json({ message: "Only clients can check provider availability." });
 
   try {
-    const provider = await User.findOne({ _id: providerId, role: "provider", registrationComplete: true }).select("_id");
+    const travelQuote = await getBookingTravelQuote(req.user, providerId);
+    if (travelQuote.errorStatus) return res.status(travelQuote.errorStatus).json({ message: travelQuote.message });
+    const provider = travelQuote.provider;
     if (!provider) return res.status(404).json({ message: "That provider is no longer available." });
 
     const startOfToday = new Date();
@@ -265,14 +277,31 @@ async function handleProviderAvailability(req, res) {
       status: mongoose.trusted({ $in: activeStatuses }),
     }).select("serviceDate timeSlot").lean();
 
-    return res.json({ bookedSlots: bookings.map((booking) => ({
-      date: new Date(booking.serviceDate).toISOString().slice(0, 10),
-      timeSlot: booking.timeSlot,
-    })) });
+    return res.json({
+      bookedSlots: bookings.map((booking) => ({
+        date: new Date(booking.serviceDate).toISOString().slice(0, 10),
+        timeSlot: booking.timeSlot,
+      })),
+      travelDistanceKm: travelQuote.travelDistanceKm,
+      travelFee: travelQuote.travelFee,
+    });
   } catch (error) {
     console.error("Provider availability error:", error);
     return res.status(500).json({ message: "Could not load provider availability." });
   }
+}
+
+async function getBookingTravelQuote(client, providerId) {
+  const provider = await User.findOne({ _id: providerId, role: "provider", registrationComplete: true }).select("_id geoLocation");
+  if (!provider) return { errorStatus: 404, message: "That provider is no longer available." };
+
+  const calculatedDistanceKm = calculateDistanceKm(client.geoLocation?.coordinates, provider.geoLocation?.coordinates);
+  if (calculatedDistanceKm == null) {
+    return { errorStatus: 400, message: "A map location is required for both accounts to calculate the travel fare." };
+  }
+
+  const travelDistanceKm = Math.round(calculatedDistanceKm * 100) / 100;
+  return { provider, travelDistanceKm, travelFee: calculateTravelFare(travelDistanceKm) };
 }
 
 async function handleCreateBooking(req, res) {
@@ -285,6 +314,7 @@ async function handleCreateBooking(req, res) {
   const timeSlot = String(req.body.timeSlot || req.body.time || req.body.service_details?.time || "").trim();
   const urgency = String(req.body.urgency || "Flexible").trim();
   const offeredPrice = Number(req.body.offeredPrice ?? req.body.offerPrice ?? req.body.offer ?? req.body.price ?? 0);
+  const tipAmount = Number(req.body.tipAmount ?? 0);
   const paymentMethod = String(req.body.paymentMethod || "cash").trim().toLowerCase();
   const termsAccepted = req.body.termsAccepted === true || req.body.termsAccepted === "true" || req.body.termsAccepted === "True";
   const safeStatus = "pending";
@@ -295,13 +325,15 @@ async function handleCreateBooking(req, res) {
   if (!serviceDate) return res.status(400).json({ message: "Choose a valid service date." });
   if (!TIME_SLOTS.has(timeSlot)) return res.status(400).json({ message: "Choose an available time slot." });
   if (!Number.isFinite(offeredPrice) || offeredPrice < 100) return res.status(400).json({ message: "Your offer must be at least PHP 100." });
+  if (!Number.isFinite(tipAmount) || tipAmount < 0 || tipAmount > 1000000) return res.status(400).json({ message: "Enter a valid tip amount." });
   if (paymentMethod !== "cash") return res.status(400).json({ message: "Cash on completion is the only supported payment method." });
   if (!["Emergency", "Flexible"].includes(urgency)) return res.status(400).json({ message: "Choose a valid urgency." });
   if (!termsAccepted) return res.status(400).json({ message: "Accept the terms and cancellation policy before submitting." });
 
   try {
-    const provider = await User.findOne({ _id: providerId, role: "provider", registrationComplete: true }).select("_id");
-    if (!provider) return res.status(404).json({ message: "That provider is no longer available." });
+    const travelQuote = await getBookingTravelQuote(req.user, providerId);
+    if (travelQuote.errorStatus) return res.status(travelQuote.errorStatus).json({ message: travelQuote.message });
+    const { provider, travelDistanceKm, travelFee } = travelQuote;
 
     const slotTimeMinutes = (() => {
       const match = String(timeSlot).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
@@ -351,6 +383,9 @@ async function handleCreateBooking(req, res) {
       serviceDate,
       timeSlot,
       offeredPrice,
+      travelDistanceKm,
+      travelFee,
+      tipAmount,
       urgency,
       paymentMethod,
       photoUrl: req.files?.[0] ? `/uploads/${req.files[0].filename}` : "",
@@ -450,7 +485,7 @@ async function handleUpdateBookingStatus(req, res) {
       approved: "Booking approved. The provider is preparing for the task.",
       en_route: "Provider is on the way to your location.",
       in_progress: "Task has started.",
-      complete: `Task completed! Please settle the cash payment of ₱${Number(booking.offeredPrice).toLocaleString("en-PH")} directly with the provider.`,
+      complete: `Task completed! Please settle the cash payment of ₱${calculateTotalPrice(booking.offeredPrice, booking.travelFee || 0, booking.tipAmount || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })} directly with the provider.`,
       canceled: "Provider canceled the booking.",
       declined: "Provider declined the booking.",
     };
@@ -458,6 +493,9 @@ async function handleUpdateBookingStatus(req, res) {
       await appendBookingSystemMessage(booking, systemMessages[status], req.user._id, "booking_status", {
         status,
         offeredPrice: booking.offeredPrice,
+        travelFee: booking.travelFee || 0,
+        tipAmount: booking.tipAmount || 0,
+        totalPrice: calculateTotalPrice(booking.offeredPrice, booking.travelFee || 0, booking.tipAmount || 0),
         serviceDate: booking.serviceDate,
         timeSlot: booking.timeSlot,
         actorRole: req.user.role,
@@ -1007,19 +1045,16 @@ async function handleCreateCounterOffer(req, res) {
   const proposedRepairDescription = String(req.body.proposedRepairDescription || "").trim();
   const note = String(req.body.note || "").trim();
   const hasPrice = proposedPriceValue !== "";
-  const hasSchedule = Boolean(proposedDateValue || proposedTimeSlot);
-  const hasScope = Boolean(proposedRepairDescription);
   const proposedPrice = hasPrice ? Number(proposedPriceValue) : undefined;
-  const proposedServiceDate = proposedDateValue ? parseServiceDate(proposedDateValue) : null;
 
   if (!mongoose.isValidObjectId(bookingId)) return res.status(400).json({ message: "Choose a valid booking." });
   if (!["client", "provider"].includes(req.user.role)) return res.status(403).json({ message: "Only booking participants can negotiate booking terms." });
-  if (hasPrice && (!Number.isFinite(proposedPrice) || proposedPrice < 100)) return res.status(400).json({ message: "Counter-offer price must be at least PHP 100." });
-  if ((proposedDateValue && !proposedServiceDate) || (proposedTimeSlot && !TIME_SLOTS.has(proposedTimeSlot))) {
-    return res.status(400).json({ message: "Choose a valid proposed date or time slot." });
+  if (!hasPrice) return res.status(400).json({ message: "Enter a task offer amount to counter the booking." });
+  if (proposedDateValue || proposedTimeSlot || proposedRepairDescription) {
+    return res.status(400).json({ message: "Counter-offers can only change the task offer amount." });
   }
-  if (proposedRepairDescription.length > 2000 || note.length > 500) return res.status(400).json({ message: "Task details or note exceed the allowed length." });
-  if (!hasPrice && !hasSchedule && !hasScope && !note) return res.status(400).json({ message: "Change at least one booking term or add a note." });
+  if (hasPrice && (!Number.isFinite(proposedPrice) || proposedPrice < 100)) return res.status(400).json({ message: "Counter-offer price must be at least PHP 100." });
+  if (note.length > 500) return res.status(400).json({ message: "The counter-offer note exceeds the allowed length." });
 
   try {
     const participantField = req.user.role === "client" ? "clientId" : "providerId";
@@ -1029,21 +1064,9 @@ async function handleCreateCounterOffer(req, res) {
     if (booking.counterOffers.some((offer) => offer.status === "pending")) {
       return res.status(409).json({ message: "Wait for the other participant to respond to the current offer." });
     }
-    const finalServiceDate = proposedServiceDate || booking.serviceDate;
-    const finalTimeSlot = proposedTimeSlot || booking.timeSlot;
-    if (hasSchedule && isServiceSlotInPast(finalServiceDate, finalTimeSlot)) {
-      return res.status(400).json({ message: "Choose a future date and time for the counter-offer." });
-    }
-    if (hasSchedule && await hasConflictingSlot(booking.providerId, finalServiceDate, finalTimeSlot, booking._id)) {
-      return res.status(409).json({ message: "That proposed time slot is no longer available." });
-    }
-
     booking.counterOffers.push({
       proposedBy: req.user.role,
       proposedPrice,
-      proposedServiceDate: proposedServiceDate || undefined,
-      proposedTimeSlot: proposedTimeSlot || undefined,
-      proposedRepairDescription: hasScope ? proposedRepairDescription : undefined,
       note,
       status: "pending",
       createdAt: new Date(),
@@ -1054,9 +1077,6 @@ async function handleCreateCounterOffer(req, res) {
       counterOfferId: String(offer._id),
       proposedBy: offer.proposedBy,
       proposedPrice: offer.proposedPrice ?? booking.offeredPrice,
-      proposedServiceDate: offer.proposedServiceDate || booking.serviceDate,
-      proposedTimeSlot: offer.proposedTimeSlot || booking.timeSlot,
-      proposedRepairDescription: offer.proposedRepairDescription || booking.repairDescription,
       note: offer.note || "",
       status: "pending",
     };
@@ -1104,18 +1124,7 @@ async function handleRespondToCounterOffer(req, res) {
 
     const now = new Date();
     if (action === "accept") {
-      const finalServiceDate = offer.proposedServiceDate || booking.serviceDate;
-      const finalTimeSlot = offer.proposedTimeSlot || booking.timeSlot;
-      if ((offer.proposedServiceDate || offer.proposedTimeSlot) && isServiceSlotInPast(finalServiceDate, finalTimeSlot)) {
-        return res.status(409).json({ message: "This counter-offer time has already passed." });
-      }
-      if ((offer.proposedServiceDate || offer.proposedTimeSlot) && await hasConflictingSlot(booking.providerId, finalServiceDate, finalTimeSlot, booking._id)) {
-        return res.status(409).json({ message: "That proposed time slot is no longer available." });
-      }
       if (offer.proposedPrice != null) booking.offeredPrice = offer.proposedPrice;
-      if (offer.proposedServiceDate) booking.serviceDate = offer.proposedServiceDate;
-      if (offer.proposedTimeSlot) booking.timeSlot = offer.proposedTimeSlot;
-      if (offer.proposedRepairDescription) booking.repairDescription = offer.proposedRepairDescription;
       booking.status = "approved";
       booking.statusHistory.push({ status: "approved", at: now });
       offer.status = "accepted";
@@ -1138,9 +1147,9 @@ async function handleRespondToCounterOffer(req, res) {
       counterOfferId: String(offer._id),
       proposedBy: offer.proposedBy,
       proposedPrice: offer.proposedPrice ?? booking.offeredPrice,
-      proposedServiceDate: offer.proposedServiceDate || booking.serviceDate,
-      proposedTimeSlot: offer.proposedTimeSlot || booking.timeSlot,
-      proposedRepairDescription: offer.proposedRepairDescription || booking.repairDescription,
+      proposedServiceDate: booking.serviceDate,
+      proposedTimeSlot: booking.timeSlot,
+      proposedRepairDescription: booking.repairDescription,
       note: offer.note || "",
       status: offer.status,
     };

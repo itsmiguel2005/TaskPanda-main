@@ -88,7 +88,7 @@ async function handleDiscoverProviders(req, res) {
                 city: 1,
                 barangay: 1,
                 createdAt: 1,
-                distanceKm: { $round: [{ $divide: ["$distanceMeters", 1000] }, 1] },
+                distanceKm: { $round: [{ $divide: ["$distanceMeters", 1000] }, 2] },
                 tesdaCertificates: {
                   $map: {
                     input: {

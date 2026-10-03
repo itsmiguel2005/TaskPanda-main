@@ -40,6 +40,7 @@ const validateBookingCreation = [
   body("offerPrice").optional().isFloat({ min: 100, max: 10000000 }),
   body("offer").optional().isFloat({ min: 100, max: 10000000 }),
   body("price").optional().isFloat({ min: 100, max: 10000000 }),
+  body("tipAmount").optional().isFloat({ min: 0, max: 1000000 }),
   body("urgency").optional().isIn(["Emergency", "Flexible"]),
   body("paymentMethod").optional().isIn(["cash"]),
   body("termsAccepted").optional().isIn(["true", "True", "false"]),

@@ -142,22 +142,26 @@ export default function SystemMessageCard({ message, role, actorName, onOpen, on
         <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 shadow-inner shadow-amber-100/40">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-700">Task summary</span>
-            <span className="rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-amber-800">{formatPrice(event.offeredPrice)}</span>
+            <span className="rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-amber-800">Task offer · {formatPrice(event.offeredPrice)}</span>
           </div>
           <p className="mt-2 text-sm font-bold leading-relaxed text-amber-950">{event.repairDescription || message.text}</p>
           <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-medium text-amber-800">
             {event.serviceDate && <span className="rounded-full bg-amber-100 px-2 py-1">{formatAppointment(event.serviceDate, event.timeSlot)}</span>}
             <span className="rounded-full bg-amber-100 px-2 py-1">{event.paymentMethod === "cash" ? "Cash on completion" : String(event.paymentMethod || "Payment arranged")}</span>
           </div>
+          <dl className="mt-3 space-y-1.5 border-t border-amber-200 pt-2 text-xs text-amber-950">
+            <div className="flex justify-between gap-3"><dt>Travel fare{event.travelDistanceKm == null ? "" : ` · ${Number(event.travelDistanceKm).toFixed(2)} km`}</dt><dd className="font-semibold">{formatPrice(event.travelFee)}</dd></div>
+            <div className="flex justify-between gap-3"><dt>Optional tip</dt><dd className="font-semibold">{formatPrice(event.tipAmount)}</dd></div>
+            <div className="flex justify-between gap-3 border-t border-amber-200 pt-1.5 text-sm"><dt className="font-semibold">Total due</dt><dd className="font-bold">{formatPrice(event.totalPrice ?? event.offeredPrice)}</dd></div>
+          </dl>
         </div>
       )}
       {message.text && message.eventType !== "booking_request" && <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs leading-relaxed text-slate-600">{message.text}</p>}
       <div>
         {message.eventType === "counter_offer" && (
           <span className="mt-2 block rounded-md border border-gray-200 bg-white p-2 text-gray-900">
+            <span className="block text-xs text-gray-500">Task offer</span>
             <span className="block font-semibold">{formatPrice(event.proposedPrice)}</span>
-            <span className="mt-0.5 block">{formatAppointment(event.proposedServiceDate, event.proposedTimeSlot)}</span>
-            {event.proposedRepairDescription && <span className="mt-0.5 block">{event.proposedRepairDescription}</span>}
             {event.note && <span className="mt-1 block text-gray-600">{event.note}</span>}
             {event.status !== "pending" && <span className="mt-1 block font-semibold capitalize">Offer {event.status}</span>}
           </span>

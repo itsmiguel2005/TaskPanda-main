@@ -80,8 +80,8 @@ function parsePrice(priceStr) {
 }
 
 function formatBookingTotal(booking) {
-  const amount = Number(booking.offeredPrice ?? booking.offer);
-  return Number.isFinite(amount) ? `₱${amount.toLocaleString()}` : String(booking.price || "").replace(/^P/, "₱");
+  const amount = Number(booking.totalPrice ?? booking.offeredPrice ?? booking.offer);
+  return Number.isFinite(amount) ? `₱${amount.toLocaleString("en-PH", { maximumFractionDigits: 2 })}` : String(booking.price || "").replace(/^P/, "₱");
 }
 
 function StatusBadge({ status }) {

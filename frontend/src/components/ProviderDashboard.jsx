@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
 import Header from "../components/Header.jsx";
+import BookingPriceBreakdown from "../components/BookingPriceBreakdown.jsx";
 import StatusChangeConfirmation from "./StatusChangeConfirmation.jsx";
 import CompletionProofModal from "./CompletionProofModal.jsx";
 import { canRequestCancellation, requiresCancellationApproval } from "../utils/bookingCancellation.js";
@@ -10,8 +11,13 @@ import { canRequestCancellation, requiresCancellationApproval } from "../utils/b
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 function parsePrice(str) {
-  const n = parseInt(String(str ?? "").replace(/[^0-9]/g, ""), 10);
-  return isNaN(n) ? 0 : n;
+  const amount = Number(String(str ?? "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function formatPhpAmount(value) {
+  const amount = Number(value);
+  return `₱${(Number.isFinite(amount) ? amount : 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
 }
 
 function fmtDate(raw) {
@@ -44,7 +50,7 @@ function StatusBadge({ status }) {
     "Pending Request": "bg-amber-50 text-amber-700 border-amber-200",
     Confirmed: "bg-green-50 text-green-700 border-green-200",
     "On the Way": "bg-cyan-50 text-cyan-800 border-cyan-200",
-    "In Progress": "bg-purple-50 text-purple-700 border-purple-200",
+    "In Progress": "bg-blue-50 text-blue-700 border-blue-200",
     Completed: "bg-blue-50 text-blue-700 border-blue-200",
     Settled: "bg-emerald-50 text-emerald-700 border-emerald-200",
     "Cancellation Requested": "bg-amber-50 text-amber-700 border-amber-200",
@@ -135,34 +141,32 @@ const FILTERS = [
 
 // ─── Incoming Request card ───────────────────────────────────────────────────
 
-function RequestCard({ booking, onAccept, onDecline }) {
+function RequestCard({ booking, onAccept, onDecline, onOpenConversation }) {
   const clientName = booking.client || booking.clientName || booking.worker || "Client";
   // Use pre-formatted date string from API + raw timeSlot string — avoids UTC offset conversion bug
   const requestedDate = booking.date || (booking.serviceDate ? new Date(booking.serviceDate).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" }) : "");
   const requestedTime = [requestedDate, booking.time || booking.timeSlot].filter(Boolean).join(", ");
   const address = booking.address || booking.location || "";
   const urgency = booking.urgency || "Flexible";
-  const price = booking.price != null
-    ? (String(booking.price).startsWith("₱") || String(booking.price).startsWith("P") ? booking.price : `P${booking.price}`)
-    : "";
+  const totalPrice = booking.totalPrice ?? booking.offeredPrice ?? booking.offer ?? 0;
 
   return (
-    <div className="border-b border-gray-100 px-5 py-4 last:border-b-0">
+    <div className="border-b border-sky-100/80 px-4 py-5 last:border-b-0 sm:px-5">
       {/* Row 1: avatar + client + badge */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
           <Avatar name={clientName} image={booking.clientProfileImage} />
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-gray-900">{clientName}</p>
-            <p className="text-[11px] text-gray-400">New booking request</p>
+            <p className="truncate text-sm font-semibold text-slate-900">{clientName}</p>
+            <p className="text-[11px] text-slate-500">New booking request</p>
           </div>
         </div>
         <StatusBadge status="Pending Request" />
       </div>
 
       {/* Task title */}
-      <p className="mt-3 text-base font-bold text-gray-900">{booking.task || booking.cred || "Booking"}</p>
-      <p className="mt-0.5 text-sm text-gray-500">{booking.description || ""}</p>
+      <p className="mt-3 text-base font-bold text-slate-900">{booking.task || booking.cred || "Booking"}</p>
+      <p className="mt-0.5 text-sm leading-6 text-slate-600">{booking.description || ""}</p>
 
       {/* Location + Requested time */}
       <div className="mt-3 flex flex-wrap items-start gap-x-6 gap-y-1.5">
@@ -170,8 +174,8 @@ function RequestCard({ booking, onAccept, onDecline }) {
           <div className="flex items-center gap-1.5">
             <LocationIcon />
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Location</p>
-              <p className="text-xs text-gray-600">{address}</p>
+              <p className="dashboard-kicker">Location</p>
+                <p className="text-xs text-slate-700">{address}</p>
             </div>
           </div>
         )}
@@ -179,45 +183,46 @@ function RequestCard({ booking, onAccept, onDecline }) {
           <div className="flex items-center gap-1.5">
             <ClockIcon />
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Requested time</p>
-              <p className="text-xs text-gray-600">{requestedTime}</p>
+              <p className="dashboard-kicker">Requested time</p>
+              <p className="text-xs text-slate-700">{requestedTime}</p>
             </div>
           </div>
         )}
       </div>
 
-      {/* Urgency pill + Price beside it + action buttons */}
-      <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <span
             className={`rounded-full border px-3 py-1 text-xs font-normal ${
               urgency.toLowerCase() === "emergency"
                 ? "border-red-200 bg-red-50 text-red-700"
-                : "border-gray-200 bg-white text-gray-700 shadow-2xs"
+                : "border-sky-100 bg-sky-50 text-blue-950"
             }`}
           >
             {urgency}
           </span>
-          {price && (
-            <span className="text-base font-bold text-gray-900">{price}</span>
-          )}
+          <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold tabular-nums text-white">Total {formatPhpAmount(totalPrice)}</span>
         </div>
-        <div className="flex flex-col gap-2 items-stretch min-w-[120px]">
+      </div>
+
+      <BookingPriceBreakdown booking={booking} className="mt-4" />
+
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:max-w-sm">
           <button
             type="button"
             onClick={() => onAccept(booking.id)}
-            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-700"
+            className="dashboard-primary-button dashboard-focus px-4 py-2.5 text-sm"
           >
             Accept
           </button>
           <button
             type="button"
             onClick={() => onDecline(booking.id)}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+            className="dashboard-secondary-button dashboard-focus px-4 py-2.5 text-sm"
           >
             Decline
           </button>
-        </div>
+          <button type="button" onClick={() => onOpenConversation(booking.id)} className="dashboard-secondary-button dashboard-focus col-span-2 px-4 py-2.5 text-sm text-blue-700">Message client to negotiate</button>
       </div>
     </div>
   );
@@ -265,10 +270,10 @@ function JobProgressTracker({ status, onAdvanceStatus }) {
               <div
                 className={`h-1.5 w-full rounded-full transition-colors ${
                   isActive
-                    ? "bg-[#547f9e]"
+                    ? "bg-blue-600"
                     : isNext
-                    ? "bg-gray-200 group-hover:bg-[#547f9e]/50"
-                    : "bg-gray-200"
+                    ? "bg-sky-100 group-hover:bg-blue-200"
+                    : "bg-sky-100"
                 }`}
               />
               <span
@@ -306,9 +311,6 @@ function JobCard({
   const scheduleDate = booking.date || (booking.serviceDate ? new Date(booking.serviceDate).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" }) : "");
   const schedule = [scheduleDate, booking.time || booking.timeSlot].filter(Boolean).join(" · ");
   const address = booking.address || booking.location || "";
-  const price = booking.price != null
-    ? (String(booking.price).startsWith("₱") || String(booking.price).startsWith("P") ? booking.price : `P${booking.price}`)
-    : "";
   const category =
     (Array.isArray(booking.professions) && booking.professions.length > 0 ? booking.professions.join(", ") : null) ||
     (booking.cred && booking.cred !== "Service provider" ? booking.cred : null) ||
@@ -345,7 +347,7 @@ function JobCard({
   const canCancel = canRequestCancellation(booking);
 
   return (
-    <div className="border-b border-gray-100 p-6 last:border-b-0">
+    <div className="border-b border-sky-100/80 p-4 last:border-b-0 sm:p-5">
       <div className="grid grid-cols-1 gap-6 md:grid-cols-[1fr_190px]">
         {/* Left Column: Details & Progress Tracker */}
         <div className="min-w-0">
@@ -353,8 +355,8 @@ function JobCard({
           <div className="flex items-center gap-3">
             <Avatar name={clientName} image={booking.clientProfileImage} />
             <div className="min-w-0">
-              <p className="truncate text-base font-semibold text-gray-900">{clientName}</p>
-              {submittedAt && <p className="text-xs text-gray-400 mt-0.5">Submitted {submittedAt}</p>}
+              <p className="truncate text-base font-semibold text-slate-900">{clientName}</p>
+              {submittedAt && <p className="mt-0.5 text-xs text-slate-500">Submitted {submittedAt}</p>}
             </div>
             <div className="ml-auto sm:ml-6 flex items-center gap-1.5">
               <StatusBadge status={booking.status} />
@@ -375,8 +377,8 @@ function JobCard({
 
           {/* Task Title & Description */}
           <div className="mt-3.5">
-            <h3 className="text-base font-bold text-gray-900">{booking.task || booking.cred || "Booking"}</h3>
-            {booking.description && <p className="mt-0.5 text-sm text-gray-500">{booking.description}</p>}
+            <h3 className="text-base font-bold text-slate-900">{booking.task || booking.cred || "Booking"}</h3>
+            {booking.description && <p className="mt-0.5 text-sm leading-6 text-slate-600">{booking.description}</p>}
           </div>
 
           {/* Progress Tracker Bar */}
@@ -392,28 +394,25 @@ function JobCard({
           />
 
           {/* Details grid below progress tracker */}
-          <div className="mt-5 grid grid-cols-2 gap-x-8 gap-y-3">
+          <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3">
             <div>
-              <p className="text-xs text-gray-400 font-normal">Location</p>
-              <p className="mt-0.5 text-sm text-gray-700">{address || "Not specified"}</p>
+              <p className="dashboard-kicker">Location</p>
+              <p className="mt-1 text-sm text-slate-700">{address || "Not specified"}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-400 font-normal">Schedule</p>
-              <p className="mt-0.5 text-sm text-gray-700">{schedule || "Flexible schedule"}</p>
+              <p className="dashboard-kicker">Schedule</p>
+              <p className="mt-1 text-sm text-slate-700">{schedule || "Flexible schedule"}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-400 font-normal">Agreed price</p>
-              <p className="mt-0.5 text-sm font-bold text-gray-900">{price || "Free"}</p>
+              <p className="dashboard-kicker">Service category</p>
+              <p className="mt-1 text-sm text-slate-700">{category || "General Service"}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-400 font-normal">Service category</p>
-              <p className="mt-0.5 text-sm text-gray-700">{category || "General Service"}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-400 font-normal">Urgency</p>
-              <p className="mt-0.5 text-sm text-gray-700">{urgency || "Flexible"}</p>
+              <p className="dashboard-kicker">Urgency</p>
+              <p className="mt-1 text-sm text-slate-700">{urgency || "Flexible"}</p>
             </div>
           </div>
+          <BookingPriceBreakdown booking={booking} className="mt-4" />
         </div>
 
         {/* Right Column: Stacked Action Buttons */}
@@ -421,14 +420,14 @@ function JobCard({
           <button
             type="button"
             onClick={() => onNavigate(`/provider/messages?bookingId=${booking.id}`)}
-            className="w-full rounded-full border border-gray-200 bg-white py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-50 transition shadow-xs"
+            className="dashboard-secondary-button dashboard-focus w-full py-2.5 text-center text-sm"
           >
             Open conversation
           </button>
           <button
             type="button"
             onClick={() => onViewDetails(booking)}
-            className="w-full rounded-full border border-gray-200 bg-white py-2 text-center text-sm font-medium text-gray-700 hover:bg-gray-50 transition shadow-xs"
+            className="dashboard-secondary-button dashboard-focus w-full py-2.5 text-center text-sm"
           >
             View details
           </button>
@@ -442,7 +441,7 @@ function JobCard({
                   onAdvanceStatus(booking.id, actionButton.statusCode, actionButton.nextStatus);
                 }
               }}
-              className="w-full rounded-full bg-[#547f9e] hover:bg-[#436782] text-white py-2 text-center text-sm font-medium shadow-xs transition"
+              className="dashboard-primary-button dashboard-focus w-full py-2.5 text-center text-sm"
             >
               {actionButton.label}
             </button>
@@ -451,7 +450,7 @@ function JobCard({
             <button
               type="button"
               onClick={() => onCancelBooking(booking)}
-              className="w-full rounded-full border border-rose-200 bg-white py-2 text-center text-sm font-medium text-rose-500 hover:bg-rose-50 hover:border-rose-300 transition shadow-xs"
+              className="w-full rounded-xl border border-rose-200 bg-white py-2.5 text-center text-sm font-semibold text-rose-700 transition hover:bg-rose-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
             >
               Cancel booking
             </button>
@@ -576,7 +575,10 @@ export default function ProviderDashboard() {
     const completedJobs = jobs.filter((j) => ["Completed", "Settled"].includes(j.status)).length;
     const earnings = jobs
       .filter((j) => ["Completed", "Settled"].includes(j.status))
-      .reduce((sum, j) => sum + parsePrice(j.price), 0);
+      .reduce((sum, j) => {
+        const total = Number(j.totalPrice);
+        return sum + (Number.isFinite(total) ? total : parsePrice(j.price));
+      }, 0);
     return { rating: ratingData.rating, reviews: ratingData.reviews, activeJobs, completedJobs, earnings };
   }, [jobs, ratingData]);
 
@@ -627,26 +629,30 @@ export default function ProviderDashboard() {
   const pendingRequest = requests.find((r) => r.id === acceptingId);
 
   return (
-    <div className="min-h-screen bg-gray-50 pt-16 pb-12">
+    <div className="dashboard-page">
       <Header showNav activeTab="Home" role="provider" notifCount={requests.length} />
 
-      <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
+      <div className="dashboard-shell max-w-7xl">
 
         {/* ── Page title ─────────────────────────────────────────────────── */}
-        <div className="py-6">
-          <h1 className="text-2xl font-bold text-gray-900">Provider Dashboard</h1>
-          <p className="mt-0.5 text-sm text-gray-500">Manage your jobs, requests, and earnings</p>
+        <div className="dashboard-panel mb-5 flex flex-col gap-2 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-7">
+          <div>
+            <p className="dashboard-kicker">Provider workspace</p>
+            <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">Manage your work</h1>
+            <p className="mt-1 text-sm text-slate-600">Requests, active jobs, and earnings in one place.</p>
+          </div>
+          {providerProfession && <p className="text-sm font-semibold text-blue-700">{providerProfession}</p>}
         </div>
 
         {error && (
-          <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>
+          <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>
         )}
 
         {/* ── Stat cards ────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {/* Rating */}
-          <div className="rounded-xl border border-gray-100 bg-white px-5 py-4 shadow-sm">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400">Rating</p>
+          <div className="dashboard-stat">
+            <p className="dashboard-kicker">Rating</p>
             <div className="mt-2 flex items-center gap-1.5">
               <div className="flex items-center gap-0.5">
                 {[1, 2, 3, 4, 5].map((s) => (
@@ -656,31 +662,31 @@ export default function ProviderDashboard() {
                 ))}
               </div>
               {stats.rating > 0 && (
-                <span className="text-sm font-bold text-gray-800">{stats.rating.toFixed(1)}</span>
+                <span className="text-sm font-bold text-slate-800">{stats.rating.toFixed(1)}</span>
               )}
             </div>
-            <p className="mt-1 text-xs text-gray-400">{stats.reviews} {stats.reviews === 1 ? "review" : "reviews"}</p>
+            <p className="mt-1 text-xs text-slate-500">{stats.reviews} {stats.reviews === 1 ? "review" : "reviews"}</p>
           </div>
 
           {/* Active Jobs */}
-          <div className="rounded-xl border border-gray-100 bg-teal-50 px-5 py-4 shadow-sm">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400">Active Jobs</p>
-            <p className="mt-2 text-3xl font-extrabold text-gray-900">{stats.activeJobs}</p>
-            <p className="mt-1 text-xs text-gray-400">Currently in progress</p>
+          <div className="dashboard-stat bg-sky-50/70">
+            <p className="dashboard-kicker">Active jobs</p>
+            <p className="mt-2 text-3xl font-extrabold tabular-nums text-slate-900">{stats.activeJobs}</p>
+            <p className="mt-1 text-xs text-slate-500">Currently in progress</p>
           </div>
 
           {/* Completed Jobs */}
-          <div className="rounded-xl border border-gray-100 bg-white px-5 py-4 shadow-sm">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400">Completed Jobs</p>
-            <p className="mt-2 text-3xl font-extrabold text-gray-900">{stats.completedJobs}</p>
-            <p className="mt-1 text-xs text-gray-400">All-time completed</p>
+          <div className="dashboard-stat">
+            <p className="dashboard-kicker">Completed jobs</p>
+            <p className="mt-2 text-3xl font-extrabold tabular-nums text-slate-900">{stats.completedJobs}</p>
+            <p className="mt-1 text-xs text-slate-500">All-time completed</p>
           </div>
 
           {/* Total Earnings */}
-          <div className="rounded-xl border border-gray-100 bg-white px-5 py-4 shadow-sm">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400">Total Earnings</p>
-            <p className="mt-2 text-3xl font-extrabold text-gray-900">₱{stats.earnings.toLocaleString()}</p>
-            <p className="mt-1 text-xs text-gray-400">From completed jobs</p>
+          <div className="dashboard-stat">
+            <p className="dashboard-kicker">Total earnings</p>
+            <p className="mt-2 text-3xl font-extrabold tabular-nums text-slate-900">{formatPhpAmount(stats.earnings)}</p>
+            <p className="mt-1 text-xs text-slate-500">From completed jobs</p>
           </div>
         </div>
 
@@ -693,13 +699,13 @@ export default function ProviderDashboard() {
               onClick={() => setActiveFilter(key)}
               className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition whitespace-nowrap ${
                 activeFilter === key
-                  ? "bg-gray-900 text-white"
-                  : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
+                  ? "bg-slate-900 text-white"
+                  : "border border-sky-100 bg-white text-slate-600 hover:bg-sky-50"
               }`}
             >
               {label}
               <span className={`inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-bold ${
-                activeFilter === key ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"
+                activeFilter === key ? "bg-white/20 text-white" : "bg-sky-50 text-blue-950"
               }`}>
                 {filterCounts[key] ?? 0}
               </span>
@@ -707,7 +713,7 @@ export default function ProviderDashboard() {
           ))}
 
           {/* Search */}
-          <div className="ml-auto flex shrink-0 items-center gap-2 rounded-full border border-gray-200 bg-white px-3.5 py-1.5">
+          <div className="ml-auto flex shrink-0 items-center gap-2 rounded-full border border-sky-100 bg-white px-3.5 py-1.5 shadow-sm">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-gray-400">
               <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
             </svg>
@@ -716,40 +722,40 @@ export default function ProviderDashboard() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search client or repair"
-              className="w-36 bg-transparent text-sm text-gray-700 placeholder-gray-400 outline-none"
+              className="w-36 bg-transparent text-sm text-slate-800 placeholder-slate-400 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
             />
           </div>
         </div>
 
         {/* ── Two-column layout ─────────────────────────────────────────── */}
-        <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_300px]">
+        <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
 
           {/* LEFT: Incoming Requests + My Jobs */}
           <div className="space-y-5">
 
             {/* Incoming Requests */}
             {(activeFilter === "All" || activeFilter === "Pending Request") && (
-              <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
-                <div className="flex items-center gap-2 border-b border-gray-100 px-5 py-4">
-                  <h2 className="text-base font-bold text-gray-900">Incoming Requests</h2>
+              <div className="dashboard-panel">
+                <div className="flex items-center gap-2 border-b border-sky-100 px-5 py-4">
+                  <h2 className="text-base font-bold tracking-tight text-slate-900">Incoming requests</h2>
                   {requests.length > 0 && (
-                    <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-amber-100 px-1.5 text-xs font-bold text-amber-700">
+                    <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-blue-100 px-1.5 text-xs font-bold text-blue-700">
                       {requests.length}
                     </span>
                   )}
                 </div>
 
                 {isLoading && requests.length === 0 ? (
-                  <div className="py-10 text-center text-sm text-gray-400">Loading…</div>
+                  <div className="py-10 text-center text-sm text-slate-500">Loading requests…</div>
                 ) : requests.length === 0 ? (
                   <div className="py-12 text-center">
                     <p className="text-3xl">📭</p>
-                    <p className="mt-2 text-sm text-gray-400">No incoming requests</p>
+                    <p className="mt-2 text-sm text-slate-500">No incoming requests</p>
                   </div>
                 ) : (
                   <div>
                     {requests.map((req) => (
-                      <RequestCard key={req.id} booking={req} onAccept={handleAccept} onDecline={handleDecline} />
+                      <RequestCard key={req.id} booking={req} onAccept={handleAccept} onDecline={handleDecline} onOpenConversation={(bookingId) => navigate(`/provider/messages?bookingId=${bookingId}`)} />
                     ))}
                   </div>
                 )}
@@ -758,20 +764,20 @@ export default function ProviderDashboard() {
 
             {/* My Jobs */}
             {activeFilter !== "Pending Request" && (
-              <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
-                <div className="border-b border-gray-100 px-5 py-4">
-                  <h2 className="text-base font-bold text-gray-900">My Jobs</h2>
+              <div className="dashboard-panel">
+                <div className="border-b border-sky-100 px-5 py-4">
+                  <h2 className="text-base font-bold tracking-tight text-slate-900">My jobs</h2>
                 </div>
 
                 {isLoading && filteredJobs.length === 0 ? (
-                  <div className="py-10 text-center text-sm text-gray-400">Loading…</div>
+                  <div className="py-10 text-center text-sm text-slate-500">Loading jobs…</div>
                 ) : filteredJobs.length === 0 ? (
                   <div className="py-12 text-center">
                     <p className="text-3xl">📋</p>
-                    <p className="mt-2 text-sm text-gray-400">No jobs yet</p>
+                    <p className="mt-2 text-sm text-slate-500">No jobs yet</p>
                   </div>
                 ) : (
-                  <div className="max-h-[600px] overflow-y-auto divide-y divide-gray-100">
+                  <div className="max-h-[720px] overflow-y-auto divide-y divide-sky-100/80">
                     {filteredJobs.map((job) => (
                       <JobCard
                         key={job.id}
@@ -803,12 +809,12 @@ export default function ProviderDashboard() {
               const statusLabel = nextJob?.status === "Confirmed" ? "Scheduled" : nextJob?.status || "Scheduled";
 
               return (
-                <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                <div className="dashboard-panel p-5">
                   {/* Header */}
                   <div className="flex items-start justify-between">
                     <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">NEXT UP</p>
-                      <h3 className="mt-0.5 text-base font-bold text-gray-900">Upcoming Schedule</h3>
+                      <p className="dashboard-kicker">Next up</p>
+                      <h3 className="mt-1 text-base font-bold text-slate-900">Upcoming schedule</h3>
                     </div>
                     {nextJob && (
                       <span className="rounded-full bg-slate-100 text-slate-700 px-3 py-1 text-xs font-medium border border-slate-200">
@@ -819,29 +825,29 @@ export default function ProviderDashboard() {
 
                   {!nextJob ? (
                     <div className="py-8 text-center">
-                      <p className="text-sm font-medium text-gray-700">No upcoming jobs</p>
-                      <p className="mt-1 text-xs text-gray-400">Accepted bookings will appear here.</p>
+                        <p className="text-sm font-medium text-slate-700">No upcoming jobs</p>
+                        <p className="mt-1 text-xs text-slate-500">Accepted bookings will appear here.</p>
                     </div>
                   ) : (
                     <div className="mt-4">
                       {/* Schedule date and time */}
-                      <p className="text-sm font-semibold text-[#547f9e]">
+                      <p className="text-sm font-semibold text-blue-700">
                         {nextJobSchedule}
                       </p>
 
                       {/* Task title */}
-                      <h4 className="mt-2 text-base font-bold text-gray-900">
+                      <h4 className="mt-2 text-base font-bold text-slate-900">
                         {nextJob.task || nextJob.cred || "Booking"}
                       </h4>
 
                       {/* Client name */}
-                      <p className="mt-0.5 text-sm text-gray-500">
+                      <p className="mt-0.5 text-sm text-slate-600">
                         {nextJob.client || nextJob.clientName || nextJob.worker || "Client"}
                       </p>
 
                       {/* Location divider */}
                       <div className="mt-3 border-t border-gray-100 pt-3">
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-slate-600">
                           {nextJob.address || nextJob.location || "Location not specified"}
                         </p>
                       </div>
@@ -851,7 +857,7 @@ export default function ProviderDashboard() {
                         <button
                           type="button"
                           onClick={() => navigate(`/provider/messages?bookingId=${nextJob.id}`)}
-                          className="w-full rounded-full bg-[#527d9e] hover:bg-[#436782] text-white py-2.5 text-center text-sm font-medium shadow-xs transition"
+                          className="dashboard-primary-button dashboard-focus w-full py-2.5 text-center text-sm"
                         >
                           Open conversation
                         </button>
@@ -861,7 +867,7 @@ export default function ProviderDashboard() {
                             setActiveFilter("Active");
                             window.scrollTo({ top: 350, behavior: "smooth" });
                           }}
-                          className="w-full rounded-full border border-gray-200 bg-white py-2.5 text-center text-sm font-medium text-gray-700 hover:bg-gray-50 transition shadow-xs"
+                          className="dashboard-secondary-button dashboard-focus w-full py-2.5 text-center text-sm"
                         >
                           View active jobs
                         </button>
@@ -873,15 +879,15 @@ export default function ProviderDashboard() {
             })()}
 
             {/* Quick Actions */}
-            <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
-              <div className="border-b border-gray-100 px-5 py-4">
-                <h3 className="text-sm font-bold text-gray-900">Quick Actions</h3>
+            <div className="dashboard-panel">
+              <div className="border-b border-sky-100 px-5 py-4">
+                <h3 className="text-sm font-bold text-slate-900">Quick actions</h3>
               </div>
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-sky-100/80">
                 <button
                   type="button"
                   onClick={() => navigate("/provider/messages")}
-                  className="flex w-full items-center gap-3 px-5 py-3.5 text-sm text-gray-700 transition hover:bg-gray-50"
+                  className="flex w-full items-center gap-3 px-5 py-3.5 text-sm text-blue-950 transition hover:bg-sky-50"
                 >
                   <ChatIcon />
                   <span>Messages</span>
@@ -889,7 +895,7 @@ export default function ProviderDashboard() {
                 <button
                   type="button"
                   onClick={() => navigate("/provider-bookings")}
-                  className="flex w-full items-center gap-3 px-5 py-3.5 text-sm text-gray-700 transition hover:bg-gray-50"
+                  className="flex w-full items-center gap-3 px-5 py-3.5 text-sm text-blue-950 transition hover:bg-sky-50"
                 >
                   <BookIcon />
                   <span>All Bookings</span>
@@ -897,7 +903,7 @@ export default function ProviderDashboard() {
                 <button
                   type="button"
                   onClick={() => navigate("/provider-profile")}
-                  className="flex w-full items-center gap-3 px-5 py-3.5 text-sm text-gray-700 transition hover:bg-gray-50"
+                  className="flex w-full items-center gap-3 px-5 py-3.5 text-sm text-blue-950 transition hover:bg-sky-50"
                 >
                   <UserIcon />
                   <span>My Profile</span>
@@ -911,19 +917,19 @@ export default function ProviderDashboard() {
       {/* ── Accept confirmation modal ──────────────────────────────────── */}
       {acceptingId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setAcceptingId(null)}>
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="dashboard-panel w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
             <div className="p-6">
-              <h3 className="text-lg font-bold text-gray-900">Accept Request?</h3>
-              <p className="mt-2 text-sm text-gray-500">
+              <h3 className="text-lg font-bold text-slate-900">Accept request?</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
                 {pendingRequest
                   ? `Accept ${pendingRequest.client || pendingRequest.clientName || "this client"}'s request for "${pendingRequest.task || "this service"}"?`
                   : "Accept this booking request?"}
               </p>
               <div className="mt-6 flex gap-3">
-                <button type="button" onClick={() => setAcceptingId(null)} className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50">
+                <button type="button" onClick={() => setAcceptingId(null)} className="dashboard-secondary-button dashboard-focus flex-1 py-2.5 text-sm">
                   Cancel
                 </button>
-                <button type="button" onClick={confirmAccept} className="flex-1 rounded-xl bg-gray-900 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-700">
+                <button type="button" onClick={confirmAccept} className="dashboard-primary-button dashboard-focus flex-1 py-2.5 text-sm">
                   Accept
                 </button>
               </div>
@@ -993,15 +999,15 @@ export default function ProviderDashboard() {
           onClick={() => setDetailBooking(null)}
         >
           <div
-            className="w-full max-w-md rounded-2xl bg-white shadow-xl overflow-hidden"
+            className="dashboard-panel w-full max-w-md"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-              <h3 className="text-base font-bold text-gray-900">Job Details</h3>
+            <div className="flex items-center justify-between border-b border-sky-100 px-6 py-4">
+              <h3 className="text-base font-bold text-slate-900">Job details</h3>
               <button
                 type="button"
                 onClick={() => setDetailBooking(null)}
-                className="flex h-7 w-7 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition"
+                className="dashboard-focus flex h-8 w-8 items-center justify-center rounded-full text-blue-900 transition hover:bg-sky-50 hover:text-blue-950"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4">
                   <path d="M18 6L6 18M6 6l12 12" />
@@ -1012,36 +1018,32 @@ export default function ProviderDashboard() {
               <div className="flex items-center gap-3">
                 <Avatar name={detailBooking.client || "Client"} image={detailBooking.clientProfileImage} />
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-gray-900 truncate">{detailBooking.client || "Client"}</p>
-                  <p className="text-xs text-gray-400">
+                  <p className="truncate font-semibold text-slate-900">{detailBooking.client || "Client"}</p>
+                  <p className="text-xs text-slate-500">
                     {detailBooking.createdAt ? `Submitted ${fmtDate(detailBooking.createdAt)}` : ""}
                   </p>
                 </div>
                 <StatusBadge status={detailBooking.status} />
               </div>
-              <div className="rounded-xl bg-gray-50 p-3.5">
-                <p className="text-xs uppercase tracking-wider text-gray-400 font-semibold">Task</p>
-                <p className="text-sm font-bold text-gray-900 mt-0.5">{detailBooking.task || "Booking"}</p>
+              <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-3.5">
+                <p className="dashboard-kicker text-blue-900">Task</p>
+                <p className="mt-1 text-sm font-bold text-slate-900">{detailBooking.task || "Booking"}</p>
                 {detailBooking.description && (
-                  <p className="text-sm text-gray-600 mt-1">{detailBooking.description}</p>
+                  <p className="mt-1 text-sm leading-6 text-blue-900">{detailBooking.description}</p>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <p className="text-xs text-gray-400">Location</p>
-                  <p className="font-medium text-gray-800 mt-0.5">{detailBooking.address || "Not specified"}</p>
+                  <p className="dashboard-kicker">Location</p>
+                  <p className="mt-1 font-medium text-slate-800">{detailBooking.address || "Not specified"}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-400">Schedule</p>
-                  <p className="font-medium text-gray-800 mt-0.5">{detailBooking.date} {detailBooking.time ? `· ${detailBooking.time}` : ""}</p>
+                  <p className="dashboard-kicker">Schedule</p>
+                  <p className="mt-1 font-medium text-slate-800">{detailBooking.date} {detailBooking.time ? `· ${detailBooking.time}` : ""}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-400">Price</p>
-                  <p className="font-bold text-gray-900 mt-0.5">{detailBooking.price != null ? (String(detailBooking.price).startsWith("P") || String(detailBooking.price).startsWith("₱") ? detailBooking.price : `P${detailBooking.price}`) : "Free"}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400">Category</p>
-                  <p className="font-medium text-gray-800 mt-0.5">
+                  <p className="dashboard-kicker">Category</p>
+                  <p className="mt-1 font-medium text-slate-800">
                     {(Array.isArray(detailBooking.professions) && detailBooking.professions.length > 0 ? detailBooking.professions.join(", ") : null) ||
                       (detailBooking.cred && detailBooking.cred !== "Service provider" ? detailBooking.cred : null) ||
                       (detailBooking.category && detailBooking.category !== "General Service" ? detailBooking.category : null) ||
@@ -1051,25 +1053,26 @@ export default function ProviderDashboard() {
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-400">Urgency</p>
-                  <p className="font-medium text-gray-800 mt-0.5">{detailBooking.urgency || "Flexible"}</p>
+                  <p className="dashboard-kicker">Urgency</p>
+                  <p className="mt-1 font-medium text-slate-800">{detailBooking.urgency || "Flexible"}</p>
                 </div>
               </div>
-              <div className="border-t border-gray-100 pt-4 flex gap-3">
+              <BookingPriceBreakdown booking={detailBooking} />
+              <div className="flex gap-3 border-t border-sky-100 pt-4">
                 <button
                   type="button"
                   onClick={() => {
                     setDetailBooking(null);
                     navigate(`/provider/messages?bookingId=${detailBooking.id}`);
                   }}
-                  className="flex-1 rounded-xl bg-gray-900 py-2.5 text-sm font-semibold text-white hover:bg-gray-800 transition"
+                  className="dashboard-primary-button dashboard-focus flex-1 py-2.5 text-sm"
                 >
                   Chat with Client
                 </button>
                 <button
                   type="button"
                   onClick={() => setDetailBooking(null)}
-                  className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
+                  className="dashboard-secondary-button dashboard-focus flex-1 py-2.5 text-sm"
                 >
                   Close
                 </button>

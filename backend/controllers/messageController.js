@@ -3,6 +3,7 @@ const Booking = require("../models/Booking");
 const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
 const { ensureBookingConversation, appendBookingSystemMessage, formatAmount } = require("../services/bookingMessaging");
+const { calculateTotalPrice } = require("../services/bookingPricing");
 const {
   deleteChatPhoto,
   fetchAuthenticatedChatPhoto,
@@ -15,7 +16,7 @@ const MESSAGE_PAGE_SIZE = 50;
 const conversationPopulate = [
   { path: "clientId", select: "fullName username email profileImage" },
   { path: "providerId", select: "fullName username email professions profileImage" },
-  { path: "bookingId", select: "repairDescription status serviceDate timeSlot offeredPrice paymentMethod cashPaidConfirmedAt cashReceivedConfirmedAt clientConfirmedCash providerConfirmedCash workCompletedAt settledAt cashReceipt completionNote completionPhotos completionSubmittedAt revisionRequests createdAt counterOffers clientRating clientReview clientReviewPhotos reviewedAt" },
+  { path: "bookingId", select: "repairDescription status serviceDate timeSlot offeredPrice travelDistanceKm travelFee tipAmount paymentMethod cashPaidConfirmedAt cashReceivedConfirmedAt clientConfirmedCash providerConfirmedCash workCompletedAt settledAt cashReceipt completionNote completionPhotos completionSubmittedAt revisionRequests createdAt counterOffers clientRating clientReview clientReviewPhotos reviewedAt" },
 ];
 
 function serializeConversation(conversation, role) {
@@ -37,6 +38,10 @@ function serializeConversation(conversation, role) {
     serviceDate: booking?.serviceDate || null,
     timeSlot: booking?.timeSlot || "",
     offeredPrice: booking?.offeredPrice ?? 0,
+    travelDistanceKm: booking?.travelDistanceKm ?? null,
+    travelFee: booking?.travelFee ?? 0,
+    tipAmount: booking?.tipAmount ?? 0,
+    totalPrice: calculateTotalPrice(booking?.offeredPrice ?? 0, booking?.travelFee ?? 0, booking?.tipAmount ?? 0),
     paymentMethod: booking?.paymentMethod || "cash",
     cashPaidConfirmedAt: booking?.cashPaidConfirmedAt || null,
     cashReceivedConfirmedAt: booking?.cashReceivedConfirmedAt || null,
@@ -414,7 +419,7 @@ async function handleCashConfirmation(req, res) {
         receiptNumber: `TP-${Date.now().toString(36).toUpperCase()}`,
         issuedAt: timestamp,
         serviceDescription: booking.repairDescription,
-        totalAmount: booking.offeredPrice,
+        totalAmount: calculateTotalPrice(booking.offeredPrice, booking.travelFee || 0, booking.tipAmount || 0),
         paymentMethod: "cash",
         completionNote: booking.completionNote,
         completionPhotos: booking.completionPhotos,

@@ -79,6 +79,7 @@ export function BookingProvider({ children }) {
       serviceDate: normalizedDetails.serviceDate || normalizedDetails.date || "",
       timeSlot: normalizedDetails.timeSlot || normalizedDetails.time || "",
       offeredPrice: normalizedDetails.offeredPrice ?? normalizedDetails.offerPrice ?? normalizedDetails.offer ?? 0,
+      tipAmount: normalizedDetails.tipAmount ?? 0,
       urgency: normalizedDetails.urgency || "Flexible",
       paymentMethod: normalizedDetails.paymentMethod || "cash",
       termsAccepted: normalizedDetails.termsAccepted ?? true,
@@ -92,6 +93,7 @@ export function BookingProvider({ children }) {
     const serviceDate = normalizedDetails.serviceDate || normalizedDetails.date || "";
     const timeSlot = normalizedDetails.timeSlot || normalizedDetails.time || "";
     const offerPrice = normalizedDetails.offeredPrice ?? normalizedDetails.offerPrice ?? normalizedDetails.offer ?? 0;
+    const tipAmount = normalizedDetails.tipAmount ?? 0;
     const paymentMethod = normalizedDetails.paymentMethod || "cash";
     const termsAccepted = normalizedDetails.termsAccepted ?? true;
 
@@ -104,6 +106,7 @@ export function BookingProvider({ children }) {
     formData.append("timeSlot", String(timeSlot));
     formData.append("time", String(timeSlot));
     formData.append("offeredPrice", String(offerPrice));
+    formData.append("tipAmount", String(tipAmount));
     formData.append("offer", String(offerPrice));
     formData.append("price", String(offerPrice));
     formData.append("paymentMethod", paymentMethod);

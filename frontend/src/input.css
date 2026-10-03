@@ -4,7 +4,94 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --taskpanda-ink: #0f172a;
+  --taskpanda-muted: #64748b;
+  --taskpanda-line: #dbeafe;
+  --taskpanda-blue: #2563eb;
+}
+
 @layer components {
+  .dashboard-page {
+    min-height: 100vh;
+    padding-top: 4rem;
+    padding-bottom: 3rem;
+    color: var(--taskpanda-ink);
+    background: linear-gradient(180deg, #eff6ff 0, #f8fbff 18rem, #f8fafc 44rem);
+  }
+
+  .dashboard-shell {
+    width: 100%;
+    max-width: 80rem;
+    margin-inline: auto;
+    padding: 1.5rem 1rem;
+  }
+
+  .dashboard-panel {
+    overflow: hidden;
+    border: 1px solid var(--taskpanda-line);
+    border-radius: 1.25rem;
+    background: #fff;
+    box-shadow: 0 14px 40px rgba(15, 23, 42, 0.045);
+  }
+
+  .dashboard-panel-heading {
+    border-bottom: 1px solid rgba(219, 234, 254, 0.8);
+    padding: 1rem 1.25rem;
+  }
+
+  .dashboard-stat {
+    border: 1px solid var(--taskpanda-line);
+    border-radius: 1rem;
+    background: #fff;
+    padding: 1rem 1.25rem;
+    box-shadow: 0 8px 28px rgba(15, 23, 42, 0.04);
+  }
+
+  .dashboard-kicker {
+    color: var(--taskpanda-muted);
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .dashboard-primary-button {
+    border-radius: 0.75rem;
+    background: var(--taskpanda-ink);
+    color: #fff;
+    font-weight: 700;
+    transition: background-color 160ms ease, transform 160ms ease;
+  }
+
+  .dashboard-primary-button:hover {
+    background: var(--taskpanda-blue);
+  }
+
+  .dashboard-primary-button:active {
+    transform: scale(0.98);
+  }
+
+  .dashboard-secondary-button {
+    border: 1px solid var(--taskpanda-line);
+    border-radius: 0.75rem;
+    background: #fff;
+    color: #334155;
+    font-weight: 600;
+    transition: background-color 160ms ease, border-color 160ms ease;
+  }
+
+  .dashboard-secondary-button:hover {
+    border-color: #bfdbfe;
+    background: #f8fbff;
+  }
+
+  .dashboard-focus:focus-visible {
+    outline: 2px solid var(--taskpanda-blue);
+    outline-offset: 2px;
+  }
+
   .avatar-shell {
     display: flex;
     align-items: center;

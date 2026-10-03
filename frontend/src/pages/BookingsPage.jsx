@@ -17,8 +17,12 @@ function isCompletedLikeStatus(status) {
 }
 
 function formatBookingTotal(booking) {
-  const amount = Number(booking.offeredPrice ?? booking.offer);
-  return Number.isFinite(amount) ? `₱${amount.toLocaleString()}` : String(booking.price || "").replace(/^P/, "₱");
+  const amount = Number(booking.totalPrice ?? booking.offeredPrice ?? booking.offer);
+  return Number.isFinite(amount) ? `₱${amount.toLocaleString("en-PH", { maximumFractionDigits: 2 })}` : String(booking.price || "").replace(/^P/, "₱");
+}
+
+function formatPhpAmount(amount) {
+  return `₱${Number(amount || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
 }
 
 function canRequestRevision(booking) {
@@ -668,12 +672,15 @@ export default function BookingsPage() {
                     {detailBooking.address}
                   </span>
                 </div>
-                <div className="flex justify-between border-b border-gray-100 pb-2">
-                  <span className="text-gray-500">Price</span>
-                  <span className="font-bold text-gray-900">
-                    {detailBooking.price}
-                  </span>
-                </div>
+                <section className="rounded-xl border border-gray-200 bg-gray-50/70 p-4">
+                  <h3 className="text-sm font-semibold text-gray-900">Price breakdown</h3>
+                  <dl className="mt-3 space-y-2 text-sm">
+                    <div className="flex justify-between gap-3"><dt className="text-gray-600">Task offer</dt><dd className="font-medium tabular-nums text-gray-900">{formatPhpAmount(detailBooking.offeredPrice ?? detailBooking.offer)}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare <span className="block text-xs text-gray-500">{detailBooking.travelDistanceKm == null ? "Distance not recorded" : `${Number(detailBooking.travelDistanceKm).toFixed(2)} km · ₱20 first 2 km + ₱10/km after`}</span></dt><dd className="font-medium tabular-nums text-gray-900">{formatPhpAmount(detailBooking.travelFee)}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-gray-600">Optional tip</dt><dd className="font-medium tabular-nums text-gray-900">{formatPhpAmount(detailBooking.tipAmount)}</dd></div>
+                  </dl>
+                  <div className="mt-3 flex justify-between gap-3 border-t border-gray-200 pt-3"><dt className="font-semibold text-gray-800">Total amount due</dt><dd className="font-bold tabular-nums text-gray-950">{formatPhpAmount(detailBooking.totalPrice ?? detailBooking.offeredPrice ?? detailBooking.offer)}</dd></div>
+                </section>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Description</span>
                   <span className="text-right text-gray-700">

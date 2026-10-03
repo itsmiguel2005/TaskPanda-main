@@ -5,6 +5,8 @@ function idOf(value) {
   return value?._id || value;
 }
 
+const { calculateTotalPrice } = require("./bookingPricing");
+
 function formatAmount(value) {
   return `₱${Number(value || 0).toLocaleString("en-PH")}`;
 }
@@ -65,11 +67,15 @@ async function ensureBookingConversation(booking) {
   const existingMessage = await Message.exists({ conversationId: conversation._id });
   if (!existingMessage) {
     const taskSummary = booking.repairDescription || "Service request";
-    const text = `New Booking Request • Task: ${taskSummary} • Budget: ${formatAmount(booking.offeredPrice)} • Date: ${bookingDateText(booking)} • Payment: Cash on Completion`;
+    const text = `New Booking Request • Task offer: ${formatAmount(booking.offeredPrice)} • Date: ${bookingDateText(booking)} • Payment: Cash on Completion`;
     await appendSystemMessageToConversation(conversation, booking, text, booking.clientId, "booking_request", {
       bookingId: String(idOf(booking)),
       repairDescription: booking.repairDescription,
       offeredPrice: booking.offeredPrice,
+      travelDistanceKm: booking.travelDistanceKm ?? null,
+      travelFee: booking.travelFee || 0,
+      tipAmount: booking.tipAmount || 0,
+      totalPrice: calculateTotalPrice(booking.offeredPrice || 0, booking.travelFee || 0, booking.tipAmount || 0),
       serviceDate: booking.serviceDate,
       timeSlot: booking.timeSlot,
       paymentMethod: booking.paymentMethod || "cash",
