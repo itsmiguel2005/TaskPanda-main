@@ -1160,6 +1160,26 @@ async function handleRespondToCounterOffer(req, res) {
       "counter_offer",
       eventData
     );
+    if (action === "reject") {
+      await appendBookingSystemMessage(
+        booking,
+        "The original booking request is available again. The original terms remain in effect.",
+        booking.clientId,
+        "booking_request",
+        {
+          resurfaced: true,
+          repairDescription: booking.repairDescription,
+          offeredPrice: booking.offeredPrice,
+          travelDistanceKm: booking.travelDistanceKm ?? null,
+          travelFee: booking.travelFee || 0,
+          tipAmount: booking.tipAmount || 0,
+          totalPrice: calculateTotalPrice(booking.offeredPrice || 0, booking.travelFee || 0, booking.tipAmount || 0),
+          serviceDate: booking.serviceDate,
+          timeSlot: booking.timeSlot,
+          paymentMethod: booking.paymentMethod || "cash",
+        }
+      );
+    }
     await booking.populate(populatePaths);
     return res.json({ booking: serializeBooking(booking) });
   } catch (error) {

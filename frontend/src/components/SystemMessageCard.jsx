@@ -29,7 +29,9 @@ function describeEvent(message, actorName) {
   const event = message.eventData || {};
   const actor = actorName || "The other participant";
   const status = String(event.status || "").replaceAll("_", " ");
-  if (message.eventType === "booking_request") return `${actor} requested a booking`;
+  if (message.eventType === "booking_request") {
+    return event.resurfaced ? "The original request is available again" : `${actor} requested a booking`;
+  }
   if (message.eventType === "booking_status" && event.status === "declined") return `${actor} declined the booking`;
   if (message.eventType === "booking_status") return `${actor} updated the booking${status ? ` to ${status}` : ""}`;
   if (message.eventType === "counter_offer") {
@@ -55,7 +57,11 @@ function getEventPresentation(message) {
   const event = message.eventData || {};
   const status = String(event.status || "").toLowerCase();
 
-  if (message.eventType === "booking_request") return { title: "New Booking Request", badge: "Pending", tone: "amber" };
+  if (message.eventType === "booking_request") {
+    return event.resurfaced
+      ? { title: "Original Request Resent", badge: "Pending", tone: "amber" }
+      : { title: "New Booking Request", badge: "Pending", tone: "amber" };
+  }
   if (message.eventType === "booking_status") {
     const presentations = {
       approved: { title: "Request Accepted", badge: "Approved", tone: "emerald" },

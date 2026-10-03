@@ -767,7 +767,20 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const handleCounterOfferResponse = async (counterOfferId, action) => {
     if (!selectedConversation) return;
     const data = await postChatApiAction(`/api/bookings/${selectedConversation.bookingId}/counter-offers/${counterOfferId}`, "PATCH", { action });
-    if (data) setActionMessage(null);
+    if (!data) return;
+    setActionMessage(null);
+    if (action === "reject") {
+      try {
+        const response = await fetch(`/api/messages/${selectedConversation.id}`, { headers: requestHeaders });
+        const messagesData = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(messagesData.message || "Could not refresh the conversation.");
+        wasAtBottomRef.current = true;
+        setMessages((current) => mergeMessages(current, messagesData.messages || []));
+        setError("");
+      } catch (requestError) {
+        setError(`Counter-offer declined, but the original request could not be refreshed. ${requestError.message || "Reload the conversation to see it."}`);
+      }
+    }
   };
 
   const handleBookingRequestAction = (action) => {
