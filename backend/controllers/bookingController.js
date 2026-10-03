@@ -489,6 +489,8 @@ async function handleCreateBooking(req, res) {
         timeSlot,
         offeredPrice,
         travelDistanceKm,
+        travelBaseFee: travelQuote.travelBaseFee,
+        travelFeePerKm: travelQuote.travelFeePerKm,
         travelFee,
         travelFeeBeforeDiscount,
         travelFeeDiscount,

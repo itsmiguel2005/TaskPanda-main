@@ -7,19 +7,13 @@ const AdminUsersManagement = lazy(() => import("../components/AdminUsersManageme
 const AdminTransactionsPanel = lazy(() => import("../components/AdminTransactionsPanel.jsx"));
 const AdminRewardsAnalytics = lazy(() => import("../components/AdminRewardsAnalytics.jsx"));
 const AdminSystemSettings = lazy(() => import("../components/AdminSystemSettings.jsx"));
+const AdminBookingsManagement = lazy(() => import("../components/AdminBookingsManagement.jsx"));
 
 const verifications = [
   { id: 1, user: "Johhny Cruz", email: "johny@taskpanda.com", type: "ID Front + Back", idNumber: "PH-1234-5678-9012", certificate: "TEC-2024-0042", idFrontFile: "id-front-johny.jpg", idBackFile: "id-back-johny.jpg", submitted: "10 min ago", status: "Pending" },
   { id: 2, user: "Maria Santos", email: "maria@taskpanda.com", type: "ID Front + Back", idNumber: "PH-9876-5432-1098", certificate: "TEC-2024-0117", idFrontFile: "id-front-maria.jpg", idBackFile: "id-back-maria.jpg", submitted: "1 hour ago", status: "Pending" },
   { id: 3, user: "Bombi Mercado", email: "bombi@taskpanda.com", type: "ID Front", idNumber: "PH-5555-6666-7777", certificate: "", idFrontFile: "id-front-bombi.jpg", idBackFile: null, submitted: "3 hours ago", status: "Pending" },
   { id: 4, user: "Guest User", email: "guest@temp.com", type: "ID Front + Back", idNumber: "TEMP-0001", certificate: "", idFrontFile: "id-front-guest.png", idBackFile: "id-back-guest.png", submitted: "5 hours ago", status: "Pending" },
-];
-
-const bookings = [
-  { id: 1, client: "Miguel Torres", worker: "Johhny Cruz", task: "Desktop Table Repair", status: "Pending Request", date: "Sep 9, 2026", price: "P500" },
-  { id: 2, client: "Liza Cristobal", worker: "Maria Santos", task: "Circuit Breaker Replacement", status: "Confirmed", date: "Sep 10, 2026", price: "P800" },
-  { id: 3, client: "Bombi Mercado", worker: "Ricky Padilla", task: "Front Yard Landscaping", status: "Completed", date: "Sep 5, 2026", price: "P1,200" },
-  { id: 4, client: "Miguel Torres", worker: "Carlos Magsaysay", task: "Bookshelf Assembly", status: "In Progress", date: "Sep 12, 2026", price: "P650" },
 ];
 
 function StatusBadge({ status }) {
@@ -42,15 +36,6 @@ export default function AdminDashboardPage() {
   const [searchParams] = useSearchParams();
   const section = searchParams.get("section") || "dashboard";
   const activeTab = section.charAt(0).toUpperCase() + section.slice(1);
-  const [bookTab, setBookTab] = useState("All");
-
-  const tabs = ["All", "Pending Request", "Confirmed", "Completed", "In Progress"];
-
-  const filteredBookings =
-    bookTab === "All"
-      ? bookings
-      : bookings.filter((b) => b.status === bookTab);
-
   const [viewingVerif, setViewingVerif] = useState(null);
 
   const approveVerification = (id) => {
@@ -97,54 +82,9 @@ export default function AdminDashboardPage() {
         )}
 
         {section === "bookings" && (
-          <div className="mt-6">
-            <div className="rounded-2xl bg-white shadow-sm">
-              <div className="border-b border-gray-100 px-5 py-4">
-                <h2 className="text-base font-semibold text-gray-900">
-                  Bookings
-                  <span className="ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-gray-100 px-1.5 text-xs font-medium text-gray-700">
-                    {bookings.length}
-                  </span>
-                </h2>
-              </div>
-              <div className="flex gap-1 px-5 pt-3">
-                {tabs.map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setBookTab(tab)}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                      bookTab === tab
-                        ? "bg-gray-900 text-white"
-                        : "text-gray-600 hover:bg-gray-100"
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
-              <div className="divide-y divide-gray-100">
-                {filteredBookings.map((b) => (
-                  <div key={b.id} className="px-5 py-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold text-gray-900">{b.task}</span>
-                          <StatusBadge status={b.status} />
-                        </div>
-                        <p className="mt-1 text-xs text-gray-500">{b.client} → {b.worker}</p>
-                        <p className="mt-1 text-xs text-gray-400">{b.date} · {b.price}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {filteredBookings.length === 0 && (
-                  <div className="py-8 text-center">
-                    <p className="text-sm text-gray-400">No bookings in this category</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <Suspense fallback={<div className="mt-6 rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-600">Loading booking operations…</div>}>
+            <AdminBookingsManagement />
+          </Suspense>
         )}
 
         {section === "verifications" && (
@@ -208,7 +148,7 @@ export default function AdminDashboardPage() {
         )}
 
         {/* System Info */}
-        <div className={["dashboard", "users", "transactions", "rewards", "settings"].includes(section) ? "hidden" : "mt-6"}>
+        <div className={["dashboard", "users", "transactions", "rewards", "settings", "bookings"].includes(section) ? "hidden" : "mt-6"}>
           <div className="rounded-2xl bg-white shadow-sm">
             <div className="border-b border-gray-100 px-5 py-4">
               <h2 className="text-base font-semibold text-gray-900">System Info</h2>

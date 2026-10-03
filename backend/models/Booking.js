@@ -26,6 +26,8 @@ const bookingSchema = new mongoose.Schema(
     },
     offeredPrice: { type: Number, required: true, min: 100 },
     travelDistanceKm: { type: Number, min: 0 },
+    travelBaseFee: { type: Number, min: 0 },
+    travelFeePerKm: { type: Number, min: 0 },
     travelFee: { type: Number, min: 0, default: 0 },
     travelFeeBeforeDiscount: { type: Number, min: 0 },
     travelFeeDiscount: { type: Number, min: 0, default: 0 },
@@ -83,6 +85,13 @@ const bookingSchema = new mongoose.Schema(
     reviewedAt: { type: Date },
     statusHistory: [{
       status: { type: String, enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "declined", "expired"] },
+      at: { type: Date, default: Date.now },
+    }],
+    adminOverrideHistory: [{
+      adminEmail: { type: String, required: true, trim: true, lowercase: true },
+      fromStatus: { type: String, required: true, trim: true },
+      toStatus: { type: String, required: true, trim: true },
+      reason: { type: String, required: true, trim: true, maxlength: 500 },
       at: { type: Date, default: Date.now },
     }],
     providerUpdates: [{

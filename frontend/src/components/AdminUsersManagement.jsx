@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 
 const FILTERS = [
@@ -171,6 +171,7 @@ function AccountActionModal({ action, busy, error, onClose, onConfirm }) {
 export default function AdminUsersManagement() {
   const { token, logout } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [users, setUsers] = useState([]);
   const [counts, setCounts] = useState({ all: 0, suspended: 0, archived: 0 });
   const [total, setTotal] = useState(0);
@@ -182,13 +183,18 @@ export default function AdminUsersManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [selectedUserId, setSelectedUserId] = useState(null);
+  const [selectedUserId, setSelectedUserId] = useState(searchParams.get("userId"));
   const [details, setDetails] = useState(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailRefresh, setDetailRefresh] = useState(0);
   const [pendingAction, setPendingAction] = useState(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState("");
+
+  useEffect(() => {
+    const requestedUserId = searchParams.get("userId");
+    if (requestedUserId !== selectedUserId) setSelectedUserId(requestedUserId);
+  }, [searchParams, selectedUserId]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebouncedSearch(search.trim()), 220);
@@ -280,6 +286,11 @@ export default function AdminUsersManagement() {
       } else {
         setSelectedUserId(null);
         setDetails(null);
+        setSearchParams((current) => {
+          const next = new URLSearchParams(current);
+          next.delete("userId");
+          return next;
+        }, { replace: true });
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -325,6 +336,11 @@ export default function AdminUsersManagement() {
       setPendingAction(null);
       if (type === "archive") {
         setSelectedUserId(null);
+        setSearchParams((current) => {
+          const next = new URLSearchParams(current);
+          next.delete("userId");
+          return next;
+        }, { replace: true });
       } else {
         setDetailRefresh((value) => value + 1);
       }
@@ -345,12 +361,22 @@ export default function AdminUsersManagement() {
     setError("");
     setNotice("");
     setSelectedUserId(id);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("userId", id);
+      return next;
+    }, { replace: true });
   };
 
   const closeDetails = () => {
     if (actionBusy) return;
     setSelectedUserId(null);
     setDetails(null);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete("userId");
+      return next;
+    }, { replace: true });
   };
 
   const selectedUser = details?.user;

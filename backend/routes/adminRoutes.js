@@ -16,12 +16,35 @@ const {
   handleUpdateAdminSystemSettings,
   handleAdminBroadcast,
 } = require("../controllers/adminOperationsController");
+const { handleGetAdminBookings, handleOverrideAdminBooking } = require("../controllers/adminBookingController");
 const { requireAdmin } = require("../middleware/requireAdmin");
 const { validateRequest } = require("../middleware/validateRequest");
 
 const router = express.Router();
 
 router.get("/analytics", requireAdmin, handleGetAdminAnalytics);
+router.get(
+  "/bookings",
+  requireAdmin,
+  [
+    query("q").optional().isString().isLength({ max: 100 }),
+    query("page").optional().isInt({ min: 1, max: 10000 }),
+    query("status").optional().isIn(["pending", "approved", "in_progress", "complete", "settled", "canceled", "declined", "expired"]),
+  ],
+  validateRequest,
+  handleGetAdminBookings
+);
+router.patch(
+  "/bookings/:bookingId/override",
+  requireAdmin,
+  [
+    param("bookingId").isMongoId(),
+    body("status").isIn(["pending", "approved", "in_progress", "complete", "settled", "canceled", "declined", "expired"]),
+    body("reason").isString().trim().isLength({ min: 5, max: 500 }),
+  ],
+  validateRequest,
+  handleOverrideAdminBooking
+);
 router.get(
   "/transactions",
   requireAdmin,
