@@ -33,6 +33,8 @@ async function handleDiscoverProviders(req, res) {
   const providerQuery = {
     role: "provider",
     registrationComplete: true,
+    isSuspended: { $ne: true },
+    archivedAt: { $exists: false },
     "geoLocation.type": "Point",
   };
   if (categories.length) {

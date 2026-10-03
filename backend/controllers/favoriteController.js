@@ -49,7 +49,13 @@ async function handleAddClientFavorite(req, res) {
       return res.status(400).json({ message: "Choose a valid provider to favorite." });
     }
 
-    const provider = await User.findOne({ _id: providerId, role: "provider", registrationComplete: true }).select("_id");
+    const provider = await User.findOne({
+      _id: providerId,
+      role: "provider",
+      registrationComplete: true,
+      isSuspended: mongoose.trusted({ $ne: true }),
+      archivedAt: null,
+    }).select("_id");
     if (!provider) {
       return res.status(404).json({ message: "This provider could not be found." });
     }

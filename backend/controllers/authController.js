@@ -807,6 +807,9 @@ async function handleLogin(req, res) {
       if (attempt.lockedUntil) return loginLockResponse(res, attempt);
       return res.status(401).json({ message: "Incorrect password. Please try again." });
     }
+    if (user.isSuspended || user.archivedAt) {
+      return res.status(403).json({ message: "This account is unavailable. Contact TaskPanda support for assistance." });
+    }
 
     if (user.emailVerified === false) {
       return res.status(403).json({

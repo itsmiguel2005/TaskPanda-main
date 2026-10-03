@@ -19,6 +19,8 @@ async function requireAuth(req, res, next) {
         },
       }),
       registrationComplete: true,
+      isSuspended: mongoose.trusted({ $ne: true }),
+      archivedAt: mongoose.trusted({ $exists: false }),
     })).select("+accountTokens");
     if (!user) return res.status(401).json({ message: "Your session expired. Sign in again." });
     req.user = user;

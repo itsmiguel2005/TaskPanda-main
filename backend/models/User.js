@@ -111,6 +111,34 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    isSuspended: {
+      type: Boolean,
+      default: false,
+    },
+    suspendedAt: {
+      type: Date,
+    },
+    adminPasswordResetRequestedAt: {
+      type: Date,
+      select: false,
+    },
+    archivedAt: {
+      type: Date,
+    },
+    adminActivity: {
+      type: [{
+        action: {
+          type: String,
+          enum: ["suspended", "unsuspended", "archived", "restored", "password_reset_requested"],
+          required: true,
+        },
+        actorEmail: { type: String, required: true, trim: true },
+        createdAt: { type: Date, default: Date.now },
+        _id: false,
+      }],
+      default: [],
+      select: false,
+    },
     emailVerificationTokenHash: {
       type: String,
       select: false,

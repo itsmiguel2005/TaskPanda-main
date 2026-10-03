@@ -40,6 +40,8 @@ app.use("/api/admin", adminRoutes);
 app.use("/api", healthRoutes);
 app.use("/api", verificationRoutes);
 
+app.use("/api", (_req, res) => res.status(404).json({ message: "API endpoint not found." }));
+
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "../dist/index.html")));
 app.get("/login", (req, res) => res.sendFile(path.join(__dirname, "../dist/index.html")));
 app.get("/register", (req, res) => res.sendFile(path.join(__dirname, "../dist/index.html")));

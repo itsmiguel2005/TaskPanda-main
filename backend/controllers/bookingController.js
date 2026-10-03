@@ -308,7 +308,13 @@ async function handleProviderAvailability(req, res) {
 }
 
 async function getBookingTravelQuote(client, providerId) {
-  const provider = await User.findOne({ _id: providerId, role: "provider", registrationComplete: true }).select("_id geoLocation");
+  const provider = await User.findOne({
+    _id: providerId,
+    role: "provider",
+    registrationComplete: true,
+    isSuspended: mongoose.trusted({ $ne: true }),
+    archivedAt: null,
+  }).select("_id geoLocation");
   if (!provider) return { errorStatus: 404, message: "That provider is no longer available." };
 
   const calculatedDistanceKm = calculateDistanceKm(client.geoLocation?.coordinates, provider.geoLocation?.coordinates);

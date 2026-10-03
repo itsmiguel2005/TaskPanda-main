@@ -3,19 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import Header from "../components/Header.jsx";
 
 const AdminDashboardOverview = lazy(() => import("../components/AdminDashboardOverview.jsx"));
-
-const users = [
-  { id: 1, name: "Miguel Torres", email: "miguel@taskpanda.com", role: "client", verified: true, status: "Active", joined: "Jan 15, 2025" },
-  { id: 2, name: "Ana Reyes", email: "ana@taskpanda.com", role: "provider", verified: true, status: "Active", joined: "Feb 3, 2025" },
-  { id: 3, name: "Johhny Cruz", email: "johny@taskpanda.com", role: "provider", verified: false, status: "Pending", joined: "Mar 12, 2025" },
-  { id: 4, name: "Maria Santos", email: "maria@taskpanda.com", role: "provider", verified: false, status: "Pending", joined: "Apr 8, 2025" },
-  { id: 5, name: "Ricky Padilla", email: "ricky@taskpanda.com", role: "provider", verified: true, status: "Active", joined: "May 20, 2025" },
-  { id: 6, name: "Carlos Magsaysay", email: "carlos@taskpanda.com", role: "provider", verified: true, status: "Active", joined: "Jun 2, 2025" },
-  { id: 7, name: "Liza Cristobal", email: "liza@taskpanda.com", role: "client", verified: true, status: "Active", joined: "Jul 14, 2025" },
-  { id: 8, name: "Bombi Mercado", email: "bombi@taskpanda.com", role: "client", verified: false, status: "Suspended", joined: "Aug 1, 2025" },
-  { id: 9, name: "Perez Cruz", email: "perez@taskpanda.com", role: "provider", verified: true, status: "Active", joined: "Sep 5, 2025" },
-  { id: 10, name: "Guest User", email: "guest@temp.com", role: "client", verified: false, status: "Pending", joined: "Sep 18, 2025" },
-];
+const AdminUsersManagement = lazy(() => import("../components/AdminUsersManagement.jsx"));
 
 const verifications = [
   { id: 1, user: "Johhny Cruz", email: "johny@taskpanda.com", type: "ID Front + Back", idNumber: "PH-1234-5678-9012", certificate: "TEC-2024-0042", idFrontFile: "id-front-johny.jpg", idBackFile: "id-back-johny.jpg", submitted: "10 min ago", status: "Pending" },
@@ -70,10 +58,6 @@ export default function AdminDashboardPage() {
     console.log(`[Admin] Rejecting verification #${id}`);
   };
 
-  const suspendUser = (id) => {
-    console.log(`[Admin] Suspending user #${id}`);
-  };
-
   return (
     <div className="min-h-screen bg-gray-50 pt-16 pb-12">
       <Header showNav activeTab={activeTab} role="admin" />
@@ -86,64 +70,9 @@ export default function AdminDashboardPage() {
         )}
 
         {section === "users" && (
-          <div className="rounded-2xl bg-white shadow-sm">
-            <div className="border-b border-gray-100 px-5 py-4">
-              <h2 className="text-base font-semibold text-gray-900">
-                All Users
-                <span className="ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-gray-100 px-1.5 text-xs font-medium text-gray-700">
-                  {users.length}
-                </span>
-              </h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50 text-xs font-medium text-gray-500">
-                  <tr>
-                    <th className="px-5 py-2.5">Name</th>
-                    <th className="px-5 py-2.5">Email</th>
-                    <th className="px-5 py-2.5">Role</th>
-                    <th className="px-5 py-2.5">Status</th>
-                    <th className="px-5 py-2.5">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {users.map((user) => (
-                    <tr key={user.id} className="hover:bg-gray-50/50">
-                      <td className="px-5 py-3">
-                        <span className="font-medium text-gray-900">{user.name}</span>
-                      </td>
-                      <td className="px-5 py-3 text-gray-500">{user.email}</td>
-                      <td className="px-5 py-3">
-                        <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${user.role === "provider" ? "bg-accent-100 text-accent-700" : "bg-primary-100 text-primary-700"}`}>
-                          {user.role}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3"><StatusBadge status={user.status} /></td>
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-2">
-                          {user.verified ? (
-                            <button
-                              onClick={() => suspendUser(user.id)}
-                              className="rounded-lg border border-red-200 px-2 py-1 text-[11px] font-medium text-red-600 transition hover:bg-red-50"
-                            >
-                              Suspend
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => approveVerification(user.id)}
-                              className="rounded-lg border border-green-200 px-2 py-1 text-[11px] font-medium text-green-600 transition hover:bg-green-50"
-                            >
-                              Verify
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <Suspense fallback={<div className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-600">Loading user management…</div>}>
+            <AdminUsersManagement />
+          </Suspense>
         )}
 
         {section === "bookings" && (
@@ -258,7 +187,7 @@ export default function AdminDashboardPage() {
         )}
 
         {/* System Info */}
-        <div className={section === "dashboard" ? "hidden" : "mt-6"}>
+        <div className={section === "dashboard" || section === "users" ? "hidden" : "mt-6"}>
           <div className="rounded-2xl bg-white shadow-sm">
             <div className="border-b border-gray-100 px-5 py-4">
               <h2 className="text-base font-semibold text-gray-900">System Info</h2>
