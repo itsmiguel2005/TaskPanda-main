@@ -111,6 +111,7 @@ function BambooStamp({ filled }) {
 export default function ProfilePage() {
   const navigate = useNavigate();
   const { isLoggedIn, role, isVerified, logout, user, token, updateUser, refreshProfile } = useAuth();
+  const verificationStatus = user?.verificationStatus || "unverified";
   const { bookings } = useBookings();
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [referralCodeCopied, setReferralCodeCopied] = useState(false);
@@ -204,12 +205,35 @@ export default function ProfilePage() {
                   <div className="min-w-0 pt-1">
                     <h2 className="break-words text-lg font-bold leading-6 text-slate-950">{fullName}</h2>
                     <p className="mt-1 text-sm text-slate-600">{roleLabel}</p>
-                    <span className={`mt-2 inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-semibold ${isVerified ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${isVerified ? "bg-emerald-600" : "bg-amber-600"}`} />
-                      {isVerified ? "Identity verified" : "Verification pending"}
+                    <span className={`mt-2 inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      isVerified ? "bg-emerald-50 text-emerald-800"
+                        : verificationStatus === "rejected" ? "bg-rose-50 text-rose-800"
+                          : verificationStatus === "pending" ? "bg-amber-50 text-amber-800"
+                            : "bg-slate-100 text-slate-700"
+                    }`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${
+                        isVerified ? "bg-emerald-600"
+                          : verificationStatus === "rejected" ? "bg-rose-600"
+                            : verificationStatus === "pending" ? "bg-amber-600"
+                              : "bg-slate-500"
+                      }`} />
+                      {isVerified ? "Identity verified"
+                        : verificationStatus === "rejected" ? "Verification rejected"
+                          : verificationStatus === "pending" ? "Verification pending"
+                            : "Identity not verified"}
                     </span>
                   </div>
                 </div>
+                {!isVerified && user?.verificationRejectionReason && (
+                  <p className={`mt-4 rounded-xl border px-3.5 py-3 text-sm leading-6 ${
+                    verificationStatus === "rejected"
+                      ? "border-rose-200 bg-rose-50/80 text-rose-900"
+                      : "border-amber-200 bg-amber-50/80 text-amber-950"
+                  }`}>
+                    <span className="font-bold">{verificationStatus === "rejected" ? "Review feedback: " : "Verification needs attention: "}</span>
+                    {user.verificationRejectionReason}
+                  </p>
+                )}
                 <dl className="mt-5 space-y-3 border-t border-slate-100 pt-4 text-sm">
                   <div className="flex justify-between gap-4">
                     <dt className="text-slate-600">Member since</dt>

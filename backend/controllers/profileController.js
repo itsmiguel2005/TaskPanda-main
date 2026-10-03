@@ -8,6 +8,10 @@ function profileFromUser(user) {
   return {
     id: user._id,
     role: user.role,
+    isVerified: user.isVerified === true,
+    verificationStatus: user.verificationStatus || "unverified",
+    verificationDetailsStatus: user.verificationDetails?.status || null,
+    verificationRejectionReason: user.verificationDetails?.rejectionReason || "",
     fullName: user.fullName,
     firstName: user.firstName,
     middleName: user.middleName,

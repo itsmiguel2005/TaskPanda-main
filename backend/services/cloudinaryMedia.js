@@ -4,6 +4,8 @@ const cloudinary = require("cloudinary").v2;
 const CHAT_PHOTO_MAX_BYTES = 4 * 1024 * 1024;
 const CHAT_PHOTO_FORMATS = ["jpg", "jpeg", "png", "webp", "gif"];
 const PROFILE_PHOTO_MAX_BYTES = 4 * 1024 * 1024;
+const VERIFICATION_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+const VERIFICATION_IMAGE_FORMATS = ["jpg", "jpeg", "png", "webp"];
 
 function getCredentials() {
   const cloudName = String(process.env.CLOUDINARY_CLOUD_NAME || "").trim();
@@ -37,6 +39,78 @@ async function uploadProfileImage(buffer, userId) {
     throw error;
   }
   return { publicId, secureUrl: result.secure_url };
+}
+
+async function uploadVerificationImage(buffer, userId, side) {
+  getCredentials();
+  if (!Buffer.isBuffer(buffer) || buffer.length > VERIFICATION_IMAGE_MAX_BYTES) {
+    const error = new Error("Identity images must be 2 MB or smaller.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const publicId = `taskpanda_verifications/${userId}/${side}_${randomUUID().replace(/-/g, "")}`;
+  const result = await new Promise((resolve, reject) => {
+    cloudinary.uploader.upload_stream({
+      allowed_formats: VERIFICATION_IMAGE_FORMATS,
+      overwrite: false,
+      public_id: publicId,
+      resource_type: "image",
+      type: "authenticated",
+    }, (error, uploadedResource) => error ? reject(error) : resolve(uploadedResource)).end(buffer);
+  });
+  if (!VERIFICATION_IMAGE_FORMATS.includes(String(result.format || "").toLowerCase()) ||
+    result.bytes > VERIFICATION_IMAGE_MAX_BYTES || !result.public_id) {
+    await deleteVerificationImage(result.public_id || publicId);
+    const error = new Error("Identity images must be 2 MB or smaller and use JPEG, PNG, or WebP format.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return { publicId: result.public_id, format: String(result.format).toLowerCase(), bytes: result.bytes };
+}
+
+async function fetchAuthenticatedVerificationImage(publicId, format) {
+  getCredentials();
+  if (!publicId || !VERIFICATION_IMAGE_FORMATS.includes(String(format || "").toLowerCase())) {
+    const error = new Error("Verification image is not available.");
+    error.statusCode = 404;
+    throw error;
+  }
+  const deliveryUrl = cloudinary.url(publicId, {
+    resource_type: "image",
+    type: "authenticated",
+    sign_url: true,
+    secure: true,
+    format,
+  });
+  const response = await fetch(deliveryUrl);
+  if (!response.ok) {
+    const error = new Error("Could not retrieve this verification image from Cloudinary.");
+    error.statusCode = 502;
+    throw error;
+  }
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().startsWith("image/")) {
+    const error = new Error("Cloudinary returned an invalid verification image.");
+    error.statusCode = 502;
+    throw error;
+  }
+  const body = Buffer.from(await response.arrayBuffer());
+  if (body.length > VERIFICATION_IMAGE_MAX_BYTES) {
+    const error = new Error("Verification image exceeds the permitted file size.");
+    error.statusCode = 502;
+    throw error;
+  }
+  return { body, contentType };
+}
+
+async function deleteVerificationImage(publicId) {
+  if (!publicId) return null;
+  getCredentials();
+  return cloudinary.uploader.destroy(publicId, {
+    resource_type: "image",
+    type: "authenticated",
+    invalidate: true,
+  });
 }
 
 async function uploadChatPhoto(buffer, conversationId, userId) {
@@ -142,9 +216,12 @@ async function deleteChatPhoto(publicId) {
 module.exports = {
   CHAT_PHOTO_MAX_BYTES,
   deleteChatPhoto,
+  deleteVerificationImage,
+  fetchAuthenticatedVerificationImage,
   fetchAuthenticatedChatPhoto,
   isOwnedChatPhotoPublicId,
   uploadProfileImage,
+  uploadVerificationImage,
   uploadChatPhoto,
   verifyChatPhotoUploads,
 };

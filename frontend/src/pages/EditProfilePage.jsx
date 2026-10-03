@@ -40,6 +40,7 @@ function validateForm(form, role) {
 export default function EditProfilePage() {
   const navigate = useNavigate();
   const { user, token, role, updateUser, refreshProfile, isAuthLoading } = useAuth();
+  const profilePath = role === "provider" ? "/provider-profile" : "/profile";
   const [form, setForm] = useState(() => getFormFromUser());
   const [saved, setSaved] = useState(false);
   const [isSavedToastFading, setIsSavedToastFading] = useState(false);
@@ -298,10 +299,10 @@ export default function EditProfilePage() {
         setForm(getFormFromUser(user));
         setErrors({});
         setDirty(false);
-        navigate("/profile");
+        navigate(profilePath);
       }
     } else {
-      navigate("/profile");
+      navigate(profilePath);
     }
   };
 

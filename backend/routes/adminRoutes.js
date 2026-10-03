@@ -17,11 +17,36 @@ const {
   handleAdminBroadcast,
 } = require("../controllers/adminOperationsController");
 const { handleGetAdminBookings, handleOverrideAdminBooking } = require("../controllers/adminBookingController");
+const {
+  handleGetAdminVerifications,
+  handleGetVerificationDocument,
+  handleReviewVerification,
+} = require("../controllers/verificationController");
 const { requireAdmin } = require("../middleware/requireAdmin");
 const { validateRequest } = require("../middleware/validateRequest");
 
 const router = express.Router();
 
+router.get("/verifications", requireAdmin, handleGetAdminVerifications);
+router.get(
+  "/verifications/:userId/documents/:side",
+  requireAdmin,
+  [param("userId").isMongoId(), param("side").isIn(["front", "back"])],
+  validateRequest,
+  handleGetVerificationDocument
+);
+router.patch(
+  "/verifications/:userId",
+  requireAdmin,
+  [
+    param("userId").isMongoId(),
+    body("action").isIn(["approve", "reject"]),
+    body("nameMatchConfirmed").if(body("action").equals("approve")).custom((value) => value === true),
+    body("rejectionReason").if(body("action").equals("reject")).isString().trim().isLength({ min: 5, max: 500 }),
+  ],
+  validateRequest,
+  handleReviewVerification
+);
 router.get("/analytics", requireAdmin, handleGetAdminAnalytics);
 router.get(
   "/bookings",

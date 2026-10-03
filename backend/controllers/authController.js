@@ -881,6 +881,8 @@ async function handleLogin(req, res) {
         profileImage: user.profileImage || "",
         createdAt: user.createdAt,
         role: user.role,
+        isVerified: user.isVerified === true,
+        verificationStatus: user.verificationStatus || "unverified",
         emailVerified: user.emailVerified !== false,
         registrationComplete: user.registrationComplete !== false,
       },

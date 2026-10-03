@@ -133,6 +133,7 @@ export default function App() {
         <Route path="/profile" element={<ProtectedRoute roles={["client"]}><ProfilePage /></ProtectedRoute>} />
         <Route path="/profile/edit" element={<ProtectedRoute roles={["client", "provider"]}><EditProfilePage /></ProtectedRoute>} />
         <Route path="/provider-profile" element={<ProtectedRoute roles={["provider"]}><ProviderProfilePage /></ProtectedRoute>} />
+        <Route path="/provider-profile/verify" element={<ProtectedRoute roles={["provider"]}><VerificationPage /></ProtectedRoute>} />
         <Route path="/explore" element={<ProtectedRoute roles={["client", "provider"]}><ExplorePage /></ProtectedRoute>} />
           <Route path="/about" element={<AboutUsPage />} />
           <Route path="/admin" element={<ProtectedRoute roles={["admin"]}><AdminDashboardPage /></ProtectedRoute>} />

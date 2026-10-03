@@ -157,10 +157,13 @@ Then open [http://localhost:3000](http://localhost:3000).
 | `npm run dev` | Start the Vite frontend on port 5173 and Express backend on port 3000 |
 | `npm start` | Start the Express backend on port 3000 |
 | `npm run build` | Build the frontend into `dist/` |
+| `npm run build:css` | Compile the standalone Tailwind CSS bundle |
 | `npm run check:health` | Verify the local API and MongoDB connection |
 | `npm run backfill:provider-ratings` | Recalculate provider ratings from completed and settled bookings |
 | `npm run preview` | Preview the Vite production build |
 | `npm run watch:css` | Watch and rebuild Tailwind CSS |
+
+The frontend uses Tailwind CSS 4. Its existing JavaScript configuration is loaded from `frontend/src/input.css` to preserve the project's custom colors and content paths.
 
 ## Troubleshooting
 
@@ -226,6 +229,10 @@ CLOUDINARY_API_SECRET=your-api-secret
 ```
 
 Keep `CLOUDINARY_API_SECRET` out of frontend variables and source control. Other existing uploads continue to use the local `uploads/` directory; chat-photo storage does not require moving old files.
+
+Identity verification uses multilingual (`eng+fil`) `tesseract.js` OCR with Tesseract's orientation-detection model and automatic, single-block, and sparse-text layout passes to handle varied Philippine ID designs and rotated photos, including PhilSys National ID and driver's-license layouts. The orientation model is loaded into the OCR worker explicitly so orientation detection is available alongside the LSTM recognition models. It checks the ID-front image against the applicant's profile name. Automatic verification requires OCR confidence of at least 60%, an exact match for every normalized account-name part, and at least two name parts; partial or approximate matches and OCR failures are routed for manual review. Admin approval requires viewing both ID sides and explicitly confirming that the document name matches the account name. Previously auto-approved submissions with incomplete name matches are returned to manual review on the user's next authenticated request or when the admin queue is opened. Each ID image is limited to 2 MB so that the two-image multipart request stays within the Vercel Function request-body limit.
+
+Front and back images are stored as authenticated Cloudinary assets and can only be retrieved through the admin verification routes. Configure the same Cloudinary credentials above to enable ID submissions and secure document review. The applicant submits to `POST /api/v1/users/verify`; admins use `GET /api/v1/admin/verifications` and `PATCH /api/v1/admin/verifications/:userId`.
 
 ## Project Structure
 

@@ -39,8 +39,10 @@ app.use("/api/rewards", rewardsRoutes);
 app.use("/api/broadcasts", broadcastRoutes);
 app.use("/api", messageRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/v1/admin", adminRoutes);
 app.use("/api", healthRoutes);
 app.use("/api", verificationRoutes);
+app.use("/api/v1/users", verificationRoutes);
 
 app.use("/api", (_req, res) => res.status(404).json({ message: "API endpoint not found." }));
 

@@ -1,6 +1,7 @@
 const { createHash } = require("crypto");
 const mongoose = require("mongoose");
 const User = require("../models/User");
+const { revalidatePersistedVerification } = require("../services/verificationPolicy");
 
 const hashToken = (token) => createHash("sha256").update(token).digest("hex");
 
@@ -23,6 +24,7 @@ async function requireAuth(req, res, next) {
       archivedAt: mongoose.trusted({ $exists: false }),
     })).select("+accountTokens");
     if (!user) return res.status(401).json({ message: "Your session expired. Sign in again." });
+    await revalidatePersistedVerification(user);
     req.user = user;
     return next();
   } catch (error) {

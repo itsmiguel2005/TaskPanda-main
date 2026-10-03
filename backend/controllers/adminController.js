@@ -29,7 +29,8 @@ function getAdminUserStatus(user) {
   if (user.archivedAt) return "Archived";
   if (user.isSuspended) return "Suspended";
   if (user.emailVerified === false || user.registrationComplete === false) return "Pending";
-  if (user.role === "provider" && user.isVerified !== true && ["unverified", "pending"].includes(user.verificationStatus)) {
+  if (user.verificationStatus === "pending" ||
+    (user.role === "provider" && user.isVerified !== true && user.verificationStatus === "unverified")) {
     return "Pending";
   }
   return "Active";
@@ -56,12 +57,12 @@ async function handleGetAdminAnalytics(_req, res) {
       User.countDocuments({ role: "client", registrationComplete: true, isSuspended: mongoose.trusted({ $ne: true }), archivedAt: null }),
       User.countDocuments({ role: "provider", registrationComplete: true, isSuspended: mongoose.trusted({ $ne: true }), archivedAt: null }),
       User.countDocuments({
-        role: "provider",
+        role: mongoose.trusted({ $in: ADMINISTRABLE_ROLES }),
         registrationComplete: true,
         isSuspended: mongoose.trusted({ $ne: true }),
         archivedAt: null,
-        isVerified: mongoose.trusted({ $ne: true }),
-        verificationStatus: mongoose.trusted({ $in: ["unverified", "pending"] }),
+        "verificationDetails.status": "Pending",
+        "verificationDetails.idFrontUrl": mongoose.trusted({ $ne: "" }),
       }),
       Booking.countDocuments({ status: mongoose.trusted({ $in: PENDING_STATUSES }) }),
       Booking.countDocuments({ status: mongoose.trusted({ $in: ACTIVE_STATUSES }) }),

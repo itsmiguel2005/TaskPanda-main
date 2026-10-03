@@ -1,33 +1,38 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 
-function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove, error }) {
+const MAX_ID_IMAGE_SIZE = 2 * 1024 * 1024;
+
+function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove }) {
   const inputRef = useRef(null);
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700">
         {label} <span className="text-red-500">*</span>
       </label>
-      <div
-        className="mt-1 flex cursor-pointer items-center gap-4 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-4 transition hover:border-primary-400 hover:bg-primary-50"
+      <button
+        type="button"
+        aria-label={`${label}: ${file ? "replace image" : "choose image"}`}
         onClick={() => inputRef.current?.click()}
+        className="dashboard-focus mt-2 flex w-full items-center gap-4 rounded-2xl border border-dashed border-sky-300 bg-sky-50/55 p-4 text-left transition hover:border-sky-500 hover:bg-sky-50"
       >
         {preview ? (
-          <img src={preview} alt={label} className="h-16 w-16 rounded-lg object-cover" />
+          <img src={preview} alt={`${label} preview`} className="h-16 w-24 rounded-lg object-cover ring-1 ring-slate-200" />
         ) : (
-          <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-gray-200 text-gray-400">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-8 w-8">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+          <div className="flex h-16 w-24 shrink-0 items-center justify-center rounded-lg border border-sky-100 bg-white/80 text-sky-700">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-8 w-8" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 5.25A2.25 2.25 0 016.75 3h10.5A2.25 2.25 0 0119.5 5.25v13.5A2.25 2.25 0 0117.25 21H6.75a2.25 2.25 0 01-2.25-2.25V5.25z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 8h8m-8 4h5m-5 4h8" />
             </svg>
           </div>
         )}
         <div>
-          <p className="text-sm font-medium text-gray-700">Click to upload</p>
-          <p className="text-xs text-gray-400">PNG, JPG, WEBP up to 5MB</p>
+          <p className="text-sm font-semibold text-slate-800">{file ? "Replace image" : "Choose image"}</p>
+          <p className="mt-1 text-xs text-slate-600">JPEG, PNG, or WebP · up to 2 MB</p>
         </div>
-      </div>
+      </button>
       <input
         ref={inputRef}
         type="file"
@@ -39,37 +44,55 @@ function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove, e
       {file && (
         <div className="mt-2 flex items-center justify-between">
           <p className="text-xs text-gray-500 truncate max-w-[200px]">{file.name}</p>
-          <button type="button" onClick={onRemove} className="text-xs text-red-500 hover:text-red-700">Remove</button>
+          <button type="button" onClick={onRemove} className="dashboard-focus rounded text-xs font-semibold text-rose-700 underline underline-offset-2 hover:text-rose-900">Remove</button>
         </div>
       )}
-      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
     </div>
   );
 }
 
 export default function VerificationPage() {
   const navigate = useNavigate();
-  const { verify, token } = useAuth();
+  const { verify, token, role } = useAuth();
+  const profilePath = role === "provider" ? "/provider-profile" : "/profile";
   const [idFrontFile, setIdFrontFile] = useState(null);
   const [idBackFile, setIdBackFile] = useState(null);
   const [idFrontPreview, setIdFrontPreview] = useState("");
   const [idBackPreview, setIdBackPreview] = useState("");
-  const [certificate, setCertificate] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [autoVerified, setAutoVerified] = useState(false);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+
+  useEffect(() => () => {
+    if (idFrontPreview) URL.revokeObjectURL(idFrontPreview);
+    if (idBackPreview) URL.revokeObjectURL(idBackPreview);
+  }, [idFrontPreview, idBackPreview]);
 
   const handleFileSelect = (setter, setPreview) => (e) => {
     const file = e.target.files[0];
     if (file) {
+      if (file.size > MAX_ID_IMAGE_SIZE) {
+        setError("Each ID image must be 2 MB or smaller. Choose a smaller image and try again.");
+        e.target.value = "";
+        return;
+      }
+      setError("");
+      setPreview((currentPreview) => {
+        if (currentPreview) URL.revokeObjectURL(currentPreview);
+        return URL.createObjectURL(file);
+      });
       setter(file);
-      setPreview(URL.createObjectURL(file));
     }
+    e.target.value = "";
   };
 
   const handleRemove = (setter, setPreview) => () => {
+    setPreview((currentPreview) => {
+      if (currentPreview) URL.revokeObjectURL(currentPreview);
+      return "";
+    });
     setter(null);
-    setPreview("");
   };
 
   const handleSubmit = async (e) => {
@@ -85,26 +108,24 @@ export default function VerificationPage() {
     const formData = new FormData();
     formData.append("idFront", idFrontFile);
     formData.append("idBack", idBackFile);
-    if (certificate.trim()) {
-      formData.append("certificate", certificate.trim());
-    }
 
     try {
-      const res = await fetch("/api/verify", {
+      const res = await fetch("/api/v1/users/verify", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Verification failed");
+        setError(data.message || data.error || "Verification failed");
         setUploading(false);
         return;
       }
-      verify();
+      verify(data);
+      setAutoVerified(data.autoVerified === true);
       setSubmitted(true);
       setTimeout(() => {
-        navigate("/profile");
+        navigate(profilePath);
       }, 2000);
     } catch (err) {
       setError("Network error. Please try again.");
@@ -113,42 +134,51 @@ export default function VerificationPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pt-16 pb-12">
-      <Header showNav activeTab="Profile" />
+    <div>
+      <Header showNav activeTab="Profile" role={role === "provider" ? "provider" : "client"} />
 
-      <div className="mx-auto max-w-lg px-4 sm:px-6 lg:px-8">
-        <button
-          onClick={() => navigate("/profile")}
-          className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 transition hover:text-gray-700"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-            <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-          </svg>
-          Back to Profile
-        </button>
+      <main className="dashboard-page bg-[radial-gradient(ellipse_at_top,_rgba(186,230,253,0.4),_transparent_55%),linear-gradient(180deg,_#eff6ff_0%,_#f8fbff_28rem,_#f8fafc_100%)]">
+        <div className="dashboard-shell max-w-lg">
+          <button
+            onClick={() => navigate(profilePath)}
+            className="dashboard-focus mb-5 inline-flex items-center gap-2 rounded-lg px-2 py-1 text-sm font-semibold text-slate-600 transition hover:text-slate-950 focus-visible:outline-blue-600"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+              <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
+            </svg>
+            Back to Profile
+          </button>
 
-        <div className="rounded-2xl bg-white p-8 shadow-sm text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-2xl">
-            🪪
+        <div className="rounded-3xl border border-white/80 bg-white/75 p-7 text-center shadow-[0_18px_48px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:p-9">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-sky-100 bg-sky-50 text-sky-800 shadow-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-8 w-8" aria-hidden="true">
+              <rect x="3" y="5" width="18" height="14" rx="2.5" />
+              <circle cx="8" cy="11" r="2" />
+              <path strokeLinecap="round" d="M5.5 16c.7-1.2 1.6-1.8 2.5-1.8s1.8.6 2.5 1.8M13 10h5m-5 4h5" />
+            </svg>
           </div>
-          <h1 className="mt-4 text-2xl font-bold text-gray-900">Identity Verification</h1>
-          <p className="mt-2 text-sm text-gray-500">
-            Upload front and back of your valid ID to unlock all features
+          <h1 className="mt-5 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">Identity verification</h1>
+          <p className="mx-auto mt-3 max-w-prose text-sm leading-6 text-slate-600">
+            Upload both sides of a valid photo ID. We’ll automatically verify clear matches or send your documents to our team for review.
           </p>
         </div>
 
         {submitted && (
-          <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-4 text-center animate-fade-in">
-            <span className="text-lg">&#10003;</span>
-            <p className="mt-1 text-sm font-medium text-green-800">Verification submitted! Redirecting...</p>
+          <div className={`mt-4 rounded-2xl border p-4 text-center shadow-sm ${autoVerified ? "border-emerald-200 bg-emerald-50/90" : "border-amber-200 bg-amber-50/90"}`} role="status">
+            <p className={`text-sm font-bold ${autoVerified ? "text-emerald-900" : "text-amber-950"}`}>
+              {autoVerified ? "Identity verified" : "Documents sent for manual review"}
+            </p>
+            <p className={`mt-1 text-sm ${autoVerified ? "text-emerald-800" : "text-amber-900"}`}>
+              {autoVerified ? "Your identity check passed. Returning to your profile…" : "Your account will be updated as soon as an administrator reviews your documents."}
+            </p>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+        <form onSubmit={handleSubmit} className="mt-5 space-y-5 rounded-3xl border border-white/80 bg-white/75 p-5 shadow-[0_18px_48px_rgba(15,23,42,0.07)] backdrop-blur-xl sm:p-7">
           <ImageUpload
             label="ID Front"
             name="idFront"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp"
             file={idFrontFile}
             preview={idFrontPreview}
             onSelect={handleFileSelect(setIdFrontFile, setIdFrontPreview)}
@@ -158,28 +188,12 @@ export default function VerificationPage() {
           <ImageUpload
             label="ID Back"
             name="idBack"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp"
             file={idBackFile}
             preview={idBackPreview}
             onSelect={handleFileSelect(setIdBackFile, setIdBackPreview)}
             onRemove={handleRemove(setIdBackFile, setIdBackPreview)}
           />
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Trade Certificate <span className="text-gray-400">(Optional)</span>
-            </label>
-            <input
-              type="text"
-              value={certificate}
-              onChange={(e) => setCertificate(e.target.value)}
-              placeholder="e.g. TESDA NC II, Diploma URL"
-              className="mt-1 w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-            />
-            <p className="mt-1 text-xs text-gray-400">
-              Provide your trade certification if available
-            </p>
-          </div>
 
           {error && (
             <p className="text-sm text-red-600" role="alert">{error}</p>
@@ -188,21 +202,22 @@ export default function VerificationPage() {
           <div className="flex gap-3">
             <button
               type="button"
-              onClick={() => navigate("/profile")}
-              className="flex-1 rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+              onClick={() => navigate(profilePath)}
+              className="dashboard-focus flex-1 rounded-xl border border-slate-300 bg-white/80 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-white"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={uploading}
-              className="flex-1 rounded-xl bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:opacity-50"
+              className="dashboard-focus flex-1 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white shadow-[0_8px_20px_rgba(15,23,42,0.15)] transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {uploading ? "Uploading..." : "Submit Verification"}
             </button>
           </div>
         </form>
-      </div>
+        </div>
+      </main>
     </div>
   );
 }

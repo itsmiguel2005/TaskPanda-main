@@ -22,11 +22,19 @@ function ProfileSetting({ label, description, onClick, last = false, tone = "def
   );
 }
 
-function StatusPill({ verified }) {
+function StatusPill({ verified, status }) {
+  const state = verified
+    ? { label: "Identity verified", color: "bg-emerald-50 text-emerald-800", dot: "bg-emerald-600" }
+    : status === "rejected"
+      ? { label: "Verification rejected", color: "bg-rose-50 text-rose-800", dot: "bg-rose-600" }
+      : status === "pending"
+        ? { label: "Verification pending", color: "bg-amber-50 text-amber-800", dot: "bg-amber-600" }
+        : { label: "Verification needed", color: "bg-amber-50 text-amber-800", dot: "bg-amber-600" };
+
   return (
-    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${verified ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${verified ? "bg-emerald-600" : "bg-amber-600"}`} />
-      {verified ? "Identity verified" : "Verification needed"}
+    <span className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-semibold ${state.color}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${state.dot}`} />
+      {state.label}
     </span>
   );
 }
@@ -45,6 +53,7 @@ export default function ProviderProfilePage() {
   const initials = fullName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
   const rating = Number(user?.averageRating ?? 0);
   const totalReviews = Number(user?.totalReviews ?? 0);
+  const verificationStatus = user?.verificationStatus || "unverified";
 
   const handleSignOut = () => {
     logout();
@@ -66,49 +75,57 @@ export default function ProviderProfilePage() {
             </button>
           </div>
 
-          <section className="dashboard-panel p-5 sm:p-7">
-            <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-              <div className="flex min-w-0 items-center gap-4 sm:gap-5">
-                <div className={`avatar-shell h-20 w-20 border-4 border-blue-50 text-2xl font-bold sm:h-24 sm:w-24 ${user?.profileImage ? "bg-transparent" : "bg-blue-100 text-blue-800"}`}>
-                  {user?.profileImage ? <img src={user.profileImage} alt={`${fullName} profile`} className="avatar-image" /> : initials || "?"}
-                </div>
-                <div className="min-w-0">
-                  <h2 className="break-words text-xl font-extrabold tracking-tight text-slate-950 sm:text-2xl">{fullName}</h2>
-                  <p className="mt-1 text-sm font-medium text-slate-600">Local service provider{user?.username ? ` · @${user.username}` : ""}</p>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <StatusPill verified={isVerified} />
-                    {location && <span className="text-xs font-medium text-slate-600">{location}</span>}
+          <div className="grid gap-5 lg:grid-cols-3">
+            <aside className="space-y-5 lg:col-span-1">
+              <section className="dashboard-panel p-5 sm:p-6">
+                <div className="flex items-start gap-4">
+                  <div className={`avatar-shell h-16 w-16 border-4 border-blue-50 text-xl font-bold ${user?.profileImage ? "bg-transparent" : "bg-blue-100 text-blue-800"}`}>
+                    {user?.profileImage ? <img src={user.profileImage} alt={`${fullName} profile`} className="avatar-image" /> : initials || "?"}
+                  </div>
+                  <div className="min-w-0 pt-1">
+                    <h2 className="break-words text-lg font-bold leading-6 text-slate-950">{fullName}</h2>
+                    <p className="mt-1 text-sm text-slate-600">Service provider{user?.username ? ` · @${user.username}` : ""}</p>
+                    <div className="mt-2">
+                      <StatusPill verified={isVerified} status={verificationStatus} />
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-4 border-t border-slate-100 pt-4 md:border-l md:border-t-0 md:pl-6 md:pt-0">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-50 text-amber-700" aria-hidden="true">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                    <path d="m10 1.5 2.47 5.01 5.53.8-4 3.9.94 5.5L10 14.11l-4.94 2.6.94-5.5-4-3.9 5.53-.8L10 1.5Z" />
-                  </svg>
+                {location && <p className="mt-3 text-xs leading-5 text-slate-600">{location}</p>}
+                <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
+                  <p className="text-xs text-slate-600">Member since</p>
+                  <p className="text-right text-xs font-semibold text-slate-900">{memberSince}</p>
                 </div>
-                <div>
-                  {totalReviews > 0 ? (
-                    <>
-                      <p className="text-xl font-extrabold tabular-nums text-slate-950">{Number.isFinite(rating) ? rating.toFixed(1) : "0.0"} <span className="text-sm font-bold text-slate-500">/ 5</span></p>
-                      <p className="text-xs text-slate-600">{totalReviews} {totalReviews === 1 ? "review" : "reviews"}</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-sm font-bold text-slate-950">New to TaskPanda</p>
-                      <p className="text-xs text-slate-600">Your reviews will appear here.</p>
-                    </>
-                  )}
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <span className="inline-flex items-center gap-2 text-sm font-bold text-slate-900">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-amber-600" aria-hidden="true">
+                      <path d="m10 1.5 2.47 5.01 5.53.8-4 3.9.94 5.5L10 14.11l-4.94 2.6.94-5.5-4-3.9 5.53-.8L10 1.5Z" />
+                    </svg>
+                    {totalReviews > 0 ? `${Number.isFinite(rating) ? rating.toFixed(1) : "0.0"} / 5` : "New to TaskPanda"}
+                  </span>
+                  {totalReviews > 0 && <span className="text-xs text-slate-600">{totalReviews} {totalReviews === 1 ? "review" : "reviews"}</span>}
                 </div>
-              </div>
-            </div>
-            <div className="mt-5 border-t border-slate-100 pt-4">
-              <p className="text-xs text-slate-600">Member since <span className="font-semibold text-slate-800">{memberSince}</span></p>
-              <ProfileSetupPanel user={user} role="provider" onEdit={() => navigate("/profile/edit")} />
-            </div>
-          </section>
+                <ProfileSetupPanel user={user} role="provider" onEdit={() => navigate("/profile/edit")} />
+              </section>
 
-          <div className="mt-5 grid gap-5 lg:grid-cols-2">
+              <section className="dashboard-panel">
+                <div className="dashboard-panel-heading">
+                  <h2 className="text-base font-bold text-slate-950">Your shortcuts</h2>
+                  <p className="mt-1 text-sm text-slate-600">Pick up where you left off.</p>
+                </div>
+                <div className="grid grid-cols-2 divide-x divide-slate-100">
+                  <button type="button" onClick={() => navigate("/provider-bookings")} className="dashboard-focus rounded-bl-[1.25rem] p-4 text-left transition hover:bg-slate-50">
+                    <span className="block text-sm font-bold text-slate-950">Bookings</span>
+                    <span className="mt-1 block text-xs font-semibold text-slate-600">Manage requests</span>
+                  </button>
+                  <button type="button" onClick={() => navigate("/provider/messages")} className="dashboard-focus rounded-br-[1.25rem] p-4 text-left transition hover:bg-slate-50">
+                    <span className="block text-sm font-bold text-slate-950">Messages</span>
+                    <span className="mt-1 block text-xs font-semibold text-slate-600">Chat with clients</span>
+                  </button>
+                </div>
+              </section>
+            </aside>
+
+            <div className="space-y-5 lg:col-span-2">
             <section className="dashboard-panel">
               <div className="dashboard-panel-heading flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -172,7 +189,7 @@ export default function ProviderProfilePage() {
                   </div>
                 </div>
                 {!isVerified && (
-                  <button type="button" onClick={() => navigate("/profile/verify")} className="dashboard-secondary-button dashboard-focus mt-5 w-full px-4 py-2.5 text-sm sm:w-auto">
+                  <button type="button" onClick={() => navigate("/provider-profile/verify")} className="dashboard-secondary-button dashboard-focus mt-5 w-full px-4 py-2.5 text-sm sm:w-auto">
                     Start verification
                   </button>
                 )}
@@ -226,17 +243,18 @@ export default function ProviderProfilePage() {
               </dl>
             </section>
 
-            <section className="dashboard-panel lg:col-span-2">
+            <section className="dashboard-panel">
               <div className="dashboard-panel-heading">
                 <h2 className="text-base font-bold text-slate-950">Account settings</h2>
                 <p className="mt-1 text-sm text-slate-600">Manage your provider profile and account access.</p>
               </div>
               <ProfileSetting label="Edit professional profile" description="Update your services, bio, contact information, or service area." onClick={() => navigate("/profile/edit")} />
-              {!isVerified && <ProfileSetting label="Verify identity" description="Submit your ID and optional trade certificate." onClick={() => navigate("/profile/verify")} />}
+              {!isVerified && <ProfileSetting label="Verify identity" description="Submit your ID and optional trade certificate." onClick={() => navigate("/provider-profile/verify")} />}
               <ProfileSetting label="Provider bookings" description="View requests and manage your schedule." onClick={() => navigate("/provider-bookings")} />
               <ProfileSetting label="Messages" description="Continue conversations with clients." onClick={() => navigate("/provider-messages")} />
               <ProfileSetting label="Sign out" description="Sign out of this device." onClick={handleSignOut} last tone="danger" />
             </section>
+            </div>
           </div>
         </div>
       </main>

@@ -21,8 +21,9 @@ export function AuthProvider({ children }) {
         const parsed = JSON.parse(saved);
         setIsLoggedIn(true);
         setRole(parsed.role || "client");
-        setIsVerified(parsed.isVerified || false);
-        isVerifiedRef.current = parsed.isVerified || false;
+        const savedVerified = Boolean(parsed.isVerified ?? parsed.user?.isVerified);
+        setIsVerified(savedVerified);
+        isVerifiedRef.current = savedVerified;
         setUser(parsed.user || null);
         setToken(parsed.token || null);
       } catch {
@@ -59,14 +60,17 @@ export function AuthProvider({ children }) {
     const { role } = userData;
     const newUser = { ...userData, role };
     const newRole = role || "client";
+    const newVerified = userData.isVerified === true;
     setIsLoggedIn(true);
     setRole(newRole);
+    setIsVerified(newVerified);
+    isVerifiedRef.current = newVerified;
     setUser(newUser);
     setToken(authToken || null);
     const authData = JSON.stringify({
       user: newUser,
       role: newRole,
-      isVerified: isVerifiedRef.current,
+      isVerified: newVerified,
       token: authToken || null,
     });
     const storage = remember ? localStorage : sessionStorage;
@@ -87,21 +91,22 @@ export function AuthProvider({ children }) {
   }, []);
 
   const verify = useCallback((verifiedData) => {
-    const newVerified = true;
+    const newVerified = verifiedData?.isVerified === true;
     setIsVerified(newVerified);
     isVerifiedRef.current = newVerified;
-    if (verifiedData?.user) setUser(verifiedData.user);
+    const updatedUser = verifiedData?.user ? { ...(user || {}), ...verifiedData.user } : user;
+    if (updatedUser) setUser(updatedUser);
     if (verifiedData?.token) setToken(verifiedData.token);
     setIsLoggedIn(true);
-    const currentUser = verifiedData?.user || user;
-    const currentRole = currentUser?.role || role || "client";
+    const currentRole = updatedUser?.role || role || "client";
     const currentToken = verifiedData?.token || token;
-    localStorage.setItem(
+    const storage = localStorage.getItem("taskpanda_auth") ? localStorage : sessionStorage;
+    storage.setItem(
       "taskpanda_auth",
       JSON.stringify({
-        user: currentUser,
+        user: updatedUser,
         role: currentRole,
-        isVerified: true,
+        isVerified: newVerified,
         token: currentToken,
       })
     );
@@ -112,7 +117,16 @@ export function AuthProvider({ children }) {
     const saved = JSON.parse(storage.getItem("taskpanda_auth") || "{}");
     const updatedUser = { ...(saved.user || {}), ...userData, role: userData.role || role || saved.role };
     setUser(updatedUser);
-    storage.setItem("taskpanda_auth", JSON.stringify({ ...saved, user: updatedUser }));
+    const isVerifiedUpdated = typeof userData.isVerified === "boolean";
+    if (isVerifiedUpdated) {
+      setIsVerified(userData.isVerified);
+      isVerifiedRef.current = userData.isVerified;
+    }
+    storage.setItem("taskpanda_auth", JSON.stringify({
+      ...saved,
+      user: updatedUser,
+      ...(isVerifiedUpdated ? { isVerified: userData.isVerified } : {}),
+    }));
   }, [role]);
 
   const refreshProfile = useCallback(async () => {

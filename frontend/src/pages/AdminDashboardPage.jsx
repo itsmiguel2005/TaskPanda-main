@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense } from "react";
 import { useSearchParams } from "react-router-dom";
 import Header from "../components/Header.jsx";
 
@@ -8,215 +8,67 @@ const AdminTransactionsPanel = lazy(() => import("../components/AdminTransaction
 const AdminRewardsAnalytics = lazy(() => import("../components/AdminRewardsAnalytics.jsx"));
 const AdminSystemSettings = lazy(() => import("../components/AdminSystemSettings.jsx"));
 const AdminBookingsManagement = lazy(() => import("../components/AdminBookingsManagement.jsx"));
+const VerificationsAdmin = lazy(() => import("../components/VerificationsAdmin.jsx"));
 
-const verifications = [
-  { id: 1, user: "Johhny Cruz", email: "johny@taskpanda.com", type: "ID Front + Back", idNumber: "PH-1234-5678-9012", certificate: "TEC-2024-0042", idFrontFile: "id-front-johny.jpg", idBackFile: "id-back-johny.jpg", submitted: "10 min ago", status: "Pending" },
-  { id: 2, user: "Maria Santos", email: "maria@taskpanda.com", type: "ID Front + Back", idNumber: "PH-9876-5432-1098", certificate: "TEC-2024-0117", idFrontFile: "id-front-maria.jpg", idBackFile: "id-back-maria.jpg", submitted: "1 hour ago", status: "Pending" },
-  { id: 3, user: "Bombi Mercado", email: "bombi@taskpanda.com", type: "ID Front", idNumber: "PH-5555-6666-7777", certificate: "", idFrontFile: "id-front-bombi.jpg", idBackFile: null, submitted: "3 hours ago", status: "Pending" },
-  { id: 4, user: "Guest User", email: "guest@temp.com", type: "ID Front + Back", idNumber: "TEMP-0001", certificate: "", idFrontFile: "id-front-guest.png", idBackFile: "id-back-guest.png", submitted: "5 hours ago", status: "Pending" },
-];
-
-function StatusBadge({ status }) {
-  const colors = {
-    Active: "bg-green-100 text-green-700 border-green-200",
-    Pending: "bg-amber-100 text-amber-700 border-amber-200",
-    Suspended: "bg-red-100 text-red-700 border-red-200",
-    Confirmed: "bg-green-100 text-green-700 border-green-200",
-    Completed: "bg-blue-100 text-blue-700 border-blue-200",
-    "In Progress": "bg-accent-100 text-accent-700 border-accent-200",
-  };
-  return (
-    <span className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-medium ${colors[status] || "bg-gray-100 text-gray-700 border-gray-200"}`}>
-      {status}
-    </span>
-  );
-}
+const sections = {
+  dashboard: {
+    component: AdminDashboardOverview,
+    label: "Loading dashboard…",
+  },
+  users: {
+    component: AdminUsersManagement,
+    label: "Loading user management…",
+  },
+  transactions: {
+    component: AdminTransactionsPanel,
+    label: "Loading financial ledger…",
+  },
+  rewards: {
+    component: AdminRewardsAnalytics,
+    label: "Loading voucher analytics…",
+  },
+  settings: {
+    component: AdminSystemSettings,
+    label: "Loading global settings…",
+  },
+  bookings: {
+    component: AdminBookingsManagement,
+    label: "Loading booking operations…",
+  },
+  verifications: {
+    component: VerificationsAdmin,
+    label: "Loading verification queue…",
+  },
+};
 
 export default function AdminDashboardPage() {
   const [searchParams] = useSearchParams();
   const section = searchParams.get("section") || "dashboard";
   const activeTab = section.charAt(0).toUpperCase() + section.slice(1);
-  const [viewingVerif, setViewingVerif] = useState(null);
-
-  const approveVerification = (id) => {
-    console.log(`[Admin] Approving verification #${id}`);
-  };
-
-  const rejectVerification = (id) => {
-    console.log(`[Admin] Rejecting verification #${id}`);
-  };
+  const activeSection = sections[section];
+  const Section = activeSection?.component;
 
   return (
-    <div className="min-h-screen bg-gray-50 pt-16 pb-12">
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_rgba(219,234,254,0.5),_transparent_48%),linear-gradient(180deg,_#eff6ff_0%,_#f8fbff_28rem,_#f8fafc_100%)] pt-16 pb-12">
       <Header showNav activeTab={activeTab} role="admin" />
 
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-        {section === "dashboard" && (
-          <Suspense fallback={<div className="rounded-lg border border-slate-200 bg-white p-8 text-sm text-slate-500">Loading dashboard…</div>}>
-            <AdminDashboardOverview />
+      <main className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+        {Section ? (
+          <Suspense fallback={<div className="mt-6 rounded-2xl border border-slate-200 bg-white/90 p-8 text-sm text-slate-600">{activeSection.label}</div>}>
+            <Section />
           </Suspense>
+        ) : (
+          <section className="mt-6 rounded-2xl border border-white/80 bg-white/85 p-6 shadow-[0_14px_40px_rgba(15,23,42,0.06)] backdrop-blur-lg">
+            <h2 className="text-base font-bold text-slate-950">System information</h2>
+            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+              <div className="flex justify-between gap-4"><dt className="text-slate-600">Server</dt><dd className="font-semibold text-emerald-800">Running</dd></div>
+              <div className="flex justify-between gap-4"><dt className="text-slate-600">Build</dt><dd className="font-semibold text-slate-900">v1.0.0</dd></div>
+              <div className="flex justify-between gap-4"><dt className="text-slate-600">Uploads</dt><dd className="font-semibold text-slate-900">5 MB limit</dd></div>
+              <div className="flex justify-between gap-4"><dt className="text-slate-600">Current role</dt><dd className="font-semibold text-sky-800">admin</dd></div>
+            </dl>
+          </section>
         )}
-
-        {section === "users" && (
-          <Suspense fallback={<div className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-600">Loading user management…</div>}>
-            <AdminUsersManagement />
-          </Suspense>
-        )}
-
-        {section === "transactions" && (
-          <Suspense fallback={<div className="mt-6 rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-600">Loading financial ledger…</div>}>
-            <AdminTransactionsPanel />
-          </Suspense>
-        )}
-
-        {section === "rewards" && (
-          <Suspense fallback={<div className="mt-6 rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-600">Loading voucher analytics…</div>}>
-            <AdminRewardsAnalytics />
-          </Suspense>
-        )}
-
-        {section === "settings" && (
-          <Suspense fallback={<div className="mt-6 rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-600">Loading global settings…</div>}>
-            <AdminSystemSettings />
-          </Suspense>
-        )}
-
-        {section === "bookings" && (
-          <Suspense fallback={<div className="mt-6 rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-600">Loading booking operations…</div>}>
-            <AdminBookingsManagement />
-          </Suspense>
-        )}
-
-        {section === "verifications" && (
-          <div className="mt-6">
-            <div className="rounded-2xl bg-white shadow-sm">
-              <div className="border-b border-gray-100 px-5 py-4">
-                <h2 className="flex items-center gap-2 text-base font-semibold text-gray-900">
-                  Verification Queue
-                  <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-amber-100 px-1.5 text-xs font-medium text-amber-700">
-                    {verifications.length}
-                  </span>
-                </h2>
-              </div>
-              {verifications.length === 0 ? (
-                <div className="py-8 text-center">
-                  <p className="text-sm text-gray-400">No pending verifications</p>
-                </div>
-              ) : (
-                <div className="divide-y divide-gray-100">
-                  {verifications.map((v) => (
-                    <div key={v.id} className="px-5 py-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-gray-900">{v.user}</p>
-                          <p className="truncate text-xs text-gray-500">{v.email}</p>
-                          <p className="mt-1 text-[11px] text-gray-400">{v.type} · {v.submitted}</p>
-                          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
-                            <span className="text-gray-500">ID: <span className="font-medium text-gray-700">{v.idNumber}</span></span>
-                            {v.certificate && <span className="text-gray-500">Cert: <span className="font-medium text-gray-700">{v.certificate}</span></span>}
-                            {v.idFrontFile && <span className="text-gray-500">ID Front: <span className="font-medium text-gray-700">{v.idFrontFile}</span></span>}
-                            {v.idBackFile && <span className="text-gray-500">ID Back: <span className="font-medium text-gray-700">{v.idBackFile}</span></span>}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-2 flex gap-2">
-                        <button
-                          onClick={() => setViewingVerif(v)}
-                          className="flex-1 rounded-lg bg-blue-600 py-1.5 text-[11px] font-semibold text-white transition hover:bg-blue-700"
-                        >
-                          View ID
-                        </button>
-                        <button
-                          onClick={() => approveVerification(v.id)}
-                          className="flex-1 rounded-lg bg-green-600 py-1.5 text-[11px] font-semibold text-white transition hover:bg-green-700"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => rejectVerification(v.id)}
-                          className="flex-1 rounded-lg border border-gray-200 py-1.5 text-[11px] font-medium text-gray-600 transition hover:bg-gray-100"
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* System Info */}
-        <div className={["dashboard", "users", "transactions", "rewards", "settings", "bookings"].includes(section) ? "hidden" : "mt-6"}>
-          <div className="rounded-2xl bg-white shadow-sm">
-            <div className="border-b border-gray-100 px-5 py-4">
-              <h2 className="text-base font-semibold text-gray-900">System Info</h2>
-            </div>
-            <div className="px-5 py-4 space-y-2 text-xs">
-              <div className="flex justify-between"><span className="text-gray-500">Server</span><span className="font-medium text-gray-900">● Running</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Port</span><span className="font-medium text-gray-900">3000</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Build</span><span className="font-medium text-gray-900">v1.0.0</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">DB</span><span className="font-medium text-gray-900">Mock Data</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Uploads</span><span className="font-medium text-gray-900">{5 * 1024}KB limit</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Auth</span><span className="font-medium text-gray-900">Session</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Current Role</span><span className="font-medium text-primary-600">admin</span></div>
-            </div>
-          </div>
-          {viewingVerif && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={() => setViewingVerif(null)}>
-              <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-gray-900">ID Verification — {viewingVerif.user}</h3>
-                  <button onClick={() => setViewingVerif(null)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                </div>
-                <div className="mt-4 space-y-4">
-                  <div>
-                    <p className="mb-1 text-xs font-medium text-gray-500">ID Front</p>
-                    <div className="flex h-40 items-center justify-center rounded-xl border-2 border-dashed border-gray-200 bg-gray-50">
-                      <div className="text-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="mx-auto h-8 w-8 text-gray-300">
-                          <path fillRule="evenodd" d="M4 4a2 2 0 012-2h12a2 2 0 012 2v16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 0v16h12V4H6z" clipRule="evenodd" />
-                          <path d="M9 8a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V8z" />
-                        </svg>
-                        <p className="mt-1 text-xs text-gray-400">{viewingVerif.idFrontFile || "No file"}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="mb-1 text-xs font-medium text-gray-500">ID Back</p>
-                    <div className="flex h-40 items-center justify-center rounded-xl border-2 border-dashed border-gray-200 bg-gray-50">
-                      <div className="text-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="mx-auto h-8 w-8 text-gray-300">
-                          <path fillRule="evenodd" d="M4 4a2 2 0 012-2h12a2 2 0 012 2v16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 0v16h12V4H6z" clipRule="evenodd" />
-                          <path d="M9 8a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V8z" />
-                        </svg>
-                        <p className="mt-1 text-xs text-gray-400">{viewingVerif.idBackFile || "No file"}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex gap-4 text-xs">
-                    <div>
-                      <span className="font-medium text-gray-500">ID Number:</span>{" "}
-                      <span className="text-gray-900">{viewingVerif.idNumber || "N/A"}</span>
-                    </div>
-                    {viewingVerif.certificate && (
-                      <div>
-                        <span className="font-medium text-gray-500">Certificate:</span>{" "}
-                        <span className="text-gray-900">{viewingVerif.certificate}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      </main>
     </div>
   );
 }
