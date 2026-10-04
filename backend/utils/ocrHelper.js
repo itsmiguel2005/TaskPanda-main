@@ -38,9 +38,9 @@ const ID_TYPE_SIGNATURES = [
 ];
 const UNKNOWN_ID_TYPE = "Unknown";
 const MINIMUM_NAME_MATCH_ACCURACY = 0.75;
-const MAX_OCR_IMAGE_VARIANTS = 8;
-const OCR_IMAGE_MAX_SIZE = 1800;
-const OCR_IMAGE_ROTATIONS = [0, 90, 180];
+const MAX_OCR_IMAGE_VARIANTS = 5;
+const OCR_IMAGE_MAX_SIZE = 1600;
+const OCR_IMAGE_ROTATIONS = [0, 90];
 const BACK_SIDE_SIGNATURES = [
   /\bsignature\b/i,
   /\b(?:thumb\s?mark|thumbprint|fingerprint|left\s+thumb|right\s+thumb)\b/i,
@@ -514,10 +514,6 @@ async function createIdOCRVariants(image) {
         name: "normalization",
         process: () => sharp(rotatedImage).grayscale().normalize().sharpen().jpeg({ quality: 92 }).toBuffer(),
       },
-      ...(rotation === 0 ? [{
-        name: "contrast",
-        process: () => sharp(rotatedImage).grayscale().linear(1.15, -15).sharpen().jpeg({ quality: 92 }).toBuffer(),
-      }] : []),
     ];
     for (const adjustment of imageAdjustments) {
       if (variants.length >= MAX_OCR_IMAGE_VARIANTS - 1) break;
@@ -586,7 +582,6 @@ async function createIdOCRVariants(image) {
     }
   }
 
-  variants.push(imageBuffer);
   return variants;
 }
 
@@ -724,7 +719,7 @@ async function performOCRVerificationNow(imagePath, userName) {
       if (completeMatch) return completeMatch;
     }
 
-    const alternateModeVariantIndexes = [0, 1, 3].filter((index) => index < variantsToProcess.length);
+    const alternateModeVariantIndexes = [0, 2].filter((index) => index < variantsToProcess.length);
     for (const variantIndex of alternateModeVariantIndexes) {
       const completeMatch = await recognizeCandidate(
         variantIndex,

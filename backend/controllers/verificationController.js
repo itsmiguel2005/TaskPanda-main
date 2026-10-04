@@ -5,7 +5,6 @@ const User = require("../models/User");
 const tesdaSectors = require("../../shared/tesdaQualifications.json");
 const TESDA_QUALIFICATIONS = new Set(tesdaSectors.flatMap(({ qualifications }) => qualifications));
 const {
-  areIdSidesLikelySwapped,
   classifyIdSide,
   performOCRVerification,
 } = require("../utils/ocrHelper");
@@ -140,7 +139,6 @@ async function handleSubmitVerification(req, res) {
         profileName: getProfileNameParts(savedUser),
         securityFlags,
         frontBuffer,
-        backBuffer,
       });
       await Promise.all(previousPublicIds.map((publicId) => deleteVerificationImage(publicId).catch((error) => {
         console.error("Could not remove replaced verification image:", error.message);
@@ -201,32 +199,17 @@ async function processIdentityVerificationOCR({
   profileName,
   securityFlags,
   frontBuffer,
-  backBuffer,
   frontPublicId,
-  backPublicId,
   frontFormat,
-  backFormat,
 }) {
   try {
     let frontImageBuffer = frontBuffer;
-    let backImageBuffer = backBuffer;
-    if (!frontImageBuffer || !backImageBuffer) {
-      const [frontImage, backImage] = await Promise.all([
-        fetchAuthenticatedVerificationImage(frontPublicId, frontFormat),
-        fetchAuthenticatedVerificationImage(backPublicId, backFormat),
-      ]);
+    if (!frontImageBuffer) {
+      const frontImage = await fetchAuthenticatedVerificationImage(frontPublicId, frontFormat);
       frontImageBuffer = frontImage.body;
-      backImageBuffer = backImage.body;
     }
 
     const ocrResult = await performOCRVerification(frontImageBuffer, profileName);
-    const frontNameMatched = ocrResult.nameMatchAccuracy >= 75 &&
-      ocrResult.firstNameMatched &&
-      ocrResult.lastNameMatched;
-    const backOcrResult = frontNameMatched
-      ? null
-      : await performOCRVerification(backImageBuffer, profileName);
-    const sidesLikelySwapped = backOcrResult && areIdSidesLikelySwapped(ocrResult, backOcrResult);
     const frontSideCheck = classifyIdSide({
       extractedText: ocrResult.extractedText,
       ocrConfidence: ocrResult.ocrConfidence,
@@ -238,10 +221,9 @@ async function processIdentityVerificationOCR({
     });
     const autoVerified = ocrResult.autoVerified &&
       securityFlags.length === 0 &&
-      !sidesLikelySwapped &&
       frontSideCheck !== "back";
-    if (sidesLikelySwapped || frontSideCheck === "back") {
-      console.warn("Verification OCR found possible swapped ID sides; keeping the submission pending for manual review.", String(userId));
+    if (frontSideCheck === "back") {
+      console.warn("Verification OCR found possible back-side evidence on the submitted front image; keeping the submission pending for manual review.", String(userId));
     }
 
     const updatedUser = await persistVerificationOCRResult(User, userId, submittedAt, {
@@ -274,7 +256,7 @@ async function resumePendingVerificationOCR() {
     "verificationDetails.status": "Pending",
     "verificationDetails.ocrProcessing": true,
   })
-    .select("role firstName middleName lastName fullName +verificationDetails.idFrontPublicId +verificationDetails.idBackPublicId +verificationDetails.idFrontFormat +verificationDetails.idBackFormat")
+    .select("role firstName middleName lastName fullName +verificationDetails.idFrontPublicId +verificationDetails.idFrontFormat")
     .lean();
 
   for (const user of pendingUsers) {
@@ -285,9 +267,7 @@ async function resumePendingVerificationOCR() {
       profileName: getProfileNameParts(user),
       securityFlags: user.verificationDetails.securityFlags || [],
       frontPublicId: user.verificationDetails.idFrontPublicId,
-      backPublicId: user.verificationDetails.idBackPublicId,
       frontFormat: user.verificationDetails.idFrontFormat,
-      backFormat: user.verificationDetails.idBackFormat,
     });
   }
   return pendingUsers.length;

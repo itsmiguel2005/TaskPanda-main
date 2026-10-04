@@ -189,29 +189,22 @@ test("synthetic Philippine ID layouts match structured names with conservative f
   }
 });
 
-test("ID OCR bounds preprocessing to resized, cropped, contrast-adjusted, rotated, and original candidates", async () => {
+test("ID OCR keeps a small set of card-focused and rotated variants", async () => {
   const image = await sharp({
     create: { width: 1000, height: 1600, channels: 3, background: "#fff" },
   }).jpeg().toBuffer();
   const variants = await createIdOCRVariants(image);
 
-  assert.equal(variants.length, 8);
+  assert.equal(variants.length, 4);
   const processedMetadata = await sharp(variants[0]).metadata();
   assert.equal(processedMetadata.width, 1000);
   assert.equal(processedMetadata.height, 1600);
   const portraitCropMetadata = await sharp(variants[2]).metadata();
-  assert.equal(portraitCropMetadata.width, 1800);
-  assert.ok(portraitCropMetadata.height > 1700);
-  const focusedPortraitCropMetadata = await sharp(variants[3]).metadata();
-  assert.equal(focusedPortraitCropMetadata.width, 1800);
-  assert.ok(focusedPortraitCropMetadata.height > 1000);
-  const rotatedMetadata = await sharp(variants[4]).metadata();
+  assert.equal(portraitCropMetadata.width, 1600);
+  assert.ok(portraitCropMetadata.height < 1000);
+  const rotatedMetadata = await sharp(variants[3]).metadata();
   assert.equal(rotatedMetadata.width, 1600);
   assert.equal(rotatedMetadata.height, 1000);
-  const rotated180Metadata = await sharp(variants[6]).metadata();
-  assert.equal(rotated180Metadata.width, 1000);
-  assert.equal(rotated180Metadata.height, 1600);
-  assert.deepEqual(variants.at(-1), image);
 });
 
 test("OCR keeps the unmodified upload as a fallback when preprocessing cannot read it", async () => {
