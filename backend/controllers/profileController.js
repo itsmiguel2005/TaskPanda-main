@@ -104,7 +104,10 @@ async function handleUpdateProfile(req, res) {
   try {
     const user = req.user;
 
-    const fullName = String(req.body.fullName || "").trim();
+    const requestFirstName = String(req.body.firstName || "").trim();
+    const requestMiddleName = String(req.body.middleName || "").trim();
+    const requestLastName = String(req.body.lastName || "").trim();
+    const fullNameFromBody = String(req.body.fullName || "").trim();
     const username = String(req.body.username || "").trim();
     const mobileNumber = String(req.body.mobileNumber || "").trim();
     const province = String(req.body.province || user.province || "").trim();
@@ -113,8 +116,20 @@ async function handleUpdateProfile(req, res) {
     const address = [barangay, city, province].filter(Boolean).join(", ");
     const geoLocationInput = req.body.geoLocation;
     const bio = String(req.body.bio || "").trim();
-    if (!fullName || fullName.length > 100) {
-      return res.status(400).json({ message: "Enter a full name under 100 characters.", field: "fullName" });
+    const hasStructuredName = ["firstName", "middleName", "lastName"].some((field) =>
+      Object.prototype.hasOwnProperty.call(req.body, field)
+    );
+    const legacyNameParts = fullNameFromBody.split(/\s+/).filter(Boolean);
+    const firstName = hasStructuredName ? requestFirstName : legacyNameParts[0] || user.firstName || "";
+    const middleName = hasStructuredName ? requestMiddleName : "";
+    const lastName = hasStructuredName
+      ? requestLastName
+      : legacyNameParts.length > 1
+        ? legacyNameParts.slice(1).join(" ")
+        : user.lastName || "";
+    const fullName = [firstName, middleName, lastName].filter(Boolean).join(" ").trim();
+    if (!firstName || !lastName || fullName.length > 100) {
+      return res.status(400).json({ message: firstName && lastName ? "Enter a full name under 100 characters." : "First name and last name are required.", field: firstName && lastName ? "fullName" : (firstName ? "lastName" : "firstName") });
     }
     if (!/^[A-Za-z0-9_.-]{3,30}$/.test(username) || /^\S+@\S+\.\S+$/.test(username)) {
       return res.status(400).json({ message: "Username must be 3-30 characters and cannot be an email.", field: "username" });
@@ -154,7 +169,6 @@ async function handleUpdateProfile(req, res) {
       return res.status(409).json({ message: "This username is already taken.", field: "username" });
     }
 
-    const nameParts = fullName.split(/\s+/);
     const professions = user.role === "provider"
       ? [...new Set((Array.isArray(req.body.professions) ? req.body.professions : [])
           .map((profession) => String(profession).trim())
@@ -165,9 +179,9 @@ async function handleUpdateProfile(req, res) {
     }
 
     user.fullName = fullName;
-    user.firstName = nameParts[0] || "";
-    user.middleName = "";
-    user.lastName = nameParts.slice(1).join(" ");
+    user.firstName = firstName;
+    user.middleName = middleName;
+    user.lastName = lastName;
     user.username = username;
     user.mobileNumber = mobileNumber;
     user.address = address;

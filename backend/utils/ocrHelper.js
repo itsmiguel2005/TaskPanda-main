@@ -154,49 +154,243 @@ function getNameTokenQuality(profileWord, extractedWords, allowSingleOCRTypo) {
     : 0;
 }
 
-function scoreNameMatch(extractedText, userName, { allowSingleOCRTypo = false } = {}) {
-  const profileWords = [...new Set(normalizeWords(userName))];
+function getProfileNameParts(userName) {
+  if (userName && typeof userName === "object") {
+    return {
+      firstName: normalizeWords(userName.firstName),
+      middleName: normalizeWords(userName.middleName),
+      lastName: normalizeWords(userName.lastName),
+    };
+  }
+
+  const words = normalizeWords(userName);
+  return {
+    firstName: words.length ? [words[0]] : [],
+    middleName: words.slice(1, -1),
+    lastName: words.length > 1 ? [words[words.length - 1]] : [],
+  };
+}
+
+function scoreNameParts(extractedText, nameParts, { allowSingleOCRTypo = false } = {}) {
   const extractedWords = [...new Set(normalizeWords(extractedText))];
-  if (profileWords.length < 2 || !extractedWords.length) {
+  const extractedWordSet = new Set(extractedWords);
+  const { firstName, middleName, lastName } = nameParts;
+  const totalParts = firstName.length + middleName.length + lastName.length;
+
+  if (firstName.length === 0 || lastName.length === 0 || extractedWords.length === 0) {
     return {
       accuracy: 0,
       matchedParts: 0,
-      totalParts: profileWords.length,
+      totalParts,
       firstNameMatched: false,
       lastNameMatched: false,
     };
   }
 
-  const extractedWordSet = new Set(extractedWords);
-  const firstName = profileWords[0];
-  const lastName = profileWords[profileWords.length - 1];
-  const middleNames = profileWords.slice(1, -1);
-  const firstNameMatched = extractedWordSet.has(firstName);
-  const lastNameMatched = extractedWordSet.has(lastName);
-  const firstNameQuality = getNameTokenQuality(firstName, extractedWords, allowSingleOCRTypo);
-  const lastNameQuality = getNameTokenQuality(lastName, extractedWords, allowSingleOCRTypo);
-  const middleNameQualities = middleNames.map((middleName) =>
-    getNameTokenQuality(middleName, extractedWords, allowSingleOCRTypo)
-  );
-  const matchedMiddleNames = middleNameQualities.filter((quality) => quality === 1).length;
-  const coreWeight = middleNames.length ? 0.75 : 1;
-  const matchedParts = Number(firstNameMatched) + Number(lastNameMatched) + matchedMiddleNames;
-  const accuracy = middleNames.length
-    ? ((firstNameQuality + lastNameQuality) / 2) * coreWeight +
-      (middleNameQualities.reduce((total, quality) => total + quality, 0) / middleNames.length) * (1 - coreWeight)
-    : (firstNameQuality + lastNameQuality) / 2;
+  const scoreField = (parts) => {
+    if (!parts.length) return { quality: 0, exactMatches: 0, matched: false };
+    const qualities = parts.map((part) => getNameTokenQuality(part, extractedWords, allowSingleOCRTypo));
+    const exactMatches = parts.filter((part) => extractedWordSet.has(part)).length;
+    return {
+      quality: qualities.reduce((total, quality) => total + quality, 0) / parts.length,
+      exactMatches,
+      matched: exactMatches === parts.length,
+    };
+  };
+
+  const first = scoreField(firstName);
+  const middle = scoreField(middleName);
+  const last = scoreField(lastName);
+  const hasMiddleName = middleName.length > 0;
+  const accuracy = hasMiddleName
+    ? ((first.quality + last.quality) / 2) * 0.75 + middle.quality * 0.25
+    : (first.quality + last.quality) / 2;
 
   return {
     accuracy,
-    matchedParts,
-    totalParts: profileWords.length,
-    firstNameMatched,
-    lastNameMatched,
+    matchedParts: first.exactMatches + middle.exactMatches + last.exactMatches,
+    totalParts,
+    firstNameMatched: first.matched,
+    lastNameMatched: last.matched,
   };
+}
+
+function scoreNameMatch(extractedText, userName, { allowSingleOCRTypo = false } = {}) {
+  return scoreNameParts(extractedText, getProfileNameParts(userName), { allowSingleOCRTypo });
 }
 
 function scoreLtoNameMatch(extractedText, userName) {
   return scoreNameMatch(extractedText, userName, { allowSingleOCRTypo: true });
+}
+
+function getCandidateLineRecords(candidate) {
+  if (Array.isArray(candidate.lines) && candidate.lines.length) {
+    return candidate.lines
+      .map((line) => typeof line === "string" ? { text: line } : line)
+      .filter((line) => typeof line?.text === "string" && line.text.trim());
+  }
+  return String(candidate.text || "")
+    .split(/\r?\n/)
+    .filter((line) => line.trim())
+    .map((text) => ({ text }));
+}
+
+function findNameFieldLabels(text) {
+  const pattern = /\b(surname|family\s+name|last\s+name|given\s+names?|first\s+name|forenames?|middle\s+names?)\b/gi;
+  return [...text.matchAll(pattern)].map((match) => ({
+    text: match[0],
+    index: match.index,
+    end: match.index + match[0].length,
+    field: /^(?:surname|family\s+name|last\s+name)$/i.test(match[0])
+      ? "lastName"
+      : /^middle\s+names?$/i.test(match[0])
+        ? "middleName"
+        : "firstName",
+  }));
+}
+
+function getNameLabelCenter(line, label) {
+  const words = Array.isArray(line.words) ? line.words : [];
+  const labelWords = normalizeWords(label.text);
+  for (let start = 0; start <= words.length - labelWords.length; start += 1) {
+    const matchedWords = words.slice(start, start + labelWords.length);
+    const normalizedLabelWords = matchedWords.flatMap((word) => normalizeWords(word.text));
+    if (normalizedLabelWords.join(" ") !== labelWords.join(" ")) continue;
+    const boxes = matchedWords.map((word) => word.bbox).filter((bbox) =>
+      Number.isFinite(bbox?.x0) && Number.isFinite(bbox?.x1)
+    );
+    if (!boxes.length) return null;
+    return (Math.min(...boxes.map((bbox) => bbox.x0)) + Math.max(...boxes.map((bbox) => bbox.x1))) / 2;
+  }
+  return null;
+}
+
+function readColumnValues(labelLine, valueLine, labels) {
+  const columns = labels
+    .map((label) => ({ ...label, center: getNameLabelCenter(labelLine, label) }))
+    .filter(({ center }) => center !== null)
+    .sort((left, right) => left.center - right.center);
+  if (columns.length < 2 || !Array.isArray(valueLine.words)) return [];
+
+  const values = columns.map((column, index) => {
+    const lowerBound = index === 0 ? -Infinity : (columns[index - 1].center + column.center) / 2;
+    const upperBound = index === columns.length - 1 ? Infinity : (column.center + columns[index + 1].center) / 2;
+    const text = valueLine.words
+      .filter((word) => {
+        const center = (word.bbox?.x0 + word.bbox?.x1) / 2;
+        return Number.isFinite(center) && center > lowerBound && center <= upperBound;
+      })
+      .map((word) => word.text)
+      .join(" ")
+      .trim();
+    return { field: column.field, text };
+  });
+  return values;
+}
+
+function extractLabeledNameFields(lineRecords) {
+  const fields = {};
+  let foundLabel = false;
+
+  for (let index = 0; index < lineRecords.length; index += 1) {
+    const line = lineRecords[index];
+    const labels = findNameFieldLabels(line.text);
+    if (!labels.length) continue;
+    foundLabel = true;
+
+    if (labels.length > 1) {
+      labels.forEach((label, labelIndex) => {
+        const nextLabel = labels[labelIndex + 1];
+        const inlineValue = line.text.slice(label.end, nextLabel?.index).replace(/^[\s:,-]+|[\s:,-]+$/g, "");
+        if (inlineValue) fields[label.field] = [fields[label.field], inlineValue].filter(Boolean).join(" ");
+      });
+
+      const missingLabels = labels.filter((label) => !fields[label.field]);
+      if (missingLabels.length) {
+        const valueLine = lineRecords.slice(index + 1).find((candidate) =>
+          candidate.text.trim() && !findNameFieldLabels(candidate.text).length
+        );
+        if (valueLine) {
+          for (const value of readColumnValues(line, valueLine, missingLabels)) {
+            if (value.text) fields[value.field] = [fields[value.field], value.text].filter(Boolean).join(" ");
+          }
+        }
+      }
+      continue;
+    }
+
+    const label = labels[0];
+    const value = line.text.slice(label.end).replace(/^[\s:,-]+|[\s:,-]+$/g, "");
+    let fieldValue = value;
+    if (!fieldValue) {
+      const nextLine = lineRecords[index + 1];
+      if (nextLine?.text.trim() && !findNameFieldLabels(nextLine.text).length) fieldValue = nextLine.text.trim();
+    }
+    if (fieldValue) fields[label.field] = [fields[label.field], fieldValue].filter(Boolean).join(" ");
+  }
+
+  return { fields, foundLabel };
+}
+
+function scoreLabeledNameFields(fields, profileName, options) {
+  const profileParts = getProfileNameParts(profileName);
+  const scoreField = (field, expectedParts) => {
+    if (!expectedParts.length || !fields[field]) return { quality: 0, matchedParts: 0, matched: false };
+    const observedParts = normalizeWords(fields[field]);
+    const observedSet = new Set(observedParts);
+    const qualities = expectedParts.map((part) => getNameTokenQuality(part, observedParts, options.allowSingleOCRTypo));
+    const matchedParts = expectedParts.filter((part) => observedSet.has(part)).length;
+    return {
+      quality: qualities.reduce((total, quality) => total + quality, 0) / expectedParts.length,
+      matchedParts,
+      matched: matchedParts === expectedParts.length,
+    };
+  };
+
+  const first = scoreField("firstName", profileParts.firstName);
+  const middle = scoreField("middleName", profileParts.middleName);
+  const last = scoreField("lastName", profileParts.lastName);
+  const hasMiddleName = profileParts.middleName.length > 0;
+  const accuracy = hasMiddleName
+    ? ((first.quality + last.quality) / 2) * 0.75 + middle.quality * 0.25
+    : (first.quality + last.quality) / 2;
+
+  return {
+    accuracy,
+    matchedParts: first.matchedParts + middle.matchedParts + last.matchedParts,
+    totalParts: profileParts.firstName.length + profileParts.middleName.length + profileParts.lastName.length,
+    firstNameMatched: first.matched,
+    lastNameMatched: last.matched,
+  };
+}
+
+function scoreCandidateName(candidate, userName, allowSingleOCRTypo = false) {
+  const lineRecords = getCandidateLineRecords(candidate);
+  const lines = lineRecords.map(({ text }) => text);
+  const { fields, foundLabel } = extractLabeledNameFields(lineRecords);
+  if (foundLabel) {
+    return scoreLabeledNameFields(fields, userName, { allowSingleOCRTypo });
+  }
+
+  const profileParts = getProfileNameParts(userName);
+  const maxWindowSize = Math.max(1, profileParts.firstName.length + profileParts.middleName.length + profileParts.lastName.length + 2);
+  let bestMatch = scoreNameMatch("", userName, { allowSingleOCRTypo });
+  for (let start = 0; start < lines.length; start += 1) {
+    for (let size = 1; size <= maxWindowSize && start + size <= lines.length; size += 1) {
+      const match = scoreNameMatch(lines.slice(start, start + size).join(" "), userName, { allowSingleOCRTypo });
+      if (
+        Number(match.firstNameMatched) + Number(match.lastNameMatched) >
+          Number(bestMatch.firstNameMatched) + Number(bestMatch.lastNameMatched) ||
+        (match.firstNameMatched === bestMatch.firstNameMatched &&
+          match.lastNameMatched === bestMatch.lastNameMatched &&
+          match.accuracy > bestMatch.accuracy)
+      ) {
+        bestMatch = match;
+      }
+    }
+  }
+
+  return bestMatch;
 }
 
 function shouldAutoVerify(ocrConfidence, nameMatch) {
@@ -247,9 +441,12 @@ async function createIdOCRVariants(image) {
 
 function selectBestOCRCandidate(candidates, userName) {
   const combinedText = candidates.map((candidate) => candidate.text).join("\n");
+  const combinedLineRecords = candidates.flatMap(getCandidateLineRecords);
   const detectedIdType = detectIdType(combinedText);
-  const combinedNameMatch = detectedIdType === "Driver's License"
-    ? scoreLtoNameMatch(combinedText, userName)
+  const combinedCandidate = { text: combinedText, lines: combinedLineRecords };
+  const hasLabeledNameFields = extractLabeledNameFields(combinedLineRecords).foundLabel;
+  const combinedNameMatch = detectedIdType === "Driver's License" || hasLabeledNameFields
+    ? scoreCandidateName(combinedCandidate, userName, detectedIdType === "Driver's License")
     : null;
   return candidates
     .map((candidate) => {
@@ -257,7 +454,7 @@ function selectBestOCRCandidate(candidates, userName) {
       const candidateIdType = detectIdType(candidate.text);
       const nameMatch = combinedNameMatch
         ? combinedNameMatch
-        : scoreNameMatch(candidate.text, userName);
+        : scoreCandidateName(candidate, userName);
       return {
         confidence,
         nameMatch,
@@ -319,7 +516,19 @@ async function performOCRVerification(imagePath, userName) {
         try {
           await worker.setParameters({ tessedit_pageseg_mode: mode });
           const { data } = await worker.recognize(imageVariant);
-          candidates.push({ confidence: data.confidence, text: data.text });
+          candidates.push({
+            confidence: data.confidence,
+            text: data.text,
+            lines: Array.isArray(data.lines)
+              ? data.lines.map(({ text, bbox, words }) => ({
+                text,
+                bbox,
+                words: Array.isArray(words)
+                  ? words.map(({ text: wordText, bbox: wordBbox }) => ({ text: wordText, bbox: wordBbox }))
+                  : undefined,
+              }))
+              : undefined,
+          });
           const currentBest = selectBestOCRCandidate(candidates, userName);
           if (currentBest.nameMatch.accuracy === 1) {
             return formatOCRResult(currentBest);
@@ -347,7 +556,7 @@ async function performOCRVerification(imagePath, userName) {
       extractedText: "",
       nameMatchAccuracy: 0,
       matchedNameParts: 0,
-      totalNameParts: normalizeWords(userName).length,
+      totalNameParts: Object.values(getProfileNameParts(userName)).flat().length,
       firstNameMatched: false,
       lastNameMatched: false,
       autoVerified: false,

@@ -23,6 +23,17 @@ function getProfileName(user) {
   return String(user.fullName || [user.firstName, user.middleName, user.lastName].filter(Boolean).join(" ")).trim();
 }
 
+function getProfileNameParts(user) {
+  if (user.firstName && user.lastName) {
+    return {
+      firstName: user.firstName,
+      middleName: user.middleName || "",
+      lastName: user.lastName,
+    };
+  }
+  return getProfileName(user);
+}
+
 async function handleSubmitVerification(req, res) {
   const front = req.files?.idFront?.[0];
   const back = req.files?.idBack?.[0];
@@ -72,13 +83,14 @@ async function handleSubmitVerification(req, res) {
       uploadVerificationImage(frontBuffer, String(req.user._id), "front"),
       uploadVerificationImage(backBuffer, String(req.user._id), "back"),
     ]);
-    const ocrResult = await performOCRVerification(front.path, getProfileName(req.user));
+    const profileName = getProfileNameParts(req.user);
+    const ocrResult = await performOCRVerification(front.path, profileName);
     const frontNameMatched = ocrResult.nameMatchAccuracy >= 75 &&
       ocrResult.firstNameMatched &&
       ocrResult.lastNameMatched;
     const backOcrResult = frontNameMatched
       ? null
-      : await performOCRVerification(back.path, getProfileName(req.user));
+      : await performOCRVerification(back.path, profileName);
 
     const [frontUpload, backUpload] = await cloudUploadsPromise;
     for (const upload of [frontUpload, backUpload]) {

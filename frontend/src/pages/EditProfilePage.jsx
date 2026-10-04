@@ -5,27 +5,45 @@ import PHLocationPicker from "../components/PHLocationPicker.jsx";
 import ProfessionSelector from "../components/ProfessionSelector.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 
-const getFormFromUser = (user = {}) => ({
-  fullName: user.fullName || [user.firstName, user.middleName, user.lastName].filter(Boolean).join(" "),
-  username: user.username || "",
-  email: user.email || "",
-  phone: user.mobileNumber || "",
-  province: user.province || "",
-  city: user.city || "",
-  barangay: user.barangay || "",
-  provinceCode: "",
-  cityCode: "",
-  barangayCode: "",
-  geoLocation: user.geoLocation || null,
-  bio: user.bio || "",
-  professions: Array.isArray(user.professions) ? [...user.professions] : [],
-});
+const buildFullName = ({ firstName = "", middleName = "", lastName = "" } = {}) => [firstName, middleName, lastName].filter(Boolean).join(" ").trim();
+
+const getFormFromUser = (user = {}) => {
+  const rawFullName = (user.fullName || "").trim();
+  const parsedParts = rawFullName ? rawFullName.split(/\s+/).filter(Boolean) : [];
+  const inferredFirstName = user.firstName || parsedParts[0] || "";
+  const inferredMiddleName = user.middleName || (parsedParts.length > 2 ? parsedParts.slice(1, -1).join(" ") : "");
+  const inferredLastName = user.lastName || (parsedParts.length > 1 ? parsedParts.at(-1) : "");
+
+  return {
+    fullName: user.fullName || buildFullName({
+      firstName: inferredFirstName,
+      middleName: inferredMiddleName,
+      lastName: inferredLastName,
+    }),
+    firstName: inferredFirstName,
+    middleName: inferredMiddleName,
+    lastName: inferredLastName,
+    username: user.username || "",
+    email: user.email || "",
+    phone: user.mobileNumber || "",
+    province: user.province || "",
+    city: user.city || "",
+    barangay: user.barangay || "",
+    provinceCode: "",
+    cityCode: "",
+    barangayCode: "",
+    geoLocation: user.geoLocation || null,
+    bio: user.bio || "",
+    professions: Array.isArray(user.professions) ? [...user.professions] : [],
+  };
+};
 
 const comparableForm = ({ provinceCode, cityCode, barangayCode, ...values }) => values;
 
 function validateForm(form, role) {
   const errors = {};
-  if (!form.fullName.trim()) errors.fullName = "Full name is required";
+  if (!form.lastName.trim()) errors.lastName = "Last name is required";
+  if (!form.firstName.trim()) errors.firstName = "First name is required";
   if (!form.username.trim()) errors.username = "Username is required";
     else if (!/^[A-Za-z0-9_.-]{3,30}$/.test(form.username) || /^\S+@\S+\.\S+$/.test(form.username)) errors.username = "Use 3-30 letters, numbers, dots, underscores, or hyphens";
   if (!form.email.trim()) errors.email = "Email is required";
@@ -114,7 +132,15 @@ export default function EditProfilePage() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    const nextForm = { ...form, [name]: value };
+    const nextForm = {
+      ...form,
+      [name]: value,
+      fullName: buildFullName({
+        firstName: name === "firstName" ? value : form.firstName,
+        middleName: name === "middleName" ? value : form.middleName,
+        lastName: name === "lastName" ? value : form.lastName,
+      }),
+    };
     setForm(nextForm);
     setDirty(JSON.stringify(comparableForm(nextForm)) !== initialFormRef.current);
     setServerError("");
@@ -230,6 +256,9 @@ export default function EditProfilePage() {
         },
         body: JSON.stringify({
           fullName: form.fullName,
+          firstName: form.firstName,
+          middleName: form.middleName,
+          lastName: form.lastName,
           username: form.username,
           mobileNumber: form.phone,
           address: [form.barangay, form.city, form.province].filter(Boolean).join(", "),
@@ -343,20 +372,53 @@ export default function EditProfilePage() {
             <h2 className="text-base font-bold text-slate-950">Personal information</h2>
             <p className="mt-1 text-sm text-slate-600">Fields marked with <span className="font-semibold text-red-700">*</span> are required.</p>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">
-              Full Name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              name="fullName"
-              value={form.fullName}
-              onChange={handleChange}
-              className="mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-              style={{ borderColor: errors.fullName ? "#ef4444" : "#e5e7eb" }}
-              required
-            />
-            {errors.fullName && <p className="mt-1 text-xs text-red-500">{errors.fullName}</p>}
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Last Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                name="lastName"
+                value={form.lastName}
+                onChange={handleChange}
+                className="mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+                style={{ borderColor: errors.lastName ? "#ef4444" : "#e5e7eb" }}
+                required
+              />
+              {errors.lastName && <p className="mt-1 text-xs text-red-500">{errors.lastName}</p>}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                First Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                name="firstName"
+                value={form.firstName}
+                onChange={handleChange}
+                className="mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+                style={{ borderColor: errors.firstName ? "#ef4444" : "#e5e7eb" }}
+                required
+              />
+              {errors.firstName && <p className="mt-1 text-xs text-red-500">{errors.firstName}</p>}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Middle Name <span className="text-xs font-normal text-slate-500">(Optional)</span>
+              </label>
+              <input
+                type="text"
+                name="middleName"
+                value={form.middleName}
+                onChange={handleChange}
+                className="mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
+                style={{ borderColor: errors.middleName ? "#ef4444" : "#e5e7eb" }}
+              />
+              {errors.middleName && <p className="mt-1 text-xs text-red-500">{errors.middleName}</p>}
+            </div>
           </div>
 
           <div>

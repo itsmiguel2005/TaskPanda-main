@@ -135,6 +135,123 @@ test("matching the middle name increases the weighted score", () => {
   assert.equal(scoreNameMatch("ANA MARIA CRUZ", "Ana Maria Cruz").accuracy, 1);
 });
 
+test("structured profile names match labeled fields regardless of the ID's name order", () => {
+  const result = selectBestOCRCandidate([{
+    confidence: 91,
+    text: "PASSPORT\nSURNAME: CALIMLIM\nGIVEN NAMES: MIGUEL EDUARDO\nMIDDLE NAME: ESTRADA",
+    lines: [
+      { text: "PASSPORT" },
+      { text: "SURNAME: CALIMLIM" },
+      { text: "GIVEN NAMES: MIGUEL EDUARDO" },
+      { text: "MIDDLE NAME: ESTRADA" },
+    ],
+  }], {
+    firstName: "Miguel Eduardo",
+    middleName: "Estrada",
+    lastName: "Calimlim",
+  });
+
+  assert.equal(result.nameMatch.accuracy, 1);
+  assert.equal(result.nameMatch.firstNameMatched, true);
+  assert.equal(result.nameMatch.lastNameMatched, true);
+  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), true);
+});
+
+test("labeled name values on separate rows match and missing optional middle names remain eligible", () => {
+  const result = selectBestOCRCandidate([{
+    confidence: 82,
+    text: "DRIVER'S LICENSE\nSURNAME\nCALIMLIM\nGIVEN NAMES\nMIGUEL EDUARDO",
+    lines: [
+      { text: "DRIVER'S LICENSE" },
+      { text: "SURNAME" },
+      { text: "CALIMLIM" },
+      { text: "GIVEN NAMES" },
+      { text: "MIGUEL EDUARDO" },
+    ],
+  }], {
+    firstName: "Miguel Eduardo",
+    middleName: "Estrada",
+    lastName: "Calimlim",
+  });
+
+  assert.equal(result.nameMatch.accuracy, 0.75);
+  assert.equal(result.nameMatch.firstNameMatched, true);
+  assert.equal(result.nameMatch.lastNameMatched, true);
+  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), true);
+});
+
+test("labeled name columns use OCR word positions to associate values with labels", () => {
+  const result = selectBestOCRCandidate([{
+    confidence: 89,
+    text: "SURNAME GIVEN NAMES\nCALIMLIM MIGUEL EDUARDO",
+    lines: [
+      {
+        text: "SURNAME GIVEN NAMES",
+        words: [
+          { text: "SURNAME", bbox: { x0: 10, x1: 80 } },
+          { text: "GIVEN", bbox: { x0: 150, x1: 200 } },
+          { text: "NAMES", bbox: { x0: 205, x1: 260 } },
+        ],
+      },
+      {
+        text: "CALIMLIM MIGUEL EDUARDO",
+        words: [
+          { text: "CALIMLIM", bbox: { x0: 12, x1: 95 } },
+          { text: "MIGUEL", bbox: { x0: 150, x1: 215 } },
+          { text: "EDUARDO", bbox: { x0: 220, x1: 300 } },
+        ],
+      },
+    ],
+  }], {
+    firstName: "Miguel Eduardo",
+    middleName: "",
+    lastName: "Calimlim",
+  });
+
+  assert.equal(result.nameMatch.accuracy, 1);
+  assert.equal(result.nameMatch.firstNameMatched, true);
+  assert.equal(result.nameMatch.lastNameMatched, true);
+});
+
+test("labeled name matching does not borrow a surname from unrelated ID text", () => {
+  const result = selectBestOCRCandidate([{
+    confidence: 95,
+    text: "GIVEN NAMES: MIGUEL EDUARDO\nADDRESS: CALIMLIM STREET",
+    lines: [
+      { text: "GIVEN NAMES: MIGUEL EDUARDO" },
+      { text: "ADDRESS: CALIMLIM STREET" },
+    ],
+  }], {
+    firstName: "Miguel Eduardo",
+    middleName: "Estrada",
+    lastName: "Calimlim",
+  });
+
+  assert.equal(result.nameMatch.firstNameMatched, true);
+  assert.equal(result.nameMatch.lastNameMatched, false);
+  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), false);
+});
+
+test("unlabeled names split across adjacent ID rows are compared independent of order", () => {
+  const result = selectBestOCRCandidate([{
+    confidence: 88,
+    text: "CALIMLIM\nMIGUEL EDUARDO\nESTRADA",
+    lines: [
+      { text: "CALIMLIM" },
+      { text: "MIGUEL EDUARDO" },
+      { text: "ESTRADA" },
+    ],
+  }], {
+    firstName: "Miguel Eduardo",
+    middleName: "Estrada",
+    lastName: "Calimlim",
+  });
+
+  assert.equal(result.nameMatch.accuracy, 1);
+  assert.equal(result.nameMatch.firstNameMatched, true);
+  assert.equal(result.nameMatch.lastNameMatched, true);
+});
+
 test("a missing first or last name prevents auto-verification", () => {
   assert.deepEqual(scoreNameMatch("Nina Nino", "Nina Nino Cruz"), {
     accuracy: 0.625,

@@ -13,6 +13,9 @@ router.get("/", handleGetProfile);
 router.post("/photo", limitProfilePhotoUploads, uploadProfilePhoto.single("photo"), handleUploadProfilePhoto);
 router.put("/", [
 	body("fullName").isString().trim().isLength({ min: 1, max: 100 }),
+	body("firstName").optional().isString().isLength({ max: 80 }),
+	body("middleName").optional().isString().isLength({ max: 80 }),
+	body("lastName").optional().isString().isLength({ max: 80 }),
 	body("username").isString().trim().isLength({ min: 3, max: 30 }),
 	body("mobileNumber").isString().isLength({ max: 11 }),
 	body("province").optional().isString().isLength({ max: 100 }),
