@@ -136,6 +136,7 @@ const userSchema = new mongoose.Schema(
       tradeCertificate: { type: String, trim: true, maxlength: 200, default: "" },
       ocrConfidence: { type: Number, min: 0, max: 100, default: null },
       nameMatchAccuracy: { type: Number, min: 0, max: 100, default: null },
+      ocrProcessing: { type: Boolean, default: false },
       autoVerified: { type: Boolean, default: false },
       securityFlags: {
         type: [{

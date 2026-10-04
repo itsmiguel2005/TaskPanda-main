@@ -9,7 +9,11 @@ const {
   performOCRVerification,
 } = require("../utils/ocrHelper");
 const { SECURITY_FLAGS, inspectVerificationMetadata } = require("../utils/verificationMetadata");
-const { persistVerificationSubmission } = require("../services/verificationSubmission");
+const {
+  markVerificationOCRUnavailable,
+  persistVerificationOCRResult,
+  persistVerificationSubmission,
+} = require("../services/verificationSubmission");
 const { removeUploadedFiles } = require("../storage/verificationUpload");
 const { sendPushNotification } = require("../services/oneSignal");
 const { awardVerificationVoucher } = require("../services/rewards");
@@ -44,6 +48,8 @@ async function handleSubmitVerification(req, res) {
   }
 
   const uploadedCloudImages = [];
+  let cloudUploadsPromise;
+  let submissionSaved = false;
   try {
     const previousUser = await User.findById(req.user._id)
       .select("+verificationDetails.idFrontPublicId +verificationDetails.idBackPublicId");
@@ -67,6 +73,10 @@ async function handleSubmitVerification(req, res) {
       fs.readFile(front.path),
       fs.readFile(back.path),
     ]);
+    cloudUploadsPromise = Promise.allSettled([
+      uploadVerificationImage(frontBuffer, String(req.user._id), "front"),
+      uploadVerificationImage(backBuffer, String(req.user._id), "back"),
+    ]);
     const metadataInspection = await inspectVerificationMetadata(frontBuffer);
     const securityFlags = metadataInspection.flags;
     if (metadataInspection.error) {
@@ -79,19 +89,6 @@ async function handleSubmitVerification(req, res) {
       console.warn("Verification ID has no camera Make/Model metadata; flagging for admin inspection.", String(req.user._id));
     }
 
-    const cloudUploadsPromise = Promise.allSettled([
-      uploadVerificationImage(frontBuffer, String(req.user._id), "front"),
-      uploadVerificationImage(backBuffer, String(req.user._id), "back"),
-    ]);
-    const profileName = getProfileNameParts(req.user);
-    const ocrResult = await performOCRVerification(front.path, profileName);
-    const frontNameMatched = ocrResult.nameMatchAccuracy >= 75 &&
-      ocrResult.firstNameMatched &&
-      ocrResult.lastNameMatched;
-    const backOcrResult = frontNameMatched
-      ? null
-      : await performOCRVerification(back.path, profileName);
-
     const [frontUpload, backUpload] = await cloudUploadsPromise;
     for (const upload of [frontUpload, backUpload]) {
       if (upload.status === "fulfilled") uploadedCloudImages.push(upload.value.publicId);
@@ -99,41 +96,21 @@ async function handleSubmitVerification(req, res) {
     const failedOperation = [frontUpload, backUpload].find((result) => result.status === "rejected");
     if (failedOperation) throw failedOperation.reason;
 
-    if (backOcrResult && areIdSidesLikelySwapped(ocrResult, backOcrResult)) {
-      const error = new Error("The name on your ID appears on the image uploaded as ID Back instead of ID Front. Swap the images so the side with your photo and name is ID Front, then submit again.");
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const frontSideCheck = classifyIdSide({
-      extractedText: ocrResult.extractedText,
-      ocrConfidence: ocrResult.ocrConfidence,
-      nameMatch: {
-        firstNameMatched: ocrResult.firstNameMatched,
-        lastNameMatched: ocrResult.lastNameMatched,
-      },
-      detectedIdType: ocrResult.detectedIdType,
-    });
-    if (frontSideCheck === "back") {
-      const error = new Error("This looks like the back of your ID. Upload the side showing your photo and name as ID Front, then upload the reverse as ID Back.");
-      error.statusCode = 400;
-      throw error;
-    }
-
     const frontImage = frontUpload.value;
     const backImage = backUpload.value;
-    const autoVerified = ocrResult.autoVerified && securityFlags.length === 0;
+    const submittedAt = new Date();
     const verificationDetails = {
       idFrontUrl: `/api/v1/admin/verifications/${req.user._id}/documents/front`,
       idBackUrl: `/api/v1/admin/verifications/${req.user._id}/documents/back`,
       tradeCertificate,
-      ocrConfidence: ocrResult.ocrConfidence,
-      nameMatchAccuracy: ocrResult.nameMatchAccuracy,
-      autoVerified,
+      ocrConfidence: null,
+      nameMatchAccuracy: null,
+      ocrProcessing: true,
+      autoVerified: false,
       securityFlags,
       rejectionReason: "",
-      status: autoVerified ? "Active" : "Pending",
-      submittedAt: new Date(),
+      status: "Pending",
+      submittedAt,
       reviewedAt: null,
       idFrontPublicId: frontImage.publicId,
       idBackPublicId: backImage.publicId,
@@ -145,56 +122,161 @@ async function handleSubmitVerification(req, res) {
       User,
       previousUser,
       verificationDetails,
-      autoVerified,
+      false,
     );
+    submissionSaved = true;
 
-    let voucherAwarded = false;
-    let voucherAwardError = false;
-    if (autoVerified && savedUser.role === "client") {
-      try {
-        voucherAwarded = await awardVerificationVoucher(savedUser._id);
-      } catch (error) {
-        voucherAwardError = true;
-        console.error("Could not award client identity verification voucher:", error);
-      }
-    }
-
-    const previousPublicIds = [previousUser.verificationDetails?.idFrontPublicId, previousUser.verificationDetails?.idBackPublicId]
-      .filter((publicId) => publicId && !uploadedCloudImages.includes(publicId));
-    await Promise.all(previousPublicIds.map((publicId) => deleteVerificationImage(publicId).catch((error) => {
-      console.error("Could not remove replaced verification image:", error.message);
-    })));
-
-    return res.status(200).json({
+    res.status(202).json({
       success: true,
-      autoVerified,
-      isVerified: savedUser.isVerified,
-      status: verificationDetails.status,
+      autoVerified: false,
+      ocrProcessing: true,
+      isVerified: false,
+      status: "Pending",
       verificationStatus: savedUser.verificationStatus,
-      ocrConfidence: ocrResult.ocrConfidence,
-      nameMatchAccuracy: ocrResult.nameMatchAccuracy,
+      ocrConfidence: null,
+      nameMatchAccuracy: null,
       securityFlags,
-      ...(savedUser.role === "client" && autoVerified ? { voucherAwarded, voucherAwardError } : {}),
-      message: autoVerified
-        ? "Your identity was verified successfully."
-        : "Your documents were submitted and are waiting for manual review.",
+      message: "Your documents are saved. We are checking your ID in the background; you can continue using TaskPanda.",
       user: {
-        isVerified: savedUser.isVerified,
-        status: verificationDetails.status,
+        isVerified: false,
+        status: "Pending",
         verificationStatus: savedUser.verificationStatus,
       },
     });
+    setImmediate(() => {
+      void processIdentityVerificationOCR({
+        userId: savedUser._id,
+        role: savedUser.role,
+        submittedAt,
+        profileName: getProfileNameParts(savedUser),
+        securityFlags,
+        frontBuffer,
+        backBuffer,
+      });
+      const previousPublicIds = [previousUser.verificationDetails?.idFrontPublicId, previousUser.verificationDetails?.idBackPublicId]
+        .filter((publicId) => publicId && !uploadedCloudImages.includes(publicId));
+      void Promise.all(previousPublicIds.map((publicId) => deleteVerificationImage(publicId).catch((error) => {
+        console.error("Could not remove replaced verification image:", error.message);
+      })));
+    });
   } catch (error) {
     await removeUploadedFiles(uploadedFiles);
-    await Promise.all(uploadedCloudImages.map((publicId) => deleteVerificationImage(publicId).catch((deleteError) => {
-      console.error("Could not remove unsaved verification image:", deleteError.message);
-    })));
+    if (!submissionSaved) {
+      if (cloudUploadsPromise) {
+        const completedUploads = await cloudUploadsPromise;
+        for (const upload of completedUploads) {
+          if (upload.status === "fulfilled") uploadedCloudImages.push(upload.value.publicId);
+        }
+      }
+      await Promise.all([...new Set(uploadedCloudImages)].map((publicId) => deleteVerificationImage(publicId).catch((deleteError) => {
+        console.error("Could not remove unsaved verification image:", deleteError.message);
+      })));
+    }
     console.error("Submit identity verification error:", error);
     if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
     return res.status(500).json({ message: "We could not save your verification. Please try again." });
   } finally {
     await removeUploadedFiles(uploadedFiles);
   }
+}
+
+async function processIdentityVerificationOCR({
+  userId,
+  role,
+  submittedAt,
+  profileName,
+  securityFlags,
+  frontBuffer,
+  backBuffer,
+  frontPublicId,
+  backPublicId,
+  frontFormat,
+  backFormat,
+}) {
+  try {
+    let frontImageBuffer = frontBuffer;
+    let backImageBuffer = backBuffer;
+    if (!frontImageBuffer || !backImageBuffer) {
+      const [frontImage, backImage] = await Promise.all([
+        fetchAuthenticatedVerificationImage(frontPublicId, frontFormat),
+        fetchAuthenticatedVerificationImage(backPublicId, backFormat),
+      ]);
+      frontImageBuffer = frontImage.body;
+      backImageBuffer = backImage.body;
+    }
+
+    const ocrResult = await performOCRVerification(frontImageBuffer, profileName);
+    const frontNameMatched = ocrResult.nameMatchAccuracy >= 75 &&
+      ocrResult.firstNameMatched &&
+      ocrResult.lastNameMatched;
+    const backOcrResult = frontNameMatched
+      ? null
+      : await performOCRVerification(backImageBuffer, profileName);
+    const sidesLikelySwapped = backOcrResult && areIdSidesLikelySwapped(ocrResult, backOcrResult);
+    const frontSideCheck = classifyIdSide({
+      extractedText: ocrResult.extractedText,
+      ocrConfidence: ocrResult.ocrConfidence,
+      nameMatch: {
+        firstNameMatched: ocrResult.firstNameMatched,
+        lastNameMatched: ocrResult.lastNameMatched,
+      },
+      detectedIdType: ocrResult.detectedIdType,
+    });
+    const autoVerified = ocrResult.autoVerified &&
+      securityFlags.length === 0 &&
+      !sidesLikelySwapped &&
+      frontSideCheck !== "back";
+    if (sidesLikelySwapped || frontSideCheck === "back") {
+      console.warn("Verification OCR found possible swapped ID sides; keeping the submission pending for manual review.", String(userId));
+    }
+
+    const updatedUser = await persistVerificationOCRResult(User, userId, submittedAt, {
+      ocrConfidence: ocrResult.ocrConfidence,
+      nameMatchAccuracy: ocrResult.nameMatchAccuracy,
+      autoVerified,
+      securityFlags,
+    });
+    if (!updatedUser) return;
+
+    if (autoVerified && role === "client") {
+      try {
+        await awardVerificationVoucher(updatedUser._id);
+      } catch (error) {
+        console.error("Could not award client identity verification voucher:", error);
+      }
+    }
+  } catch (error) {
+    console.error("Background identity OCR processing failed; leaving the submission for manual review:", error);
+    try {
+      await markVerificationOCRUnavailable(User, userId, submittedAt, securityFlags);
+    } catch (saveError) {
+      console.error("Could not mark failed identity OCR for manual review:", saveError);
+    }
+  }
+}
+
+async function resumePendingVerificationOCR() {
+  const pendingUsers = await User.find({
+    "verificationDetails.status": "Pending",
+    "verificationDetails.ocrProcessing": true,
+  })
+    .select("role firstName middleName lastName fullName +verificationDetails.idFrontPublicId +verificationDetails.idBackPublicId +verificationDetails.idFrontFormat +verificationDetails.idBackFormat")
+    .lean();
+
+  for (const user of pendingUsers) {
+    void processIdentityVerificationOCR({
+      userId: user._id,
+      role: user.role,
+      submittedAt: user.verificationDetails.submittedAt,
+      profileName: getProfileNameParts(user),
+      securityFlags: user.verificationDetails.securityFlags || [],
+      frontPublicId: user.verificationDetails.idFrontPublicId,
+      backPublicId: user.verificationDetails.idBackPublicId,
+      frontFormat: user.verificationDetails.idFrontFormat,
+      backFormat: user.verificationDetails.idBackFormat,
+    });
+  }
+  return pendingUsers.length;
 }
 
 async function handleSubmitTesdaCertificate(req, res) {
@@ -295,10 +377,11 @@ async function handleSubmitTesdaCertificate(req, res) {
 
 async function handleGetAdminVerifications(_req, res) {
   try {
-    const [users, providersWithPendingCertificates] = await Promise.all([
+    const [users, providersWithPendingCertificates, processingIdentityCount] = await Promise.all([
       User.find({
         "verificationDetails.status": "Pending",
         "verificationDetails.idFrontUrl": mongoose.trusted({ $ne: "" }),
+        "verificationDetails.ocrProcessing": mongoose.trusted({ $ne: true }),
         role: mongoose.trusted({ $in: ["client", "provider"] }),
       })
         .select("fullName firstName middleName lastName username email role createdAt verificationStatus isVerified verificationDetails")
@@ -309,6 +392,11 @@ async function handleGetAdminVerifications(_req, res) {
       })
         .select("fullName firstName middleName lastName username email role createdAt tesdaCertificates")
         .lean(),
+      User.countDocuments({
+        "verificationDetails.status": "Pending",
+        "verificationDetails.ocrProcessing": true,
+        role: mongoose.trusted({ $in: ["client", "provider"] }),
+      }),
     ]);
 
     const identitySubmissions = users.map((user) => ({
@@ -326,6 +414,7 @@ async function handleGetAdminVerifications(_req, res) {
       tradeCertificate: user.verificationDetails?.tradeCertificate || "",
       ocrConfidence: user.verificationDetails?.ocrConfidence ?? null,
       nameMatchAccuracy: user.verificationDetails?.nameMatchAccuracy ?? null,
+      ocrProcessing: user.verificationDetails?.ocrProcessing === true,
       autoVerified: user.verificationDetails?.autoVerified === true,
       securityFlags: (user.verificationDetails?.securityFlags || [])
         .filter((flag) => Object.values(SECURITY_FLAGS).includes(flag)),
@@ -353,6 +442,7 @@ async function handleGetAdminVerifications(_req, res) {
       .sort((left, right) => new Date(left.submittedAt || 0) - new Date(right.submittedAt || 0));
     return res.json({
       verifications,
+      processingIdentityCount,
     });
   } catch (error) {
     console.error("Admin verification queue error:", error);
@@ -607,4 +697,5 @@ module.exports = {
   handleSubmitTesdaCertificate,
   handleReviewVerification,
   handleSubmitVerification,
+  resumePendingVerificationOCR,
 };

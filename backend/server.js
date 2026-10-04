@@ -2,6 +2,7 @@ const app = require("./app");
 const connectDB = require("./db");
 const { port } = require("./config/env");
 const { processCashSettlementFallbacks, processExpiredBookingRequests } = require("./controllers/bookingController");
+const { resumePendingVerificationOCR } = require("./controllers/verificationController");
 
 const CASH_SETTLEMENT_INTERVAL_MS = 60 * 1000;
 const BOOKING_EXPIRATION_INTERVAL_MS = 10 * 1000;
@@ -11,6 +12,11 @@ if (require.main === module) {
     .then(() => {
       processCashSettlementFallbacks().catch((error) => console.error("Initial cash settlement pass failed:", error));
       processExpiredBookingRequests().catch((error) => console.error("Initial booking expiry pass failed:", error));
+      resumePendingVerificationOCR()
+        .then((count) => {
+          if (count) console.log(`Resumed ${count} pending identity OCR submission(s).`);
+        })
+        .catch((error) => console.error("Initial identity OCR recovery failed:", error));
       setInterval(() => {
         processCashSettlementFallbacks().catch((error) => console.error("Cash settlement pass failed:", error));
       }, CASH_SETTLEMENT_INTERVAL_MS);

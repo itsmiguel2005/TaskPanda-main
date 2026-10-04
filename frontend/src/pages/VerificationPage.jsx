@@ -106,6 +106,7 @@ export default function VerificationPage() {
   const [checkingImages, setCheckingImages] = useState({ front: false, back: false });
   const [imageErrors, setImageErrors] = useState({ front: "", back: "" });
   const [submitted, setSubmitted] = useState(false);
+  const [ocrProcessing, setOcrProcessing] = useState(false);
   const [autoVerified, setAutoVerified] = useState(false);
   const [voucherAwarded, setVoucherAwarded] = useState(false);
   const [voucherAwardError, setVoucherAwardError] = useState(false);
@@ -215,12 +216,11 @@ export default function VerificationPage() {
       }
       verify(data);
       setAutoVerified(data.autoVerified === true);
+      setOcrProcessing(data.ocrProcessing === true);
       setVoucherAwarded(data.voucherAwarded === true);
       setVoucherAwardError(data.voucherAwardError === true);
       setSubmitted(true);
-      setTimeout(() => {
-        navigate(profilePath);
-      }, 2000);
+      setUploading(false);
     } catch (err) {
       console.error("Identity verification submission failed:", err);
       setError(err instanceof TypeError
@@ -283,17 +283,28 @@ export default function VerificationPage() {
         {submitted && (
           <div className={`mt-4 rounded-2xl border p-4 text-center shadow-sm ${autoVerified ? "border-emerald-200 bg-emerald-50/90" : "border-amber-200 bg-amber-50/90"}`} role="status">
             <p className={`text-sm font-bold ${autoVerified ? "text-emerald-900" : "text-amber-950"}`}>
-              {autoVerified ? "Identity verified" : "Documents sent for manual review"}
+              {autoVerified ? "Identity verified" : ocrProcessing ? "ID check in progress" : "Documents sent for manual review"}
             </p>
             <p className={`mt-1 text-sm ${autoVerified ? "text-emerald-800" : "text-amber-900"}`}>
-              {autoVerified
-                ? voucherAwarded
-                  ? "Your free ₱50 travel-fee voucher is in your wallet. Returning to your profile…"
-                  : voucherAwardError
-                    ? "Your identity check passed, but we couldn’t add the voucher right now. Please contact support."
-                    : "Your identity check passed. Returning to your profile…"
-                : "Your account will be updated as soon as an administrator reviews your documents. If approved, your free ₱50 travel-fee voucher will be added to your wallet."}
+              {ocrProcessing
+                ? "Your ID images are saved securely. We’re checking them in the background, so you can explore TaskPanda now. Check your profile later for the result."
+                : autoVerified
+                  ? voucherAwarded
+                    ? "Your free ₱50 travel-fee voucher is in your wallet."
+                    : voucherAwardError
+                      ? "Your identity check passed, but we couldn’t add the voucher right now. Please contact support."
+                      : "Your identity check passed."
+                  : "Your account will be updated as soon as an administrator reviews your documents. If approved, your free ₱50 travel-fee voucher will be added to your wallet."}
             </p>
+            {ocrProcessing && (
+              <button
+                type="button"
+                onClick={() => navigate("/explore")}
+                className="dashboard-focus mt-4 inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-sky-800"
+              >
+                Explore TaskPanda
+              </button>
+            )}
           </div>
         )}
 
@@ -334,7 +345,7 @@ export default function VerificationPage() {
                 <div>
                   <p className="text-sm font-semibold text-slate-900">Submitting your ID securely</p>
                   <p className="mt-1 text-xs leading-5 text-slate-700">
-                    We’re uploading both images, checking your ID, and saving your submission. This can take a little while; keep this page open.
+                    We’re uploading both images and saving your submission. Once they’re saved, you can leave while the ID check continues in the background.
                   </p>
                 </div>
               </div>

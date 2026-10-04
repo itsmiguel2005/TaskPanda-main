@@ -27,4 +27,45 @@ async function persistVerificationSubmission(userModel, previousUser, verificati
   return user;
 }
 
-module.exports = { persistVerificationSubmission };
+async function persistVerificationOCRResult(userModel, userId, submittedAt, result) {
+  const user = await userModel.findOneAndUpdate({
+    _id: userId,
+    isVerified: false,
+    verificationStatus: "pending",
+    "verificationDetails.status": "Pending",
+    "verificationDetails.submittedAt": submittedAt,
+    "verificationDetails.reviewedAt": null,
+    "verificationDetails.ocrProcessing": true,
+  }, {
+    $set: {
+      "verificationDetails.ocrProcessing": false,
+      "verificationDetails.ocrConfidence": result.ocrConfidence,
+      "verificationDetails.nameMatchAccuracy": result.nameMatchAccuracy,
+      "verificationDetails.autoVerified": result.autoVerified,
+      "verificationDetails.status": result.autoVerified ? "Active" : "Pending",
+      "verificationDetails.securityFlags": result.securityFlags,
+      isVerified: result.autoVerified,
+      verificationStatus: result.autoVerified ? "verified" : "pending",
+    },
+  }, {
+    new: true,
+    runValidators: true,
+  });
+
+  return user;
+}
+
+async function markVerificationOCRUnavailable(userModel, userId, submittedAt, securityFlags) {
+  return persistVerificationOCRResult(userModel, userId, submittedAt, {
+    ocrConfidence: 0,
+    nameMatchAccuracy: 0,
+    autoVerified: false,
+    securityFlags,
+  });
+}
+
+module.exports = {
+  markVerificationOCRUnavailable,
+  persistVerificationOCRResult,
+  persistVerificationSubmission,
+};

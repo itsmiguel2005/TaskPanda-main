@@ -1,6 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { persistVerificationSubmission } = require("./verificationSubmission");
+const {
+  markVerificationOCRUnavailable,
+  persistVerificationOCRResult,
+  persistVerificationSubmission,
+} = require("./verificationSubmission");
 
 function createUserModel(currentUser) {
   return {
@@ -122,4 +126,51 @@ test("a review marker prevents an in-flight submission from replacing the review
   assert.equal(currentUser.verificationStatus, "verified");
   assert.equal(currentUser.verificationDetails.status, "Active");
   assert.equal(currentUser.verificationDetails.reviewedAt, reviewedAt);
+});
+
+test("background OCR updates only the exact still-processing submission", async () => {
+  const submittedAt = new Date("2026-10-04T07:30:00.000Z");
+  const updates = [];
+  const userModel = {
+    async findOneAndUpdate(filter, update, options) {
+      updates.push({ filter, update, options });
+      return { _id: "user-123" };
+    },
+  };
+
+  await persistVerificationOCRResult(userModel, "user-123", submittedAt, {
+    ocrConfidence: 86,
+    nameMatchAccuracy: 100,
+    autoVerified: true,
+    securityFlags: [],
+  });
+
+  assert.equal(updates[0].filter._id, "user-123");
+  assert.equal(updates[0].filter["verificationDetails.submittedAt"], submittedAt);
+  assert.equal(updates[0].filter["verificationDetails.status"], "Pending");
+  assert.equal(updates[0].filter["verificationDetails.ocrProcessing"], true);
+  assert.equal(updates[0].update.$set["verificationDetails.status"], "Active");
+  assert.equal(updates[0].update.$set["verificationDetails.ocrProcessing"], false);
+  assert.equal(updates[0].update.$set.verificationStatus, "verified");
+  assert.equal(updates[0].options.new, true);
+});
+
+test("OCR-unavailable fallback keeps a submission pending for manual review", async () => {
+  const submittedAt = new Date("2026-10-04T07:31:00.000Z");
+  const updates = [];
+  const userModel = {
+    async findOneAndUpdate(filter, update) {
+      updates.push({ filter, update });
+      return null;
+    },
+  };
+
+  const result = await markVerificationOCRUnavailable(userModel, "user-123", submittedAt, []);
+
+  assert.equal(result, null);
+  assert.equal(updates[0].update.$set["verificationDetails.ocrConfidence"], 0);
+  assert.equal(updates[0].update.$set["verificationDetails.nameMatchAccuracy"], 0);
+  assert.equal(updates[0].update.$set["verificationDetails.ocrProcessing"], false);
+  assert.equal(updates[0].update.$set["verificationDetails.status"], "Pending");
+  assert.equal(updates[0].update.$set.isVerified, false);
 });

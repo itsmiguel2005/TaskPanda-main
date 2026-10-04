@@ -17,15 +17,15 @@ function verificationKey(applicant) {
   return `${applicant.type || "identity"}:${applicant.userId}:${applicant.certificateId || applicant.submittedAt || ""}`;
 }
 
-function ConfidenceBadge({ confidence, autoVerified }) {
-  const needsReview = !autoVerified || confidence === null || confidence < 60;
+function ConfidenceBadge({ confidence, autoVerified, ocrProcessing }) {
+  const needsReview = !ocrProcessing && (!autoVerified || confidence === null || confidence < 60);
   return (
     <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold tabular-nums ${
       needsReview
         ? "border-amber-200 bg-amber-50 text-amber-900"
         : "border-emerald-200 bg-emerald-50 text-emerald-900"
     }`}>
-      {confidence === null ? "OCR unavailable" : `${Math.round(confidence)}% confidence`}
+      {ocrProcessing ? "OCR processing" : confidence === null ? "OCR unavailable" : `${Math.round(confidence)}% confidence`}
       {needsReview && <span className="ml-1.5 font-semibold">· Needs review</span>}
     </span>
   );
@@ -47,6 +47,7 @@ function Icon({ name, className = "h-4 w-4" }) {
 export default function VerificationsAdmin() {
   const { token } = useAuth();
   const [verifications, setVerifications] = useState([]);
+  const [processingIdentityCount, setProcessingIdentityCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -69,6 +70,7 @@ export default function VerificationsAdmin() {
     try {
       const result = await adminRequest("/api/v1/admin/verifications", token);
       setVerifications(result.verifications || []);
+      setProcessingIdentityCount(result.processingIdentityCount || 0);
     } catch (requestError) {
       setError(requestError.message || "Could not load the verification queue.");
     } finally {
@@ -80,6 +82,14 @@ export default function VerificationsAdmin() {
   useEffect(() => {
     void loadQueue();
   }, [loadQueue]);
+
+  useEffect(() => {
+    if (processingIdentityCount === 0) return undefined;
+    const intervalId = window.setInterval(() => {
+      if (!document.hidden) void loadQueue(true);
+    }, 10000);
+    return () => window.clearInterval(intervalId);
+  }, [loadQueue, processingIdentityCount]);
 
   useEffect(() => {
     if (!viewing || !token) return undefined;
@@ -193,7 +203,14 @@ export default function VerificationsAdmin() {
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200/80 px-5 py-5 sm:px-7">
           <div>
             <h2 id="verification-queue-title" className="text-xl font-extrabold tracking-tight text-slate-950">Verification queue</h2>
-            <p className="mt-1 text-sm text-slate-600">Review identity documents and TESDA certification evidence.</p>
+            <p className="mt-1 text-sm text-slate-600">
+              Review identity documents and TESDA certification evidence.
+              {processingIdentityCount > 0 && (
+                <span className="ml-1">
+                  {processingIdentityCount} ID {processingIdentityCount === 1 ? "check is" : "checks are"} processing and will appear here when complete.
+                </span>
+              )}
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-bold tabular-nums text-amber-950">
@@ -237,7 +254,11 @@ export default function VerificationsAdmin() {
               </svg>
             </span>
             <h3 className="mt-4 text-base font-bold text-slate-900">Queue is clear</h3>
-            <p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-slate-600">New manual-review submissions will appear here.</p>
+            <p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-slate-600">
+              {processingIdentityCount > 0
+                ? "ID checks in progress will appear here when OCR is complete."
+                : "New manual-review submissions will appear here."}
+            </p>
           </div>
         ) : !error && (
           <div className="admin-ledger-scroll" tabIndex={0} aria-label="Pending identity and TESDA certificate submissions">
@@ -264,9 +285,9 @@ export default function VerificationsAdmin() {
                         <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-900">TESDA certificate</span>
                       ) : (
                         <>
-                          <ConfidenceBadge confidence={applicant.ocrConfidence} autoVerified={applicant.autoVerified} />
+                          <ConfidenceBadge confidence={applicant.ocrConfidence} autoVerified={applicant.autoVerified} ocrProcessing={applicant.ocrProcessing} />
                           <p className="mt-2 text-xs text-slate-600">
-                            Name match: {applicant.nameMatchAccuracy === null ? "Unavailable" : `${Math.round(applicant.nameMatchAccuracy)}%`}
+                            Name match: {applicant.ocrProcessing ? "Processing" : applicant.nameMatchAccuracy === null ? "Unavailable" : `${Math.round(applicant.nameMatchAccuracy)}%`}
                           </p>
                           {applicant.securityFlags?.length > 0 && (
                             <ul className="mt-2 space-y-1">

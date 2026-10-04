@@ -1,0 +1,142 @@
+[
+  {
+    "idType": "PhilSys National ID",
+    "lines": [
+      "REPUBLIC OF THE PHILIPPINES",
+      "PhilSys",
+      "SURNAME: SANTOS",
+      "GIVEN NAMES: MIKA LUZ",
+      "MIDDLE NAME: REYES"
+    ],
+    "profile": {
+      "firstName": "Mika Luz",
+      "middleName": "Reyes",
+      "lastName": "Santos"
+    },
+    "ocrConfidence": 91,
+    "expectedFirstNameMatch": true,
+    "expectedLastNameMatch": true,
+    "expectedAutoVerify": true
+  },
+  {
+    "idType": "Driver's License",
+    "lines": [
+      "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE",
+      "CALIMLIM, MIGUEL EDUARDO ESTRADA"
+    ],
+    "profile": {
+      "firstName": "Miguel Eduardo",
+      "middleName": "Estrada",
+      "lastName": "Calimlim"
+    },
+    "ocrConfidence": 86,
+    "expectedFirstNameMatch": true,
+    "expectedLastNameMatch": true,
+    "expectedAutoVerify": true
+  },
+  {
+    "idType": "UMID",
+    "lines": [
+      "UMID",
+      "FAMILY NAME: DELA CRUZ",
+      "FIRST NAME: JOSE MARIA",
+      "MIDDLE NAME: BAUTISTA"
+    ],
+    "profile": {
+      "firstName": "Jose Maria",
+      "middleName": "Bautista",
+      "lastName": "Dela Cruz"
+    },
+    "ocrConfidence": 84,
+    "expectedFirstNameMatch": true,
+    "expectedLastNameMatch": true,
+    "expectedAutoVerify": true
+  },
+  {
+    "idType": "Postal ID",
+    "lines": [
+      "PHILPOST POSTAL ID",
+      "LAST NAME: NAVARRO",
+      "FIRST NAME: LEO",
+      "MIDDLE NAME: GARCIA"
+    ],
+    "profile": {
+      "firstName": "Leo",
+      "middleName": "Garcia",
+      "lastName": "Navarro"
+    },
+    "ocrConfidence": 79,
+    "expectedFirstNameMatch": true,
+    "expectedLastNameMatch": true,
+    "expectedAutoVerify": true
+  },
+  {
+    "idType": "Voter's ID",
+    "lines": [
+      "COMELEC VOTER REGISTRATION",
+      "APELYIDO: CRUZ",
+      "PANGALAN: ANA MARIE",
+      "GITNANG PANGALAN: TORRES"
+    ],
+    "profile": {
+      "firstName": "Ana Marie",
+      "middleName": "Torres",
+      "lastName": "Cruz"
+    },
+    "ocrConfidence": 82,
+    "expectedFirstNameMatch": true,
+    "expectedLastNameMatch": true,
+    "expectedAutoVerify": true
+  },
+  {
+    "idType": "Passport",
+    "lines": [
+      "PASSPORT",
+      "SURNAME: LIM, GIVEN NAMES: SAMANTHA JOY"
+    ],
+    "profile": {
+      "firstName": "Samantha Joy",
+      "middleName": "",
+      "lastName": "Lim"
+    },
+    "ocrConfidence": 88,
+    "expectedFirstNameMatch": true,
+    "expectedLastNameMatch": true,
+    "expectedAutoVerify": true
+  },
+  {
+    "idType": "Passport",
+    "lines": [
+      "PASSPORT",
+      "SAMANTHA JOY LIM",
+      "ADDRESS: CALIMLIM STREET"
+    ],
+    "profile": {
+      "firstName": "Samantha Joy",
+      "middleName": "",
+      "lastName": "Lim"
+    },
+    "ocrConfidence": 93,
+    "expectedFirstNameMatch": true,
+    "expectedLastNameMatch": true,
+    "expectedAutoVerify": true
+  },
+  {
+    "idType": "PhilSys National ID",
+    "imageCondition": "synthetic OCR output with a missing first-name character",
+    "lines": [
+      "PhilSys",
+      "SURNAME: SANTOS",
+      "GIVEN NAMES: MIK4 LUZ"
+    ],
+    "profile": {
+      "firstName": "Mika Luz",
+      "middleName": "",
+      "lastName": "Santos"
+    },
+    "ocrConfidence": 86,
+    "expectedFirstNameMatch": false,
+    "expectedLastNameMatch": true,
+    "expectedAutoVerify": false
+  }
+]

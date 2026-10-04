@@ -5,6 +5,7 @@ const path = require("path");
 const sharp = require("sharp");
 
 let workerPromise;
+let ocrJobQueue = Promise.resolve();
 const ocrCachePath = path.join(os.tmpdir(), "taskpanda-tesseract");
 const OCR_LANGUAGES = "eng+fil";
 const OCR_SEGMENTATION_MODES = [
@@ -37,6 +38,8 @@ const ID_TYPE_SIGNATURES = [
 ];
 const UNKNOWN_ID_TYPE = "Unknown";
 const MINIMUM_NAME_MATCH_ACCURACY = 0.75;
+const OCR_IMAGE_MAX_SIZE = 1800;
+const OCR_IMAGE_ROTATIONS = [0, 90, 180, 270, -4, 4];
 const BACK_SIDE_SIGNATURES = [
   /\bsignature\b/i,
   /\b(?:thumb\s?mark|thumbprint|fingerprint|left\s+thumb|right\s+thumb)\b/i,
@@ -236,14 +239,14 @@ function getCandidateLineRecords(candidate) {
 }
 
 function findNameFieldLabels(text) {
-  const pattern = /\b(surname|family\s+name|last\s+name|given\s+names?|first\s+name|forenames?|middle\s+names?)\b/gi;
+  const pattern = /\b(gitnang\s+(?:pangalan|apelyido)|middle\s+names?|surname|family\s+name|last\s+name|apelyido(?:\s+ng\s+pamilya)?|given\s+names?|first\s+name|forenames?|mga\s+pangalan|pangalan)\b/gi;
   return [...text.matchAll(pattern)].map((match) => ({
     text: match[0],
     index: match.index,
     end: match.index + match[0].length,
-    field: /^(?:surname|family\s+name|last\s+name)$/i.test(match[0])
+    field: /^(?:surname|family\s+name|last\s+name|apelyido(?:\s+ng\s+pamilya)?)$/i.test(match[0])
       ? "lastName"
-      : /^middle\s+names?$/i.test(match[0])
+      : /^(?:middle\s+names?|gitnang\s+(?:pangalan|apelyido))$/i.test(match[0])
         ? "middleName"
         : "firstName",
   }));
@@ -364,20 +367,82 @@ function scoreLabeledNameFields(fields, profileName, options) {
   };
 }
 
+function scoreLtoCommaSeparatedName(line, userName) {
+  const commaIndex = line.indexOf(",");
+  if (commaIndex < 0) return null;
+
+  const match = scoreLabeledNameFields({
+    lastName: line.slice(0, commaIndex),
+    firstName: line.slice(commaIndex + 1),
+    middleName: line.slice(commaIndex + 1),
+  }, userName, { allowSingleOCRTypo: true });
+  return match.firstNameMatched && match.lastNameMatched ? match : null;
+}
+
 function scoreCandidateName(candidate, userName, allowSingleOCRTypo = false) {
   const lineRecords = getCandidateLineRecords(candidate);
-  const lines = lineRecords.map(({ text }) => text);
+  const lines = lineRecords.map(({ text }) => ({
+    text: allowSingleOCRTypo
+      ? text.replace(/^\s*(?:(?:republic\s+of\s+the\s+philippines)\s+)?(?:(?:lto|land\s+transportation\s+office)\s+)?driver'?s?\s+licen[sc]e\b[\s:,-]*/i, "")
+      : text,
+  }));
+  if (allowSingleOCRTypo) {
+    const ltoMatches = lines
+      .map(({ text }) => scoreLtoCommaSeparatedName(text, userName))
+      .filter(Boolean);
+    const bestLtoMatch = ltoMatches.sort((left, right) => right.accuracy - left.accuracy)[0];
+    if (bestLtoMatch?.accuracy === 1) return bestLtoMatch;
+  }
   const { fields, foundLabel } = extractLabeledNameFields(lineRecords);
   if (foundLabel) {
-    return scoreLabeledNameFields(fields, userName, { allowSingleOCRTypo });
+    const labeledMatch = scoreLabeledNameFields(fields, userName, { allowSingleOCRTypo });
+    if (labeledMatch.accuracy === 1) return labeledMatch;
   }
 
   const profileParts = getProfileNameParts(userName);
   const maxWindowSize = Math.max(1, profileParts.firstName.length + profileParts.middleName.length + profileParts.lastName.length + 2);
+  const expectedNameParts = [
+    ...profileParts.firstName,
+    ...profileParts.middleName,
+    ...profileParts.lastName,
+  ];
+  const completeNameWindowSize = Math.min(lines.length, Math.max(1, Math.min(expectedNameParts.length + 2, 6)));
+  for (let start = 0; start < lines.length; start += 1) {
+    for (let size = 1; size <= completeNameWindowSize && start + size <= lines.length; size += 1) {
+      const match = scoreNameMatch(
+        lines.slice(start, start + size).map(({ text }) => text).join(" "),
+        userName,
+        { allowSingleOCRTypo }
+      );
+      if (match.accuracy === 1 && match.matchedParts === match.totalParts) return match;
+    }
+  }
+
+  const isNameOnlyLine = (line) => {
+    const words = normalizeWords(line);
+    return words.length > 0 && words.every((word) =>
+      expectedNameParts.some((part) =>
+        getNameTokenQuality(part, [word], allowSingleOCRTypo) > 0
+      )
+    );
+  };
   let bestMatch = scoreNameMatch("", userName, { allowSingleOCRTypo });
   for (let start = 0; start < lines.length; start += 1) {
     for (let size = 1; size <= maxWindowSize && start + size <= lines.length; size += 1) {
-      const match = scoreNameMatch(lines.slice(start, start + size).join(" "), userName, { allowSingleOCRTypo });
+      const lineWindow = lines.slice(start, start + size);
+      const isLtoNameLine = allowSingleOCRTypo && lineWindow.length === 1;
+      if (!isLtoNameLine && !lineWindow.every(({ text }) => isNameOnlyLine(text))) continue;
+      const match = scoreNameMatch(lineWindow.map(({ text }) => text).join(" "), userName, { allowSingleOCRTypo });
+      if (isLtoNameLine) {
+        const lineWords = normalizeWords(lineWindow[0].text);
+        const hasCoreNameEvidence = ["firstName", "lastName"].every((field) =>
+          profileParts[field].length > 0 &&
+          profileParts[field].every((part) =>
+            getNameTokenQuality(part, lineWords, allowSingleOCRTypo) > 0
+          )
+        );
+        if (!hasCoreNameEvidence) continue;
+      }
       if (
         Number(match.firstNameMatched) + Number(match.lastNameMatched) >
           Number(bestMatch.firstNameMatched) + Number(bestMatch.lastNameMatched) ||
@@ -390,7 +455,9 @@ function scoreCandidateName(candidate, userName, allowSingleOCRTypo = false) {
     }
   }
 
-  return bestMatch;
+  if (!foundLabel) return bestMatch;
+  const labeledMatch = scoreLabeledNameFields(fields, userName, { allowSingleOCRTypo });
+  return labeledMatch.accuracy > bestMatch.accuracy ? labeledMatch : bestMatch;
 }
 
 function shouldAutoVerify(ocrConfidence, nameMatch) {
@@ -403,71 +470,176 @@ function shouldAutoVerify(ocrConfidence, nameMatch) {
 
 async function createIdOCRVariants(image) {
   const imageBuffer = Buffer.isBuffer(image) ? image : await fs.readFile(image);
-  const metadata = await sharp(imageBuffer).rotate().metadata();
+  let orientedImage = imageBuffer;
+  let metadata;
+  try {
+    orientedImage = await sharp(imageBuffer).rotate().toBuffer();
+    metadata = await sharp(orientedImage).metadata();
+  } catch (error) {
+    console.warn("Verification OCR preprocessing could not orient the image; trying the original:", error.message);
+    return [imageBuffer];
+  }
   if (!metadata.width || !metadata.height) {
-    throw new Error("Could not read ID image dimensions.");
+    console.warn("Verification OCR preprocessing could not read image dimensions; trying the original.");
+    return [imageBuffer];
   }
 
-  const orientationSwapsDimensions = metadata.orientation >= 5 && metadata.orientation <= 8;
-  const imageWidth = orientationSwapsDimensions ? metadata.height : metadata.width;
-  const imageHeight = orientationSwapsDimensions ? metadata.width : metadata.height;
-  const cropWidth = Math.max(1, Math.round(imageWidth * 0.94));
-  const cropHeight = Math.max(1, Math.round(imageHeight * 0.5));
-  const [cardCrop, resizedFullImage] = await Promise.all([
-    sharp(imageBuffer)
-      .rotate()
-      .extract({
-        left: Math.max(0, Math.round((imageWidth - cropWidth) / 2)),
-        top: Math.max(0, Math.round((imageHeight - cropHeight) / 2)),
-        width: Math.min(cropWidth, imageWidth),
-        height: Math.min(cropHeight, imageHeight),
-      })
-      .resize({ width: 1800, withoutEnlargement: false })
-      .grayscale()
-      .normalize()
-      .sharpen()
-      .jpeg({ quality: 90 })
-      .toBuffer(),
-    sharp(imageBuffer)
-      .rotate()
-      .resize({ width: 1800, height: 1800, fit: "inside", withoutEnlargement: true })
-      .grayscale()
-      .jpeg({ quality: 85 })
-      .toBuffer(),
-  ]);
+  const imageWidth = metadata.width;
+  const imageHeight = metadata.height;
+  const variants = [];
+  for (const rotation of OCR_IMAGE_ROTATIONS) {
+    const isCardinalRotation = [0, 90, 180, 270].includes(rotation);
+    let rotatedImage;
+    try {
+      rotatedImage = await sharp(orientedImage)
+        .rotate(rotation, { background: "#ffffff" })
+        .resize({
+          width: OCR_IMAGE_MAX_SIZE,
+          height: OCR_IMAGE_MAX_SIZE,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .jpeg({ quality: 95 })
+        .toBuffer();
+    } catch (error) {
+      console.warn(`Verification OCR preprocessing failed for ${rotation}-degree rotation; trying other variants:`, error.message);
+      continue;
+    }
 
-  return [cardCrop, resizedFullImage];
+    const initialVariantCount = variants.length;
+    const imageAdjustments = [
+      {
+        name: "normalization",
+        process: () => sharp(rotatedImage).grayscale().normalize().sharpen().jpeg({ quality: 92 }).toBuffer(),
+      },
+      {
+        name: "contrast",
+        process: () => sharp(rotatedImage).grayscale().linear(1.15, -15).sharpen().jpeg({ quality: 92 }).toBuffer(),
+      },
+      ...(isCardinalRotation ? [{
+        name: "local contrast",
+        process: async () => {
+          const localContrastImage = await sharp(rotatedImage)
+            .toColourspace("srgb")
+            .clahe({ width: 128, height: 128, maxSlope: 3 })
+            .jpeg({ quality: 92 })
+            .toBuffer();
+          return sharp(localContrastImage).grayscale().sharpen().jpeg({ quality: 92 }).toBuffer();
+        },
+      }] : []),
+    ];
+    for (const adjustment of imageAdjustments) {
+      try {
+        variants.push(await adjustment.process());
+      } catch (error) {
+        console.warn(`Verification OCR ${adjustment.name} preprocessing failed for ${rotation}-degree image:`, error.message);
+      }
+    }
+    if (variants.length === initialVariantCount) variants.push(rotatedImage);
+    if (!isCardinalRotation) continue;
+
+    const rotationSwapsDimensions = rotation === 90 || rotation === 270;
+    const rotatedWidth = rotationSwapsDimensions ? imageHeight : imageWidth;
+    const rotatedHeight = rotationSwapsDimensions ? imageWidth : imageHeight;
+    const rotatedMetadata = await sharp(rotatedImage).metadata();
+    const cropWidth = Math.max(1, Math.round(rotatedMetadata.width * 0.94));
+    const cropHeight = Math.max(1, Math.round(rotatedMetadata.height * 0.58));
+    try {
+      const cropBuffer = await sharp(rotatedImage)
+        .extract({
+          left: Math.max(0, Math.round((rotatedMetadata.width - cropWidth) / 2)),
+          top: Math.max(0, Math.round((rotatedMetadata.height - cropHeight) / 2)),
+          width: cropWidth,
+          height: cropHeight,
+        })
+        .grayscale()
+        .normalize()
+        .sharpen()
+        .resize({
+          width: OCR_IMAGE_MAX_SIZE,
+          height: OCR_IMAGE_MAX_SIZE,
+          fit: "inside",
+        })
+        .jpeg({ quality: 92 })
+        .toBuffer();
+      variants.push(cropBuffer);
+    } catch (error) {
+      console.warn(`Verification OCR card-area crop failed for ${rotation}-degree image:`, error.message);
+    }
+
+    if (rotatedHeight > rotatedWidth) {
+      const tightCropHeight = Math.max(1, Math.round(rotatedMetadata.height * 0.36));
+      try {
+        const tightCrop = await sharp(rotatedImage)
+          .extract({
+            left: Math.max(0, Math.round((rotatedMetadata.width - cropWidth) / 2)),
+            top: Math.max(0, Math.round((rotatedMetadata.height - tightCropHeight) / 2)),
+            width: cropWidth,
+            height: tightCropHeight,
+          })
+          .grayscale()
+          .normalize()
+          .sharpen()
+          .resize({
+            width: OCR_IMAGE_MAX_SIZE,
+            height: OCR_IMAGE_MAX_SIZE,
+            fit: "inside",
+          })
+          .jpeg({ quality: 95 })
+          .toBuffer();
+        variants.push(tightCrop);
+      } catch (error) {
+        console.warn(`Verification OCR focused card crop failed for ${rotation}-degree image:`, error.message);
+      }
+    }
+  }
+
+  variants.push(imageBuffer);
+  return variants;
 }
 
 function selectBestOCRCandidate(candidates, userName) {
-  const combinedText = candidates.map((candidate) => candidate.text).join("\n");
-  const combinedLineRecords = candidates.flatMap(getCandidateLineRecords);
-  const detectedIdType = detectIdType(combinedText);
-  const combinedCandidate = { text: combinedText, lines: combinedLineRecords };
-  const hasLabeledNameFields = extractLabeledNameFields(combinedLineRecords).foundLabel;
-  const combinedNameMatch = detectedIdType === "Driver's License" || hasLabeledNameFields
-    ? scoreCandidateName(combinedCandidate, userName, detectedIdType === "Driver's License")
-    : null;
-  return candidates
-    .map((candidate) => {
+  const groups = new Map();
+  candidates.forEach((candidate, index) => {
+    const groupKey = candidate.variantIndex ?? "untracked";
+    const group = groups.get(groupKey) || [];
+    group.push({ candidate, index });
+    groups.set(groupKey, group);
+  });
+
+  const bestCandidates = [...groups.values()].flatMap((group) => {
+    const combinedText = group.map(({ candidate }) => candidate.text).join("\n");
+    const combinedLineRecords = group.flatMap(({ candidate }) => getCandidateLineRecords(candidate));
+    const detectedIdType = detectIdType(combinedText);
+    const combinedCandidate = { text: combinedText, lines: combinedLineRecords };
+    const hasLabeledNameFields = extractLabeledNameFields(combinedLineRecords).foundLabel;
+    const combinedNameMatch = detectedIdType === "Driver's License" || hasLabeledNameFields
+      ? scoreCandidateName(combinedCandidate, userName, detectedIdType === "Driver's License")
+      : null;
+
+    return group.map(({ candidate, index }) => {
       const confidence = Math.max(0, Math.min(100, Number(candidate.confidence) || 0));
       const candidateIdType = detectIdType(candidate.text);
-      const nameMatch = combinedNameMatch
-        ? combinedNameMatch
-        : scoreCandidateName(candidate, userName);
+      const nameMatch = combinedNameMatch || scoreCandidateName(candidate, userName);
       return {
         confidence,
         nameMatch,
         detectedIdType: candidateIdType === UNKNOWN_ID_TYPE ? detectedIdType : candidateIdType,
         text: combinedNameMatch ? combinedText : candidate.text,
+        variantIndex: candidate.variantIndex,
+        index,
       };
-    })
+    });
+  });
+
+  return bestCandidates
     .sort((left, right) =>
       Number(right.nameMatch.firstNameMatched && right.nameMatch.lastNameMatched) -
         Number(left.nameMatch.firstNameMatched && left.nameMatch.lastNameMatched) ||
       right.nameMatch.accuracy - left.nameMatch.accuracy ||
       Number(right.detectedIdType !== UNKNOWN_ID_TYPE) - Number(left.detectedIdType !== UNKNOWN_ID_TYPE) ||
-      right.confidence - left.confidence
+      right.confidence - left.confidence ||
+      left.index - right.index
     )[0] || null;
 }
 
@@ -505,22 +677,30 @@ async function getWorker() {
   }
 }
 
-async function performOCRVerification(imagePath, userName) {
+async function performOCRVerificationNow(imagePath, userName) {
   try {
     const worker = await getWorker();
     const candidates = [];
     const modeErrors = [];
     const imageVariants = await createIdOCRVariants(imagePath);
-    for (const imageVariant of imageVariants) {
+    for (const [variantIndex, imageVariant] of imageVariants.entries()) {
       for (const mode of OCR_SEGMENTATION_MODES) {
         try {
           await worker.setParameters({ tessedit_pageseg_mode: mode });
-          const { data } = await worker.recognize(imageVariant);
+          const { data } = await worker.recognize(imageVariant, {}, { text: true, blocks: true });
+          const recognizedLines = Array.isArray(data.lines)
+            ? data.lines
+            : Array.isArray(data.blocks)
+              ? data.blocks.flatMap((block) =>
+                (block.paragraphs || []).flatMap((paragraph) => paragraph.lines || [])
+              )
+              : [];
           candidates.push({
             confidence: data.confidence,
             text: data.text,
-            lines: Array.isArray(data.lines)
-              ? data.lines.map(({ text, bbox, words }) => ({
+            variantIndex,
+            lines: recognizedLines.length
+              ? recognizedLines.map(({ text, bbox, words }) => ({
                 text,
                 bbox,
                 words: Array.isArray(words)
@@ -530,7 +710,7 @@ async function performOCRVerification(imagePath, userName) {
               : undefined,
           });
           const currentBest = selectBestOCRCandidate(candidates, userName);
-          if (currentBest.nameMatch.accuracy === 1) {
+          if (shouldAutoVerify(currentBest.confidence, currentBest.nameMatch)) {
             return formatOCRResult(currentBest);
           }
         } catch (error) {
@@ -563,6 +743,12 @@ async function performOCRVerification(imagePath, userName) {
       ocrUnavailable: true,
     };
   }
+}
+
+function performOCRVerification(imagePath, userName) {
+  const job = ocrJobQueue.then(() => performOCRVerificationNow(imagePath, userName));
+  ocrJobQueue = job.then(() => undefined, () => undefined);
+  return job;
 }
 
 module.exports = {

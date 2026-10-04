@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const sharp = require("sharp");
 const {
   OCR_LANGUAGES,
@@ -13,6 +15,10 @@ const {
   selectBestOCRCandidate,
   shouldAutoVerify,
 } = require("./ocrHelper");
+const philippineIdNameFixtures = JSON.parse(fs.readFileSync(
+  path.join(__dirname, "fixtures", "ph-id-name-layouts.json"),
+  "utf8"
+));
 
 test("OCR supports English and Filipino IDs using multiple card layout modes", () => {
   assert.equal(OCR_LANGUAGES, "eng+fil");
@@ -74,6 +80,80 @@ test("candidate selection applies LTO-aware matching to the one-line surname-fir
   assert.ok(result.nameMatch.accuracy >= 0.9);
 });
 
+test("LTO name matching accepts an additional ID middle name when account first and last names match", () => {
+  const result = selectBestOCRCandidate([{
+    confidence: 87,
+    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nCALIMLIM, MIGUEL EDUARDO ESTRADA",
+    lines: [
+      { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
+      { text: "CALIMLIM, MIGUEL EDUARDO ESTRADA" },
+    ],
+  }], "Miguel Eduardo Calimlim");
+
+  assert.equal(result.detectedIdType, "Driver's License");
+  assert.equal(result.nameMatch.accuracy, 1);
+  assert.equal(result.nameMatch.firstNameMatched, true);
+  assert.equal(result.nameMatch.lastNameMatched, true);
+});
+
+test("LTO full-name line outranks a partial labeled-field match", () => {
+  const result = selectBestOCRCandidate([{
+    confidence: 87,
+    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nMIDDLE NAME: ESTRADA\nCALIMLIM, MIGUEL EDUARDO ESTRADA",
+    lines: [
+      { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
+      { text: "MIDDLE NAME: ESTRADA" },
+      { text: "CALIMLIM, MIGUEL EDUARDO ESTRADA" },
+    ],
+  }], {
+    firstName: "Miguel Eduardo",
+    middleName: "Estrada",
+    lastName: "Calimlim",
+  });
+
+  assert.equal(result.nameMatch.accuracy, 1);
+  assert.equal(result.nameMatch.matchedParts, 4);
+  assert.equal(result.nameMatch.firstNameMatched, true);
+  assert.equal(result.nameMatch.lastNameMatched, true);
+});
+
+test("LTO comma layout treats the text after the surname as given names and middle name", () => {
+  const result = selectBestOCRCandidate([{
+    confidence: 87,
+    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nCALIMLIM, MIGUEL EDUARDO ESTRADA",
+    lines: [
+      { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
+      { text: "CALIMLIM, MIGUEL EDUARDO ESTRADA" },
+    ],
+  }], {
+    firstName: "Miguel Eduardo",
+    middleName: "Estrada",
+    lastName: "Calimlim",
+  });
+
+  assert.equal(result.nameMatch.accuracy, 1);
+  assert.equal(result.nameMatch.matchedParts, 4);
+});
+
+test("full name split across labeled and unlabeled ID lines scores every matching name part", () => {
+  const result = selectBestOCRCandidate([{
+    confidence: 87,
+    text: "DRIVER'S LICENSE MIDDLE NAME ESTRADA\nCALIMLIM MIGUEL EDUARDO",
+    lines: [
+      { text: "DRIVER'S LICENSE MIDDLE NAME ESTRADA" },
+      { text: "CALIMLIM MIGUEL EDUARDO" },
+    ],
+  }], {
+    firstName: "Miguel Eduardo",
+    middleName: "Estrada",
+    lastName: "Calimlim",
+  });
+
+  assert.equal(result.nameMatch.accuracy, 1);
+  assert.equal(result.nameMatch.matchedParts, 4);
+  assert.equal(result.nameMatch.totalParts, 4);
+});
+
 test("LTO-aware candidate selection applies the card layout to a separate OCR name line", () => {
   const result = selectBestOCRCandidate([
     { confidence: 92, text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
@@ -95,19 +175,59 @@ test("LTO name score combines the heading and comma-separated name read in separ
   assert.equal(result.nameMatch.lastNameMatched, true);
 });
 
-test("ID OCR creates a centered enlarged crop to recover small card text", async () => {
+test("synthetic Philippine ID layouts match structured names with conservative fallback", () => {
+  for (const fixture of philippineIdNameFixtures) {
+    const result = selectBestOCRCandidate([{
+      confidence: fixture.ocrConfidence,
+      text: fixture.lines.join("\n"),
+      lines: fixture.lines,
+    }], fixture.profile);
+    assert.equal(result.detectedIdType, fixture.idType, fixture.idType);
+    assert.equal(result.nameMatch.firstNameMatched, fixture.expectedFirstNameMatch, fixture.idType);
+    assert.equal(result.nameMatch.lastNameMatched, fixture.expectedLastNameMatch, fixture.idType);
+    assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), fixture.expectedAutoVerify, fixture.idType);
+  }
+});
+
+test("ID OCR tries rotated, lightly deskewed, contrast-adjusted, cropped, and original image candidates", async () => {
   const image = await sharp({
     create: { width: 1000, height: 1600, channels: 3, background: "#fff" },
   }).jpeg().toBuffer();
   const variants = await createIdOCRVariants(image);
 
-  assert.equal(variants.length, 2);
-  const croppedMetadata = await sharp(variants[0]).metadata();
-  assert.equal(croppedMetadata.width, 1800);
-  assert.equal(croppedMetadata.height, 1532);
-  const fullMetadata = await sharp(variants[1]).metadata();
-  assert.equal(fullMetadata.width, 1000);
-  assert.equal(fullMetadata.height, 1600);
+  assert.equal(variants.length, 23);
+  const processedMetadata = await sharp(variants[0]).metadata();
+  assert.equal(processedMetadata.width, 1000);
+  assert.equal(processedMetadata.height, 1600);
+  const portraitCropMetadata = await sharp(variants[3]).metadata();
+  assert.equal(portraitCropMetadata.width, 1800);
+  assert.ok(portraitCropMetadata.height > 1700);
+  const focusedPortraitCropMetadata = await sharp(variants[4]).metadata();
+  assert.equal(focusedPortraitCropMetadata.width, 1800);
+  assert.ok(focusedPortraitCropMetadata.height > 1000);
+  const rotatedMetadata = await sharp(variants[5]).metadata();
+  assert.equal(rotatedMetadata.width, 1600);
+  assert.equal(rotatedMetadata.height, 1000);
+  const landscapeCropMetadata = await sharp(variants[8]).metadata();
+  assert.equal(landscapeCropMetadata.width, 1800);
+  assert.ok(landscapeCropMetadata.height < 800);
+  const deskewedMetadata = await sharp(variants[18]).metadata();
+  assert.ok(deskewedMetadata.width > 1000);
+  assert.ok(deskewedMetadata.height > 1600);
+  assert.deepEqual(variants.at(-1), image);
+});
+
+test("OCR keeps the unmodified upload as a fallback when preprocessing cannot read it", async () => {
+  const original = Buffer.from("synthetic invalid image");
+  const originalWarn = console.warn;
+  let variants;
+  console.warn = () => {};
+  try {
+    variants = await createIdOCRVariants(original);
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.deepEqual(variants, [original]);
 });
 
 test("OCR name matching does not treat approximate spellings as a verified identity", () => {
@@ -230,6 +350,27 @@ test("labeled name matching does not borrow a surname from unrelated ID text", (
   assert.equal(result.nameMatch.firstNameMatched, true);
   assert.equal(result.nameMatch.lastNameMatched, false);
   assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), false);
+});
+
+test("driver's-license name order remains matchable when OCR reads labels separately from values", () => {
+  const result = selectBestOCRCandidate([{
+    confidence: 88,
+    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nLAST NAME FIRST NAME MIDDLE NAME\nCALIMLIM MIGUEL EDUARDO ESTRADA",
+    lines: [
+      { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
+      { text: "LAST NAME FIRST NAME MIDDLE NAME" },
+      { text: "CALIMLIM MIGUEL EDUARDO ESTRADA" },
+    ],
+  }], {
+    firstName: "Miguel Eduardo",
+    middleName: "Estrada",
+    lastName: "Calimlim",
+  });
+
+  assert.equal(result.nameMatch.accuracy, 1);
+  assert.equal(result.nameMatch.firstNameMatched, true);
+  assert.equal(result.nameMatch.lastNameMatched, true);
+  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), true);
 });
 
 test("unlabeled names split across adjacent ID rows are compared independent of order", () => {
