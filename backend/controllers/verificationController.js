@@ -14,6 +14,7 @@ const {
   markVerificationOCRUnavailable,
   persistVerificationOCRResult,
   persistVerificationSubmission,
+  releaseStaleVerificationOCR,
 } = require("../services/verificationSubmission");
 const { removeUploadedFiles } = require("../storage/verificationUpload");
 const { sendPushNotification } = require("../services/oneSignal");
@@ -390,6 +391,13 @@ async function handleSubmitTesdaCertificate(req, res) {
 
 async function handleGetAdminVerifications(_req, res) {
   try {
+    const staleOCRCount = await releaseStaleVerificationOCR(
+      User,
+      new Date(Date.now() - 3 * 60 * 1000),
+    );
+    if (staleOCRCount) {
+      console.warn(`Released ${staleOCRCount} identity submission(s) from stale OCR processing for manual review.`);
+    }
     const [users, providersWithPendingCertificates, processingIdentityCount] = await Promise.all([
       User.find({
         "verificationDetails.status": "Pending",

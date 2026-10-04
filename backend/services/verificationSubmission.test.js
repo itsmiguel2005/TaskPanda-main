@@ -4,6 +4,7 @@ const {
   markVerificationOCRUnavailable,
   persistVerificationOCRResult,
   persistVerificationSubmission,
+  releaseStaleVerificationOCR,
 } = require("./verificationSubmission");
 
 function createUserModel(currentUser) {
@@ -173,4 +174,27 @@ test("OCR-unavailable fallback keeps a submission pending for manual review", as
   assert.equal(updates[0].update.$set["verificationDetails.ocrProcessing"], false);
   assert.equal(updates[0].update.$set["verificationDetails.status"], "Pending");
   assert.equal(updates[0].update.$set.isVerified, false);
+});
+
+test("stale OCR runs are released for manual review without changing the submission status", async () => {
+  const staleBefore = new Date("2026-10-04T07:35:00.000Z");
+  const updates = [];
+  const userModel = {
+    async updateMany(filter, update) {
+      updates.push({ filter, update });
+      return { modifiedCount: 1 };
+    },
+  };
+
+  const releasedCount = await releaseStaleVerificationOCR(userModel, staleBefore);
+
+  assert.equal(releasedCount, 1);
+  assert.equal(updates[0].filter["verificationDetails.ocrProcessing"], true);
+  const submittedAtFilter = updates[0].filter["verificationDetails.submittedAt"];
+  assert.ok(submittedAtFilter[Object.getOwnPropertySymbols(submittedAtFilter)[0]]);
+  assert.equal(submittedAtFilter.$lt, staleBefore);
+  assert.equal(updates[0].update.$set["verificationDetails.ocrProcessing"], false);
+  assert.equal(updates[0].update.$set["verificationDetails.nameMatchAccuracy"], 0);
+  assert.equal(updates[0].update.$set["verificationDetails.autoVerified"], false);
+  assert.equal(updates[0].update.$set["verificationDetails.status"], undefined);
 });

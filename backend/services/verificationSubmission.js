@@ -1,3 +1,5 @@
+const mongoose = require("mongoose");
+
 async function persistVerificationSubmission(userModel, previousUser, verificationDetails, autoVerified) {
   const previousDetails = previousUser.verificationDetails || {};
   const user = await userModel.findOneAndUpdate({
@@ -64,8 +66,27 @@ async function markVerificationOCRUnavailable(userModel, userId, submittedAt, se
   });
 }
 
+async function releaseStaleVerificationOCR(userModel, staleBefore) {
+  const result = await userModel.updateMany({
+    isVerified: false,
+    verificationStatus: "pending",
+    "verificationDetails.status": "Pending",
+    "verificationDetails.ocrProcessing": true,
+    "verificationDetails.submittedAt": mongoose.trusted({ $lt: staleBefore }),
+  }, {
+    $set: {
+      "verificationDetails.ocrProcessing": false,
+      "verificationDetails.ocrConfidence": 0,
+      "verificationDetails.nameMatchAccuracy": 0,
+      "verificationDetails.autoVerified": false,
+    },
+  });
+  return result.modifiedCount;
+}
+
 module.exports = {
   markVerificationOCRUnavailable,
   persistVerificationOCRResult,
   persistVerificationSubmission,
+  releaseStaleVerificationOCR,
 };
