@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { checkImageSharpness } from "../utils/imageCheck.js";
+import { prepareVerificationImage } from "../utils/verificationImage.js";
 
 const MAX_ID_IMAGE_SIZE = 8 * 1024 * 1024;
 
@@ -77,7 +78,7 @@ function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove, d
       />
       {isChecking && (
         <p className="mt-2 text-xs font-medium text-sky-800" role="status" aria-live="polite">
-          Checking image clarity…
+          Checking clarity and preparing image for upload…
         </p>
       )}
       {imageError && (
@@ -144,12 +145,13 @@ export default function VerificationPage() {
           return;
         }
 
+        const preparedFile = await prepareVerificationImage(file);
         setImageErrors((current) => ({ ...current, [side]: "" }));
         setPreview((currentPreview) => {
           if (currentPreview) URL.revokeObjectURL(currentPreview);
-          return URL.createObjectURL(file);
+          return URL.createObjectURL(preparedFile);
         });
-        setter(file);
+        setter(preparedFile);
       } catch (imageError) {
         setPreview((currentPreview) => {
           if (currentPreview) URL.revokeObjectURL(currentPreview);
@@ -195,6 +197,9 @@ export default function VerificationPage() {
     formData.append("idBack", idBackFile);
 
     try {
+      if (idFrontFile.size + idBackFile.size > 3_400_000) {
+        throw new Error("The two ID photos are still too large to submit. Please retake them closer to the ID or choose smaller photos.");
+      }
       const res = await fetch("/api/v1/users/verify", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
@@ -205,7 +210,9 @@ export default function VerificationPage() {
         ? await res.json()
         : {};
       if (!res.ok) {
-        setError(data.message || data.error || `Verification failed (HTTP ${res.status}). Please try again.`);
+        setError(res.status === 413
+          ? "The upload service rejected the photos because they are too large. Please retake each side closer to the ID and try again."
+          : data.message || data.error || `Verification failed (HTTP ${res.status}). Please try again.`);
         setUploading(false);
         return;
       }

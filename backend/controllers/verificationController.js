@@ -1,5 +1,6 @@
 const fs = require("fs/promises");
 const mongoose = require("mongoose");
+const { waitUntil } = require("@vercel/functions");
 const User = require("../models/User");
 const tesdaSectors = require("../../shared/tesdaQualifications.json");
 const TESDA_QUALIFICATIONS = new Set(tesdaSectors.flatMap(({ qualifications }) => qualifications));
@@ -126,6 +127,34 @@ async function handleSubmitVerification(req, res) {
     );
     submissionSaved = true;
 
+    const previousPublicIds = [
+      previousUser.verificationDetails?.idFrontPublicId,
+      previousUser.verificationDetails?.idBackPublicId,
+    ].filter((publicId) => publicId && !uploadedCloudImages.includes(publicId));
+    const runBackgroundTasks = async () => {
+      await processIdentityVerificationOCR({
+        userId: savedUser._id,
+        role: savedUser.role,
+        submittedAt,
+        profileName: getProfileNameParts(savedUser),
+        securityFlags,
+        frontBuffer,
+        backBuffer,
+      });
+      await Promise.all(previousPublicIds.map((publicId) => deleteVerificationImage(publicId).catch((error) => {
+        console.error("Could not remove replaced verification image:", error.message);
+      })));
+    };
+    if (process.env.VERCEL) {
+      waitUntil(Promise.resolve().then(runBackgroundTasks));
+    } else {
+      setImmediate(() => {
+        void runBackgroundTasks().catch((error) => {
+          console.error("Background verification tasks failed:", error);
+        });
+      });
+    }
+
     res.status(202).json({
       success: true,
       autoVerified: false,
@@ -142,22 +171,6 @@ async function handleSubmitVerification(req, res) {
         status: "Pending",
         verificationStatus: savedUser.verificationStatus,
       },
-    });
-    setImmediate(() => {
-      void processIdentityVerificationOCR({
-        userId: savedUser._id,
-        role: savedUser.role,
-        submittedAt,
-        profileName: getProfileNameParts(savedUser),
-        securityFlags,
-        frontBuffer,
-        backBuffer,
-      });
-      const previousPublicIds = [previousUser.verificationDetails?.idFrontPublicId, previousUser.verificationDetails?.idBackPublicId]
-        .filter((publicId) => publicId && !uploadedCloudImages.includes(publicId));
-      void Promise.all(previousPublicIds.map((publicId) => deleteVerificationImage(publicId).catch((error) => {
-        console.error("Could not remove replaced verification image:", error.message);
-      })));
     });
   } catch (error) {
     await removeUploadedFiles(uploadedFiles);

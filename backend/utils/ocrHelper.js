@@ -38,8 +38,9 @@ const ID_TYPE_SIGNATURES = [
 ];
 const UNKNOWN_ID_TYPE = "Unknown";
 const MINIMUM_NAME_MATCH_ACCURACY = 0.75;
+const MAX_OCR_IMAGE_VARIANTS = 9;
 const OCR_IMAGE_MAX_SIZE = 1800;
-const OCR_IMAGE_ROTATIONS = [0, 90, 180, 270, -4, 4];
+const OCR_IMAGE_ROTATIONS = [0, 90, 180];
 const BACK_SIDE_SIGNATURES = [
   /\bsignature\b/i,
   /\b(?:thumb\s?mark|thumbprint|fingerprint|left\s+thumb|right\s+thumb)\b/i,
@@ -488,6 +489,7 @@ async function createIdOCRVariants(image) {
   const imageHeight = metadata.height;
   const variants = [];
   for (const rotation of OCR_IMAGE_ROTATIONS) {
+    if (variants.length >= MAX_OCR_IMAGE_VARIANTS - 1) break;
     const isCardinalRotation = [0, 90, 180, 270].includes(rotation);
     let rotatedImage;
     try {
@@ -512,23 +514,13 @@ async function createIdOCRVariants(image) {
         name: "normalization",
         process: () => sharp(rotatedImage).grayscale().normalize().sharpen().jpeg({ quality: 92 }).toBuffer(),
       },
-      {
+      ...(rotation === 0 ? [{
         name: "contrast",
         process: () => sharp(rotatedImage).grayscale().linear(1.15, -15).sharpen().jpeg({ quality: 92 }).toBuffer(),
-      },
-      ...(isCardinalRotation ? [{
-        name: "local contrast",
-        process: async () => {
-          const localContrastImage = await sharp(rotatedImage)
-            .toColourspace("srgb")
-            .clahe({ width: 128, height: 128, maxSlope: 3 })
-            .jpeg({ quality: 92 })
-            .toBuffer();
-          return sharp(localContrastImage).grayscale().sharpen().jpeg({ quality: 92 }).toBuffer();
-        },
       }] : []),
     ];
     for (const adjustment of imageAdjustments) {
+      if (variants.length >= MAX_OCR_IMAGE_VARIANTS - 1) break;
       try {
         variants.push(await adjustment.process());
       } catch (error) {
@@ -536,7 +528,7 @@ async function createIdOCRVariants(image) {
       }
     }
     if (variants.length === initialVariantCount) variants.push(rotatedImage);
-    if (!isCardinalRotation) continue;
+    if (!isCardinalRotation || variants.length >= MAX_OCR_IMAGE_VARIANTS - 1) continue;
 
     const rotationSwapsDimensions = rotation === 90 || rotation === 270;
     const rotatedWidth = rotationSwapsDimensions ? imageHeight : imageWidth;
@@ -567,7 +559,7 @@ async function createIdOCRVariants(image) {
       console.warn(`Verification OCR card-area crop failed for ${rotation}-degree image:`, error.message);
     }
 
-    if (rotatedHeight > rotatedWidth) {
+    if (rotatedHeight > rotatedWidth && variants.length < MAX_OCR_IMAGE_VARIANTS - 1) {
       const tightCropHeight = Math.max(1, Math.round(rotatedMetadata.height * 0.36));
       try {
         const tightCrop = await sharp(rotatedImage)
@@ -683,8 +675,9 @@ async function performOCRVerificationNow(imagePath, userName) {
     const candidates = [];
     const modeErrors = [];
     const imageVariants = await createIdOCRVariants(imagePath);
-    for (const [variantIndex, imageVariant] of imageVariants.entries()) {
-      for (const mode of OCR_SEGMENTATION_MODES) {
+    const variantsToProcess = imageVariants.slice(0, MAX_OCR_IMAGE_VARIANTS);
+    for (const [variantIndex, imageVariant] of variantsToProcess.entries()) {
+      for (const [modeIndex, mode] of OCR_SEGMENTATION_MODES.entries()) {
         try {
           await worker.setParameters({ tessedit_pageseg_mode: mode });
           const { data } = await worker.recognize(imageVariant, {}, { text: true, blocks: true });
@@ -713,6 +706,17 @@ async function performOCRVerificationNow(imagePath, userName) {
           if (shouldAutoVerify(currentBest.confidence, currentBest.nameMatch)) {
             return formatOCRResult(currentBest);
           }
+          if (currentBest.nameMatch.accuracy === 1 && currentBest.confidence >= 40) {
+            return formatOCRResult(currentBest);
+          }
+          const hasStrongNameMatch = currentBest.nameMatch.accuracy >= MINIMUM_NAME_MATCH_ACCURACY &&
+            currentBest.nameMatch.firstNameMatched &&
+            currentBest.nameMatch.lastNameMatched;
+          if (
+            hasStrongNameMatch && modeIndex === 0
+          ) {
+            break;
+          }
         } catch (error) {
           modeErrors.push(error);
         }
@@ -723,7 +727,7 @@ async function performOCRVerificationNow(imagePath, userName) {
       throw new Error(`All OCR image variants and layout modes failed: ${modeErrors.map((error) => error.message).join("; ")}`);
     }
     if (modeErrors.length) {
-      console.warn(`Verification OCR: ${modeErrors.length} of ${imageVariants.length * OCR_SEGMENTATION_MODES.length} image/layout attempts failed.`);
+      console.warn(`Verification OCR: ${modeErrors.length} of ${variantsToProcess.length * OCR_SEGMENTATION_MODES.length} image/layout attempts failed.`);
     }
 
     const bestCandidate = selectBestOCRCandidate(candidates, userName);

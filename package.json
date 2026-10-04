@@ -19,6 +19,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@vercel/functions": "^3.9.11",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.11.0",
     "cors": "^2.8.6",

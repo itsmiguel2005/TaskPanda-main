@@ -189,31 +189,34 @@ test("synthetic Philippine ID layouts match structured names with conservative f
   }
 });
 
-test("ID OCR tries rotated, lightly deskewed, contrast-adjusted, cropped, and original image candidates", async () => {
+test("ID OCR bounds preprocessing to resized, cropped, contrast-adjusted, rotated, and original candidates", async () => {
   const image = await sharp({
     create: { width: 1000, height: 1600, channels: 3, background: "#fff" },
   }).jpeg().toBuffer();
   const variants = await createIdOCRVariants(image);
 
-  assert.equal(variants.length, 23);
+  assert.equal(variants.length, 9);
   const processedMetadata = await sharp(variants[0]).metadata();
   assert.equal(processedMetadata.width, 1000);
   assert.equal(processedMetadata.height, 1600);
-  const portraitCropMetadata = await sharp(variants[3]).metadata();
+  const portraitCropMetadata = await sharp(variants[2]).metadata();
   assert.equal(portraitCropMetadata.width, 1800);
   assert.ok(portraitCropMetadata.height > 1700);
-  const focusedPortraitCropMetadata = await sharp(variants[4]).metadata();
+  const focusedPortraitCropMetadata = await sharp(variants[3]).metadata();
   assert.equal(focusedPortraitCropMetadata.width, 1800);
   assert.ok(focusedPortraitCropMetadata.height > 1000);
-  const rotatedMetadata = await sharp(variants[5]).metadata();
+  const rotatedMetadata = await sharp(variants[4]).metadata();
   assert.equal(rotatedMetadata.width, 1600);
   assert.equal(rotatedMetadata.height, 1000);
-  const landscapeCropMetadata = await sharp(variants[8]).metadata();
+  const landscapeCropMetadata = await sharp(variants[5]).metadata();
   assert.equal(landscapeCropMetadata.width, 1800);
   assert.ok(landscapeCropMetadata.height < 800);
-  const deskewedMetadata = await sharp(variants[18]).metadata();
-  assert.ok(deskewedMetadata.width > 1000);
-  assert.ok(deskewedMetadata.height > 1600);
+  const flippedMetadata = await sharp(variants[6]).metadata();
+  assert.equal(flippedMetadata.width, 1000);
+  assert.equal(flippedMetadata.height, 1600);
+  const flippedCropMetadata = await sharp(variants[7]).metadata();
+  assert.equal(flippedCropMetadata.width, 1800);
+  assert.ok(flippedCropMetadata.height > 1700);
   assert.deepEqual(variants.at(-1), image);
 });
 
