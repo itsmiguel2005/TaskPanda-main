@@ -18,7 +18,7 @@ function verificationKey(applicant) {
 }
 
 function ConfidenceBadge({ confidence, autoVerified, ocrProcessing }) {
-  const needsReview = !ocrProcessing && (!autoVerified || confidence === null || confidence < 60);
+  const needsReview = ocrProcessing || !autoVerified || confidence === null || confidence < 60;
   return (
     <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold tabular-nums ${
       needsReview
@@ -26,7 +26,11 @@ function ConfidenceBadge({ confidence, autoVerified, ocrProcessing }) {
         : "border-emerald-200 bg-emerald-50 text-emerald-900"
     }`}>
       {ocrProcessing ? "OCR processing" : confidence === null ? "OCR unavailable" : `${Math.round(confidence)}% confidence`}
-      {needsReview && <span className="ml-1.5 font-semibold">· Needs review</span>}
+    {needsReview && (
+      <span className="ml-1.5 font-semibold">
+        · {ocrProcessing ? "Review now" : "Needs review"}
+      </span>
+    )}
     </span>
   );
 }
@@ -207,7 +211,7 @@ export default function VerificationsAdmin() {
               Review identity documents and TESDA certification evidence.
               {processingIdentityCount > 0 && (
                 <span className="ml-1">
-                  {processingIdentityCount} ID {processingIdentityCount === 1 ? "check is" : "checks are"} processing and will appear here when complete.
+                  {processingIdentityCount} ID {processingIdentityCount === 1 ? "check is" : "checks are"} processing; you can review them now.
                 </span>
               )}
             </p>
@@ -256,7 +260,7 @@ export default function VerificationsAdmin() {
             <h3 className="mt-4 text-base font-bold text-slate-900">Queue is clear</h3>
             <p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-slate-600">
               {processingIdentityCount > 0
-                ? "ID checks in progress will appear here when OCR is complete."
+                ? "Processing ID submissions are included in this queue and can be reviewed now."
                 : "New manual-review submissions will appear here."}
             </p>
           </div>

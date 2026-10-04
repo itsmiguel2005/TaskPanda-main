@@ -38,7 +38,7 @@ const ID_TYPE_SIGNATURES = [
 ];
 const UNKNOWN_ID_TYPE = "Unknown";
 const MINIMUM_NAME_MATCH_ACCURACY = 0.75;
-const MAX_OCR_IMAGE_VARIANTS = 9;
+const MAX_OCR_IMAGE_VARIANTS = 8;
 const OCR_IMAGE_MAX_SIZE = 1800;
 const OCR_IMAGE_ROTATIONS = [0, 90, 180];
 const BACK_SIDE_SIGNATURES = [
@@ -676,58 +676,69 @@ async function performOCRVerificationNow(imagePath, userName) {
     const modeErrors = [];
     const imageVariants = await createIdOCRVariants(imagePath);
     const variantsToProcess = imageVariants.slice(0, MAX_OCR_IMAGE_VARIANTS);
-    for (const [variantIndex, imageVariant] of variantsToProcess.entries()) {
-      for (const [modeIndex, mode] of OCR_SEGMENTATION_MODES.entries()) {
-        try {
-          await worker.setParameters({ tessedit_pageseg_mode: mode });
-          const { data } = await worker.recognize(imageVariant, {}, { text: true, blocks: true });
-          const recognizedLines = Array.isArray(data.lines)
-            ? data.lines
-            : Array.isArray(data.blocks)
-              ? data.blocks.flatMap((block) =>
-                (block.paragraphs || []).flatMap((paragraph) => paragraph.lines || [])
-              )
-              : [];
-          candidates.push({
-            confidence: data.confidence,
-            text: data.text,
-            variantIndex,
-            lines: recognizedLines.length
-              ? recognizedLines.map(({ text, bbox, words }) => ({
-                text,
-                bbox,
-                words: Array.isArray(words)
-                  ? words.map(({ text: wordText, bbox: wordBbox }) => ({ text: wordText, bbox: wordBbox }))
-                  : undefined,
-              }))
-              : undefined,
-          });
-          const currentBest = selectBestOCRCandidate(candidates, userName);
-          if (shouldAutoVerify(currentBest.confidence, currentBest.nameMatch)) {
-            return formatOCRResult(currentBest);
-          }
-          if (currentBest.nameMatch.accuracy === 1 && currentBest.confidence >= 40) {
-            return formatOCRResult(currentBest);
-          }
-          const hasStrongNameMatch = currentBest.nameMatch.accuracy >= MINIMUM_NAME_MATCH_ACCURACY &&
-            currentBest.nameMatch.firstNameMatched &&
-            currentBest.nameMatch.lastNameMatched;
-          if (
-            hasStrongNameMatch && modeIndex === 0
-          ) {
-            break;
-          }
-        } catch (error) {
-          modeErrors.push(error);
+    const recognizeCandidate = async (variantIndex, imageVariant, mode) => {
+      try {
+        await worker.setParameters({ tessedit_pageseg_mode: mode });
+        const { data } = await worker.recognize(imageVariant, {}, { text: true, blocks: true });
+        const recognizedLines = Array.isArray(data.lines)
+          ? data.lines
+          : Array.isArray(data.blocks)
+            ? data.blocks.flatMap((block) =>
+              (block.paragraphs || []).flatMap((paragraph) => paragraph.lines || [])
+            )
+            : [];
+        candidates.push({
+          confidence: data.confidence,
+          text: data.text,
+          variantIndex,
+          lines: recognizedLines.length
+            ? recognizedLines.map(({ text, bbox, words }) => ({
+              text,
+              bbox,
+              words: Array.isArray(words)
+                ? words.map(({ text: wordText, bbox: wordBbox }) => ({ text: wordText, bbox: wordBbox }))
+                : undefined,
+            }))
+            : undefined,
+        });
+        const currentBest = selectBestOCRCandidate(candidates, userName);
+        if (
+          shouldAutoVerify(currentBest.confidence, currentBest.nameMatch) ||
+          (currentBest.nameMatch.accuracy === 1 && currentBest.confidence >= 40)
+        ) {
+          return formatOCRResult(currentBest);
         }
+        return null;
+      } catch (error) {
+        modeErrors.push(error);
+        return null;
       }
+    };
+
+    for (const [variantIndex, imageVariant] of variantsToProcess.entries()) {
+      const completeMatch = await recognizeCandidate(
+        variantIndex,
+        imageVariant,
+        OCR_SEGMENTATION_MODES[0]
+      );
+      if (completeMatch) return completeMatch;
+    }
+
+    const alternateModeVariantIndexes = [0, 1, 3].filter((index) => index < variantsToProcess.length);
+    for (const variantIndex of alternateModeVariantIndexes) {
+      const completeMatch = await recognizeCandidate(
+        variantIndex,
+        variantsToProcess[variantIndex],
+        OCR_SEGMENTATION_MODES[1]
+      );
+      if (completeMatch) return completeMatch;
     }
 
     if (!candidates.length) {
       throw new Error(`All OCR image variants and layout modes failed: ${modeErrors.map((error) => error.message).join("; ")}`);
     }
     if (modeErrors.length) {
-      console.warn(`Verification OCR: ${modeErrors.length} of ${variantsToProcess.length * OCR_SEGMENTATION_MODES.length} image/layout attempts failed.`);
+      console.warn(`Verification OCR: ${modeErrors.length} of ${variantsToProcess.length + alternateModeVariantIndexes.length} image/layout attempts failed.`);
     }
 
     const bestCandidate = selectBestOCRCandidate(candidates, userName);

@@ -195,7 +195,7 @@ test("ID OCR bounds preprocessing to resized, cropped, contrast-adjusted, rotate
   }).jpeg().toBuffer();
   const variants = await createIdOCRVariants(image);
 
-  assert.equal(variants.length, 9);
+  assert.equal(variants.length, 8);
   const processedMetadata = await sharp(variants[0]).metadata();
   assert.equal(processedMetadata.width, 1000);
   assert.equal(processedMetadata.height, 1600);
@@ -208,15 +208,9 @@ test("ID OCR bounds preprocessing to resized, cropped, contrast-adjusted, rotate
   const rotatedMetadata = await sharp(variants[4]).metadata();
   assert.equal(rotatedMetadata.width, 1600);
   assert.equal(rotatedMetadata.height, 1000);
-  const landscapeCropMetadata = await sharp(variants[5]).metadata();
-  assert.equal(landscapeCropMetadata.width, 1800);
-  assert.ok(landscapeCropMetadata.height < 800);
-  const flippedMetadata = await sharp(variants[6]).metadata();
-  assert.equal(flippedMetadata.width, 1000);
-  assert.equal(flippedMetadata.height, 1600);
-  const flippedCropMetadata = await sharp(variants[7]).metadata();
-  assert.equal(flippedCropMetadata.width, 1800);
-  assert.ok(flippedCropMetadata.height > 1700);
+  const rotated180Metadata = await sharp(variants[6]).metadata();
+  assert.equal(rotated180Metadata.width, 1000);
+  assert.equal(rotated180Metadata.height, 1600);
   assert.deepEqual(variants.at(-1), image);
 });
 

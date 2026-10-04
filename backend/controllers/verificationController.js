@@ -402,7 +402,6 @@ async function handleGetAdminVerifications(_req, res) {
       User.find({
         "verificationDetails.status": "Pending",
         "verificationDetails.idFrontUrl": mongoose.trusted({ $ne: "" }),
-        "verificationDetails.ocrProcessing": mongoose.trusted({ $ne: true }),
         role: mongoose.trusted({ $in: ["client", "provider"] }),
       })
         .select("fullName firstName middleName lastName username email role createdAt verificationStatus isVerified verificationDetails")
@@ -564,6 +563,7 @@ async function handleReviewVerification(req, res) {
     const update = {
       $set: {
         "verificationDetails.status": approved ? "Active" : "Rejected",
+        "verificationDetails.ocrProcessing": false,
         "verificationDetails.rejectionReason": approved ? "" : rejectionReason.trim(),
         "verificationDetails.autoVerified": false,
         "verificationDetails.reviewedAt": new Date(),
