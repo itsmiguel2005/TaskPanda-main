@@ -1,0 +1,26 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const {
+  SECURITY_FLAGS,
+  getVerificationMetadataFlags,
+} = require("./verificationMetadata");
+
+test("metadata from known editing and AI software is flagged", () => {
+  for (const software of ["Adobe Photoshop 25", "Illustrator", "Canva", "Midjourney"]) {
+    assert.deepEqual(getVerificationMetadataFlags({
+      Make: "Canon",
+      Model: "EOS",
+      XMP: { CreatorTool: software },
+    }), [SECURITY_FLAGS.AI_OR_EDITED_METADATA_DETECTED]);
+  }
+});
+
+test("missing camera metadata is flagged for admin inspection", () => {
+  assert.deepEqual(getVerificationMetadataFlags({ Software: "Unknown application" }), [
+    SECURITY_FLAGS.CAMERA_METADATA_MISSING,
+  ]);
+});
+
+test("camera metadata without editing signatures produces no flags", () => {
+  assert.deepEqual(getVerificationMetadataFlags({ Make: "Canon", Model: "EOS 80D" }), []);
+});

@@ -6,17 +6,17 @@ async function revalidatePersistedVerification(user, userModel = User) {
   if (
     user.isVerified !== true ||
     details?.status !== "Active" ||
-    details.nameMatchAccuracy === 100
+    details.nameMatchAccuracy >= 75
   ) {
     return false;
   }
 
-  const rejectionReason = "Your ID name did not fully match your account name. Please resubmit an ID that shows your full account name.";
+  const rejectionReason = "Your ID's first and last names did not match your account name. Please resubmit an ID that clearly shows both.";
   const result = await userModel.updateOne({
     _id: user._id,
     isVerified: true,
     "verificationDetails.status": "Active",
-    "verificationDetails.nameMatchAccuracy": mongoose.trusted({ $ne: 100 }),
+    "verificationDetails.nameMatchAccuracy": mongoose.trusted({ $lt: 75 }),
   }, {
     $set: {
       isVerified: false,

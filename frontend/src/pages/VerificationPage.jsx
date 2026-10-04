@@ -2,10 +2,11 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
+import { checkImageSharpness } from "../utils/imageCheck.js";
 
 const MAX_ID_IMAGE_SIZE = 2 * 1024 * 1024;
 
-function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove, disabled }) {
+function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove, disabled, isChecking, imageError }) {
   const inputRef = useRef(null);
   return (
     <div>
@@ -43,6 +44,16 @@ function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove, d
         disabled={disabled}
         onChange={onSelect}
       />
+      {isChecking && (
+        <p className="mt-2 text-xs font-medium text-sky-800" role="status" aria-live="polite">
+          Checking image clarity…
+        </p>
+      )}
+      {imageError && (
+        <p className="mt-2 text-sm font-medium text-rose-800" role="alert">
+          {imageError}
+        </p>
+      )}
       {file && (
         <div className="mt-2 flex items-center justify-between">
           <p className="text-xs text-gray-500 truncate max-w-[200px]">{file.name}</p>
@@ -61,6 +72,8 @@ export default function VerificationPage() {
   const [idBackFile, setIdBackFile] = useState(null);
   const [idFrontPreview, setIdFrontPreview] = useState("");
   const [idBackPreview, setIdBackPreview] = useState("");
+  const [checkingImages, setCheckingImages] = useState({ front: false, back: false });
+  const [imageErrors, setImageErrors] = useState({ front: "", back: "" });
   const [submitted, setSubmitted] = useState(false);
   const [autoVerified, setAutoVerified] = useState(false);
   const [error, setError] = useState("");
@@ -71,35 +84,71 @@ export default function VerificationPage() {
     if (idBackPreview) URL.revokeObjectURL(idBackPreview);
   }, [idFrontPreview, idBackPreview]);
 
-  const handleFileSelect = (setter, setPreview) => (e) => {
+  const handleFileSelect = (side, setter, setPreview) => async (e) => {
     const file = e.target.files[0];
+    e.target.value = "";
     if (file) {
       if (file.size > MAX_ID_IMAGE_SIZE) {
         setError("Each ID image must be 2 MB or smaller. Choose a smaller image and try again.");
-        e.target.value = "";
         return;
       }
       setError("");
-      setPreview((currentPreview) => {
-        if (currentPreview) URL.revokeObjectURL(currentPreview);
-        return URL.createObjectURL(file);
-      });
-      setter(file);
+      setImageErrors((current) => ({ ...current, [side]: "" }));
+      setCheckingImages((current) => ({ ...current, [side]: true }));
+      try {
+        const { isBlurry } = await checkImageSharpness(file);
+        if (isBlurry) {
+          setPreview((currentPreview) => {
+            if (currentPreview) URL.revokeObjectURL(currentPreview);
+            return "";
+          });
+          setter(null);
+          setImageErrors((current) => ({
+            ...current,
+            [side]: "Photo is too blurry. Please retake or upload a clearer image of your ID.",
+          }));
+          return;
+        }
+
+        setImageErrors((current) => ({ ...current, [side]: "" }));
+        setPreview((currentPreview) => {
+          if (currentPreview) URL.revokeObjectURL(currentPreview);
+          return URL.createObjectURL(file);
+        });
+        setter(file);
+      } catch (imageError) {
+        setPreview((currentPreview) => {
+          if (currentPreview) URL.revokeObjectURL(currentPreview);
+          return "";
+        });
+        setter(null);
+        setImageErrors((current) => ({
+          ...current,
+          [side]: imageError.message || "Could not check this image. Please choose another.",
+        }));
+      } finally {
+        setCheckingImages((current) => ({ ...current, [side]: false }));
+      }
     }
-    e.target.value = "";
   };
 
-  const handleRemove = (setter, setPreview) => () => {
+  const handleRemove = (side, setter, setPreview) => () => {
     setPreview((currentPreview) => {
       if (currentPreview) URL.revokeObjectURL(currentPreview);
       return "";
     });
     setter(null);
+    setImageErrors((current) => ({ ...current, [side]: "" }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+
+    if (checkingImages.front || checkingImages.back) {
+      setError("Please wait for the image clarity check to finish.");
+      return;
+    }
 
     if (!idFrontFile || !idBackFile) {
       setError("Please upload both ID front and ID back images");
@@ -184,9 +233,11 @@ export default function VerificationPage() {
             accept="image/jpeg,image/png,image/webp"
             file={idFrontFile}
             preview={idFrontPreview}
-            onSelect={handleFileSelect(setIdFrontFile, setIdFrontPreview)}
-            onRemove={handleRemove(setIdFrontFile, setIdFrontPreview)}
-            disabled={uploading || submitted}
+            onSelect={handleFileSelect("front", setIdFrontFile, setIdFrontPreview)}
+            onRemove={handleRemove("front", setIdFrontFile, setIdFrontPreview)}
+            disabled={uploading || submitted || checkingImages.front}
+            isChecking={checkingImages.front}
+            imageError={imageErrors.front}
           />
 
           <ImageUpload
@@ -195,9 +246,11 @@ export default function VerificationPage() {
             accept="image/jpeg,image/png,image/webp"
             file={idBackFile}
             preview={idBackPreview}
-            onSelect={handleFileSelect(setIdBackFile, setIdBackPreview)}
-            onRemove={handleRemove(setIdBackFile, setIdBackPreview)}
-            disabled={uploading || submitted}
+            onSelect={handleFileSelect("back", setIdBackFile, setIdBackPreview)}
+            onRemove={handleRemove("back", setIdBackFile, setIdBackPreview)}
+            disabled={uploading || submitted || checkingImages.back}
+            isChecking={checkingImages.back}
+            imageError={imageErrors.back}
           />
 
           {uploading && (
@@ -228,14 +281,14 @@ export default function VerificationPage() {
             <button
               type="button"
               onClick={() => navigate(profilePath)}
-              disabled={uploading || submitted}
+              disabled={uploading || submitted || checkingImages.front || checkingImages.back}
               className="dashboard-focus flex-1 rounded-xl border border-slate-300 bg-white/80 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-white"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={uploading || submitted}
+              disabled={uploading || submitted || checkingImages.front || checkingImages.back}
               className="dashboard-focus flex-1 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white shadow-[0_8px_20px_rgba(15,23,42,0.15)] transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {uploading ? "Uploading..." : "Submit Verification"}

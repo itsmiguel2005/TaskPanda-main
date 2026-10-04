@@ -256,6 +256,22 @@ export default function VerificationsAdmin() {
                       <p className="mt-2 text-xs text-slate-600">
                         Name match: {applicant.nameMatchAccuracy === null ? "Unavailable" : `${Math.round(applicant.nameMatchAccuracy)}%`}
                       </p>
+                      {applicant.securityFlags?.length > 0 && (
+                        <ul className="mt-2 space-y-1">
+                          {applicant.securityFlags.map((flag) => (
+                            <li
+                              key={flag}
+                              className={`inline-flex rounded-md border px-2 py-1 text-[10px] font-bold leading-4 ${
+                                flag === "AI_OR_EDITED_METADATA_DETECTED"
+                                  ? "border-rose-200 bg-rose-50 text-rose-900"
+                                  : "border-amber-200 bg-amber-50 text-amber-950"
+                              }`}
+                            >
+                              {flag}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </td>
                     <td className="px-5 py-4 text-sm text-slate-700">
                       <p>{formatDate(applicant.submittedAt)}</p>

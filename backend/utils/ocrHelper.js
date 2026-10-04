@@ -13,6 +13,32 @@ const OCR_SEGMENTATION_MODES = [
   Tesseract.PSM.SPARSE_TEXT,
 ];
 const OCR_ORIENTATION_LANGUAGE = "osd";
+const IGNORED_NAME_PARTS = new Set([
+  "da",
+  "das",
+  "de",
+  "del",
+  "di",
+  "do",
+  "dos",
+  "la",
+  "las",
+  "los",
+  "ng",
+  "sa",
+  "van",
+  "von",
+]);
+const ID_TYPE_SIGNATURES = [
+  { pattern: /\bphilsys\b/i, type: "PhilSys National ID" },
+  { pattern: /\blto\b/i, type: "Driver's License" },
+  { pattern: /\bumid\b/i, type: "UMID" },
+  { pattern: /\bphilpost\b/i, type: "Postal ID" },
+  { pattern: /\bcomelec\b/i, type: "Voter's ID" },
+  { pattern: /\bpassport\b/i, type: "Passport" },
+];
+const UNKNOWN_ID_TYPE = "Unknown";
+const MINIMUM_NAME_MATCH_ACCURACY = 0.75;
 
 function normalizeWords(value) {
   return String(value || "")
@@ -22,28 +48,56 @@ function normalizeWords(value) {
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .split(/\s+/)
-    .filter((word) => word.length > 1);
+    .filter((word) => word.length > 0 && !IGNORED_NAME_PARTS.has(word));
+}
+
+function detectIdType(extractedText) {
+  const signature = ID_TYPE_SIGNATURES.find(({ pattern }) => pattern.test(String(extractedText || "")));
+  return signature?.type || UNKNOWN_ID_TYPE;
 }
 
 function scoreNameMatch(extractedText, userName) {
   const profileWords = [...new Set(normalizeWords(userName))];
   const extractedWords = [...new Set(normalizeWords(extractedText))];
-  if (!profileWords.length || !extractedWords.length) {
-    return { accuracy: 0, matchedParts: 0, totalParts: profileWords.length };
+  if (profileWords.length < 2 || !extractedWords.length) {
+    return {
+      accuracy: 0,
+      matchedParts: 0,
+      totalParts: profileWords.length,
+      firstNameMatched: false,
+      lastNameMatched: false,
+    };
   }
 
   const extractedWordSet = new Set(extractedWords);
-  const matchedParts = profileWords.filter((profileWord) => extractedWordSet.has(profileWord)).length;
+  const firstName = profileWords[0];
+  const lastName = profileWords[profileWords.length - 1];
+  const middleNames = profileWords.slice(1, -1);
+  const firstNameMatched = extractedWordSet.has(firstName);
+  const lastNameMatched = extractedWordSet.has(lastName);
+  const matchedMiddleNames = middleNames.filter((middleName) => extractedWordSet.has(middleName)).length;
+  const coreWeight = middleNames.length ? 0.75 : 1;
+  const matchedParts = Number(firstNameMatched) + Number(lastNameMatched) + matchedMiddleNames;
+  const accuracy = middleNames.length
+    ? (Number(firstNameMatched) + Number(lastNameMatched)) * (coreWeight / 2) +
+      (matchedMiddleNames / middleNames.length) * (1 - coreWeight)
+    : matchedParts / profileWords.length;
 
   return {
-    accuracy: matchedParts / profileWords.length,
+    accuracy,
     matchedParts,
     totalParts: profileWords.length,
+    firstNameMatched,
+    lastNameMatched,
   };
 }
 
-function shouldAutoVerify(ocrConfidence, nameMatchAccuracy, totalNameParts) {
-  return ocrConfidence >= 60 && nameMatchAccuracy === 1 && totalNameParts >= 2;
+function shouldAutoVerify(ocrConfidence, nameMatch) {
+  return ocrConfidence >= 60 &&
+    nameMatch.accuracy >= MINIMUM_NAME_MATCH_ACCURACY &&
+    nameMatch.totalParts >= 2 &&
+    nameMatch.firstNameMatched &&
+    nameMatch.lastNameMatched;
 }
 
 function selectBestOCRCandidate(candidates, userName) {
@@ -51,22 +105,26 @@ function selectBestOCRCandidate(candidates, userName) {
     .map((candidate) => {
       const confidence = Math.max(0, Math.min(100, Number(candidate.confidence) || 0));
       const nameMatch = scoreNameMatch(candidate.text, userName);
-      return { confidence, nameMatch };
+      return { confidence, nameMatch, detectedIdType: detectIdType(candidate.text) };
     })
     .sort((left, right) =>
-      right.nameMatch.matchedParts - left.nameMatch.matchedParts ||
+      Number(right.nameMatch.firstNameMatched && right.nameMatch.lastNameMatched) -
+        Number(left.nameMatch.firstNameMatched && left.nameMatch.lastNameMatched) ||
+      right.nameMatch.accuracy - left.nameMatch.accuracy ||
+      Number(right.detectedIdType !== UNKNOWN_ID_TYPE) - Number(left.detectedIdType !== UNKNOWN_ID_TYPE) ||
       right.confidence - left.confidence
     )[0] || null;
 }
 
 function formatOCRResult(candidate) {
-  const { confidence, nameMatch } = candidate;
+  const { confidence, nameMatch, detectedIdType } = candidate;
   return {
     ocrConfidence: confidence,
+    detectedIdType,
     nameMatchAccuracy: Math.round(nameMatch.accuracy * 100),
     matchedNameParts: nameMatch.matchedParts,
     totalNameParts: nameMatch.totalParts,
-    autoVerified: shouldAutoVerify(confidence, nameMatch.accuracy, nameMatch.totalParts),
+    autoVerified: shouldAutoVerify(confidence, nameMatch),
   };
 }
 
@@ -130,8 +188,7 @@ async function performOCRVerification(imagePath, userName) {
         const currentBest = selectBestOCRCandidate(candidates, userName);
         if (shouldAutoVerify(
           currentBest.confidence,
-          currentBest.nameMatch.accuracy,
-          currentBest.nameMatch.totalParts
+          currentBest.nameMatch
         )) {
           return formatOCRResult(currentBest);
         }
@@ -153,6 +210,7 @@ async function performOCRVerification(imagePath, userName) {
     console.warn("Verification OCR failed; routing submission for manual review:", error.message);
     return {
       ocrConfidence: 0,
+      detectedIdType: UNKNOWN_ID_TYPE,
       nameMatchAccuracy: 0,
       matchedNameParts: 0,
       totalNameParts: normalizeWords(userName).length,
@@ -166,6 +224,7 @@ module.exports = {
   OCR_LANGUAGES,
   OCR_ORIENTATION_LANGUAGE,
   OCR_SEGMENTATION_MODES,
+  detectIdType,
   performOCRVerification,
   scoreNameMatch,
   selectBestOCRCandidate,

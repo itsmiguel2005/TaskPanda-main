@@ -2,6 +2,7 @@ const fs = require("fs/promises");
 const mongoose = require("mongoose");
 const User = require("../models/User");
 const { performOCRVerification } = require("../utils/ocrHelper");
+const { SECURITY_FLAGS, inspectVerificationMetadata } = require("../utils/verificationMetadata");
 const { revalidatePersistedVerification } = require("../services/verificationPolicy");
 const { removeUploadedFiles } = require("../storage/verificationUpload");
 const {
@@ -38,10 +39,26 @@ async function handleSubmitVerification(req, res) {
       return res.status(400).json({ message: "Trade certificates must be 200 characters or fewer." });
     }
 
+    const [frontBuffer, backBuffer] = await Promise.all([
+      fs.readFile(front.path),
+      fs.readFile(back.path),
+    ]);
+    const metadataInspection = await inspectVerificationMetadata(frontBuffer);
+    const securityFlags = metadataInspection.flags;
+    if (metadataInspection.error) {
+      console.warn("Verification metadata inspection failed; routing submission for manual review:", metadataInspection.error.message);
+    }
+    if (securityFlags.includes(SECURITY_FLAGS.AI_OR_EDITED_METADATA_DETECTED)) {
+      console.warn("Verification metadata indicates possible AI-generated or edited ID; routing for manual review.", String(req.user._id));
+    }
+    if (securityFlags.includes(SECURITY_FLAGS.CAMERA_METADATA_MISSING)) {
+      console.warn("Verification ID has no camera Make/Model metadata; flagging for admin inspection.", String(req.user._id));
+    }
+
     const [ocrOutcome, frontUpload, backUpload] = await Promise.allSettled([
       performOCRVerification(front.path, getProfileName(req.user)),
-      fs.readFile(front.path).then((buffer) => uploadVerificationImage(buffer, String(req.user._id), "front")),
-      fs.readFile(back.path).then((buffer) => uploadVerificationImage(buffer, String(req.user._id), "back")),
+      uploadVerificationImage(frontBuffer, String(req.user._id), "front"),
+      uploadVerificationImage(backBuffer, String(req.user._id), "back"),
     ]);
     for (const upload of [frontUpload, backUpload]) {
       if (upload.status === "fulfilled") uploadedCloudImages.push(upload.value.publicId);
@@ -52,15 +69,17 @@ async function handleSubmitVerification(req, res) {
     const ocrResult = ocrOutcome.value;
     const frontImage = frontUpload.value;
     const backImage = backUpload.value;
+    const autoVerified = ocrResult.autoVerified && securityFlags.length === 0;
     const verificationDetails = {
       idFrontUrl: `/api/v1/admin/verifications/${req.user._id}/documents/front`,
       idBackUrl: `/api/v1/admin/verifications/${req.user._id}/documents/back`,
       tradeCertificate,
       ocrConfidence: ocrResult.ocrConfidence,
       nameMatchAccuracy: ocrResult.nameMatchAccuracy,
-      autoVerified: ocrResult.autoVerified,
+      autoVerified,
+      securityFlags,
       rejectionReason: "",
-      status: ocrResult.autoVerified ? "Active" : "Pending",
+      status: autoVerified ? "Active" : "Pending",
       submittedAt: new Date(),
       idFrontPublicId: frontImage.publicId,
       idBackPublicId: backImage.publicId,
@@ -69,8 +88,8 @@ async function handleSubmitVerification(req, res) {
     };
 
     req.user.verificationDetails = verificationDetails;
-    req.user.isVerified = ocrResult.autoVerified;
-    req.user.verificationStatus = ocrResult.autoVerified ? "verified" : "pending";
+    req.user.isVerified = autoVerified;
+    req.user.verificationStatus = autoVerified ? "verified" : "pending";
     await req.user.save();
 
     const previousPublicIds = [previousUser.verificationDetails?.idFrontPublicId, previousUser.verificationDetails?.idBackPublicId]
@@ -81,13 +100,14 @@ async function handleSubmitVerification(req, res) {
 
     return res.status(200).json({
       success: true,
-      autoVerified: ocrResult.autoVerified,
+      autoVerified,
       isVerified: req.user.isVerified,
       status: verificationDetails.status,
       verificationStatus: req.user.verificationStatus,
       ocrConfidence: ocrResult.ocrConfidence,
       nameMatchAccuracy: ocrResult.nameMatchAccuracy,
-      message: ocrResult.autoVerified
+      securityFlags,
+      message: autoVerified
         ? "Your identity was verified successfully."
         : "Your documents were submitted and are waiting for manual review.",
       user: {
@@ -114,7 +134,7 @@ async function handleGetAdminVerifications(_req, res) {
     const previousPartialMatches = await User.find({
       isVerified: true,
       "verificationDetails.status": "Active",
-      "verificationDetails.nameMatchAccuracy": mongoose.trusted({ $ne: 100 }),
+      "verificationDetails.nameMatchAccuracy": mongoose.trusted({ $lt: 75 }),
     });
     for (const user of previousPartialMatches) {
       await revalidatePersistedVerification(user);
@@ -145,6 +165,7 @@ async function handleGetAdminVerifications(_req, res) {
         ocrConfidence: user.verificationDetails?.ocrConfidence ?? null,
         nameMatchAccuracy: user.verificationDetails?.nameMatchAccuracy ?? null,
         autoVerified: user.verificationDetails?.autoVerified === true,
+        securityFlags: user.verificationDetails?.securityFlags || [],
         rejectionReason: user.verificationDetails?.rejectionReason || "",
       })),
     });

@@ -123,6 +123,13 @@ const userSchema = new mongoose.Schema(
       ocrConfidence: { type: Number, min: 0, max: 100, default: null },
       nameMatchAccuracy: { type: Number, min: 0, max: 100, default: null },
       autoVerified: { type: Boolean, default: false },
+      securityFlags: {
+        type: [{
+          type: String,
+          enum: ["AI_OR_EDITED_METADATA_DETECTED", "CAMERA_METADATA_MISSING", "METADATA_INSPECTION_FAILED"],
+        }],
+        default: [],
+      },
       rejectionReason: { type: String, trim: true, maxlength: 500, default: "" },
       status: { type: String, enum: ["Active", "Pending", "Rejected"], default: undefined },
       submittedAt: { type: Date, default: null },

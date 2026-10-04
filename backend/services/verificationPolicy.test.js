@@ -39,11 +39,27 @@ test("previous approvals with incomplete OCR name match are returned to pending 
   assert.equal(user.verificationStatus, "pending");
   assert.equal(user.verificationDetails.status, "Pending");
   assert.equal(user.verificationDetails.autoVerified, false);
-  assert.match(user.verificationDetails.rejectionReason, /full account name/);
+  assert.match(user.verificationDetails.rejectionReason, /first and last names/);
   assert.equal(userModel.updateCalls, 1);
 });
 
-test("previous approval remains verified only when every account-name part matched", async () => {
+test("previous approval remains verified when the weighted name score is at least 75%", async () => {
+  const user = createUser({
+    verificationDetails: {
+      status: "Active",
+      nameMatchAccuracy: 75,
+      autoVerified: true,
+      rejectionReason: "",
+    },
+  });
+
+  const userModel = createModel();
+  assert.equal(await revalidatePersistedVerification(user, userModel), false);
+  assert.equal(user.isVerified, true);
+  assert.equal(userModel.updateCalls, 0);
+});
+
+test("previous approval with all name parts matched remains verified", async () => {
   const user = createUser({
     verificationDetails: {
       status: "Active",
