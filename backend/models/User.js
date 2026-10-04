@@ -59,10 +59,24 @@ const userSchema = new mongoose.Schema(
       }],
       default: [],
     },
+    verificationVoucherAwarded: {
+      type: Boolean,
+      default: false,
+    },
     rewardNotifications: {
       type: [{
         title: { type: String, required: true, trim: true, maxlength: 100 },
         message: { type: String, required: true, trim: true, maxlength: 240 },
+        createdAt: { type: Date, default: Date.now },
+        readAt: { type: Date },
+      }],
+      default: [],
+    },
+    verificationNotifications: {
+      type: [{
+        title: { type: String, required: true, trim: true, maxlength: 100 },
+        message: { type: String, required: true, trim: true, maxlength: 240 },
+        href: { type: String, required: true, trim: true, maxlength: 200 },
         createdAt: { type: Date, default: Date.now },
         readAt: { type: Date },
       }],

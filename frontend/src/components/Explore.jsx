@@ -7,29 +7,9 @@ import RequestBookingModal from "./RequestBookingModal.jsx";
 import PandaSwipeRefresh from "./PandaSwipeRefresh.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
+import { PROFESSIONS } from "../utils/professions.js";
 
-const filterCategories = [
-  { name: "Air Conditioning Technician" },
-  { name: "Appliance Installer" },
-  { name: "Appliance Repair" },
-  { name: "Carpenter" },
-  { name: "Ceiling Installer" },
-  { name: "Chimney Sweep" },
-  { name: "House Cleaner" },
-  { name: "Deep Cleaning" },
-  { name: "Drainage Engineer" },
-  { name: "Dryer Vent Cleaning" },
-  { name: "Door Repair" },
-  { name: "Electrician" },
-  { name: "Furniture Assembly" },
-  { name: "Handyman" },
-  { name: "Landscaper" },
-  { name: "Locksmith" },
-  { name: "Mason" },
-  { name: "Painter" },
-  { name: "Plumber" },
-  { name: "Roofer" },
-];
+const filterCategories = PROFESSIONS.map((name) => ({ name }));
 
 const sortOptions = [
   { value: "distance", label: "Nearest" },

@@ -4,22 +4,17 @@ import Header from "../components/Header.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { checkImageSharpness } from "../utils/imageCheck.js";
 
-const MAX_ID_IMAGE_SIZE = 2 * 1024 * 1024;
+const MAX_ID_IMAGE_SIZE = 8 * 1024 * 1024;
 
 function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove, disabled, isChecking, imageError }) {
-  const inputRef = useRef(null);
+  const uploadInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700">
         {label} <span className="text-red-500">*</span>
       </label>
-      <button
-        type="button"
-        aria-label={`${label}: ${file ? "replace image" : "choose image"}`}
-        onClick={() => inputRef.current?.click()}
-        disabled={disabled}
-        className="dashboard-focus mt-2 flex w-full items-center gap-4 rounded-2xl border border-dashed border-sky-300 bg-sky-50/55 p-4 text-left transition hover:border-sky-500 hover:bg-sky-50"
-      >
+      <div className="mt-2 flex w-full items-center gap-4 rounded-2xl border border-dashed border-sky-300 bg-sky-50/55 p-4">
         {preview ? (
           <img src={preview} alt={`${label} preview`} className="h-16 w-24 rounded-lg object-cover ring-1 ring-slate-200" />
         ) : (
@@ -30,15 +25,51 @@ function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove, d
             </svg>
           </div>
         )}
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-slate-800">{file ? "Replace image" : "Choose image"}</p>
-          <p className="mt-1 text-xs text-slate-600">JPEG, PNG, or WebP · up to 2 MB</p>
+          <p className="mt-1 text-xs text-slate-600">JPEG, PNG, or WebP · up to 8 MB</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => cameraInputRef.current?.click()}
+              disabled={disabled}
+              className="dashboard-focus inline-flex min-h-9 items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 text-xs font-semibold text-sky-950 transition hover:border-sky-400 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+                <path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z" />
+                <circle cx="12" cy="13" r="3.5" />
+              </svg>
+              Take photo
+            </button>
+            <button
+              type="button"
+              onClick={() => uploadInputRef.current?.click()}
+              disabled={disabled}
+              className="dashboard-focus inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+                <path d="M12 16V4m0 0L8 8m4-4 4 4" />
+                <path d="M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5" />
+              </svg>
+              Upload photo
+            </button>
+          </div>
         </div>
-      </button>
+      </div>
       <input
-        ref={inputRef}
+        ref={cameraInputRef}
         type="file"
         name={name}
+        accept={accept}
+        capture="environment"
+        className="hidden"
+        disabled={disabled}
+        onChange={onSelect}
+      />
+      <input
+        ref={uploadInputRef}
+        type="file"
+        name={`${name}-upload`}
         accept={accept}
         className="hidden"
         disabled={disabled}
@@ -66,7 +97,7 @@ function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove, d
 
 export default function VerificationPage() {
   const navigate = useNavigate();
-  const { verify, token, role } = useAuth();
+  const { verify, token, role, isVerified } = useAuth();
   const profilePath = role === "provider" ? "/provider-profile" : "/profile";
   const [idFrontFile, setIdFrontFile] = useState(null);
   const [idBackFile, setIdBackFile] = useState(null);
@@ -76,6 +107,8 @@ export default function VerificationPage() {
   const [imageErrors, setImageErrors] = useState({ front: "", back: "" });
   const [submitted, setSubmitted] = useState(false);
   const [autoVerified, setAutoVerified] = useState(false);
+  const [voucherAwarded, setVoucherAwarded] = useState(false);
+  const [voucherAwardError, setVoucherAwardError] = useState(false);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
 
@@ -89,7 +122,7 @@ export default function VerificationPage() {
     e.target.value = "";
     if (file) {
       if (file.size > MAX_ID_IMAGE_SIZE) {
-        setError("Each ID image must be 2 MB or smaller. Choose a smaller image and try again.");
+        setError("Each ID image must be 8 MB or smaller. Choose a smaller image and try again.");
         return;
       }
       setError("");
@@ -174,6 +207,8 @@ export default function VerificationPage() {
       }
       verify(data);
       setAutoVerified(data.autoVerified === true);
+      setVoucherAwarded(data.voucherAwarded === true);
+      setVoucherAwardError(data.voucherAwardError === true);
       setSubmitted(true);
       setTimeout(() => {
         navigate(profilePath);
@@ -215,13 +250,38 @@ export default function VerificationPage() {
           </p>
         </div>
 
+        {role === "client" && !isVerified && !submitted && (
+          <aside className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/90 p-4 text-left shadow-sm sm:p-5" aria-label="Identity verification reward">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-800 ring-1 ring-emerald-200" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                  <path d="M20 12v8H4v-8M2 7h20v5H2zM12 20V7" />
+                  <path d="M12 7H7.5a2.5 2.5 0 1 1 2.5-2.5V7Zm0 0h4.5A2.5 2.5 0 1 0 14 4.5V7Z" />
+                </svg>
+              </span>
+              <div>
+                <h2 className="text-sm font-extrabold text-emerald-950">Get a free ₱50 travel-fee voucher</h2>
+                <p className="mt-1 text-sm leading-5 text-emerald-900">
+                  Complete identity verification and we’ll add a one-time voucher to your wallet after approval. Use it toward a future booking’s travel fee.
+                </p>
+              </div>
+            </div>
+          </aside>
+        )}
+
         {submitted && (
           <div className={`mt-4 rounded-2xl border p-4 text-center shadow-sm ${autoVerified ? "border-emerald-200 bg-emerald-50/90" : "border-amber-200 bg-amber-50/90"}`} role="status">
             <p className={`text-sm font-bold ${autoVerified ? "text-emerald-900" : "text-amber-950"}`}>
               {autoVerified ? "Identity verified" : "Documents sent for manual review"}
             </p>
             <p className={`mt-1 text-sm ${autoVerified ? "text-emerald-800" : "text-amber-900"}`}>
-              {autoVerified ? "Your identity check passed. Returning to your profile…" : "Your account will be updated as soon as an administrator reviews your documents."}
+              {autoVerified
+                ? voucherAwarded
+                  ? "Your free ₱50 travel-fee voucher is in your wallet. Returning to your profile…"
+                  : voucherAwardError
+                    ? "Your identity check passed, but we couldn’t add the voucher right now. Please contact support."
+                    : "Your identity check passed. Returning to your profile…"
+                : "Your account will be updated as soon as an administrator reviews your documents. If approved, your free ₱50 travel-fee voucher will be added to your wallet."}
             </p>
           </div>
         )}

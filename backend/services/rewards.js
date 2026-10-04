@@ -5,6 +5,7 @@ const User = require("../models/User");
 const REFERRAL_VOUCHER_AMOUNT = 50;
 const STAMPS_PER_REWARD = 5;
 const STAMP_VOUCHER_AMOUNT = 50;
+const VERIFICATION_VOUCHER_AMOUNT = 50;
 
 function createReferralCode(userId) {
   return `TP${String(userId).replace(/[^a-f\d]/gi, "").toUpperCase()}`;
@@ -42,6 +43,45 @@ function makeRewardNotification({ title, message }) {
     message,
     createdAt: new Date(),
   };
+}
+
+async function awardVerificationVoucher(userId) {
+  const voucherId = new mongoose.Types.ObjectId();
+  const notificationId = new mongoose.Types.ObjectId();
+  const awardedAt = new Date();
+  const result = await User.updateOne(
+    mongoose.trusted({
+      _id: userId,
+      role: "client",
+      isVerified: true,
+      verificationStatus: "verified",
+      verificationVoucherAwarded: mongoose.trusted({ $ne: true }),
+    }),
+    {
+      $set: { verificationVoucherAwarded: true },
+      $push: {
+        vouchers: {
+          _id: voucherId,
+          kind: "promotion",
+          title: "Identity verified — ₱50 travel-fee voucher",
+          origin: "promotion",
+          amount: VERIFICATION_VOUCHER_AMOUNT,
+          status: "active",
+          awardedAt,
+        },
+        rewardNotifications: {
+          $each: [{
+            _id: notificationId,
+            title: "Your verification reward is here",
+            message: "Your identity is verified. A free ₱50 travel-fee voucher is now in your wallet.",
+            createdAt: awardedAt,
+          }],
+          $slice: -50,
+        },
+      },
+    }
+  );
+  return result.modifiedCount === 1;
 }
 
 async function creditReferralRewards(user) {
@@ -265,6 +305,8 @@ module.exports = {
   REFERRAL_VOUCHER_AMOUNT,
   STAMPS_PER_REWARD,
   STAMP_VOUCHER_AMOUNT,
+  VERIFICATION_VOUCHER_AMOUNT,
+  awardVerificationVoucher,
   createReferralCode,
   ensureReferralCode,
   creditReferralRewards,

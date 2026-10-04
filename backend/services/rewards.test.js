@@ -2,7 +2,46 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const User = require("../models/User");
-const { restoreVoucherForBooking } = require("./rewards");
+const {
+  awardVerificationVoucher,
+  restoreVoucherForBooking,
+} = require("./rewards");
+
+test("verification reward awards one active voucher and notification to a verified client", async () => {
+  const clientId = new mongoose.Types.ObjectId();
+  const originalUpdateOne = User.updateOne;
+  let awarded = false;
+  let updateCalls = 0;
+
+  User.updateOne = async (filter, update) => {
+    updateCalls += 1;
+    assert.equal(String(filter._id), String(clientId));
+    assert.equal(filter.role, "client");
+    assert.equal(filter.isVerified, true);
+    assert.equal(filter.verificationStatus, "verified");
+    assert.equal(filter.verificationVoucherAwarded.$ne, true);
+    assert.equal(update.$set.verificationVoucherAwarded, true);
+    assert.equal(update.$push.vouchers.kind, "promotion");
+    assert.equal(update.$push.vouchers.origin, "promotion");
+    assert.equal(update.$push.vouchers.amount, 50);
+    assert.equal(update.$push.vouchers.status, "active");
+    assert.match(update.$push.vouchers.title, /Identity verified/);
+    assert.equal(update.$push.rewardNotifications.$each.length, 1);
+    assert.match(update.$push.rewardNotifications.$each[0].message, /₱50 travel-fee voucher/);
+
+    if (awarded) return { modifiedCount: 0 };
+    awarded = true;
+    return { modifiedCount: 1 };
+  };
+
+  try {
+    assert.equal(await awardVerificationVoucher(clientId), true);
+    assert.equal(await awardVerificationVoucher(clientId), false);
+    assert.equal(updateCalls, 2);
+  } finally {
+    User.updateOne = originalUpdateOne;
+  }
+});
 
 test("voucher restoration is atomic and only restores its redeemed booking once", async () => {
   const clientId = new mongoose.Types.ObjectId();

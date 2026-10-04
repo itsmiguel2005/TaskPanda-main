@@ -1,23 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-
-const PROFESSIONS = [
-  "Electrician",
-  "Plumber",
-  "Aircon Tech",
-  "Carpenter",
-  "Painter",
-  "Welder",
-  "Construction Worker",
-  "Appliance Tech",
-  "Housekeeper",
-  "Home Chef",
-  "Gardener",
-  "Disinfection",
-  "Delivery Rider",
-  "Transport Helper",
-  "IT Tech",
-  "IT Repair",
-];
+import { PROFESSIONS } from "../utils/professions.js";
 
 export default function ProfessionSelector({
   value = [],

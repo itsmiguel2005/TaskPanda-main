@@ -5,6 +5,8 @@ const { performOCRVerification } = require("../utils/ocrHelper");
 const { SECURITY_FLAGS, inspectVerificationMetadata } = require("../utils/verificationMetadata");
 const { revalidatePersistedVerification } = require("../services/verificationPolicy");
 const { removeUploadedFiles } = require("../storage/verificationUpload");
+const { sendPushNotification } = require("../services/oneSignal");
+const { awardVerificationVoucher } = require("../services/rewards");
 const {
   deleteVerificationImage,
   fetchAuthenticatedVerificationImage,
@@ -92,6 +94,17 @@ async function handleSubmitVerification(req, res) {
     req.user.verificationStatus = autoVerified ? "verified" : "pending";
     await req.user.save();
 
+    let voucherAwarded = false;
+    let voucherAwardError = false;
+    if (autoVerified && req.user.role === "client") {
+      try {
+        voucherAwarded = await awardVerificationVoucher(req.user._id);
+      } catch (error) {
+        voucherAwardError = true;
+        console.error("Could not award client identity verification voucher:", error);
+      }
+    }
+
     const previousPublicIds = [previousUser.verificationDetails?.idFrontPublicId, previousUser.verificationDetails?.idBackPublicId]
       .filter((publicId) => publicId && !uploadedCloudImages.includes(publicId));
     await Promise.all(previousPublicIds.map((publicId) => deleteVerificationImage(publicId).catch((error) => {
@@ -107,6 +120,7 @@ async function handleSubmitVerification(req, res) {
       ocrConfidence: ocrResult.ocrConfidence,
       nameMatchAccuracy: ocrResult.nameMatchAccuracy,
       securityFlags,
+      ...(req.user.role === "client" && autoVerified ? { voucherAwarded, voucherAwardError } : {}),
       message: autoVerified
         ? "Your identity was verified successfully."
         : "Your documents were submitted and are waiting for manual review.",
@@ -182,19 +196,64 @@ async function handleReviewVerification(req, res) {
   }
   try {
     const approved = action === "approve";
-    const user = await User.findOneAndUpdate({
-      _id: req.params.userId,
-      "verificationDetails.status": "Pending",
-      role: mongoose.trusted({ $in: ["client", "provider"] }),
-    }, {
+    const targetUser = approved
+      ? null
+      : await User.findById(req.params.userId).select("role").lean();
+    const update = {
       $set: {
         "verificationDetails.status": approved ? "Active" : "Rejected",
         "verificationDetails.rejectionReason": approved ? "" : rejectionReason.trim(),
         isVerified: approved,
         verificationStatus: approved ? "verified" : "rejected",
       },
-    }, { new: true, runValidators: true });
+    };
+    if (!approved) {
+      update.$push = {
+        verificationNotifications: {
+          $each: [{
+            title: "Identity verification rejected",
+            message: `Your identity verification was rejected. ${rejectionReason.trim()}`,
+            href: userProfilePathForRole(targetUser?.role),
+            createdAt: new Date(),
+          }],
+          $slice: -25,
+        },
+      };
+    }
+    const user = await User.findOneAndUpdate({
+      _id: req.params.userId,
+      "verificationDetails.status": "Pending",
+      role: mongoose.trusted({ $in: ["client", "provider"] }),
+    }, update, { new: true, runValidators: true });
     if (!user) return res.status(404).json({ message: "This pending verification could not be found." });
+
+    let voucherAwarded = false;
+    let voucherAwardError = false;
+    if (approved && user.role === "client") {
+      try {
+        voucherAwarded = await awardVerificationVoucher(user._id);
+      } catch (error) {
+        voucherAwardError = true;
+        console.error("Could not award client identity verification voucher:", error);
+      }
+    }
+
+    let pushNotificationSent = false;
+    if (!approved) {
+      try {
+        const result = await sendPushNotification({
+          userIds: [String(user._id)],
+          title: "Identity verification rejected",
+          body: `Your identity verification was rejected. ${rejectionReason.trim()}`,
+          url: user.role === "provider" ? "/provider-profile" : "/profile",
+          data: { event: "verification.rejected", userId: String(user._id) },
+          name: "Identity verification update",
+        });
+        pushNotificationSent = Boolean(result?.id);
+      } catch (pushError) {
+        console.warn("Verification rejection push notification failed; in-app notice was saved:", pushError.message);
+      }
+    }
 
     return res.json({
       success: true,
@@ -202,10 +261,59 @@ async function handleReviewVerification(req, res) {
       status: user.verificationDetails.status,
       isVerified: user.isVerified,
       verificationStatus: user.verificationStatus,
+      ...(approved && user.role === "client" ? { voucherAwarded, voucherAwardError } : {}),
+      ...(approved ? {} : { notificationSent: true, pushNotificationSent }),
     });
   } catch (error) {
     console.error("Admin verification review error:", error);
     return res.status(500).json({ message: "Could not update this identity verification." });
+  }
+}
+
+function userProfilePathForRole(role) {
+  return role === "provider" ? "/provider-profile" : "/profile";
+}
+
+async function handleGetVerificationNotifications(req, res) {
+  try {
+    const user = await User.findById(req.user._id).select("verificationNotifications").lean();
+    if (!user) return res.status(404).json({ message: "Account not found." });
+    const notifications = (user.verificationNotifications || [])
+      .filter((notification) => !notification.readAt)
+      .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt))
+      .map((notification) => ({
+        id: String(notification._id),
+        title: notification.title,
+        message: notification.message,
+        href: notification.href,
+        createdAt: notification.createdAt,
+      }));
+    return res.json({ notifications });
+  } catch (error) {
+    console.error("Get verification notifications error:", error);
+    return res.status(500).json({ message: "Could not load verification notifications." });
+  }
+}
+
+async function handleMarkVerificationNotificationRead(req, res) {
+  if (!mongoose.isValidObjectId(req.params.notificationId)) {
+    return res.status(400).json({ message: "Choose a valid verification notification." });
+  }
+  try {
+    const result = await User.updateOne(
+      mongoose.trusted({
+        _id: req.user._id,
+        verificationNotifications: mongoose.trusted({
+          $elemMatch: { _id: new mongoose.Types.ObjectId(req.params.notificationId) },
+        }),
+      }),
+      { $set: { "verificationNotifications.$.readAt": new Date() } }
+    );
+    if (!result.matchedCount) return res.status(404).json({ message: "Verification notification not found." });
+    return res.json({ message: "Verification notification marked as read." });
+  } catch (error) {
+    console.error("Mark verification notification read error:", error);
+    return res.status(500).json({ message: "Could not update the verification notification." });
   }
 }
 
@@ -238,7 +346,9 @@ async function handleGetVerificationDocument(req, res) {
 
 module.exports = {
   handleGetAdminVerifications,
+  handleGetVerificationNotifications,
   handleGetVerificationDocument,
+  handleMarkVerificationNotificationRead,
   handleReviewVerification,
   handleSubmitVerification,
 };

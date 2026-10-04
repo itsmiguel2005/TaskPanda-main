@@ -266,6 +266,24 @@ export default function ProfilePage() {
             </aside>
 
             <div className="space-y-5 lg:col-span-2">
+              {role === "client" && !isVerified && (
+                <aside className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 shadow-sm sm:flex sm:items-center sm:justify-between sm:gap-6" aria-label="Identity verification reward">
+                  <div>
+                    <h2 className="text-base font-extrabold text-emerald-950">Verify your identity. Get a free ₱50 voucher.</h2>
+                    <p className="mt-1 text-sm leading-5 text-emerald-900">
+                      Clients receive a one-time travel-fee voucher after their identity is approved.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/profile/verify")}
+                    className="dashboard-focus mt-4 inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl bg-emerald-800 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-900 sm:mt-0"
+                  >
+                    Verify identity
+                  </button>
+                </aside>
+              )}
+
               <section id="rewards" className="dashboard-panel scroll-mt-24">
                 <div className="dashboard-panel-heading flex flex-wrap items-center justify-between gap-3">
                   <div>
@@ -340,7 +358,13 @@ export default function ProfilePage() {
                               </span>
                               <span className="min-w-0">
                                 <span className="block truncate text-sm font-semibold text-slate-900">{voucher.title}</span>
-                                <span className="mt-0.5 block text-xs text-slate-500">{voucher.kind === "milestone" ? "Stamp card reward" : "Referral reward"}</span>
+                                <span className="mt-0.5 block text-xs text-slate-500">
+                                  {voucher.origin === "stamp-card"
+                                    ? "Stamp card reward"
+                                    : voucher.title.startsWith("Identity verified")
+                                      ? "Identity verification reward"
+                                      : "Referral reward"}
+                                </span>
                               </span>
                             </span>
                             <span className="shrink-0 text-sm font-bold tabular-nums text-emerald-800">{formatRewardAmount(voucher.amount)}</span>

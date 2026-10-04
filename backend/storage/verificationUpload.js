@@ -5,6 +5,7 @@ const multer = require("multer");
 const { randomUUID } = require("crypto");
 
 const verificationUploadDirectory = path.join(os.tmpdir(), "taskpanda-verifications");
+const MAX_VERIFICATION_IMAGE_SIZE = 8 * 1024 * 1024;
 const allowedTypes = new Map([
   ["image/jpeg", ".jpg"],
   ["image/png", ".png"],
@@ -28,7 +29,7 @@ function removeUploadedFiles(files) {
 
 const upload = multer({
   storage,
-  limits: { fileSize: 2 * 1024 * 1024, files: 2, fields: 1, fieldSize: 200, parts: 3 },
+  limits: { fileSize: MAX_VERIFICATION_IMAGE_SIZE, files: 2, fields: 1, fieldSize: 200, parts: 3 },
   fileFilter: (_req, file, callback) => {
     const accepted = allowedTypes.has(file.mimetype);
     const error = accepted ? null : new Error("Choose a JPEG, PNG, or WebP image.");
@@ -52,7 +53,7 @@ function uploadVerificationImages(req, res, next) {
     if (error instanceof multer.MulterError) {
       const tooLarge = error.code === "LIMIT_FILE_SIZE" || error.code === "LIMIT_FIELD_VALUE";
       return res.status(tooLarge ? 413 : 400).json({
-        message: tooLarge ? "Each ID image must be 2 MB or smaller." : error.message,
+        message: tooLarge ? "Each ID image must be 8 MB or smaller." : error.message,
       });
     }
     console.error("Verification image upload error:", error);

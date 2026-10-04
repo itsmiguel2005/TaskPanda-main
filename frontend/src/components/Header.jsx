@@ -20,6 +20,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [notificationItems, setNotificationItems] = useState([]);
   const [broadcastNotificationItems, setBroadcastNotificationItems] = useState([]);
+  const [verificationNotificationItems, setVerificationNotificationItems] = useState([]);
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState([]);
   const [pushPromptStatus, setPushPromptStatus] = useState("");
   const [rewardToast, setRewardToast] = useState(null);
@@ -38,6 +39,38 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     } catch (error) {
       console.warn("OneSignal permission prompt failed:", error.message);
       setPushPromptStatus("error");
+    }
+  };
+
+  const markVerificationNotificationRead = async (notification) => {
+    try {
+      const response = await fetch(`/api/v1/users/verification-notifications/${notification.notificationId}/read`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.message || `Could not update notification (HTTP ${response.status}).`);
+      }
+      setVerificationNotificationItems((current) => current.filter((item) => item.id !== notification.id));
+    } catch (error) {
+      console.warn("Verification notification update failed:", error.message);
+    }
+  };
+
+  const dismissNotification = (item) => {
+    setDismissedNotificationIds((current) => {
+      if (current.includes(item.id)) return current;
+      const next = [...current, item.id];
+      try {
+        localStorage.setItem(dismissedStorageKey, JSON.stringify(next));
+      } catch {
+        // Keep the dismissal for this page session if storage is unavailable.
+      }
+      return next;
+    });
+    if (item.isVerificationNotice && item.notificationId) {
+      void markVerificationNotificationRead(item);
     }
   };
 
@@ -122,6 +155,83 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
       window.removeEventListener(CONVERSATION_READ_EVENT, handleConversationRead);
     };
   }, [authRole, isLoggedIn, showNav, token]);
+
+  useEffect(() => {
+    if (!showNav || !isLoggedIn || !token || !["client", "provider"].includes(authRole)) {
+      setVerificationNotificationItems([]);
+      return undefined;
+    }
+
+    let active = true;
+    const getProfileRejectionNotice = () => {
+      if (user?.verificationStatus !== "rejected") return null;
+      const reason = String(user.verificationRejectionReason || "").trim();
+      const userId = String(user._id || user.id || user.email || "account");
+      return {
+        id: `verification-rejected:${userId}:${reason}`,
+        title: "Identity verification rejected",
+        detail: reason
+          ? `Your identity verification was rejected. ${reason}`
+          : "Your identity verification was rejected. Open your profile to review the feedback.",
+        from: "TaskPanda",
+        unreadCount: 1,
+        href: authRole === "provider" ? "/provider-profile" : "/profile",
+        isVerificationNotice: true,
+      };
+    };
+    const loadVerificationNotifications = async () => {
+      try {
+        const response = await fetch("/api/v1/users/verification-notifications", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          throw new Error(`Verification notification request failed (HTTP ${response.status}).`);
+        }
+        const result = await response.json();
+        if (!active) return;
+        const notifications = (Array.isArray(result.notifications) ? result.notifications : []).map((notification) => ({
+            id: `verification:${notification.id}`,
+            notificationId: notification.id,
+            title: notification.title,
+            detail: notification.message,
+            from: "TaskPanda",
+            unreadCount: 1,
+            href: notification.href,
+            createdAt: notification.createdAt,
+            isVerificationNotice: true,
+          }));
+        const rejectionNotice = getProfileRejectionNotice();
+        const hasRejectionNotification = notifications.some((notification) =>
+          notification.title === "Identity verification rejected"
+        );
+        if (rejectionNotice && !hasRejectionNotification) notifications.unshift(rejectionNotice);
+        setVerificationNotificationItems(notifications);
+      } catch (error) {
+        if (active) {
+          console.warn("Verification notifications refresh failed:", error.message);
+          const rejectionNotice = getProfileRejectionNotice();
+          setVerificationNotificationItems(rejectionNotice ? [rejectionNotice] : []);
+        }
+      }
+    };
+
+    void loadVerificationNotifications();
+    const intervalId = window.setInterval(loadVerificationNotifications, 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [
+    authRole,
+    isLoggedIn,
+    showNav,
+    token,
+    user?._id,
+    user?.id,
+    user?.verificationRejectionReason,
+    user?.verificationStatus,
+  ]);
 
   useEffect(() => {
     if (!showNav || !isLoggedIn || !token || !["client", "provider"].includes(authRole)) {
@@ -305,7 +415,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   const accountRoleLabel = authRole === "provider" ? "Provider" : authRole === "admin" ? "Admin" : "Client";
   const dashboardPath = authRole === "provider" ? "/provider-dashboard" : authRole === "admin" ? "/admin?section=dashboard" : "/dashboard";
   const profilePath = authRole === "provider" ? "/provider-profile" : "/profile";
-  const notificationList = [...broadcastNotificationItems, ...notificationItems];
+  const notificationList = [...verificationNotificationItems, ...broadcastNotificationItems, ...notificationItems];
   const visibleNotificationList = notificationList.filter((item) => !dismissedNotificationIds.includes(item.id));
   const unreadNotificationCount = visibleNotificationList.reduce((total, item) => total + Math.max(0, Number(item.unreadCount) || 0), 0);
   const totalNotificationCount = unreadNotificationCount;
@@ -416,7 +526,17 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                               : "border-gray-50 hover:bg-gray-50"
                           }`}
                         >
-                          <Link to={item.href} onClick={() => setNotifOpen(false)} className="flex min-w-0 flex-1 gap-3 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
+                          <Link
+                            to={item.href}
+                            onClick={() => {
+                              setNotifOpen(false);
+                              if (item.isVerificationNotice) {
+                                if (item.notificationId) void markVerificationNotificationRead(item);
+                                else dismissNotification(item);
+                              }
+                            }}
+                            className="flex min-w-0 flex-1 gap-3 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+                          >
                             {item.isSystemAnnouncement && (
                               <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-800" aria-hidden="true">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
@@ -439,6 +559,19 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                                   <span className="mt-1 block break-words text-sm font-semibold leading-5 text-slate-950">{item.title}</span>
                                   <span className="mt-0.5 block break-words text-xs leading-5 text-slate-700">{item.detail}</span>
                                 </>
+                              ) : item.isVerificationNotice ? (
+                                <>
+                                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                    <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-rose-800">Verification update</span>
+                                    {item.createdAt && (
+                                      <time dateTime={item.createdAt} className="text-[10px] font-medium text-slate-500">
+                                        {new Date(item.createdAt).toLocaleDateString()}
+                                      </time>
+                                    )}
+                                  </span>
+                                  <span className="mt-1 block break-words text-sm font-semibold leading-5 text-slate-950">{item.title}</span>
+                                  <span className="mt-0.5 block break-words text-xs leading-5 text-slate-700">{item.detail}</span>
+                                </>
                               ) : (
                                 <>
                                   <span className="block text-sm text-gray-700"><span className="font-semibold">{item.from}</span> · {item.title}</span>
@@ -452,16 +585,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                             onClick={(event) => {
                               event.preventDefault();
                               event.stopPropagation();
-                              setDismissedNotificationIds((current) => {
-                                if (current.includes(item.id)) return current;
-                                const next = [...current, item.id];
-                                try {
-                                  localStorage.setItem(dismissedStorageKey, JSON.stringify(next));
-                                } catch {
-                                  // Keep the dismissal for this page session if storage is unavailable.
-                                }
-                                return next;
-                              });
+                              dismissNotification(item);
                             }}
                             className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-gray-400 transition hover:bg-gray-200 hover:text-gray-600"
                             aria-label={`Dismiss notification from ${item.from}`}
