@@ -20,8 +20,8 @@ const philippineIdNameFixtures = JSON.parse(fs.readFileSync(
   "utf8"
 ));
 
-test("OCR supports English and Filipino IDs using multiple card layout modes", () => {
-  assert.equal(OCR_LANGUAGES, "eng+fil");
+test("OCR uses a single Latin-script language model and bounded card layout modes", () => {
+  assert.equal(OCR_LANGUAGES, "eng");
   assert.deepEqual(OCR_SEGMENTATION_MODES, [
     "6",
     "11",
@@ -189,22 +189,17 @@ test("synthetic Philippine ID layouts match structured names with conservative f
   }
 });
 
-test("ID OCR keeps a small set of card-focused and rotated variants", async () => {
+test("ID OCR prioritizes a focused card crop with the original image as fallback", async () => {
   const image = await sharp({
     create: { width: 1000, height: 1600, channels: 3, background: "#fff" },
   }).jpeg().toBuffer();
   const variants = await createIdOCRVariants(image);
 
-  assert.equal(variants.length, 4);
+  assert.equal(variants.length, 2);
   const processedMetadata = await sharp(variants[0]).metadata();
-  assert.equal(processedMetadata.width, 1000);
-  assert.equal(processedMetadata.height, 1600);
-  const portraitCropMetadata = await sharp(variants[2]).metadata();
-  assert.equal(portraitCropMetadata.width, 1600);
-  assert.ok(portraitCropMetadata.height < 1000);
-  const rotatedMetadata = await sharp(variants[3]).metadata();
-  assert.equal(rotatedMetadata.width, 1600);
-  assert.equal(rotatedMetadata.height, 1000);
+  assert.equal(processedMetadata.width, 1600);
+  assert.ok(processedMetadata.height < 1000);
+  assert.deepEqual(variants[1], image);
 });
 
 test("OCR keeps the unmodified upload as a fallback when preprocessing cannot read it", async () => {

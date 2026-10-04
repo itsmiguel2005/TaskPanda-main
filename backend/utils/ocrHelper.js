@@ -7,7 +7,7 @@ const sharp = require("sharp");
 let workerPromise;
 let ocrJobQueue = Promise.resolve();
 const ocrCachePath = path.join(os.tmpdir(), "taskpanda-tesseract");
-const OCR_LANGUAGES = "eng+fil";
+const OCR_LANGUAGES = "eng";
 const OCR_SEGMENTATION_MODES = [
   Tesseract.PSM.SINGLE_BLOCK,
   Tesseract.PSM.SPARSE_TEXT,
@@ -38,9 +38,9 @@ const ID_TYPE_SIGNATURES = [
 ];
 const UNKNOWN_ID_TYPE = "Unknown";
 const MINIMUM_NAME_MATCH_ACCURACY = 0.75;
-const MAX_OCR_IMAGE_VARIANTS = 5;
+const MAX_OCR_IMAGE_VARIANTS = 2;
 const OCR_IMAGE_MAX_SIZE = 1600;
-const OCR_IMAGE_ROTATIONS = [0, 90];
+const OCR_IMAGE_ROTATIONS = [0];
 const BACK_SIDE_SIGNATURES = [
   /\bsignature\b/i,
   /\b(?:thumb\s?mark|thumbprint|fingerprint|left\s+thumb|right\s+thumb)\b/i,
@@ -485,12 +485,9 @@ async function createIdOCRVariants(image) {
     return [imageBuffer];
   }
 
-  const imageWidth = metadata.width;
-  const imageHeight = metadata.height;
   const variants = [];
   for (const rotation of OCR_IMAGE_ROTATIONS) {
     if (variants.length >= MAX_OCR_IMAGE_VARIANTS - 1) break;
-    const isCardinalRotation = [0, 90, 180, 270].includes(rotation);
     let rotatedImage;
     try {
       rotatedImage = await sharp(orientedImage)
@@ -508,80 +505,30 @@ async function createIdOCRVariants(image) {
       continue;
     }
 
-    const initialVariantCount = variants.length;
-    const imageAdjustments = [
-      {
-        name: "normalization",
-        process: () => sharp(rotatedImage).grayscale().normalize().sharpen().jpeg({ quality: 92 }).toBuffer(),
-      },
-    ];
-    for (const adjustment of imageAdjustments) {
-      if (variants.length >= MAX_OCR_IMAGE_VARIANTS - 1) break;
-      try {
-        variants.push(await adjustment.process());
-      } catch (error) {
-        console.warn(`Verification OCR ${adjustment.name} preprocessing failed for ${rotation}-degree image:`, error.message);
-      }
-    }
-    if (variants.length === initialVariantCount) variants.push(rotatedImage);
-    if (!isCardinalRotation || variants.length >= MAX_OCR_IMAGE_VARIANTS - 1) continue;
-
-    const rotationSwapsDimensions = rotation === 90 || rotation === 270;
-    const rotatedWidth = rotationSwapsDimensions ? imageHeight : imageWidth;
-    const rotatedHeight = rotationSwapsDimensions ? imageWidth : imageHeight;
     const rotatedMetadata = await sharp(rotatedImage).metadata();
     const cropWidth = Math.max(1, Math.round(rotatedMetadata.width * 0.94));
-    const cropHeight = Math.max(1, Math.round(rotatedMetadata.height * 0.58));
-    try {
-      const cropBuffer = await sharp(rotatedImage)
-        .extract({
-          left: Math.max(0, Math.round((rotatedMetadata.width - cropWidth) / 2)),
-          top: Math.max(0, Math.round((rotatedMetadata.height - cropHeight) / 2)),
-          width: cropWidth,
-          height: cropHeight,
-        })
-        .grayscale()
-        .normalize()
-        .sharpen()
-        .resize({
-          width: OCR_IMAGE_MAX_SIZE,
-          height: OCR_IMAGE_MAX_SIZE,
-          fit: "inside",
-        })
-        .jpeg({ quality: 92 })
-        .toBuffer();
-      variants.push(cropBuffer);
-    } catch (error) {
-      console.warn(`Verification OCR card-area crop failed for ${rotation}-degree image:`, error.message);
-    }
-
-    if (rotatedHeight > rotatedWidth && variants.length < MAX_OCR_IMAGE_VARIANTS - 1) {
-      const tightCropHeight = Math.max(1, Math.round(rotatedMetadata.height * 0.36));
-      try {
-        const tightCrop = await sharp(rotatedImage)
-          .extract({
-            left: Math.max(0, Math.round((rotatedMetadata.width - cropWidth) / 2)),
-            top: Math.max(0, Math.round((rotatedMetadata.height - tightCropHeight) / 2)),
-            width: cropWidth,
-            height: tightCropHeight,
-          })
-          .grayscale()
-          .normalize()
-          .sharpen()
-          .resize({
-            width: OCR_IMAGE_MAX_SIZE,
-            height: OCR_IMAGE_MAX_SIZE,
-            fit: "inside",
-          })
-          .jpeg({ quality: 95 })
-          .toBuffer();
-        variants.push(tightCrop);
-      } catch (error) {
-        console.warn(`Verification OCR focused card crop failed for ${rotation}-degree image:`, error.message);
-      }
-    }
+    const cardCropHeight = Math.max(1, Math.round(rotatedMetadata.height * 0.36));
+    const cropBuffer = await sharp(rotatedImage)
+      .extract({
+        left: Math.max(0, Math.round((rotatedMetadata.width - cropWidth) / 2)),
+        top: Math.max(0, Math.round((rotatedMetadata.height - cardCropHeight) / 2)),
+        width: cropWidth,
+        height: cardCropHeight,
+      })
+      .grayscale()
+      .normalize()
+      .sharpen()
+      .resize({
+        width: OCR_IMAGE_MAX_SIZE,
+        height: OCR_IMAGE_MAX_SIZE,
+        fit: "inside",
+      })
+      .jpeg({ quality: 92 })
+      .toBuffer();
+    variants.push(cropBuffer);
   }
 
+  variants.push(imageBuffer);
   return variants;
 }
 
@@ -648,12 +595,16 @@ function formatOCRResult(candidate) {
 async function getWorker() {
   if (!workerPromise) {
     workerPromise = (async () => {
+      const startedAt = Date.now();
       await fs.mkdir(ocrCachePath, { recursive: true });
-      return Tesseract.createWorker(
+      const worker = await Tesseract.createWorker(
         OCR_LANGUAGES,
         Tesseract.OEM.LSTM_ONLY,
-        { cachePath: ocrCachePath, legacyCore: true }
+        { cachePath: ocrCachePath }
       );
+      await worker.setParameters({ tessedit_pageseg_mode: OCR_SEGMENTATION_MODES[0] });
+      console.info(`Verification OCR worker initialized in ${Date.now() - startedAt} ms.`);
+      return worker;
     })();
   }
   try {
@@ -664,7 +615,12 @@ async function getWorker() {
   }
 }
 
+function warmOCRWorker() {
+  return getWorker();
+}
+
 async function performOCRVerificationNow(imagePath, userName) {
+  const startedAt = Date.now();
   try {
     const worker = await getWorker();
     const candidates = [];
@@ -701,6 +657,7 @@ async function performOCRVerificationNow(imagePath, userName) {
           shouldAutoVerify(currentBest.confidence, currentBest.nameMatch) ||
           (currentBest.nameMatch.accuracy === 1 && currentBest.confidence >= 40)
         ) {
+          console.info(`Verification OCR completed in ${Date.now() - startedAt} ms using ${candidates.length} pass(es).`);
           return formatOCRResult(currentBest);
         }
         return null;
@@ -737,6 +694,7 @@ async function performOCRVerificationNow(imagePath, userName) {
     }
 
     const bestCandidate = selectBestOCRCandidate(candidates, userName);
+    console.info(`Verification OCR completed in ${Date.now() - startedAt} ms using ${candidates.length} pass(es).`);
     return formatOCRResult(bestCandidate);
   } catch (error) {
     console.warn("Verification OCR failed; routing submission for manual review:", error.message);
@@ -773,4 +731,5 @@ module.exports = {
   scoreNameMatch,
   selectBestOCRCandidate,
   shouldAutoVerify,
+  warmOCRWorker,
 };

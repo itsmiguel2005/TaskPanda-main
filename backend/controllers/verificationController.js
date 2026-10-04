@@ -7,6 +7,7 @@ const TESDA_QUALIFICATIONS = new Set(tesdaSectors.flatMap(({ qualifications }) =
 const {
   classifyIdSide,
   performOCRVerification,
+  warmOCRWorker,
 } = require("../utils/ocrHelper");
 const { SECURITY_FLAGS, inspectVerificationMetadata } = require("../utils/verificationMetadata");
 const {
@@ -70,6 +71,9 @@ async function handleSubmitVerification(req, res) {
       return res.status(400).json({ message: "Trade certificates must be 200 characters or fewer." });
     }
 
+    void warmOCRWorker().catch((error) => {
+      console.warn("Verification OCR worker preloading failed; it will retry during processing:", error.message);
+    });
     const [frontBuffer, backBuffer] = await Promise.all([
       fs.readFile(front.path),
       fs.readFile(back.path),
