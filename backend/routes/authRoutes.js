@@ -4,6 +4,7 @@ const {
   handleRegistrationAvailability,
   handleRegistrationStatus,
   handleRegistrationTabClosed,
+  handleResumeRegistration,
   handleVerifyEmail,
   handleResendVerification,
   handleCompleteRegistration,
@@ -60,6 +61,7 @@ router.post("/check-registration", limitRegistrationChecks, [
   body("username").optional().isString().trim().isLength({ max: 30 }),
 ], validateRequest, handleRegistrationAvailability);
 router.get("/registration-status", handleRegistrationStatus);
+router.post("/registration-resume", limitAuthAttempts, body("code").isString().matches(/^[a-f\d]{12}$/i), validateRequest, handleResumeRegistration);
 router.post("/registration-tab-closed", limitAuthAttempts, handleRegistrationTabClosed);
 router.post("/verify-email", limitAuthAttempts, body("token").isString().matches(/^[a-f\d]{64}$/i), validateRequest, handleVerifyEmail);
 router.post("/resend-verification", limitAuthAttempts, emailField(), validateRequest, handleResendVerification);

@@ -10,6 +10,10 @@ export default function VerifyEmailPage() {
   const [status, setStatus] = useState(token ? "verifying" : "waiting");
   const [message, setMessage] = useState("");
   const [isResending, setIsResending] = useState(false);
+  const [resumeCode, setResumeCode] = useState("");
+  const [resumeCodeInput, setResumeCodeInput] = useState("");
+  const [isResuming, setIsResuming] = useState(false);
+  const [resumeCodeError, setResumeCodeError] = useState("");
   const verificationStarted = useRef(false);
   const registrationResumed = useRef(false);
 
@@ -55,7 +59,7 @@ export default function VerifyEmailPage() {
         return;
       }
       if (response.status === 401) {
-        setMessage("Your email is verified. Return to the browser or device where you started registration; it will continue automatically.");
+        setMessage("Your email is verified. Return to the browser or device where you started registration; it should continue automatically. If it does not, enter the one-time code below.");
         return;
       }
       if (!response.ok) {
@@ -84,6 +88,7 @@ export default function VerifyEmailPage() {
           throw new Error(data.message || "We could not confirm your email address.");
         }
         setEmail(data.user.email || "");
+        setResumeCode(data.registrationResumeCode || "");
         setStatus("verified");
         await continueRegistrationOnThisBrowser();
       })
@@ -112,7 +117,7 @@ export default function VerifyEmailPage() {
           resumeRegistration(data);
         } else if (data.alreadyResumed) {
           setStatus("verified");
-          setMessage("Registration is already continuing in another tab on this browser.");
+          setMessage("Registration was already opened in another tab. If it did not continue, enter the one-time code from your verified device below.");
         } else if (data.verified) {
           setStatus("verified");
           setMessage("Your email is verified. Continue your registration here.");
@@ -130,6 +135,33 @@ export default function VerifyEmailPage() {
       window.clearInterval(pollId);
     };
   }, [resumeRegistration, token]);
+
+  const handleResumeWithCode = async (event) => {
+    event.preventDefault();
+    setResumeCodeError("");
+    setIsResuming(true);
+    try {
+      const response = await fetch("/api/auth/registration-resume", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: resumeCodeInput.trim() }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.onboardingToken || !data.user) {
+        setResumeCodeError(data.message || "Could not resume registration with that code.");
+        return;
+      }
+      resumeRegistration(data);
+    } catch (error) {
+      console.error("Registration resume code submission failed:", error);
+      setResumeCodeError(error instanceof TypeError
+        ? "Could not reach the registration service. Check your connection and try again."
+        : error.message || "Could not resume registration with that code.");
+    } finally {
+      setIsResuming(false);
+    }
+  };
 
   const handleResend = async (event) => {
     event.preventDefault();
@@ -208,9 +240,39 @@ export default function VerifyEmailPage() {
                   Check this browser again
                 </button>
                 <p className="text-xs leading-5 text-gray-500" role="status">
-                  If you started registration on another device, return to that device. It will continue automatically.
+                  If you started registration on another device, return to it. It should continue automatically.
                 </p>
+                {resumeCode && (
+                  <div className="rounded-xl border border-primary-200 bg-primary-50/70 p-4 text-left">
+                    <p className="text-sm font-semibold text-gray-900">If the other device does not continue</p>
+                    <p className="mt-1 text-xs leading-5 text-gray-600">Enter this one-time code on the device where you started registration. It expires in 15 minutes.</p>
+                    <p className="mt-3 select-all rounded-lg bg-white px-3 py-2 text-center font-mono text-lg font-bold tracking-[0.18em] text-primary-900" aria-label="One-time registration resume code">{resumeCode}</p>
+                  </div>
+                )}
               </div>
+            )}
+            {status !== "verifying" && (
+              <form onSubmit={handleResumeWithCode} className="space-y-3 border-t border-gray-100 pt-4 text-left">
+                <label htmlFor="registrationResumeCode" className="block text-sm font-medium text-gray-700">Have a code from your verified device?</label>
+                <input
+                  id="registrationResumeCode"
+                  type="text"
+                  autoComplete="one-time-code"
+                  value={resumeCodeInput}
+                  onChange={(event) => setResumeCodeInput(event.target.value.toUpperCase().replace(/[^A-F0-9]/g, "").slice(0, 12))}
+                  maxLength={12}
+                  placeholder="12-character code"
+                  className="block w-full rounded-lg border border-primary-200 bg-primary-50/50 px-4 py-2.5 text-center font-mono text-sm tracking-[0.18em] text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
+                />
+                {resumeCodeError && <p className="text-sm text-red-600" role="alert">{resumeCodeError}</p>}
+                <button
+                  type="submit"
+                  disabled={isResuming || resumeCodeInput.length !== 12}
+                  className={`w-full rounded-lg bg-gradient-to-r ${a.button} px-4 py-2.5 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50`}
+                >
+                  {isResuming ? "Continuing..." : "Continue registration"}
+                </button>
+              </form>
             )}
             {status !== "verified" && (
               <Link to="/login" className="inline-block text-sm font-semibold text-primary-700 hover:text-primary-900">

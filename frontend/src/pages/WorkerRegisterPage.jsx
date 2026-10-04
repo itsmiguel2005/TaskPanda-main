@@ -143,6 +143,7 @@ export default function WorkerRegisterPage() {
     try {
       const response = await fetch("/api/auth/register", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           role: "provider",

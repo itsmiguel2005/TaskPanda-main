@@ -222,6 +222,14 @@ const userSchema = new mongoose.Schema(
       type: Date,
       select: false,
     },
+    registrationResumeCodeHash: {
+      type: String,
+      select: false,
+    },
+    registrationResumeCodeExpiresAt: {
+      type: Date,
+      select: false,
+    },
     onboardingTokenHash: {
       type: String,
       select: false,

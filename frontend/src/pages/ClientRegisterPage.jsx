@@ -139,6 +139,7 @@ export default function ClientRegisterPage() {
     try {
       const response = await fetch("/api/auth/register", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           role: "client",

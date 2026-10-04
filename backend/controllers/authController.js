@@ -99,6 +99,7 @@ function getRegistrationAppUrl(req) {
       // Fall back to the configured app URL when the request has no local origin.
     }
   }
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
   return config.appUrl;
 }
 
@@ -423,9 +424,15 @@ async function handleVerifyEmail(req, res) {
     return res.status(400).json({ message: "This verification link is invalid or expired. Request a new one to continue." });
   }
 
+  const registrationResumeCode = randomBytes(6).toString("hex").toUpperCase();
+  user.registrationResumeCodeHash = hashToken(registrationResumeCode);
+  user.registrationResumeCodeExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
+  await user.save();
+
   return res.json({
     message: "Email verified successfully. Return to the browser where you started registration to continue.",
     verified: true,
+    registrationResumeCode,
     user: {
       id: user._id,
       email: user.email,
@@ -463,13 +470,19 @@ async function handleRegistrationStatus(req, res) {
     const onboardingToken = randomBytes(32).toString("hex");
     const onboardingTokenHash = hashToken(onboardingToken);
     const onboardingExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const claimAvailable = mongoose.trusted({
+      $or: [
+        { registrationResumeClaimedAt: mongoose.trusted({ $exists: false }) },
+        { registrationResumeClaimedAt: mongoose.trusted({ $lt: new Date(Date.now() - 10 * 60 * 1000) }) },
+      ],
+    });
     const claimedUser = await User.findOneAndUpdate(
       mongoose.trusted({
         _id: user._id,
         ...sessionFilter,
         emailVerified: true,
         registrationComplete: false,
-        registrationResumeClaimedAt: mongoose.trusted({ $exists: false }),
+        ...claimAvailable,
       }),
       {
         $set: {
@@ -482,6 +495,10 @@ async function handleRegistrationStatus(req, res) {
             $each: [{ tokenHash: onboardingTokenHash, expiresAt: onboardingExpiresAt }],
             $slice: -5,
           },
+        },
+        $unset: {
+          registrationResumeCodeHash: 1,
+          registrationResumeCodeExpiresAt: 1,
         },
       },
       { new: true }
@@ -504,6 +521,72 @@ async function handleRegistrationStatus(req, res) {
   } catch (error) {
     console.error("Registration status error:", error);
     return res.status(500).json({ message: "Could not check registration status." });
+  }
+}
+
+async function handleResumeRegistration(req, res) {
+  const code = String(req.body.code || "").trim().toUpperCase();
+  if (!/^[A-F0-9]{12}$/.test(code)) {
+    return res.status(400).json({ message: "Enter the 12-character code shown on the verified device." });
+  }
+
+  try {
+    const onboardingToken = randomBytes(32).toString("hex");
+    const onboardingTokenHash = hashToken(onboardingToken);
+    const onboardingExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const claimAvailable = mongoose.trusted({
+      $or: [
+        { registrationResumeClaimedAt: mongoose.trusted({ $exists: false }) },
+        { registrationResumeClaimedAt: mongoose.trusted({ $lt: new Date(now.getTime() - 10 * 60 * 1000) }) },
+      ],
+    });
+    const user = await User.findOneAndUpdate(
+      mongoose.trusted({
+        registrationResumeCodeHash: hashToken(code),
+        registrationResumeCodeExpiresAt: mongoose.trusted({ $gt: now }),
+        emailVerified: true,
+        registrationComplete: false,
+        ...claimAvailable,
+      }),
+      {
+        $set: {
+          registrationResumeClaimedAt: now,
+          onboardingTokenHash,
+          onboardingTokenExpiresAt: onboardingExpiresAt,
+        },
+        $push: {
+          onboardingTokens: {
+            $each: [{ tokenHash: onboardingTokenHash, expiresAt: onboardingExpiresAt }],
+            $slice: -5,
+          },
+        },
+        $unset: {
+          registrationResumeCodeHash: 1,
+          registrationResumeCodeExpiresAt: 1,
+        },
+      },
+      { new: true }
+    );
+    if (!user) {
+      return res.status(400).json({ message: "That code is invalid, expired, or already used. Verify your email again or sign in to continue." });
+    }
+
+    return res.json({
+      onboardingToken,
+      user: {
+        id: user._id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        professions: user.professions,
+        emailVerified: true,
+        registrationComplete: false,
+      },
+    });
+  } catch (error) {
+    console.error("Registration resume code error:", error);
+    return res.status(500).json({ message: "Could not resume registration with that code." });
   }
 }
 
@@ -539,7 +622,7 @@ async function handleResendVerification(req, res) {
     return res.status(400).json({ message: "Enter a valid email address." });
   }
 
-  const user = await User.findOne({ email, emailVerified: false, registrationComplete: false }).select(
+  const user = await User.findOne({ email, registrationComplete: false }).select(
     "+emailVerificationTokenHash +emailVerificationExpiresAt +emailVerificationTokens"
   );
   if (!user) {
@@ -654,6 +737,8 @@ async function handleCompleteRegistration(req, res) {
         registrationSessionExpiresAt: 1,
         registrationVerificationClosedAt: 1,
         registrationResumeClaimedAt: 1,
+        registrationResumeCodeHash: 1,
+        registrationResumeCodeExpiresAt: 1,
       },
     },
     { new: true, runValidators: true }
@@ -1062,6 +1147,7 @@ async function handleResetPassword(req, res) {
 module.exports = {
   handleRegister,
   handleRegistrationAvailability,
+  handleResumeRegistration,
   handleRegistrationStatus,
   handleRegistrationTabClosed,
   handleVerifyEmail,
