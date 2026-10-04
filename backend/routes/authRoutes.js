@@ -35,7 +35,7 @@ const registrationValidation = [
 
 const loginValidation = [
   body("email").isString().trim().isLength({ min: 1, max: 254 }),
-  body("password").isString().isLength({ min: 1, max: 256 }),
+  body("password").isString().isLength({ min: 8, max: 256 }),
 ];
 
 const completionValidation = [

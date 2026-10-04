@@ -234,6 +234,8 @@ Identity verification uses multilingual (`eng+fil`) `tesseract.js` OCR with Tess
 
 Front and back images are stored as authenticated Cloudinary assets and can only be retrieved through the admin verification routes. Configure the same Cloudinary credentials above to enable ID submissions and secure document review. The applicant submits to `POST /api/v1/users/verify`; admins use `GET /api/v1/admin/verifications` and `PATCH /api/v1/admin/verifications/:userId`.
 
+Identity-verified providers can submit TESDA certificates separately at `POST /api/tesda-certificates` by searching and selecting a qualification from `shared/tesdaQualifications.json`, then uploading a JPEG, PNG, or WebP certificate image (up to 8 MB). The selected qualification is validated against the same catalog on the server. Certificate submissions remain pending until an admin reviews the image in the verification queue; approval adds the trade to the provider's verified TESDA credentials without changing their identity status. Admin certificate review uses `PATCH /api/v1/admin/verifications/:userId/tesda/:certificateId`, and its image is served only through the authenticated admin verification routes.
+
 ## Project Structure
 
 ```text

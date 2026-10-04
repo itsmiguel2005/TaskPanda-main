@@ -189,8 +189,8 @@ export default function ProviderProfilePage() {
                     <p className="text-sm font-semibold text-slate-900">{isVerified ? "Identity verification complete" : "Verify your identity"}</p>
                     <p className="mt-1 text-sm leading-6 text-slate-600">
                       {isVerified
-                        ? "Your identity has been verified. You can include a trade certificate when submitting verification."
-                        : "Submit a valid ID and optionally add a trade certificate such as TESDA NC II."}
+                        ? "Your identity has been verified. Submit TESDA certificates separately for review from this section."
+                        : "Submit a valid photo ID to verify the identity on your provider account."}
                     </p>
                   </div>
                 </div>
@@ -199,6 +199,44 @@ export default function ProviderProfilePage() {
                     Start verification
                   </button>
                 )}
+                <div className="mt-5 border-t border-slate-100 pt-5">
+                  <h3 className="text-sm font-semibold text-slate-900">TESDA certification</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    Submit certificates for a separate review at any time after your identity is verified.
+                  </p>
+                  {(user?.tesdaCertificates || []).length > 0 && (
+                    <ul className="mt-3 space-y-2">
+                      {user.tesdaCertificates.map((certificate) => (
+                        <li key={certificate.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-3.5 py-3">
+                          <span className="text-sm font-semibold text-slate-800">{certificate.trade}</span>
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                            certificate.status === "approved"
+                              ? "bg-emerald-50 text-emerald-800"
+                              : certificate.status === "rejected"
+                                ? "bg-rose-50 text-rose-800"
+                                : "bg-amber-50 text-amber-900"
+                          }`}>
+                            {certificate.status === "approved" ? "Verified" : certificate.status === "rejected" ? "Update requested" : "Pending review"}
+                          </span>
+                          {certificate.rejectionReason && (
+                            <p className="basis-full text-xs leading-5 text-rose-800">Review feedback: {certificate.rejectionReason}</p>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {isVerified ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate("/provider-profile/tesda")}
+                      className="dashboard-secondary-button dashboard-focus mt-4 w-full px-4 py-2.5 text-sm sm:w-auto"
+                    >
+                      Submit TESDA certificate
+                    </button>
+                  ) : (
+                    <p className="mt-3 text-xs font-medium text-slate-600">Verify your identity first to submit a certificate.</p>
+                  )}
+                </div>
               </div>
             </section>
 
@@ -255,7 +293,8 @@ export default function ProviderProfilePage() {
                 <p className="mt-1 text-sm text-slate-600">Manage your provider profile and account access.</p>
               </div>
               <ProfileSetting label="Edit professional profile" description="Update your services, bio, contact information, or service area." onClick={() => navigate("/profile/edit")} />
-              {!isVerified && <ProfileSetting label="Verify identity" description="Submit your ID and optional trade certificate." onClick={() => navigate("/provider-profile/verify")} />}
+              {!isVerified && <ProfileSetting label="Verify identity" description="Submit your ID for identity review." onClick={() => navigate("/provider-profile/verify")} />}
+              {isVerified && <ProfileSetting label="Submit TESDA certificate" description="Add or update a TESDA trade credential for separate review." onClick={() => navigate("/provider-profile/tesda")} />}
               <ProfileSetting label="Provider bookings" description="View requests and manage your schedule." onClick={() => navigate("/provider-bookings")} />
               <ProfileSetting label="Messages" description="Continue conversations with clients." onClick={() => navigate("/provider-messages")} />
               <ProfileSetting label="Sign out" description="Sign out of this device." onClick={handleSignOut} last tone="danger" />

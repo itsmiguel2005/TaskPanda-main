@@ -94,8 +94,8 @@ export default function LoginPage() {
         : "",
     password: !formData.password
       ? "Password is required"
-      : formData.password.length < 6
-      ? "Password must be at least 6 characters"
+      : formData.password.length < 8
+      ? "Password must be at least 8 characters"
       : "",
   };
 

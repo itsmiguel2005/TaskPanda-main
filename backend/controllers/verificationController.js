@@ -1,6 +1,8 @@
 const fs = require("fs/promises");
 const mongoose = require("mongoose");
 const User = require("../models/User");
+const tesdaSectors = require("../../shared/tesdaQualifications.json");
+const TESDA_QUALIFICATIONS = new Set(tesdaSectors.flatMap(({ qualifications }) => qualifications));
 const {
   areIdSidesLikelySwapped,
   classifyIdSide,
@@ -183,41 +185,246 @@ async function handleSubmitVerification(req, res) {
   }
 }
 
+async function handleSubmitTesdaCertificate(req, res) {
+  const file = req.file;
+  if (!file) return res.status(400).json({ message: "Upload a photo of your TESDA certificate." });
+
+  const trade = typeof req.body?.trade === "string" ? req.body.trade : "";
+  if (!TESDA_QUALIFICATIONS.has(trade)) {
+    await removeUploadedFiles([file]);
+    return res.status(400).json({ message: "Choose a TESDA qualification from the available catalog." });
+  }
+
+  let uploadedImage;
+  try {
+    const previousUser = await User.findById(req.user._id).select("role isVerified tesdaCertificates");
+    if (!previousUser) {
+      return res.status(404).json({ message: "Your account could not be found." });
+    }
+    if (previousUser.role !== "provider" || previousUser.isVerified !== true) {
+      return res.status(403).json({ message: "Complete identity verification before submitting a TESDA certificate." });
+    }
+
+    const tradeKey = trade.toLowerCase();
+    const alreadySubmitted = (previousUser.tesdaCertificates || []).some((certificate) =>
+      certificate.trade?.trim().toLowerCase() === tradeKey &&
+      ["pending", "approved"].includes(certificate.status)
+    );
+    if (alreadySubmitted) {
+      return res.status(409).json({ message: "A TESDA certificate for this trade is already pending or approved." });
+    }
+
+    const buffer = await fs.readFile(file.path);
+    uploadedImage = await uploadVerificationImage(buffer, String(req.user._id), "tesda");
+    const certificateId = new mongoose.Types.ObjectId();
+    const certificateImageUrl = `/api/v1/admin/verifications/${req.user._id}/tesda/${certificateId}/document`;
+    const savedUser = await User.findOneAndUpdate({
+      _id: req.user._id,
+      role: "provider",
+      isVerified: true,
+      tesdaCertificates: {
+        $not: {
+          $elemMatch: {
+            trade: { $regex: `^${trade.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
+            status: { $in: ["pending", "approved"] },
+          },
+        },
+      },
+    }, {
+      $push: {
+        tesdaCertificates: {
+          _id: certificateId,
+          trade,
+          status: "pending",
+          submittedAt: new Date(),
+          certificateImageUrl,
+          certificateImagePublicId: uploadedImage.publicId,
+          certificateImageFormat: uploadedImage.format,
+        },
+      },
+    }, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!savedUser) {
+      const error = new Error("A TESDA certificate for this trade was submitted while your upload was processing. Refresh your profile to see its status.");
+      error.statusCode = 409;
+      throw error;
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Your TESDA certificate was submitted for review.",
+      user: {
+        tesdaCertificates: (savedUser.tesdaCertificates || []).map((certificate) => ({
+          id: String(certificate._id),
+          trade: certificate.trade || "",
+          status: certificate.status || "pending",
+          submittedAt: certificate.submittedAt || null,
+          reviewedAt: certificate.reviewedAt || null,
+          rejectionReason: certificate.rejectionReason || "",
+        })),
+      },
+    });
+  } catch (error) {
+    if (uploadedImage?.publicId) {
+      await deleteVerificationImage(uploadedImage.publicId).catch((deleteError) => {
+        console.error("Could not remove unsaved TESDA certificate image:", deleteError.message);
+      });
+    }
+    console.error("Submit TESDA certificate error:", error);
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
+    return res.status(500).json({ message: "We could not submit your TESDA certificate. Please try again." });
+  } finally {
+    await removeUploadedFiles([file]);
+  }
+}
+
 async function handleGetAdminVerifications(_req, res) {
   try {
-    const users = await User.find({
-      "verificationDetails.status": "Pending",
-      "verificationDetails.idFrontUrl": mongoose.trusted({ $ne: "" }),
-      role: mongoose.trusted({ $in: ["client", "provider"] }),
-    })
-      .select("fullName firstName middleName lastName username email role createdAt verificationStatus isVerified verificationDetails")
-      .sort({ "verificationDetails.submittedAt": 1 })
-      .lean();
+    const [users, providersWithPendingCertificates] = await Promise.all([
+      User.find({
+        "verificationDetails.status": "Pending",
+        "verificationDetails.idFrontUrl": mongoose.trusted({ $ne: "" }),
+        role: mongoose.trusted({ $in: ["client", "provider"] }),
+      })
+        .select("fullName firstName middleName lastName username email role createdAt verificationStatus isVerified verificationDetails")
+        .lean(),
+      User.find({
+        "tesdaCertificates.status": "pending",
+        role: "provider",
+      })
+        .select("fullName firstName middleName lastName username email role createdAt tesdaCertificates")
+        .lean(),
+    ]);
 
+    const identitySubmissions = users.map((user) => ({
+      type: "identity",
+      userId: String(user._id),
+      name: getProfileName(user) || user.username || "Unnamed account",
+      username: user.username || "",
+      email: user.email,
+      role: user.role,
+      accountCreatedAt: user.createdAt,
+      submittedAt: user.verificationDetails?.submittedAt || null,
+      status: user.verificationDetails?.status || "Pending",
+      idFrontUrl: user.verificationDetails?.idFrontUrl || "",
+      idBackUrl: user.verificationDetails?.idBackUrl || "",
+      tradeCertificate: user.verificationDetails?.tradeCertificate || "",
+      ocrConfidence: user.verificationDetails?.ocrConfidence ?? null,
+      nameMatchAccuracy: user.verificationDetails?.nameMatchAccuracy ?? null,
+      autoVerified: user.verificationDetails?.autoVerified === true,
+      securityFlags: (user.verificationDetails?.securityFlags || [])
+        .filter((flag) => Object.values(SECURITY_FLAGS).includes(flag)),
+      rejectionReason: user.verificationDetails?.rejectionReason || "",
+    }));
+    const tesdaSubmissions = providersWithPendingCertificates.flatMap((user) =>
+      (user.tesdaCertificates || [])
+        .filter((certificate) => certificate.status === "pending")
+        .filter((certificate) => certificate.certificateImageUrl)
+        .map((certificate) => ({
+          type: "tesda",
+          userId: String(user._id),
+          certificateId: String(certificate._id),
+          name: getProfileName(user) || user.username || "Unnamed account",
+          username: user.username || "",
+          email: user.email,
+          role: user.role,
+          accountCreatedAt: user.createdAt,
+          submittedAt: certificate.submittedAt || null,
+          trade: certificate.trade || "",
+          certificateUrl: certificate.certificateImageUrl || "",
+        }))
+    );
+    const verifications = [...identitySubmissions, ...tesdaSubmissions]
+      .sort((left, right) => new Date(left.submittedAt || 0) - new Date(right.submittedAt || 0));
     return res.json({
-      verifications: users.map((user) => ({
-        userId: String(user._id),
-        name: getProfileName(user) || user.username || "Unnamed account",
-        username: user.username || "",
-        email: user.email,
-        role: user.role,
-        accountCreatedAt: user.createdAt,
-        submittedAt: user.verificationDetails?.submittedAt || null,
-        status: user.verificationDetails?.status || "Pending",
-        idFrontUrl: user.verificationDetails?.idFrontUrl || "",
-        idBackUrl: user.verificationDetails?.idBackUrl || "",
-        tradeCertificate: user.verificationDetails?.tradeCertificate || "",
-        ocrConfidence: user.verificationDetails?.ocrConfidence ?? null,
-        nameMatchAccuracy: user.verificationDetails?.nameMatchAccuracy ?? null,
-        autoVerified: user.verificationDetails?.autoVerified === true,
-        securityFlags: (user.verificationDetails?.securityFlags || [])
-          .filter((flag) => Object.values(SECURITY_FLAGS).includes(flag)),
-        rejectionReason: user.verificationDetails?.rejectionReason || "",
-      })),
+      verifications,
     });
   } catch (error) {
     console.error("Admin verification queue error:", error);
-    return res.status(500).json({ message: "Could not load pending identity verifications." });
+    return res.status(500).json({ message: "Could not load pending verification submissions." });
+  }
+}
+
+async function handleGetTesdaCertificateDocument(req, res) {
+  try {
+    const user = await User.findOne({
+      _id: req.params.userId,
+      role: "provider",
+      tesdaCertificates: { $elemMatch: { _id: req.params.certificateId } },
+    }).select("+tesdaCertificates.certificateImagePublicId +tesdaCertificates.certificateImageFormat");
+    const certificate = user?.tesdaCertificates?.id(req.params.certificateId);
+    if (!certificate?.certificateImagePublicId) {
+      return res.status(404).json({ message: "TESDA certificate image not found." });
+    }
+
+    const image = await fetchAuthenticatedVerificationImage(
+      certificate.certificateImagePublicId,
+      certificate.certificateImageFormat,
+    );
+    res.set("Cache-Control", "private, no-store");
+    res.set("Content-Type", image.contentType);
+    return res.send(image.body);
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
+    console.error("Admin TESDA certificate document error:", error);
+    return res.status(500).json({ message: "Could not load this TESDA certificate image." });
+  }
+}
+
+async function handleReviewTesdaCertificate(req, res) {
+  const approved = req.body.action === "approve";
+  if (approved && req.body.certificateInspected !== true) {
+    return res.status(400).json({ message: "Inspect the TESDA certificate before approving it." });
+  }
+  const rejectionReason = approved ? "" : String(req.body.rejectionReason || "").trim();
+  const notification = {
+    title: approved ? "TESDA certificate approved" : "TESDA certificate needs changes",
+    message: approved
+      ? "Your TESDA certificate was approved and is now shown on your provider profile."
+      : `Your TESDA certificate was rejected. ${rejectionReason}`.slice(0, 240),
+    href: "/provider-profile",
+    createdAt: new Date(),
+  };
+  try {
+    const user = await User.findOneAndUpdate({
+      _id: req.params.userId,
+      role: "provider",
+      tesdaCertificates: {
+        $elemMatch: {
+          _id: req.params.certificateId,
+          status: "pending",
+          certificateImagePublicId: { $exists: true, $ne: "" },
+        },
+      },
+    }, {
+      $set: {
+        "tesdaCertificates.$.status": approved ? "approved" : "rejected",
+        "tesdaCertificates.$.reviewedAt": new Date(),
+        "tesdaCertificates.$.rejectionReason": rejectionReason,
+      },
+      $push: {
+        verificationNotifications: {
+          $each: [notification],
+          $slice: -25,
+        },
+      },
+    }, {
+      new: true,
+      runValidators: true,
+    });
+    if (!user) return res.status(404).json({ message: "This pending TESDA certificate could not be found." });
+    return res.json({
+      success: true,
+      userId: String(user._id),
+      certificateId: String(req.params.certificateId),
+      status: user.tesdaCertificates.id(req.params.certificateId)?.status,
+    });
+  } catch (error) {
+    console.error("Admin TESDA certificate review error:", error);
+    return res.status(500).json({ message: "Could not update this TESDA certificate." });
   }
 }
 
@@ -380,9 +587,12 @@ async function handleGetVerificationDocument(req, res) {
 
 module.exports = {
   handleGetAdminVerifications,
+  handleGetTesdaCertificateDocument,
+  handleReviewTesdaCertificate,
   handleGetVerificationNotifications,
   handleGetVerificationDocument,
   handleMarkVerificationNotificationRead,
+  handleSubmitTesdaCertificate,
   handleReviewVerification,
   handleSubmitVerification,
 };

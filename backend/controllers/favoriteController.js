@@ -31,7 +31,12 @@ async function handleGetClientFavorites(req, res) {
         averageRating: favorite.providerId.averageRating || 0,
         totalReviews: favorite.providerId.totalReviews || 0,
         profileImage: favorite.providerId.profileImage || "",
-        tesdaCertificates: favorite.providerId.tesdaCertificates || [],
+        tesdaCertificates: (favorite.providerId.tesdaCertificates || [])
+          .filter((certificate) => certificate.status === "approved")
+          .map((certificate) => ({
+            trade: certificate.trade,
+            status: certificate.status,
+          })),
         onTimeStreak: providerStreaks.get(String(favorite.providerId._id)) || { count: 0, milestone: null, nextMilestone: 5 },
       }));
 

@@ -20,6 +20,8 @@ const { handleGetAdminBookings, handleOverrideAdminBooking } = require("../contr
 const {
   handleGetAdminVerifications,
   handleGetVerificationDocument,
+  handleGetTesdaCertificateDocument,
+  handleReviewTesdaCertificate,
   handleReviewVerification,
 } = require("../controllers/verificationController");
 const { requireAdmin } = require("../middleware/requireAdmin");
@@ -28,6 +30,13 @@ const { validateRequest } = require("../middleware/validateRequest");
 const router = express.Router();
 
 router.get("/verifications", requireAdmin, handleGetAdminVerifications);
+router.get(
+  "/verifications/:userId/tesda/:certificateId/document",
+  requireAdmin,
+  [param("userId").isMongoId(), param("certificateId").isMongoId()],
+  validateRequest,
+  handleGetTesdaCertificateDocument
+);
 router.get(
   "/verifications/:userId/documents/:side",
   requireAdmin,
@@ -46,6 +55,19 @@ router.patch(
   ],
   validateRequest,
   handleReviewVerification
+);
+router.patch(
+  "/verifications/:userId/tesda/:certificateId",
+  requireAdmin,
+  [
+    param("userId").isMongoId(),
+    param("certificateId").isMongoId(),
+    body("action").isIn(["approve", "reject"]),
+    body("certificateInspected").if(body("action").equals("approve")).custom((value) => value === true),
+    body("rejectionReason").if(body("action").equals("reject")).isString().trim().isLength({ min: 5, max: 500 }),
+  ],
+  validateRequest,
+  handleReviewTesdaCertificate
 );
 router.get("/analytics", requireAdmin, handleGetAdminAnalytics);
 router.get(

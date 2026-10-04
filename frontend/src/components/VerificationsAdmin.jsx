@@ -14,7 +14,7 @@ function formatDate(value) {
 }
 
 function verificationKey(applicant) {
-  return `${applicant.userId}:${applicant.submittedAt || ""}`;
+  return `${applicant.type || "identity"}:${applicant.userId}:${applicant.certificateId || applicant.submittedAt || ""}`;
 }
 
 function ConfidenceBadge({ confidence, autoVerified }) {
@@ -91,14 +91,18 @@ export default function VerificationsAdmin() {
 
     const loadDocuments = async () => {
       try {
-        const sides = await Promise.all(["front", "back"].map(async (side) => {
-          const response = await fetch(viewing[side === "front" ? "idFrontUrl" : "idBackUrl"], {
+        const documentFields = viewing.type === "tesda"
+          ? [["certificate", viewing.certificateUrl]]
+          : [["front", viewing.idFrontUrl], ["back", viewing.idBackUrl]];
+        const sides = await Promise.all(documentFields.map(async ([side, url]) => {
+          const response = await fetch(url, {
             headers: { Authorization: `Bearer ${token}` },
             cache: "no-store",
             signal: controller.signal,
           });
-          if (!response.ok) {
-            let message = `Could not load the ID ${side} image.`;
+          const contentType = response.headers.get("content-type") || "";
+          if (!response.ok || !contentType.toLowerCase().startsWith("image/")) {
+            let message = `Could not load the ${side === "certificate" ? "TESDA certificate" : `ID ${side}`} image.`;
             try {
               const result = await response.json();
               message = result.message || message;
@@ -110,11 +114,11 @@ export default function VerificationsAdmin() {
           return URL.createObjectURL(await response.blob());
         }));
         objectUrls.push(...sides);
-        setDocuments({ front: sides[0], back: sides[1] });
+        setDocuments(Object.fromEntries(documentFields.map(([side], index) => [side, sides[index]])));
         setViewedVerificationKey(verificationKey(viewing));
       } catch (documentError) {
         if (documentError.name !== "AbortError") {
-          setDocumentsError(documentError.message || "Could not load the submitted ID images.");
+          setDocumentsError(documentError.message || "Could not load the submitted documents.");
         }
       } finally {
         if (!controller.signal.aborted) setDocumentsLoading(false);
@@ -146,15 +150,19 @@ export default function VerificationsAdmin() {
     setProcessingUserId(applicant.userId);
     setActionError("");
     try {
-      await adminRequest(`/api/v1/admin/verifications/${applicant.userId}`, token, {
+      const reviewPath = applicant.type === "tesda"
+        ? `/api/v1/admin/verifications/${applicant.userId}/tesda/${applicant.certificateId}`
+        : `/api/v1/admin/verifications/${applicant.userId}`;
+      await adminRequest(reviewPath, token, {
         method: "PATCH",
         body: JSON.stringify({
           action,
           ...(action === "reject" ? { rejectionReason: reason } : {}),
+          ...(action === "approve" && applicant.type === "tesda" ? { certificateInspected: confirmedNameMatch } : {}),
           ...(action === "approve" ? { nameMatchConfirmed: confirmedNameMatch } : {}),
         }),
       });
-      setVerifications((current) => current.filter((item) => item.userId !== applicant.userId));
+      setVerifications((current) => current.filter((item) => verificationKey(item) !== verificationKey(applicant)));
       setViewing(null);
       setApproving(null);
       setNameMatchConfirmed(false);
@@ -185,7 +193,7 @@ export default function VerificationsAdmin() {
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200/80 px-5 py-5 sm:px-7">
           <div>
             <h2 id="verification-queue-title" className="text-xl font-extrabold tracking-tight text-slate-950">Verification queue</h2>
-            <p className="mt-1 text-sm text-slate-600">Review submitted identity documents and OCR results.</p>
+            <p className="mt-1 text-sm text-slate-600">Review identity documents and TESDA certification evidence.</p>
           </div>
           <div className="flex items-center gap-3">
             <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-bold tabular-nums text-amber-950">
@@ -232,45 +240,51 @@ export default function VerificationsAdmin() {
             <p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-slate-600">New manual-review submissions will appear here.</p>
           </div>
         ) : !error && (
-          <div className="admin-ledger-scroll" tabIndex={0} aria-label="Pending identity verification submissions">
+          <div className="admin-ledger-scroll" tabIndex={0} aria-label="Pending identity and TESDA certificate submissions">
             <table className="w-full min-w-[820px] text-left">
               <thead className="bg-slate-50/90 text-[11px] font-bold uppercase tracking-wider text-slate-600">
                 <tr>
                   <th scope="col" className="px-6 py-3">Applicant</th>
-                  <th scope="col" className="px-5 py-3">OCR result</th>
-                  <th scope="col" className="px-5 py-3">Submission</th>
-                  <th scope="col" className="px-5 py-3">Trade certificate</th>
+                  <th scope="col" className="px-5 py-3">Type</th>
+                  <th scope="col" className="px-5 py-3">Submitted</th>
+                  <th scope="col" className="px-5 py-3">Trade / OCR details</th>
                   <th scope="col" className="px-6 py-3 text-right">Review</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200/80">
                 {verifications.map((applicant) => (
-                  <tr key={applicant.userId} className="align-top transition hover:bg-sky-50/35">
+                  <tr key={verificationKey(applicant)} className="align-top transition hover:bg-sky-50/35">
                     <td className="px-6 py-4">
                       <p className="font-bold text-slate-950">{applicant.name}</p>
                       <p className="mt-0.5 text-sm text-slate-600">{applicant.email}</p>
                       <p className="mt-1 text-xs font-semibold capitalize text-slate-500">{applicant.role}</p>
                     </td>
                     <td className="px-5 py-4">
-                      <ConfidenceBadge confidence={applicant.ocrConfidence} autoVerified={applicant.autoVerified} />
-                      <p className="mt-2 text-xs text-slate-600">
-                        Name match: {applicant.nameMatchAccuracy === null ? "Unavailable" : `${Math.round(applicant.nameMatchAccuracy)}%`}
-                      </p>
-                      {applicant.securityFlags?.length > 0 && (
-                        <ul className="mt-2 space-y-1">
-                          {applicant.securityFlags.map((flag) => (
-                            <li
-                              key={flag}
-                              className={`inline-flex rounded-md border px-2 py-1 text-[10px] font-bold leading-4 ${
-                                flag === "AI_OR_EDITED_METADATA_DETECTED"
-                                  ? "border-rose-200 bg-rose-50 text-rose-900"
-                                  : "border-amber-200 bg-amber-50 text-amber-950"
-                              }`}
-                            >
-                              {flag}
-                            </li>
-                          ))}
-                        </ul>
+                      {applicant.type === "tesda" ? (
+                        <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-900">TESDA certificate</span>
+                      ) : (
+                        <>
+                          <ConfidenceBadge confidence={applicant.ocrConfidence} autoVerified={applicant.autoVerified} />
+                          <p className="mt-2 text-xs text-slate-600">
+                            Name match: {applicant.nameMatchAccuracy === null ? "Unavailable" : `${Math.round(applicant.nameMatchAccuracy)}%`}
+                          </p>
+                          {applicant.securityFlags?.length > 0 && (
+                            <ul className="mt-2 space-y-1">
+                              {applicant.securityFlags.map((flag) => (
+                                <li
+                                  key={flag}
+                                  className={`inline-flex rounded-md border px-2 py-1 text-[10px] font-bold leading-4 ${
+                                    flag === "AI_OR_EDITED_METADATA_DETECTED"
+                                      ? "border-rose-200 bg-rose-50 text-rose-900"
+                                      : "border-amber-200 bg-amber-50 text-amber-950"
+                                  }`}
+                                >
+                                  {flag}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </>
                       )}
                     </td>
                     <td className="px-5 py-4 text-sm text-slate-700">
@@ -278,7 +292,7 @@ export default function VerificationsAdmin() {
                       <p className="mt-1 text-xs text-slate-500">Joined {formatDate(applicant.accountCreatedAt)}</p>
                     </td>
                     <td className="max-w-48 px-5 py-4 text-sm text-slate-700">
-                      <span className="line-clamp-2">{applicant.tradeCertificate || "Not provided"}</span>
+                      <span className="line-clamp-2">{applicant.type === "tesda" ? applicant.trade : applicant.tradeCertificate || "Not provided"}</span>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex justify-end gap-2">
@@ -288,7 +302,7 @@ export default function VerificationsAdmin() {
                           className="dashboard-focus inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-sky-950 transition hover:border-sky-300 hover:bg-sky-50"
                         >
                           <Icon name="image" />
-                          View ID
+                          {applicant.type === "tesda" ? "View certificate" : "View ID"}
                         </button>
                         <button
                           type="button"
@@ -296,7 +310,9 @@ export default function VerificationsAdmin() {
                           onClick={() => {
                             setActionError("");
                             if (viewedVerificationKey !== verificationKey(applicant)) {
-                              setActionError("Open and inspect both sides of this ID before approving.");
+                              setActionError(applicant.type === "tesda"
+                                ? "Open and inspect the TESDA certificate before approving."
+                                : "Open and inspect both sides of this ID before approving.");
                               return;
                             }
                             setApproving(applicant);
@@ -335,27 +351,42 @@ export default function VerificationsAdmin() {
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 id="verification-document-title" className="text-lg font-extrabold text-slate-950">ID documents</h3>
+                <h3 id="verification-document-title" className="text-lg font-extrabold text-slate-950">
+                  {viewing.type === "tesda" ? "TESDA certificate" : "ID documents"}
+                </h3>
                 <p className="mt-1 text-sm text-slate-600">{viewing.name} · {viewing.email}</p>
-                <p className="mt-1 text-xs leading-5 text-slate-600">Compare the full name on the ID front with this account name before approving.</p>
+                <p className="mt-1 text-xs leading-5 text-slate-600">
+                  {viewing.type === "tesda"
+                    ? `Review the certificate evidence for the ${viewing.trade} trade before approving.`
+                    : "Compare the full name on the ID front with this account name before approving."}
+                </p>
               </div>
               <button type="button" aria-label="Close document viewer" onClick={() => setViewing(null)} className="dashboard-focus rounded-xl p-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950">
                 <Icon name="close" className="h-5 w-5" />
               </button>
             </div>
-            {documentsLoading && <p className="py-14 text-center text-sm font-medium text-slate-600">Loading secure ID images…</p>}
+            {documentsLoading && <p className="py-14 text-center text-sm font-medium text-slate-600">Loading secure documents…</p>}
             {documentsError && <p role="alert" className="mt-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">{documentsError}</p>}
             {documents && (
-              <div className="mt-5 grid gap-5 md:grid-cols-2">
-                {[["Front", documents.front], ["Back", documents.back]].map(([side, url]) => (
-                  <figure key={side} className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80">
-                    <figcaption className="border-b border-slate-200 px-4 py-3 text-sm font-bold text-slate-800">ID {side}</figcaption>
-                    <div className="flex min-h-64 items-center justify-center p-3 sm:min-h-80">
-                      <img src={url} alt={`${viewing.name}'s ID ${side.toLowerCase()}`} className="max-h-[62vh] w-full rounded-lg object-contain" />
-                    </div>
-                  </figure>
-                ))}
-              </div>
+              viewing.type === "tesda" ? (
+                <figure className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80">
+                  <figcaption className="border-b border-slate-200 px-4 py-3 text-sm font-bold text-slate-800">{viewing.trade} certificate</figcaption>
+                  <div className="flex min-h-64 items-center justify-center p-3 sm:min-h-80">
+                    <img src={documents.certificate} alt={`${viewing.name}'s TESDA ${viewing.trade} certificate`} className="max-h-[62vh] w-full rounded-lg object-contain" />
+                  </div>
+                </figure>
+              ) : (
+                <div className="mt-5 grid gap-5 md:grid-cols-2">
+                  {[["Front", documents.front], ["Back", documents.back]].map(([side, url]) => (
+                    <figure key={side} className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80">
+                      <figcaption className="border-b border-slate-200 px-4 py-3 text-sm font-bold text-slate-800">ID {side}</figcaption>
+                      <div className="flex min-h-64 items-center justify-center p-3 sm:min-h-80">
+                        <img src={url} alt={`${viewing.name}'s ID ${side.toLowerCase()}`} className="max-h-[62vh] w-full rounded-lg object-contain" />
+                      </div>
+                    </figure>
+                  ))}
+                </div>
+              )
             )}
           </section>
         </div>
@@ -371,10 +402,13 @@ export default function VerificationsAdmin() {
             onMouseDown={(event) => event.stopPropagation()}
             className="w-full max-w-lg rounded-3xl border border-white/70 bg-white/95 p-6 shadow-[0_24px_80px_rgba(2,6,23,0.3)] backdrop-blur-2xl sm:p-7"
           >
-            <h3 id="verification-approval-title" className="text-lg font-extrabold text-slate-950">Confirm identity match</h3>
+            <h3 id="verification-approval-title" className="text-lg font-extrabold text-slate-950">
+              {approving.type === "tesda" ? "Confirm TESDA certificate" : "Confirm identity match"}
+            </h3>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Approving will verify <span className="font-bold text-slate-900">{approving.name}</span> and activate this account.
-              Check the ID images against the account name before continuing.
+              {approving.type === "tesda"
+                ? <>Approving will mark the <span className="font-bold text-slate-900">{approving.trade}</span> certificate for <span className="font-bold text-slate-900">{approving.name}</span> as verified.</>
+                : <>Approving will verify <span className="font-bold text-slate-900">{approving.name}</span> and activate this account. Check the ID images against the account name before continuing.</>}
             </p>
             {actionError && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">{actionError}</p>}
             <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-xl border border-sky-200 bg-sky-50/80 p-4 text-sm leading-6 text-sky-950">
@@ -384,14 +418,20 @@ export default function VerificationsAdmin() {
                 onChange={(event) => setNameMatchConfirmed(event.target.checked)}
                 className="mt-1 h-4 w-4 shrink-0 accent-sky-700"
               />
-              <span>I inspected both ID images and confirmed the full name on the ID matches this account holder.</span>
+              <span>
+                {approving.type === "tesda"
+                  ? "I inspected the certificate and confirmed it supports the TESDA trade listed above."
+                  : "I inspected both ID images and confirmed the full name on the ID matches this account holder."}
+              </span>
             </label>
             <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button type="button" onClick={() => { setApproving(null); setNameMatchConfirmed(false); }} className="dashboard-focus min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50">
                 Cancel
               </button>
               <button type="submit" disabled={!nameMatchConfirmed || Boolean(processingUserId) || viewedVerificationKey !== verificationKey(approving)} className="dashboard-focus min-h-11 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-55">
-                {processingUserId === approving.userId ? "Saving…" : "Confirm name and approve"}
+                {processingUserId === approving.userId
+                  ? "Saving…"
+                  : approving.type === "tesda" ? "Confirm and approve" : "Confirm name and approve"}
               </button>
             </div>
           </form>
@@ -408,9 +448,11 @@ export default function VerificationsAdmin() {
             onMouseDown={(event) => event.stopPropagation()}
             className="w-full max-w-lg rounded-3xl border border-white/70 bg-white/95 p-6 shadow-[0_24px_80px_rgba(2,6,23,0.3)] backdrop-blur-2xl sm:p-7"
           >
-            <h3 id="rejection-reason-title" className="text-lg font-extrabold text-slate-950">Reject identity documents</h3>
+            <h3 id="rejection-reason-title" className="text-lg font-extrabold text-slate-950">
+              {rejecting.type === "tesda" ? "Reject TESDA certificate" : "Reject identity documents"}
+            </h3>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Add feedback for {rejecting.name}. The applicant will be able to see why their documents were rejected.
+              Add feedback for {rejecting.name}. The applicant will be able to see why their {rejecting.type === "tesda" ? "certificate" : "documents"} were rejected.
             </p>
             <label htmlFor="verification-rejection-reason" className="mt-5 block text-sm font-bold text-slate-800">Reason for rejection</label>
             <textarea

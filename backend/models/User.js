@@ -287,9 +287,14 @@ const userSchema = new mongoose.Schema(
     },
     tesdaCertificates: {
       type: [{
-        trade: { type: String, trim: true },
+        trade: { type: String, trim: true, maxlength: 120 },
         status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
         submittedAt: { type: Date, default: Date.now },
+        reviewedAt: { type: Date, default: null },
+        rejectionReason: { type: String, trim: true, maxlength: 500, default: "" },
+        certificateImageUrl: { type: String, default: "" },
+        certificateImagePublicId: { type: String, select: false },
+        certificateImageFormat: { type: String, select: false },
       }],
       default: [],
     },

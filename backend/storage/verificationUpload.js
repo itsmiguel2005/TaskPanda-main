@@ -43,6 +43,25 @@ const uploadFields = upload.fields([
   { name: "idBack", maxCount: 1 },
 ]);
 
+const uploadCertificateFile = upload.single("certificate");
+
+function uploadTesdaCertificate(req, res, next) {
+  uploadCertificateFile(req, res, async (error) => {
+    if (!error) return next();
+    await removeUploadedFiles(req.file ? [req.file] : []);
+
+    if (error.statusCode === 400) return res.status(400).json({ message: error.message });
+    if (error instanceof multer.MulterError) {
+      const tooLarge = error.code === "LIMIT_FILE_SIZE" || error.code === "LIMIT_FIELD_VALUE";
+      return res.status(tooLarge ? 413 : 400).json({
+        message: tooLarge ? "The TESDA certificate image must be 8 MB or smaller." : error.message,
+      });
+    }
+    console.error("TESDA certificate upload error:", error);
+    return res.status(500).json({ message: "Could not receive your TESDA certificate image." });
+  });
+}
+
 function uploadVerificationImages(req, res, next) {
   uploadFields(req, res, async (error) => {
     if (!error) return next();
@@ -61,4 +80,4 @@ function uploadVerificationImages(req, res, next) {
   });
 }
 
-module.exports = { removeUploadedFiles, uploadVerificationImages };
+module.exports = { removeUploadedFiles, uploadTesdaCertificate, uploadVerificationImages };

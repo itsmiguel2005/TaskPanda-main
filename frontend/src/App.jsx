@@ -32,6 +32,7 @@ import BlogPage from "./pages/BlogPage.jsx";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage.jsx";
 import ContactUsPage from "./pages/ContactUsPage.jsx";
 import VerificationPage from "./pages/VerificationPage.jsx";
+import TesdaCertificatePage from "./pages/TesdaCertificatePage.jsx";
 import { AuthProvider } from "./context/AuthContext.jsx";
 import { BookingProvider } from "./context/BookingContext.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
@@ -134,6 +135,7 @@ export default function App() {
         <Route path="/profile/edit" element={<ProtectedRoute roles={["client", "provider"]}><EditProfilePage /></ProtectedRoute>} />
         <Route path="/provider-profile" element={<ProtectedRoute roles={["provider"]}><ProviderProfilePage /></ProtectedRoute>} />
         <Route path="/provider-profile/verify" element={<ProtectedRoute roles={["provider"]}><VerificationPage /></ProtectedRoute>} />
+        <Route path="/provider-profile/tesda" element={<ProtectedRoute roles={["provider"]}><TesdaCertificatePage /></ProtectedRoute>} />
         <Route path="/explore" element={<ProtectedRoute roles={["client", "provider"]}><ExplorePage /></ProtectedRoute>} />
           <Route path="/about" element={<AboutUsPage />} />
           <Route path="/admin" element={<ProtectedRoute roles={["admin"]}><AdminDashboardPage /></ProtectedRoute>} />

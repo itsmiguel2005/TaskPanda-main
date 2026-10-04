@@ -1,0 +1,103 @@
+[
+  {
+    "sector": "Information and Communications Technology (ICT)",
+    "qualifications": [
+      "Computer Systems Servicing NC II",
+      "Visual Graphic Design NC III",
+      "Contact Center Services NC II",
+      "Animation NC II",
+      "Animation NC III",
+      "Programming / Web Development"
+    ]
+  },
+  {
+    "sector": "Tourism, Hospitality, and Culinary Services",
+    "qualifications": [
+      "Cookery NC II",
+      "Bread and Pastry Production NC II",
+      "Food and Beverage Services (FBS) NC II",
+      "Housekeeping NC II",
+      "Front Office Services NC II",
+      "Bartending NC II",
+      "Tour Guiding Services NC II",
+      "Travel Services NC II"
+    ]
+  },
+  {
+    "sector": "Construction",
+    "qualifications": [
+      "Electrical Installation and Maintenance NC II",
+      "Shielded Metal Arc Welding (SMAW) NC I",
+      "Shielded Metal Arc Welding (SMAW) NC II",
+      "Shielded Metal Arc Welding (SMAW) NC III",
+      "Shielded Metal Arc Welding (SMAW) NC IV",
+      "Carpentry NC II",
+      "Carpentry NC III",
+      "Masonry NC I",
+      "Masonry NC II",
+      "Plumbing NC I",
+      "Plumbing NC II",
+      "Tile Setting NC II",
+      "Heavy Equipment Operation (Forklift, Crane, Excavator, Motor Grader)"
+    ]
+  },
+  {
+    "sector": "Automotive and Land Transport",
+    "qualifications": [
+      "Automotive Servicing NC I",
+      "Automotive Servicing NC II",
+      "Automotive Servicing NC III",
+      "Driving NC II",
+      "Driving NC III",
+      "Motorcycle/Small Engine Servicing NC II",
+      "Automotive Body Painting / Repairing NC II"
+    ]
+  },
+  {
+    "sector": "Health, Social, and Community Development",
+    "qualifications": [
+      "Caregiving (Elderly / Special Needs / Infants) NC II",
+      "Health Care Services NC II",
+      "Pharmacy Services NC III",
+      "Massage Therapy NC II",
+      "Emergency Medical Services NC II",
+      "Emergency Medical Services NC III"
+    ]
+  },
+  {
+    "sector": "Business, Management, and Finance",
+    "qualifications": [
+      "Bookkeeping NC III",
+      "Microfinance Technology NC IV",
+      "Human Resource Management / Events Management"
+    ]
+  },
+  {
+    "sector": "Agriculture and Fishery",
+    "qualifications": [
+      "Agricultural Crops Production NC II",
+      "Agricultural Crops Production NC III",
+      "Organic Agriculture Production NC II",
+      "Animal Production (Poultry / Ruminants / Swine) NC II",
+      "Fish Production / Aquaculture"
+    ]
+  },
+  {
+    "sector": "Electronics and Electrical",
+    "qualifications": [
+      "Consumer Electronics Servicing NC II",
+      "Consumer Electronics Servicing NC III",
+      "Consumer Electronics Servicing NC IV",
+      "Mechatronics Servicing NC II"
+    ]
+  },
+  {
+    "sector": "Maritime",
+    "qualifications": [
+      "Ship's Catering Services (Ship's Cook) NC I",
+      "Ship's Catering Services (Ship's Cook) NC II",
+      "Ship's Catering Services (Ship's Cook) NC III",
+      "Maritime-Related Deck and Engine Support Ratings"
+    ]
+  }
+]
