@@ -423,14 +423,9 @@ async function handleVerifyEmail(req, res) {
     return res.status(400).json({ message: "This verification link is invalid or expired. Request a new one to continue." });
   }
 
-  const onboardingToken = await issueOnboardingToken(user._id);
-  if (!onboardingToken) {
-    return res.status(409).json({ message: "Your registration has changed. Please start again." });
-  }
-  await createRegistrationSession(user, res);
   return res.json({
-    message: "Email verified successfully. Continue your registration in the original tab.",
-    onboardingToken,
+    message: "Email verified successfully. Return to the browser where you started registration to continue.",
+    verified: true,
     user: {
       id: user._id,
       email: user.email,
@@ -465,6 +460,9 @@ async function handleRegistrationStatus(req, res) {
       });
     }
 
+    const onboardingToken = randomBytes(32).toString("hex");
+    const onboardingTokenHash = hashToken(onboardingToken);
+    const onboardingExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const claimedUser = await User.findOneAndUpdate(
       mongoose.trusted({
         _id: user._id,
@@ -473,19 +471,25 @@ async function handleRegistrationStatus(req, res) {
         registrationComplete: false,
         registrationResumeClaimedAt: mongoose.trusted({ $exists: false }),
       }),
-      { $set: { registrationResumeClaimedAt: new Date() } },
+      {
+        $set: {
+          registrationResumeClaimedAt: new Date(),
+          onboardingTokenHash,
+          onboardingTokenExpiresAt: onboardingExpiresAt,
+        },
+        $push: {
+          onboardingTokens: {
+            $each: [{ tokenHash: onboardingTokenHash, expiresAt: onboardingExpiresAt }],
+            $slice: -5,
+          },
+        },
+      },
       { new: true }
     );
-    if (!claimedUser) return res.json({ verified: true, verificationTabClosed: true, alreadyResumed: true });
-
-    const onboardingToken = await issueOnboardingToken(claimedUser._id);
-    if (!onboardingToken) {
-      return res.status(409).json({ message: "Registration is no longer available." });
-    }
+    if (!claimedUser) return res.json({ verified: true, alreadyResumed: true });
 
     return res.json({
       verified: true,
-      verificationTabClosed: true,
       onboardingToken,
       user: {
         id: claimedUser._id,
