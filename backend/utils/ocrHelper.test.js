@@ -69,110 +69,174 @@ test("LTO name matching tolerates one OCR character error in a long name token",
   assert.equal(shouldAutoVerify(87, result), false);
 });
 
-test("candidate selection applies LTO-aware matching to the one-line surname-first layout", () => {
+test("driver's-license matching compares the labeled comma-separated name with account fields", () => {
   const result = selectBestOCRCandidate([
     {
       confidence: 87,
-      text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE CALIML1M MIGUEL EDUARDO ESTRADA",
+      text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nLAST NAME, FIRST NAME, MIDDLE NAME\nCALIMLIM, MIGUEL EDUARDO ESTRADA",
+      lines: [
+        { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
+        { text: "LAST NAME, FIRST NAME, MIDDLE NAME" },
+        { text: "CALIMLIM, MIGUEL EDUARDO ESTRADA" },
+      ],
     },
-  ], "Miguel Eduardo Estrada Calimlim");
+  ], {
+    firstName: "Miguel Eduardo",
+    middleName: "Estrada",
+    lastName: "Calimlim",
+  });
   assert.equal(result.detectedIdType, "Driver's License");
+  assert.equal(result.nameMatch.accuracy, 1);
+  assert.equal(result.nameMatch.allNamePartsMatched, true);
+});
+
+test("driver's-license matching requires a middle name when the account has one", () => {
+  const result = selectBestOCRCandidate([{
+    confidence: 87,
+    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nLAST NAME, FIRST NAME, MIDDLE NAME\nCALIMLIM, MIGUEL EDUARDO ESTRADA",
+    lines: [
+      { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
+      { text: "LAST NAME, FIRST NAME, MIDDLE NAME" },
+      { text: "CALIMLIM, MIGUEL EDUARDO ESTRADA" },
+    ],
+  }], {
+    firstName: "Miguel Eduardo",
+    middleName: "Estrada",
+    lastName: "Calimlim",
+  });
+
+  assert.equal(result.detectedIdType, "Driver's License");
+  assert.equal(result.nameMatch.accuracy, 1);
+  assert.equal(result.nameMatch.firstNameMatched, true);
+  assert.equal(result.nameMatch.lastNameMatched, true);
+  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), true);
+});
+
+test("driver's-license matching does not accept a missing account middle name", () => {
+  const result = selectBestOCRCandidate([{
+    confidence: 87,
+    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nLAST NAME, FIRST NAME, MIDDLE NAME\nCALIMLIM, MIGUEL EDUARDO",
+    lines: [
+      { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
+      { text: "LAST NAME, FIRST NAME, MIDDLE NAME" },
+      { text: "CALIMLIM, MIGUEL EDUARDO" },
+    ],
+  }], {
+    firstName: "Miguel Eduardo",
+    middleName: "Estrada",
+    lastName: "Calimlim",
+  });
+
+  assert.equal(result.nameMatch.firstNameMatched, false);
+  assert.equal(result.nameMatch.lastNameMatched, true);
+  assert.equal(result.nameMatch.allNamePartsMatched, false);
+  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), false);
+});
+
+test("driver's-license matching allows only one one-character OCR error in the full name", () => {
+  const result = selectBestOCRCandidate([{
+    confidence: 87,
+    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nLAST NAME, FIRST NAME, MIDDLE NAME\nCALIML1M, MIGUEL EDUARDO ESTRADA",
+    lines: [
+      { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
+      { text: "LAST NAME, FIRST NAME, MIDDLE NAME" },
+      { text: "CALIML1M, MIGUEL EDUARDO ESTRADA" },
+    ],
+  }], {
+    firstName: "Miguel Eduardo",
+    middleName: "Estrada",
+    lastName: "Calimlim",
+  });
+
   assert.ok(result.nameMatch.accuracy >= 0.9);
+  assert.equal(result.nameMatch.matchedParts, 3);
+  assert.equal(result.nameMatch.allNamePartsMatched, true);
+  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), true);
 });
 
-test("LTO name matching accepts an additional ID middle name when account first and last names match", () => {
+test("driver's-license matching rejects more than one OCR character error", () => {
   const result = selectBestOCRCandidate([{
     confidence: 87,
+    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nLAST NAME, FIRST NAME, MIDDLE NAME\nCALIML1M, MIGUE1 EDUARDO ESTRADA",
+    lines: [
+      { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
+      { text: "LAST NAME, FIRST NAME, MIDDLE NAME" },
+      { text: "CALIML1M, MIGUE1 EDUARDO ESTRADA" },
+    ],
+  }], {
+    firstName: "Miguel Eduardo",
+    middleName: "Estrada",
+    lastName: "Calimlim",
+  });
+
+  assert.equal(result.nameMatch.allNamePartsMatched, false);
+  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), false);
+});
+
+test("driver's-license matching requires the labeled comma-separated name block", () => {
+  const account = {
+    firstName: "Miguel Eduardo",
+    middleName: "Estrada",
+    lastName: "Calimlim",
+  };
+  const noLabel = selectBestOCRCandidate([{
+    confidence: 92,
     text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nCALIMLIM, MIGUEL EDUARDO ESTRADA",
-    lines: [
-      { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
-      { text: "CALIMLIM, MIGUEL EDUARDO ESTRADA" },
-    ],
-  }], "Miguel Eduardo Calimlim");
+  }], account);
+  const noComma = selectBestOCRCandidate([{
+    confidence: 92,
+    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nLAST NAME, FIRST NAME, MIDDLE NAME\nCALIMLIM MIGUEL EDUARDO ESTRADA",
+  }], account);
 
-  assert.equal(result.detectedIdType, "Driver's License");
-  assert.equal(result.nameMatch.accuracy, 1);
-  assert.equal(result.nameMatch.firstNameMatched, true);
-  assert.equal(result.nameMatch.lastNameMatched, true);
+  assert.equal(shouldAutoVerify(noLabel.confidence, noLabel.nameMatch), false);
+  assert.equal(shouldAutoVerify(noComma.confidence, noComma.nameMatch), false);
 });
 
-test("LTO full-name line outranks a partial labeled-field match", () => {
+test("driver's-license matching requires only first and last names for a two-part account", () => {
   const result = selectBestOCRCandidate([{
     confidence: 87,
-    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nMIDDLE NAME: ESTRADA\nCALIMLIM, MIGUEL EDUARDO ESTRADA",
-    lines: [
-      { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
-      { text: "MIDDLE NAME: ESTRADA" },
-      { text: "CALIMLIM, MIGUEL EDUARDO ESTRADA" },
-    ],
+    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nLAST NAME, FIRST NAME, MIDDLE NAME\nCALIMLIM, JUAN",
   }], {
-    firstName: "Miguel Eduardo",
-    middleName: "Estrada",
+    firstName: "Juan",
+    middleName: "",
     lastName: "Calimlim",
   });
 
   assert.equal(result.nameMatch.accuracy, 1);
-  assert.equal(result.nameMatch.matchedParts, 4);
-  assert.equal(result.nameMatch.firstNameMatched, true);
-  assert.equal(result.nameMatch.lastNameMatched, true);
+  assert.equal(result.nameMatch.allNamePartsMatched, true);
+  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), true);
 });
 
-test("LTO comma layout treats the text after the surname as given names and middle name", () => {
-  const result = selectBestOCRCandidate([{
-    confidence: 87,
-    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nCALIMLIM, MIGUEL EDUARDO ESTRADA",
-    lines: [
-      { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
-      { text: "CALIMLIM, MIGUEL EDUARDO ESTRADA" },
-    ],
-  }], {
-    firstName: "Miguel Eduardo",
-    middleName: "Estrada",
-    lastName: "Calimlim",
-  });
-
-  assert.equal(result.nameMatch.accuracy, 1);
-  assert.equal(result.nameMatch.matchedParts, 4);
-});
-
-test("full name split across labeled and unlabeled ID lines scores every matching name part", () => {
-  const result = selectBestOCRCandidate([{
-    confidence: 87,
-    text: "DRIVER'S LICENSE MIDDLE NAME ESTRADA\nCALIMLIM MIGUEL EDUARDO",
-    lines: [
-      { text: "DRIVER'S LICENSE MIDDLE NAME ESTRADA" },
-      { text: "CALIMLIM MIGUEL EDUARDO" },
-    ],
-  }], {
-    firstName: "Miguel Eduardo",
-    middleName: "Estrada",
-    lastName: "Calimlim",
-  });
-
-  assert.equal(result.nameMatch.accuracy, 1);
-  assert.equal(result.nameMatch.matchedParts, 4);
-  assert.equal(result.nameMatch.totalParts, 4);
-});
-
-test("LTO-aware candidate selection applies the card layout to a separate OCR name line", () => {
+test("driver's-license OCR joins the header and name line from separate OCR blocks", () => {
   const result = selectBestOCRCandidate([
     { confidence: 92, text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
-    { confidence: 68, text: "CALIML1M MIGUEL EDUARDO ESTRADA" },
-  ], "Miguel Eduardo Estrada Calimlim");
-  assert.ok(result.nameMatch.accuracy >= 0.9);
-  assert.match(result.text, /CALIML1M MIGUEL EDUARDO ESTRADA/);
+    { confidence: 76, text: "LAST NAME, FIRST NAME, MIDDLE NAME" },
+    { confidence: 68, text: "CALIML1M, MIGUEL EDUARDO ESTRADA" },
+  ], {
+    firstName: "Miguel Eduardo",
+    middleName: "Estrada",
+    lastName: "Calimlim",
+  });
+  assert.equal(result.nameMatch.allNamePartsMatched, true);
+  assert.match(result.text, /CALIML1M, MIGUEL EDUARDO ESTRADA/);
 });
 
-test("LTO name score combines the heading and comma-separated name read in separate OCR blocks", () => {
+test("driver's-license matching can use the combined label header from OCR blocks", () => {
   const result = selectBestOCRCandidate([
     { confidence: 54, text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
+    { confidence: 59, text: "LAST NAME, FIRST NAME, MIDDLE NAME" },
     { confidence: 63, text: "CALIMLIM, MIGUEL EDUARDO ESTRADA" },
-  ], "MIGUEL EDUARDO ESTRADA CALIMLIM");
+  ], {
+    firstName: "Miguel Eduardo",
+    middleName: "Estrada",
+    lastName: "Calimlim",
+  });
 
   assert.equal(result.detectedIdType, "Driver's License");
   assert.equal(result.nameMatch.accuracy, 1);
   assert.equal(result.nameMatch.firstNameMatched, true);
   assert.equal(result.nameMatch.lastNameMatched, true);
+  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), true);
 });
 
 test("synthetic Philippine ID layouts match structured names with conservative fallback", () => {
@@ -265,9 +329,9 @@ test("structured profile names match labeled fields regardless of the ID's name 
 test("labeled name values on separate rows match and missing optional middle names remain eligible", () => {
   const result = selectBestOCRCandidate([{
     confidence: 82,
-    text: "DRIVER'S LICENSE\nSURNAME\nCALIMLIM\nGIVEN NAMES\nMIGUEL EDUARDO",
+    text: "PASSPORT\nSURNAME\nCALIMLIM\nGIVEN NAMES\nMIGUEL EDUARDO",
     lines: [
-      { text: "DRIVER'S LICENSE" },
+      { text: "PASSPORT" },
       { text: "SURNAME" },
       { text: "CALIMLIM" },
       { text: "GIVEN NAMES" },
@@ -344,7 +408,7 @@ test("driver's-license name order remains matchable when OCR reads labels separa
     lines: [
       { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
       { text: "LAST NAME FIRST NAME MIDDLE NAME" },
-      { text: "CALIMLIM MIGUEL EDUARDO ESTRADA" },
+      { text: "CALIMLIM, MIGUEL EDUARDO ESTRADA" },
     ],
   }], {
     firstName: "Miguel Eduardo",

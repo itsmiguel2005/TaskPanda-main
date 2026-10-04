@@ -2,12 +2,27 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
-import { checkImageSharpness } from "../utils/imageCheck.js";
+import { analyzeImageQuality, checkImageSharpness } from "../utils/imageCheck.js";
 import { prepareVerificationImage } from "../utils/verificationImage.js";
 
 const MAX_ID_IMAGE_SIZE = 8 * 1024 * 1024;
+const MAX_LIVE_ANALYSIS_DIMENSION = 320;
+const LIVE_ANALYSIS_INTERVAL_MS = 750;
 
-function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove, disabled, isChecking, imageError }) {
+function ImageUpload({
+  label,
+  name,
+  accept,
+  file,
+  preview,
+  onSelect,
+  onTakePhoto,
+  onRemove,
+  disabled,
+  isChecking,
+  imageError,
+  imageWarnings,
+}) {
   const uploadInputRef = useRef(null);
   const cameraInputRef = useRef(null);
   return (
@@ -32,7 +47,7 @@ function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove, d
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => cameraInputRef.current?.click()}
+              onClick={onTakePhoto}
               disabled={disabled}
               className="dashboard-focus inline-flex min-h-9 items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 text-xs font-semibold text-sky-950 transition hover:border-sky-400 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -40,7 +55,15 @@ function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove, d
                 <path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z" />
                 <circle cx="12" cy="13" r="3.5" />
               </svg>
-              Take photo
+              Guided camera
+            </button>
+            <button
+              type="button"
+              onClick={() => cameraInputRef.current?.click()}
+              disabled={disabled}
+              className="dashboard-focus inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Use device camera
             </button>
             <button
               type="button"
@@ -78,7 +101,7 @@ function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove, d
       />
       {isChecking && (
         <p className="mt-2 text-xs font-medium text-sky-800" role="status" aria-live="polite">
-          Checking clarity and preparing image for upload…
+          Checking clarity, lighting, and resolution…
         </p>
       )}
       {imageError && (
@@ -86,13 +109,198 @@ function ImageUpload({ label, name, accept, file, preview, onSelect, onRemove, d
           {imageError}
         </p>
       )}
+      {imageWarnings.length > 0 && (
+        <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950" role="status" aria-live="polite">
+          <ul className="list-disc space-y-1 pl-5">
+            {imageWarnings.map((warning) => <li key={warning}>{warning}</li>)}
+          </ul>
+          <p className="mt-2 text-xs leading-5">
+            Check that all four corners and the printed details are visible. You can retake the photo or continue if everything is readable.
+          </p>
+        </div>
+      )}
       {file && (
-        <div className="mt-2 flex items-center justify-between">
-          <p className="text-xs text-gray-500 truncate max-w-[200px]">{file.name}</p>
-          <button type="button" onClick={onRemove} disabled={disabled} className="dashboard-focus rounded text-xs font-semibold text-rose-700 underline underline-offset-2 hover:text-rose-900 disabled:cursor-not-allowed disabled:opacity-60">Remove</button>
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <p className="min-w-0 truncate text-xs text-gray-500">{file.name}</p>
+            <button type="button" onClick={onRemove} disabled={disabled} className="dashboard-focus shrink-0 rounded text-xs font-semibold text-rose-700 underline underline-offset-2 hover:text-rose-900 disabled:cursor-not-allowed disabled:opacity-60">Remove</button>
+          </div>
+          <img src={preview} alt={`${label} full photo preview`} className="max-h-56 w-full rounded-xl bg-slate-950/5 object-contain ring-1 ring-slate-200" />
+          <p className="text-xs leading-5 text-slate-700">
+            Check the preview: the ID should fill most of the photo, all four corners should show, and the printed details should be readable.
+          </p>
         </div>
       )}
     </div>
+  );
+}
+
+function GuidedCamera({ side, onCancel, onCapture }) {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const [cameraError, setCameraError] = useState("");
+  const [cameraReady, setCameraReady] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [liveQuality, setLiveQuality] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let analysisTimer;
+
+    const startCamera = async () => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setCameraError("Live camera capture is not supported in this browser. Use the device camera or upload a photo instead.");
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        if (cancelled) return;
+        setCameraReady(true);
+
+        analysisTimer = window.setInterval(() => {
+          const video = videoRef.current;
+          if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+          const scale = Math.min(
+            1,
+            MAX_LIVE_ANALYSIS_DIMENSION / Math.max(video.videoWidth, video.videoHeight)
+          );
+          const width = Math.max(3, Math.round(video.videoWidth * scale));
+          const height = Math.max(3, Math.round(video.videoHeight * scale));
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const context = canvas.getContext("2d", { willReadFrequently: true });
+          if (!context) return;
+          context.drawImage(video, 0, 0, width, height);
+          setLiveQuality(analyzeImageQuality(context.getImageData(0, 0, width, height), width, height));
+        }, LIVE_ANALYSIS_INTERVAL_MS);
+      } catch (error) {
+        if (cancelled) return;
+        const messages = {
+          NotAllowedError: "Camera access is blocked. Allow camera access in your browser settings, or use Upload photo.",
+          NotFoundError: "No camera was found. Use Upload photo to choose an ID image.",
+          NotReadableError: "The camera is being used by another app. Close it and try again, or use Upload photo.",
+          OverconstrainedError: "This camera could not start with the requested settings. Use Upload photo or the device camera option.",
+        };
+        setCameraError(messages[error.name] || "Could not start the camera. Use the device camera or upload a photo instead.");
+      }
+    };
+
+    void startCamera();
+    return () => {
+      cancelled = true;
+      window.clearInterval(analysisTimer);
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      if (videoRef.current) videoRef.current.srcObject = null;
+    };
+  }, []);
+
+  const capturePhoto = async () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) return;
+    setCapturing(true);
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Could not capture a photo from this camera.");
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob((result) => {
+          if (result) resolve(result);
+          else reject(new Error("Could not capture a photo from this camera. Please try again."));
+        }, "image/jpeg", 0.94);
+      });
+      onCapture(new File([blob], `id-${side}-${Date.now()}.jpg`, {
+        type: "image/jpeg",
+        lastModified: Date.now(),
+      }));
+    } catch (error) {
+      setCameraError(error.message || "Could not capture a photo. Please try again.");
+      setCapturing(false);
+    }
+  };
+
+  const liveMessage = liveQuality?.isBlurry
+    ? "Hold the phone steady and tap the screen to focus."
+    : liveQuality?.isTooDark
+      ? "Add more light and avoid casting a shadow over the ID."
+      : liveQuality?.isOverexposed
+        ? "The image looks washed out. Move away from direct light or glare."
+        : "Move closer until the ID nearly fills the guide; keep all four corners inside it.";
+
+  return (
+    <section className="mt-4 rounded-2xl border border-sky-200 bg-slate-950 p-4 text-white" aria-label={`Guided camera for ${side} of ID`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-bold">Capture the {side} of your ID</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-200">
+            Use even light, avoid flash reflections, and keep every edge visible.
+          </p>
+        </div>
+        <button type="button" onClick={onCancel} className="dashboard-focus rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-200 underline underline-offset-2 hover:text-white">
+          Close camera
+        </button>
+      </div>
+
+      {cameraError ? (
+        <p className="mt-4 rounded-xl bg-rose-950/70 p-3 text-sm text-rose-100" role="alert">{cameraError}</p>
+      ) : (
+        <>
+          <div className="relative mt-4 overflow-hidden rounded-xl bg-black">
+            <video
+              ref={videoRef}
+              autoPlay
+              muted
+              playsInline
+              className="max-h-[55vh] min-h-48 w-full object-contain"
+              aria-label="Live camera preview"
+            />
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-5" aria-hidden="true">
+              <div className="aspect-[1.586/1] w-full max-w-[30rem] rounded-xl border-2 border-dashed border-white shadow-[0_0_0_999px_rgba(0,0,0,0.35)]" />
+            </div>
+          </div>
+          <p className={`mt-3 text-sm ${liveQuality?.isBlurry || liveQuality?.isTooDark || liveQuality?.isOverexposed ? "text-amber-200" : "text-slate-100"}`} role="status" aria-live="polite">
+            {cameraReady ? liveMessage : "Starting your camera…"}
+          </p>
+          <div className="mt-4 flex gap-3">
+            <button
+              type="button"
+              onClick={capturePhoto}
+              disabled={!cameraReady || capturing}
+              className="dashboard-focus min-h-11 flex-1 rounded-xl bg-white px-4 text-sm font-bold text-slate-950 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {capturing ? "Checking photo…" : "Capture photo"}
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="dashboard-focus min-h-11 rounded-xl border border-white/30 px-4 text-sm font-semibold text-white transition hover:bg-white/10"
+            >
+              Cancel
+            </button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -106,6 +314,8 @@ export default function VerificationPage() {
   const [idBackPreview, setIdBackPreview] = useState("");
   const [checkingImages, setCheckingImages] = useState({ front: false, back: false });
   const [imageErrors, setImageErrors] = useState({ front: "", back: "" });
+  const [imageWarnings, setImageWarnings] = useState({ front: [], back: [] });
+  const [cameraSide, setCameraSide] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [ocrProcessing, setOcrProcessing] = useState(false);
   const [autoVerified, setAutoVerified] = useState(false);
@@ -119,53 +329,73 @@ export default function VerificationPage() {
     if (idBackPreview) URL.revokeObjectURL(idBackPreview);
   }, [idFrontPreview, idBackPreview]);
 
-  const handleFileSelect = (side, setter, setPreview) => async (e) => {
-    const file = e.target.files[0];
-    e.target.value = "";
-    if (file) {
-      if (file.size > MAX_ID_IMAGE_SIZE) {
-        setError("Each ID image must be 8 MB or smaller. Choose a smaller image and try again.");
-        return;
-      }
-      setError("");
-      setImageErrors((current) => ({ ...current, [side]: "" }));
-      setCheckingImages((current) => ({ ...current, [side]: true }));
-      try {
-        const { isBlurry } = await checkImageSharpness(file);
-        if (isBlurry) {
-          setPreview((currentPreview) => {
-            if (currentPreview) URL.revokeObjectURL(currentPreview);
-            return "";
-          });
-          setter(null);
-          setImageErrors((current) => ({
-            ...current,
-            [side]: "Photo is too blurry. Please retake or upload a clearer image of your ID.",
-          }));
-          return;
-        }
+  const processSelectedImage = async (side, file) => {
+    if (!file) return;
+    const setter = side === "front" ? setIdFrontFile : setIdBackFile;
+    const setPreview = side === "front" ? setIdFrontPreview : setIdBackPreview;
+    const clearImage = () => {
+      setPreview((currentPreview) => {
+        if (currentPreview) URL.revokeObjectURL(currentPreview);
+        return "";
+      });
+      setter(null);
+      setImageWarnings((current) => ({ ...current, [side]: [] }));
+    };
 
-        const preparedFile = await prepareVerificationImage(file);
-        setImageErrors((current) => ({ ...current, [side]: "" }));
-        setPreview((currentPreview) => {
-          if (currentPreview) URL.revokeObjectURL(currentPreview);
-          return URL.createObjectURL(preparedFile);
-        });
-        setter(preparedFile);
-      } catch (imageError) {
-        setPreview((currentPreview) => {
-          if (currentPreview) URL.revokeObjectURL(currentPreview);
-          return "";
-        });
-        setter(null);
+    if (file.size > MAX_ID_IMAGE_SIZE) {
+      setError("Each ID image must be 8 MB or smaller. Choose a smaller image and try again.");
+      return;
+    }
+    setError("");
+    setImageErrors((current) => ({ ...current, [side]: "" }));
+    setImageWarnings((current) => ({ ...current, [side]: [] }));
+    setCheckingImages((current) => ({ ...current, [side]: true }));
+    try {
+      const quality = await checkImageSharpness(file);
+      if (quality.isBlurry || quality.isTooSmall) {
+        clearImage();
         setImageErrors((current) => ({
           ...current,
-          [side]: imageError.message || "Could not check this image. Please choose another.",
+          [side]: quality.isBlurry
+            ? "This photo is too blurry to read. Hold the camera steady, tap to focus, and retake it."
+            : "This photo has too few pixels to read the ID. Retake it closer or choose a higher-resolution image.",
         }));
-      } finally {
-        setCheckingImages((current) => ({ ...current, [side]: false }));
+        return;
       }
+
+      const warnings = [];
+      if (quality.isLowResolution) {
+        warnings.push("This image may not have enough detail. Retake it closer to the ID if the printed text looks small.");
+      }
+      if (quality.isTooDark) {
+        warnings.push("The photo looks dark. Add even light and keep your shadow off the ID.");
+      }
+      if (quality.isOverexposed) {
+        warnings.push("Bright areas may hide ID details. Avoid direct light and reflections.");
+      }
+
+      const preparedFile = await prepareVerificationImage(file);
+      setImageWarnings((current) => ({ ...current, [side]: warnings }));
+      setPreview((currentPreview) => {
+        if (currentPreview) URL.revokeObjectURL(currentPreview);
+        return URL.createObjectURL(preparedFile);
+      });
+      setter(preparedFile);
+    } catch (imageError) {
+      clearImage();
+      setImageErrors((current) => ({
+        ...current,
+        [side]: imageError.message || "Could not check this image. Please choose another.",
+      }));
+    } finally {
+      setCheckingImages((current) => ({ ...current, [side]: false }));
     }
+  };
+
+  const handleFileSelect = (side) => (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    void processSelectedImage(side, file);
   };
 
   const handleRemove = (side, setter, setPreview) => () => {
@@ -175,11 +405,17 @@ export default function VerificationPage() {
     });
     setter(null);
     setImageErrors((current) => ({ ...current, [side]: "" }));
+    setImageWarnings((current) => ({ ...current, [side]: [] }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+
+    if (cameraSide) {
+      setError("Finish or close the live camera before submitting your ID.");
+      return;
+    }
 
     if (checkingImages.front || checkingImages.back) {
       setError("Please wait for the image clarity check to finish.");
@@ -237,6 +473,8 @@ export default function VerificationPage() {
     }
   };
 
+  const imagesBusy = uploading || submitted || checkingImages.front || checkingImages.back;
+
   return (
     <div>
       <Header showNav activeTab="Profile" role={role === "provider" ? "provider" : "client"} />
@@ -264,7 +502,7 @@ export default function VerificationPage() {
           </div>
           <h1 className="mt-5 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">Identity verification</h1>
           <p className="mx-auto mt-3 max-w-prose text-sm leading-6 text-slate-600">
-            Upload both sides of a valid photo ID. We’ll automatically verify clear matches or send your documents to our team for review.
+            Capture or upload both sides of a valid photo ID. Use a flat surface, even light, and keep all four ID corners visible so the text can be read.
           </p>
         </div>
 
@@ -316,17 +554,31 @@ export default function VerificationPage() {
         )}
 
         <form onSubmit={handleSubmit} className="mt-5 space-y-5 rounded-3xl border border-white/80 bg-white/75 p-5 shadow-[0_18px_48px_rgba(15,23,42,0.07)] backdrop-blur-xl sm:p-7">
+          {cameraSide && (
+            <GuidedCamera
+              side={cameraSide}
+              onCancel={() => setCameraSide("")}
+              onCapture={(file) => {
+                const side = cameraSide;
+                setCameraSide("");
+                void processSelectedImage(side, file);
+              }}
+            />
+          )}
+
           <ImageUpload
             label="ID Front"
             name="idFront"
             accept="image/jpeg,image/png,image/webp"
             file={idFrontFile}
             preview={idFrontPreview}
-            onSelect={handleFileSelect("front", setIdFrontFile, setIdFrontPreview)}
+            onSelect={handleFileSelect("front")}
+            onTakePhoto={() => setCameraSide("front")}
             onRemove={handleRemove("front", setIdFrontFile, setIdFrontPreview)}
-            disabled={uploading || submitted || checkingImages.front}
+            disabled={imagesBusy}
             isChecking={checkingImages.front}
             imageError={imageErrors.front}
+            imageWarnings={imageWarnings.front}
           />
 
           <ImageUpload
@@ -335,11 +587,13 @@ export default function VerificationPage() {
             accept="image/jpeg,image/png,image/webp"
             file={idBackFile}
             preview={idBackPreview}
-            onSelect={handleFileSelect("back", setIdBackFile, setIdBackPreview)}
+            onSelect={handleFileSelect("back")}
+            onTakePhoto={() => setCameraSide("back")}
             onRemove={handleRemove("back", setIdBackFile, setIdBackPreview)}
-            disabled={uploading || submitted || checkingImages.back}
+            disabled={imagesBusy}
             isChecking={checkingImages.back}
             imageError={imageErrors.back}
+            imageWarnings={imageWarnings.back}
           />
 
           {uploading && (
@@ -377,7 +631,7 @@ export default function VerificationPage() {
             </button>
             <button
               type="submit"
-              disabled={uploading || submitted || checkingImages.front || checkingImages.back}
+              disabled={imagesBusy || Boolean(cameraSide)}
               className="dashboard-focus flex-1 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white shadow-[0_8px_20px_rgba(15,23,42,0.15)] transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {uploading ? "Uploading..." : "Submit Verification"}
