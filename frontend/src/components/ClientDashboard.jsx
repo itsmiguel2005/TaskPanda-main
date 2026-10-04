@@ -30,6 +30,17 @@ function formatPhpAmount(value) {
   return `₱${(Number.isFinite(amount) ? amount : 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
 }
 
+function VerifiedBadge() {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700" aria-label="Verified provider">
+      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" className="h-3 w-3">
+        <path fillRule="evenodd" d="M10 1.667a2.5 2.5 0 0 1 2.357 1.666h1.81a2.5 2.5 0 0 1 2.5 2.5v1.81a2.5 2.5 0 0 1 0 4.714v1.81a2.5 2.5 0 0 1-2.5 2.5h-1.81a2.5 2.5 0 0 1-4.714 0h-1.81a2.5 2.5 0 0 1-2.5-2.5v-1.81a2.5 2.5 0 0 1 0-4.714v-1.81a2.5 2.5 0 0 1 2.5-2.5h1.81A2.5 2.5 0 0 1 10 1.667Zm3.09 6.75a.75.75 0 0 0-1.18-.92l-2.74 3.52-1.08-1.08a.75.75 0 0 0-1.06 1.06l1.68 1.68a.75.75 0 0 0 1.12-.07l3.26-4.19Z" clipRule="evenodd" />
+      </svg>
+      Verified
+    </span>
+  );
+}
+
 function StatusBadge({ status }) {
   const colors = {
     "Pending Request": "bg-amber-100 text-amber-700 border-amber-200",
@@ -74,32 +85,6 @@ function StarIcon({ filled }) {
 }
 
 const FAVORITES_SYNC_EVENT = "taskpanda:favorites-sync";
-
-function resolveProviderPerformance(provider, bookings) {
-  if (!Array.isArray(bookings) || bookings.length === 0) {
-    return { rating: 0, reviews: 0 };
-  }
-
-  const providerKey = String(provider?._id || "");
-  const providerName = String(provider?.fullName || provider?.username || "").trim().toLowerCase();
-
-  const matchingReviews = bookings.filter((booking) => {
-    const status = String(booking?.statusCode || booking?.status || "").trim().toLowerCase();
-    if (!["complete", "completed", "closed", "settled"].includes(status)) return false;
-    if (!Number.isFinite(Number(booking?.clientRating))) return false;
-    const sameProviderId = providerKey && String(booking?.providerId || "") === providerKey;
-    const sameProviderName = providerName && String(booking?.worker || "").trim().toLowerCase() === providerName;
-    return sameProviderId || sameProviderName;
-  });
-
-  if (!matchingReviews.length) return { rating: 0, reviews: 0 };
-
-  const totalRating = matchingReviews.reduce((sum, booking) => sum + Number(booking.clientRating), 0);
-  return {
-    rating: Number((totalRating / matchingReviews.length).toFixed(1)),
-    reviews: matchingReviews.length,
-  };
-}
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -370,7 +355,7 @@ export default function Dashboard() {
       latitude: String(latitude),
       minKm: "0",
       maxKm: "25",
-      limit: "3",
+      limit: "50",
     });
 
     try {
@@ -379,18 +364,13 @@ export default function Dashboard() {
       if (!response.ok) throw new Error(data.message || "Could not load nearby providers.");
 
       const providers = Array.isArray(data.providers) ? data.providers : [];
-      const nextProviders = providers.slice(0, 3).map((provider, index) => {
+      const nextProviders = providers.map((provider, index) => {
         const professions = Array.isArray(provider.professions) ? provider.professions : [];
         const category = professions[0] || "Local Service";
         const backendRating = Number(provider?.averageRating ?? 0);
         const backendReviews = Number(provider?.totalReviews ?? 0);
-        const fallbackPerformance = resolveProviderPerformance(provider, bookingList);
-        const rating = Number.isFinite(backendRating) && backendReviews > 0
-          ? backendRating
-          : fallbackPerformance.reviews > 0 ? fallbackPerformance.rating : 0;
-        const reviews = Number.isFinite(backendReviews) && backendReviews > 0
-          ? backendReviews
-          : fallbackPerformance.reviews;
+        const rating = Number.isFinite(backendRating) ? backendRating : 0;
+        const reviews = Number.isFinite(backendReviews) ? backendReviews : 0;
 
         return {
           _id: provider._id,
@@ -398,13 +378,20 @@ export default function Dashboard() {
           name: provider.fullName || provider.username || "Local pro",
           cred: professions.join(" · ") || "Local service provider",
           profileImage: provider.profileImage || "",
+          isVerified: provider.isVerified === true || provider.verificationStatus === "verified",
           rating,
           reviews,
           category,
           onTimeStreak: provider.onTimeStreak,
           accent: index === 0 ? "from-sky-50 via-white to-white" : index === 1 ? "from-cyan-50 via-white to-white" : "from-blue-50 via-white to-white",
         };
-      });
+      })
+        .sort((first, second) => (
+          second.rating - first.rating
+          || second.reviews - first.reviews
+          || first.name.localeCompare(second.name)
+        ))
+        .slice(0, 3);
 
       setTopRatedProviders((current) => {
         const sameSnapshot = current.length === nextProviders.length && current.every((provider, index) => (
@@ -412,6 +399,7 @@ export default function Dashboard() {
           provider.category === nextProviders[index].category &&
           provider.rating === nextProviders[index].rating &&
           provider.reviews === nextProviders[index].reviews &&
+          provider.isVerified === nextProviders[index].isVerified &&
           provider.onTimeStreak?.count === nextProviders[index].onTimeStreak?.count &&
           provider.onTimeStreak?.milestone === nextProviders[index].onTimeStreak?.milestone
         ));
@@ -427,7 +415,7 @@ export default function Dashboard() {
         setTopRatedProvidersLoading(false);
       }
     }
-  }, [bookingList, locationKey]);
+  }, [locationKey]);
 
   useEffect(() => {
     if (!locationKey) {
@@ -631,6 +619,10 @@ export default function Dashboard() {
               {visibleTopRatedProviders.length > 0 ? (
                 visibleTopRatedProviders.map((pro) => {
                   const hasRatings = Number(pro.rating) > 0 && Number(pro.reviews) > 0;
+                  const isVerified = pro.isVerified || favoriteProviders.some(
+                    (provider) => String(provider?._id || provider?.id) === String(pro._id || pro.id)
+                      && (provider.isVerified === true || provider.verificationStatus === "verified")
+                  );
 
                   return (
                     <div
@@ -677,6 +669,7 @@ export default function Dashboard() {
                         <span className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-gray-700">
                           {pro.category}
                         </span>
+                        {isVerified && <VerifiedBadge />}
                       </div>
 
                       <div className="mt-auto flex gap-2 pt-4">
@@ -812,6 +805,7 @@ export default function Dashboard() {
                       </div>
                       <div className="mt-4 flex items-center justify-start gap-2">
                         <span className="rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-blue-950">{category}</span>
+                        {(provider.isVerified === true || provider.verificationStatus === "verified") && <VerifiedBadge />}
                       </div>
 
                       <div className="mt-auto flex gap-2 pt-4">

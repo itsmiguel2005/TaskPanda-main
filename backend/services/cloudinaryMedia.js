@@ -4,7 +4,7 @@ const cloudinary = require("cloudinary").v2;
 const CHAT_PHOTO_MAX_BYTES = 4 * 1024 * 1024;
 const CHAT_PHOTO_FORMATS = ["jpg", "jpeg", "png", "webp", "gif"];
 const PROFILE_PHOTO_MAX_BYTES = 4 * 1024 * 1024;
-const VERIFICATION_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+const VERIFICATION_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 const VERIFICATION_IMAGE_FORMATS = ["jpg", "jpeg", "png", "webp"];
 
 function getCredentials() {
@@ -44,7 +44,7 @@ async function uploadProfileImage(buffer, userId) {
 async function uploadVerificationImage(buffer, userId, side) {
   getCredentials();
   if (!Buffer.isBuffer(buffer) || buffer.length > VERIFICATION_IMAGE_MAX_BYTES) {
-    const error = new Error("Identity images must be 2 MB or smaller.");
+    const error = new Error("Identity images must be 8 MB or smaller.");
     error.statusCode = 400;
     throw error;
   }
@@ -61,7 +61,7 @@ async function uploadVerificationImage(buffer, userId, side) {
   if (!VERIFICATION_IMAGE_FORMATS.includes(String(result.format || "").toLowerCase()) ||
     result.bytes > VERIFICATION_IMAGE_MAX_BYTES || !result.public_id) {
     await deleteVerificationImage(result.public_id || publicId);
-    const error = new Error("Identity images must be 2 MB or smaller and use JPEG, PNG, or WebP format.");
+    const error = new Error("Identity images must be 8 MB or smaller and use JPEG, PNG, or WebP format.");
     error.statusCode = 400;
     throw error;
   }

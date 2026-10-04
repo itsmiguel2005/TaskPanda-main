@@ -7,7 +7,7 @@ const {
   performOCRVerification,
 } = require("../utils/ocrHelper");
 const { SECURITY_FLAGS, inspectVerificationMetadata } = require("../utils/verificationMetadata");
-const { revalidatePersistedVerification } = require("../services/verificationPolicy");
+const { persistVerificationSubmission } = require("../services/verificationSubmission");
 const { removeUploadedFiles } = require("../storage/verificationUpload");
 const { sendPushNotification } = require("../services/oneSignal");
 const { awardVerificationVoucher } = require("../services/rewards");
@@ -38,6 +38,11 @@ async function handleSubmitVerification(req, res) {
       await removeUploadedFiles(uploadedFiles);
       return res.status(404).json({ message: "Your account could not be found." });
     }
+    if (previousUser.isVerified === true && previousUser.verificationDetails?.status === "Active") {
+      const error = new Error("Your identity is already verified. This submission was not saved.");
+      error.statusCode = 409;
+      throw error;
+    }
 
     const tradeCertificate = String(req.body.tradeCertificate || req.body.certificate || "").trim();
     if (tradeCertificate.length > 200) {
@@ -61,13 +66,29 @@ async function handleSubmitVerification(req, res) {
       console.warn("Verification ID has no camera Make/Model metadata; flagging for admin inspection.", String(req.user._id));
     }
 
+    const cloudUploadsPromise = Promise.allSettled([
+      uploadVerificationImage(frontBuffer, String(req.user._id), "front"),
+      uploadVerificationImage(backBuffer, String(req.user._id), "back"),
+    ]);
     const ocrResult = await performOCRVerification(front.path, getProfileName(req.user));
-    const backOcrResult = await performOCRVerification(back.path, getProfileName(req.user));
-    if (areIdSidesLikelySwapped(ocrResult, backOcrResult)) {
-      return res.status(400).json({
-        message: "The name on your ID appears on the image uploaded as ID Back instead of ID Front. Swap the images so the side with your photo and name is ID Front, then submit again.",
-        code: "ID_SIDES_APPEAR_SWAPPED",
-      });
+    const frontNameMatched = ocrResult.nameMatchAccuracy >= 75 &&
+      ocrResult.firstNameMatched &&
+      ocrResult.lastNameMatched;
+    const backOcrResult = frontNameMatched
+      ? null
+      : await performOCRVerification(back.path, getProfileName(req.user));
+
+    const [frontUpload, backUpload] = await cloudUploadsPromise;
+    for (const upload of [frontUpload, backUpload]) {
+      if (upload.status === "fulfilled") uploadedCloudImages.push(upload.value.publicId);
+    }
+    const failedOperation = [frontUpload, backUpload].find((result) => result.status === "rejected");
+    if (failedOperation) throw failedOperation.reason;
+
+    if (backOcrResult && areIdSidesLikelySwapped(ocrResult, backOcrResult)) {
+      const error = new Error("The name on your ID appears on the image uploaded as ID Back instead of ID Front. Swap the images so the side with your photo and name is ID Front, then submit again.");
+      error.statusCode = 400;
+      throw error;
     }
 
     const frontSideCheck = classifyIdSide({
@@ -80,20 +101,10 @@ async function handleSubmitVerification(req, res) {
       detectedIdType: ocrResult.detectedIdType,
     });
     if (frontSideCheck === "back") {
-      return res.status(400).json({
-        message: "This looks like the back of your ID. Upload the side showing your photo and name as ID Front, then upload the reverse as ID Back.",
-        code: "ID_FRONT_APPEARS_TO_BE_BACK",
-      });
+      const error = new Error("This looks like the back of your ID. Upload the side showing your photo and name as ID Front, then upload the reverse as ID Back.");
+      error.statusCode = 400;
+      throw error;
     }
-    const [frontUpload, backUpload] = await Promise.allSettled([
-      uploadVerificationImage(frontBuffer, String(req.user._id), "front"),
-      uploadVerificationImage(backBuffer, String(req.user._id), "back"),
-    ]);
-    for (const upload of [frontUpload, backUpload]) {
-      if (upload.status === "fulfilled") uploadedCloudImages.push(upload.value.publicId);
-    }
-    const failedOperation = [frontUpload, backUpload].find((result) => result.status === "rejected");
-    if (failedOperation) throw failedOperation.reason;
 
     const frontImage = frontUpload.value;
     const backImage = backUpload.value;
@@ -109,22 +120,25 @@ async function handleSubmitVerification(req, res) {
       rejectionReason: "",
       status: autoVerified ? "Active" : "Pending",
       submittedAt: new Date(),
+      reviewedAt: null,
       idFrontPublicId: frontImage.publicId,
       idBackPublicId: backImage.publicId,
       idFrontFormat: frontImage.format,
       idBackFormat: backImage.format,
     };
 
-    req.user.verificationDetails = verificationDetails;
-    req.user.isVerified = autoVerified;
-    req.user.verificationStatus = autoVerified ? "verified" : "pending";
-    await req.user.save();
+    const savedUser = await persistVerificationSubmission(
+      User,
+      previousUser,
+      verificationDetails,
+      autoVerified,
+    );
 
     let voucherAwarded = false;
     let voucherAwardError = false;
-    if (autoVerified && req.user.role === "client") {
+    if (autoVerified && savedUser.role === "client") {
       try {
-        voucherAwarded = await awardVerificationVoucher(req.user._id);
+        voucherAwarded = await awardVerificationVoucher(savedUser._id);
       } catch (error) {
         voucherAwardError = true;
         console.error("Could not award client identity verification voucher:", error);
@@ -140,20 +154,20 @@ async function handleSubmitVerification(req, res) {
     return res.status(200).json({
       success: true,
       autoVerified,
-      isVerified: req.user.isVerified,
+      isVerified: savedUser.isVerified,
       status: verificationDetails.status,
-      verificationStatus: req.user.verificationStatus,
+      verificationStatus: savedUser.verificationStatus,
       ocrConfidence: ocrResult.ocrConfidence,
       nameMatchAccuracy: ocrResult.nameMatchAccuracy,
       securityFlags,
-      ...(req.user.role === "client" && autoVerified ? { voucherAwarded, voucherAwardError } : {}),
+      ...(savedUser.role === "client" && autoVerified ? { voucherAwarded, voucherAwardError } : {}),
       message: autoVerified
         ? "Your identity was verified successfully."
         : "Your documents were submitted and are waiting for manual review.",
       user: {
-        isVerified: req.user.isVerified,
+        isVerified: savedUser.isVerified,
         status: verificationDetails.status,
-        verificationStatus: req.user.verificationStatus,
+        verificationStatus: savedUser.verificationStatus,
       },
     });
   } catch (error) {
@@ -171,15 +185,6 @@ async function handleSubmitVerification(req, res) {
 
 async function handleGetAdminVerifications(_req, res) {
   try {
-    const previousPartialMatches = await User.find({
-      isVerified: true,
-      "verificationDetails.status": "Active",
-      "verificationDetails.nameMatchAccuracy": mongoose.trusted({ $lt: 75 }),
-    });
-    for (const user of previousPartialMatches) {
-      await revalidatePersistedVerification(user);
-    }
-
     const users = await User.find({
       "verificationDetails.status": "Pending",
       "verificationDetails.idFrontUrl": mongoose.trusted({ $ne: "" }),
@@ -205,7 +210,8 @@ async function handleGetAdminVerifications(_req, res) {
         ocrConfidence: user.verificationDetails?.ocrConfidence ?? null,
         nameMatchAccuracy: user.verificationDetails?.nameMatchAccuracy ?? null,
         autoVerified: user.verificationDetails?.autoVerified === true,
-        securityFlags: user.verificationDetails?.securityFlags || [],
+        securityFlags: (user.verificationDetails?.securityFlags || [])
+          .filter((flag) => Object.values(SECURITY_FLAGS).includes(flag)),
         rejectionReason: user.verificationDetails?.rejectionReason || "",
       })),
     });
@@ -229,6 +235,8 @@ async function handleReviewVerification(req, res) {
       $set: {
         "verificationDetails.status": approved ? "Active" : "Rejected",
         "verificationDetails.rejectionReason": approved ? "" : rejectionReason.trim(),
+        "verificationDetails.autoVerified": false,
+        "verificationDetails.reviewedAt": new Date(),
         isVerified: approved,
         verificationStatus: approved ? "verified" : "rejected",
       },

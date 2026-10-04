@@ -199,9 +199,17 @@ export default function VerificationPage() {
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
-      const data = await res.json();
+      const contentType = res.headers.get("content-type") || "";
+      const data = contentType.includes("application/json")
+        ? await res.json()
+        : {};
       if (!res.ok) {
-        setError(data.message || data.error || "Verification failed");
+        setError(data.message || data.error || `Verification failed (HTTP ${res.status}). Please try again.`);
+        setUploading(false);
+        return;
+      }
+      if (!data.success) {
+        setError("The verification service returned an unexpected response. Please try again.");
         setUploading(false);
         return;
       }
@@ -214,7 +222,10 @@ export default function VerificationPage() {
         navigate(profilePath);
       }, 2000);
     } catch (err) {
-      setError("Network error. Please try again.");
+      console.error("Identity verification submission failed:", err);
+      setError(err instanceof TypeError
+        ? "Could not reach the verification service. Check your connection and try again."
+        : err.message || "Could not submit your verification. Please try again.");
       setUploading(false);
     }
   };

@@ -66,6 +66,7 @@ export default function Explore() {
   const [providers, setProviders] = useState([]);
   const [totalProviders, setTotalProviders] = useState(0);
   const [favoriteProviderIds, setFavoriteProviderIds] = useState(new Set());
+  const [verifiedFavoriteProviderIds, setVerifiedFavoriteProviderIds] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
   const { token } = useAuth();
@@ -99,6 +100,7 @@ export default function Explore() {
   useEffect(() => {
     if (!token) {
       setFavoriteProviderIds(new Set());
+      setVerifiedFavoriteProviderIds(new Set());
       return undefined;
     }
 
@@ -115,7 +117,12 @@ export default function Explore() {
         const favorites = Array.isArray(data.favorites) ? data.favorites : [];
         const nextIds = favorites.map((favorite) => String(favorite._id || favorite.id)).filter(Boolean);
         const normalizedSet = new Set(nextIds);
+        const verifiedIds = favorites
+          .filter((favorite) => favorite.isVerified === true || favorite.verificationStatus === "verified")
+          .map((favorite) => String(favorite._id || favorite.id))
+          .filter(Boolean);
         setFavoriteProviderIds(normalizedSet);
+        setVerifiedFavoriteProviderIds(new Set(verifiedIds));
         window.dispatchEvent(new CustomEvent(FAVORITES_SYNC_EVENT, { detail: { favoriteProviderIds: nextIds } }));
       } catch {
         if (!cancelled) setFavoriteProviderIds(new Set());
@@ -581,7 +588,11 @@ export default function Explore() {
           ) : filteredProviders.length > 0 ? (
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
               {filteredProviders.map((provider) => {
-                const isProviderVerified = Boolean(provider.isVerified || provider.verificationStatus === "verified");
+                const isProviderVerified = Boolean(
+                  provider.isVerified === true
+                    || provider.verificationStatus === "verified"
+                    || verifiedFavoriteProviderIds.has(String(provider._id))
+                );
                 const rating = Number(provider?.averageRating ?? 0);
                 const reviews = Number(provider?.totalReviews ?? 0);
                 const hasRatings = rating > 0 && reviews > 0;
@@ -617,7 +628,17 @@ export default function Explore() {
                           <h3 className="truncate text-sm font-bold text-slate-900">
                             {provider.fullName || provider.username || "Provider"}
                           </h3>
-                          <p className="text-xs text-slate-600">{provider.professions?.join(" · ") || "Service provider"}</p>
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <p className="truncate text-xs text-slate-600">{provider.professions?.join(" · ") || "Service provider"}</p>
+                            {isProviderVerified && (
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700" aria-label="Verified provider">
+                                <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" className="h-3 w-3">
+                                  <path fillRule="evenodd" d="M10 1.667a2.5 2.5 0 0 1 2.357 1.666h1.81a2.5 2.5 0 0 1 2.5 2.5v1.81a2.5 2.5 0 0 1 0 4.714v1.81a2.5 2.5 0 0 1-2.5 2.5h-1.81a2.5 2.5 0 0 1-4.714 0h-1.81a2.5 2.5 0 0 1-2.5-2.5v-1.81a2.5 2.5 0 0 1 0-4.714v-1.81a2.5 2.5 0 0 1 2.5-2.5h1.81A2.5 2.5 0 0 1 10 1.667Zm3.09 6.75a.75.75 0 0 0-1.18-.92l-2.74 3.52-1.08-1.08a.75.75 0 0 0-1.06 1.06l1.68 1.68a.75.75 0 0 0 1.12-.07l3.26-4.19Z" clipRule="evenodd" />
+                                </svg>
+                                Verified
+                              </span>
+                            )}
+                          </div>
                         </div>
                         {token && (
                           <button

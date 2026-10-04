@@ -147,6 +147,7 @@ const userSchema = new mongoose.Schema(
       rejectionReason: { type: String, trim: true, maxlength: 500, default: "" },
       status: { type: String, enum: ["Active", "Pending", "Rejected"], default: undefined },
       submittedAt: { type: Date, default: null },
+      reviewedAt: { type: Date, default: null },
       idFrontPublicId: { type: String, select: false },
       idBackPublicId: { type: String, select: false },
       idFrontFormat: { type: String, select: false },

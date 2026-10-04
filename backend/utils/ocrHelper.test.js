@@ -1,12 +1,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const sharp = require("sharp");
 const {
   OCR_LANGUAGES,
-  OCR_ORIENTATION_LANGUAGE,
   OCR_SEGMENTATION_MODES,
   areIdSidesLikelySwapped,
   classifyIdSide,
+  createIdOCRVariants,
   detectIdType,
+  scoreLtoNameMatch,
   scoreNameMatch,
   selectBestOCRCandidate,
   shouldAutoVerify,
@@ -14,10 +16,7 @@ const {
 
 test("OCR supports English and Filipino IDs using multiple card layout modes", () => {
   assert.equal(OCR_LANGUAGES, "eng+fil");
-  assert.equal(OCR_ORIENTATION_LANGUAGE, "osd");
   assert.deepEqual(OCR_SEGMENTATION_MODES, [
-    "1",
-    "3",
     "6",
     "11",
   ]);
@@ -41,6 +40,74 @@ test("OCR name matching ignores short prepositions", () => {
     firstNameMatched: true,
     lastNameMatched: true,
   });
+});
+
+test("Philippine driver's-license surname-first layout matches a conventionally ordered profile name", () => {
+  const result = scoreNameMatch(
+    "CALIMLIM MIGUEL EDUARDO ESTRADA",
+    "Miguel Eduardo Estrada Calimlim"
+  );
+  assert.equal(result.accuracy, 1);
+  assert.equal(result.firstNameMatched, true);
+  assert.equal(result.lastNameMatched, true);
+});
+
+test("LTO name matching tolerates one OCR character error in a long name token", () => {
+  const result = scoreLtoNameMatch(
+    "DRIVER'S LICENSE CALIML1M MIGUEL EDUARDO ESTRADA",
+    "Miguel Eduardo Estrada Calimlim"
+  );
+  assert.ok(result.accuracy >= 0.9);
+  assert.equal(result.firstNameMatched, true);
+  assert.equal(result.lastNameMatched, false);
+  assert.equal(shouldAutoVerify(87, result), false);
+});
+
+test("candidate selection applies LTO-aware matching to the one-line surname-first layout", () => {
+  const result = selectBestOCRCandidate([
+    {
+      confidence: 87,
+      text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE CALIML1M MIGUEL EDUARDO ESTRADA",
+    },
+  ], "Miguel Eduardo Estrada Calimlim");
+  assert.equal(result.detectedIdType, "Driver's License");
+  assert.ok(result.nameMatch.accuracy >= 0.9);
+});
+
+test("LTO-aware candidate selection applies the card layout to a separate OCR name line", () => {
+  const result = selectBestOCRCandidate([
+    { confidence: 92, text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
+    { confidence: 68, text: "CALIML1M MIGUEL EDUARDO ESTRADA" },
+  ], "Miguel Eduardo Estrada Calimlim");
+  assert.ok(result.nameMatch.accuracy >= 0.9);
+  assert.match(result.text, /CALIML1M MIGUEL EDUARDO ESTRADA/);
+});
+
+test("LTO name score combines the heading and comma-separated name read in separate OCR blocks", () => {
+  const result = selectBestOCRCandidate([
+    { confidence: 54, text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
+    { confidence: 63, text: "CALIMLIM, MIGUEL EDUARDO ESTRADA" },
+  ], "MIGUEL EDUARDO ESTRADA CALIMLIM");
+
+  assert.equal(result.detectedIdType, "Driver's License");
+  assert.equal(result.nameMatch.accuracy, 1);
+  assert.equal(result.nameMatch.firstNameMatched, true);
+  assert.equal(result.nameMatch.lastNameMatched, true);
+});
+
+test("ID OCR creates a centered enlarged crop to recover small card text", async () => {
+  const image = await sharp({
+    create: { width: 1000, height: 1600, channels: 3, background: "#fff" },
+  }).jpeg().toBuffer();
+  const variants = await createIdOCRVariants(image);
+
+  assert.equal(variants.length, 2);
+  const croppedMetadata = await sharp(variants[0]).metadata();
+  assert.equal(croppedMetadata.width, 1800);
+  assert.equal(croppedMetadata.height, 1532);
+  const fullMetadata = await sharp(variants[1]).metadata();
+  assert.equal(fullMetadata.width, 1000);
+  assert.equal(fullMetadata.height, 1600);
 });
 
 test("OCR name matching does not treat approximate spellings as a verified identity", () => {

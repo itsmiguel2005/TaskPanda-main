@@ -82,6 +82,8 @@ async function handleDiscoverProviders(req, res) {
                 _id: 1,
                 fullName: 1,
                 username: 1,
+                isVerified: 1,
+                verificationStatus: 1,
                 profileImage: 1,
                 professions: 1,
                 bio: 1,

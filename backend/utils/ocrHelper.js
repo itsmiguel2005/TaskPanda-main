@@ -2,17 +2,15 @@ const Tesseract = require("tesseract.js");
 const fs = require("fs/promises");
 const os = require("os");
 const path = require("path");
+const sharp = require("sharp");
 
 let workerPromise;
 const ocrCachePath = path.join(os.tmpdir(), "taskpanda-tesseract");
 const OCR_LANGUAGES = "eng+fil";
 const OCR_SEGMENTATION_MODES = [
-  Tesseract.PSM.AUTO_OSD,
-  Tesseract.PSM.AUTO,
   Tesseract.PSM.SINGLE_BLOCK,
   Tesseract.PSM.SPARSE_TEXT,
 ];
-const OCR_ORIENTATION_LANGUAGE = "osd";
 const IGNORED_NAME_PARTS = new Set([
   "da",
   "das",
@@ -121,7 +119,42 @@ function areIdSidesLikelySwapped(frontOCRResult, backOCRResult) {
       hasFrontFaceEvidence(backOCRResult);
 }
 
-function scoreNameMatch(extractedText, userName) {
+function editDistance(left, right, maximumDistance) {
+  if (Math.abs(left.length - right.length) > maximumDistance) return Infinity;
+
+  let previous = Array.from({ length: right.length + 1 }, (_unused, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex];
+    let rowMinimum = current[0];
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const cost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
+      current[rightIndex] = Math.min(
+        current[rightIndex - 1] + 1,
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] + cost
+      );
+      rowMinimum = Math.min(rowMinimum, current[rightIndex]);
+    }
+    if (rowMinimum > maximumDistance) return Infinity;
+    previous = current;
+  }
+  return previous[right.length];
+}
+
+function getNameTokenQuality(profileWord, extractedWords, allowSingleOCRTypo) {
+  if (extractedWords.includes(profileWord)) return 1;
+  if (!allowSingleOCRTypo || profileWord.length < 5) return 0;
+  const maximumDistance = Math.min(2, Math.max(1, Math.floor(profileWord.length * 0.2)));
+  const bestDistance = extractedWords.reduce((best, word) => {
+    if (word.length < 5) return best;
+    return Math.min(best, editDistance(profileWord, word, maximumDistance));
+  }, Infinity);
+  return Number.isFinite(bestDistance)
+    ? Math.max(0.65, 1 - bestDistance / profileWord.length)
+    : 0;
+}
+
+function scoreNameMatch(extractedText, userName, { allowSingleOCRTypo = false } = {}) {
   const profileWords = [...new Set(normalizeWords(userName))];
   const extractedWords = [...new Set(normalizeWords(extractedText))];
   if (profileWords.length < 2 || !extractedWords.length) {
@@ -140,13 +173,18 @@ function scoreNameMatch(extractedText, userName) {
   const middleNames = profileWords.slice(1, -1);
   const firstNameMatched = extractedWordSet.has(firstName);
   const lastNameMatched = extractedWordSet.has(lastName);
-  const matchedMiddleNames = middleNames.filter((middleName) => extractedWordSet.has(middleName)).length;
+  const firstNameQuality = getNameTokenQuality(firstName, extractedWords, allowSingleOCRTypo);
+  const lastNameQuality = getNameTokenQuality(lastName, extractedWords, allowSingleOCRTypo);
+  const middleNameQualities = middleNames.map((middleName) =>
+    getNameTokenQuality(middleName, extractedWords, allowSingleOCRTypo)
+  );
+  const matchedMiddleNames = middleNameQualities.filter((quality) => quality === 1).length;
   const coreWeight = middleNames.length ? 0.75 : 1;
   const matchedParts = Number(firstNameMatched) + Number(lastNameMatched) + matchedMiddleNames;
   const accuracy = middleNames.length
-    ? (Number(firstNameMatched) + Number(lastNameMatched)) * (coreWeight / 2) +
-      (matchedMiddleNames / middleNames.length) * (1 - coreWeight)
-    : matchedParts / profileWords.length;
+    ? ((firstNameQuality + lastNameQuality) / 2) * coreWeight +
+      (middleNameQualities.reduce((total, quality) => total + quality, 0) / middleNames.length) * (1 - coreWeight)
+    : (firstNameQuality + lastNameQuality) / 2;
 
   return {
     accuracy,
@@ -157,6 +195,10 @@ function scoreNameMatch(extractedText, userName) {
   };
 }
 
+function scoreLtoNameMatch(extractedText, userName) {
+  return scoreNameMatch(extractedText, userName, { allowSingleOCRTypo: true });
+}
+
 function shouldAutoVerify(ocrConfidence, nameMatch) {
   return ocrConfidence >= 60 &&
     nameMatch.accuracy >= MINIMUM_NAME_MATCH_ACCURACY &&
@@ -165,16 +207,62 @@ function shouldAutoVerify(ocrConfidence, nameMatch) {
     nameMatch.lastNameMatched;
 }
 
+async function createIdOCRVariants(image) {
+  const imageBuffer = Buffer.isBuffer(image) ? image : await fs.readFile(image);
+  const metadata = await sharp(imageBuffer).rotate().metadata();
+  if (!metadata.width || !metadata.height) {
+    throw new Error("Could not read ID image dimensions.");
+  }
+
+  const orientationSwapsDimensions = metadata.orientation >= 5 && metadata.orientation <= 8;
+  const imageWidth = orientationSwapsDimensions ? metadata.height : metadata.width;
+  const imageHeight = orientationSwapsDimensions ? metadata.width : metadata.height;
+  const cropWidth = Math.max(1, Math.round(imageWidth * 0.94));
+  const cropHeight = Math.max(1, Math.round(imageHeight * 0.5));
+  const [cardCrop, resizedFullImage] = await Promise.all([
+    sharp(imageBuffer)
+      .rotate()
+      .extract({
+        left: Math.max(0, Math.round((imageWidth - cropWidth) / 2)),
+        top: Math.max(0, Math.round((imageHeight - cropHeight) / 2)),
+        width: Math.min(cropWidth, imageWidth),
+        height: Math.min(cropHeight, imageHeight),
+      })
+      .resize({ width: 1800, withoutEnlargement: false })
+      .grayscale()
+      .normalize()
+      .sharpen()
+      .jpeg({ quality: 90 })
+      .toBuffer(),
+    sharp(imageBuffer)
+      .rotate()
+      .resize({ width: 1800, height: 1800, fit: "inside", withoutEnlargement: true })
+      .grayscale()
+      .jpeg({ quality: 85 })
+      .toBuffer(),
+  ]);
+
+  return [cardCrop, resizedFullImage];
+}
+
 function selectBestOCRCandidate(candidates, userName) {
+  const combinedText = candidates.map((candidate) => candidate.text).join("\n");
+  const detectedIdType = detectIdType(combinedText);
+  const combinedNameMatch = detectedIdType === "Driver's License"
+    ? scoreLtoNameMatch(combinedText, userName)
+    : null;
   return candidates
     .map((candidate) => {
       const confidence = Math.max(0, Math.min(100, Number(candidate.confidence) || 0));
-      const nameMatch = scoreNameMatch(candidate.text, userName);
+      const candidateIdType = detectIdType(candidate.text);
+      const nameMatch = combinedNameMatch
+        ? combinedNameMatch
+        : scoreNameMatch(candidate.text, userName);
       return {
         confidence,
         nameMatch,
-        detectedIdType: detectIdType(candidate.text),
-        text: candidate.text,
+        detectedIdType: candidateIdType === UNKNOWN_ID_TYPE ? detectedIdType : candidateIdType,
+        text: combinedNameMatch ? combinedText : candidate.text,
       };
     })
     .sort((left, right) =>
@@ -205,39 +293,11 @@ async function getWorker() {
   if (!workerPromise) {
     workerPromise = (async () => {
       await fs.mkdir(ocrCachePath, { recursive: true });
-      const orientationModelPath = path.join(ocrCachePath, `${OCR_ORIENTATION_LANGUAGE}.traineddata`);
-      let orientationModel;
-      try {
-        orientationModel = await fs.readFile(orientationModelPath);
-      } catch (error) {
-        if (error.code !== "ENOENT") {
-          throw error;
-        }
-
-        const orientationWorker = await Tesseract.createWorker(
-          OCR_ORIENTATION_LANGUAGE,
-          Tesseract.OEM.TESSERACT_ONLY,
-          { cachePath: ocrCachePath, legacyCore: true, legacyLang: true }
-        );
-        try {
-          orientationModel = await fs.readFile(orientationModelPath);
-        } finally {
-          await orientationWorker.terminate();
-        }
-      }
-
-      const worker = await Tesseract.createWorker(
+      return Tesseract.createWorker(
         OCR_LANGUAGES,
         Tesseract.OEM.LSTM_ONLY,
         { cachePath: ocrCachePath, legacyCore: true }
       );
-      try {
-        await worker.FS("writeFile", [`./${OCR_ORIENTATION_LANGUAGE}.traineddata`, orientationModel]);
-        return worker;
-      } catch (error) {
-        await worker.terminate();
-        throw error;
-      }
     })();
   }
   try {
@@ -253,28 +313,28 @@ async function performOCRVerification(imagePath, userName) {
     const worker = await getWorker();
     const candidates = [];
     const modeErrors = [];
-    for (const mode of OCR_SEGMENTATION_MODES) {
-      try {
-        await worker.setParameters({ tessedit_pageseg_mode: mode });
-        const { data } = await worker.recognize(imagePath, { rotateAuto: true });
-        candidates.push({ confidence: data.confidence, text: data.text });
-        const currentBest = selectBestOCRCandidate(candidates, userName);
-        if (shouldAutoVerify(
-          currentBest.confidence,
-          currentBest.nameMatch
-        )) {
-          return formatOCRResult(currentBest);
+    const imageVariants = await createIdOCRVariants(imagePath);
+    for (const imageVariant of imageVariants) {
+      for (const mode of OCR_SEGMENTATION_MODES) {
+        try {
+          await worker.setParameters({ tessedit_pageseg_mode: mode });
+          const { data } = await worker.recognize(imageVariant);
+          candidates.push({ confidence: data.confidence, text: data.text });
+          const currentBest = selectBestOCRCandidate(candidates, userName);
+          if (currentBest.nameMatch.accuracy === 1) {
+            return formatOCRResult(currentBest);
+          }
+        } catch (error) {
+          modeErrors.push(error);
         }
-      } catch (error) {
-        modeErrors.push(error);
       }
     }
 
     if (!candidates.length) {
-      throw new Error(`All OCR layout modes failed: ${modeErrors.map((error) => error.message).join("; ")}`);
+      throw new Error(`All OCR image variants and layout modes failed: ${modeErrors.map((error) => error.message).join("; ")}`);
     }
     if (modeErrors.length) {
-      console.warn(`Verification OCR: ${modeErrors.length} of ${OCR_SEGMENTATION_MODES.length} layout modes failed.`);
+      console.warn(`Verification OCR: ${modeErrors.length} of ${imageVariants.length * OCR_SEGMENTATION_MODES.length} image/layout attempts failed.`);
     }
 
     const bestCandidate = selectBestOCRCandidate(candidates, userName);
@@ -298,12 +358,13 @@ async function performOCRVerification(imagePath, userName) {
 
 module.exports = {
   OCR_LANGUAGES,
-  OCR_ORIENTATION_LANGUAGE,
   OCR_SEGMENTATION_MODES,
   areIdSidesLikelySwapped,
   classifyIdSide,
+  createIdOCRVariants,
   detectIdType,
   performOCRVerification,
+  scoreLtoNameMatch,
   scoreNameMatch,
   selectBestOCRCandidate,
   shouldAutoVerify,
