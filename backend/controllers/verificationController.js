@@ -1,7 +1,11 @@
 const fs = require("fs/promises");
 const mongoose = require("mongoose");
 const User = require("../models/User");
-const { performOCRVerification } = require("../utils/ocrHelper");
+const {
+  areIdSidesLikelySwapped,
+  classifyIdSide,
+  performOCRVerification,
+} = require("../utils/ocrHelper");
 const { SECURITY_FLAGS, inspectVerificationMetadata } = require("../utils/verificationMetadata");
 const { revalidatePersistedVerification } = require("../services/verificationPolicy");
 const { removeUploadedFiles } = require("../storage/verificationUpload");
@@ -57,18 +61,40 @@ async function handleSubmitVerification(req, res) {
       console.warn("Verification ID has no camera Make/Model metadata; flagging for admin inspection.", String(req.user._id));
     }
 
-    const [ocrOutcome, frontUpload, backUpload] = await Promise.allSettled([
-      performOCRVerification(front.path, getProfileName(req.user)),
+    const ocrResult = await performOCRVerification(front.path, getProfileName(req.user));
+    const backOcrResult = await performOCRVerification(back.path, getProfileName(req.user));
+    if (areIdSidesLikelySwapped(ocrResult, backOcrResult)) {
+      return res.status(400).json({
+        message: "The name on your ID appears on the image uploaded as ID Back instead of ID Front. Swap the images so the side with your photo and name is ID Front, then submit again.",
+        code: "ID_SIDES_APPEAR_SWAPPED",
+      });
+    }
+
+    const frontSideCheck = classifyIdSide({
+      extractedText: ocrResult.extractedText,
+      ocrConfidence: ocrResult.ocrConfidence,
+      nameMatch: {
+        firstNameMatched: ocrResult.firstNameMatched,
+        lastNameMatched: ocrResult.lastNameMatched,
+      },
+      detectedIdType: ocrResult.detectedIdType,
+    });
+    if (frontSideCheck === "back") {
+      return res.status(400).json({
+        message: "This looks like the back of your ID. Upload the side showing your photo and name as ID Front, then upload the reverse as ID Back.",
+        code: "ID_FRONT_APPEARS_TO_BE_BACK",
+      });
+    }
+    const [frontUpload, backUpload] = await Promise.allSettled([
       uploadVerificationImage(frontBuffer, String(req.user._id), "front"),
       uploadVerificationImage(backBuffer, String(req.user._id), "back"),
     ]);
     for (const upload of [frontUpload, backUpload]) {
       if (upload.status === "fulfilled") uploadedCloudImages.push(upload.value.publicId);
     }
-    const failedOperation = [ocrOutcome, frontUpload, backUpload].find((result) => result.status === "rejected");
+    const failedOperation = [frontUpload, backUpload].find((result) => result.status === "rejected");
     if (failedOperation) throw failedOperation.reason;
 
-    const ocrResult = ocrOutcome.value;
     const frontImage = frontUpload.value;
     const backImage = backUpload.value;
     const autoVerified = ocrResult.autoVerified && securityFlags.length === 0;

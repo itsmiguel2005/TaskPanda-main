@@ -4,6 +4,8 @@ const {
   OCR_LANGUAGES,
   OCR_ORIENTATION_LANGUAGE,
   OCR_SEGMENTATION_MODES,
+  areIdSidesLikelySwapped,
+  classifyIdSide,
   detectIdType,
   scoreNameMatch,
   selectBestOCRCandidate,
@@ -90,11 +92,115 @@ test("automatic verification retains the OCR confidence floor and requires two n
 test("OCR identifies supported Philippine ID types from structural text", () => {
   assert.equal(detectIdType("REPUBLIC OF THE PHILIPPINES PhilSys"), "PhilSys National ID");
   assert.equal(detectIdType("LAND TRANSPORTATION OFFICE LTO"), "Driver's License");
+  assert.equal(detectIdType("REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE"), "Driver's License");
+  assert.equal(detectIdType("LAND TRANSPORTATION OFFICE DRIVER LICENSE"), "Driver's License");
+  assert.equal(detectIdType("POSTAL ID"), "Postal ID");
   assert.equal(detectIdType("UMID CRN"), "UMID");
   assert.equal(detectIdType("PhilPost Postal ID"), "Postal ID");
   assert.equal(detectIdType("COMELEC Voter Registration"), "Voter's ID");
   assert.equal(detectIdType("PASSPORT"), "Passport");
   assert.equal(detectIdType("Republic of the Philippines"), "Unknown");
+});
+
+test("ID side check rejects only clear back-side evidence", () => {
+  assert.equal(classifyIdSide({
+    extractedText: "SIGNATURE THUMBPRINT EMERGENCY CONTACT",
+    ocrConfidence: 88,
+    nameMatch: { firstNameMatched: false, lastNameMatched: false },
+    detectedIdType: "Unknown",
+  }), "back");
+  assert.equal(classifyIdSide({
+    extractedText: "CARDHOLDER SIGNATURE",
+    ocrConfidence: 88,
+    nameMatch: { firstNameMatched: false, lastNameMatched: false },
+    detectedIdType: "Unknown",
+  }), "uncertain");
+});
+
+test("ID side check recognizes a front when OCR confidently matches first and last names", () => {
+  assert.equal(classifyIdSide({
+    extractedText: "ANA CRUZ PHILSYS",
+    ocrConfidence: 72,
+    nameMatch: { firstNameMatched: true, lastNameMatched: true },
+    detectedIdType: "PhilSys National ID",
+  }), "front");
+});
+
+test("ID side check recognizes a readable driver's-license front when name OCR is incomplete", () => {
+  assert.equal(classifyIdSide({
+    extractedText: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE SURNAME GIVEN NAMES DATE OF BIRTH SEX ADDRESS",
+    ocrConfidence: 86,
+    nameMatch: { accuracy: 0, firstNameMatched: false, lastNameMatched: false },
+    detectedIdType: "Driver's License",
+  }), "front");
+});
+
+test("ID side check treats weak or ambiguous evidence as uncertain", () => {
+  assert.equal(classifyIdSide({
+    extractedText: "SIGNATURE",
+    ocrConfidence: 80,
+    nameMatch: { firstNameMatched: false, lastNameMatched: false },
+    detectedIdType: "Unknown",
+  }), "uncertain");
+});
+
+test("ID side pair check detects a clear swap when the matching name is only on the back image", () => {
+  assert.equal(areIdSidesLikelySwapped(
+    {
+      ocrConfidence: 84,
+      nameMatchAccuracy: 37,
+      firstNameMatched: false,
+      lastNameMatched: true,
+    },
+    {
+      ocrConfidence: 76,
+      nameMatchAccuracy: 100,
+      firstNameMatched: true,
+      lastNameMatched: true,
+    }
+  ), true);
+});
+
+test("ID side pair check detects a swapped driver's license when only the back has face-side layout", () => {
+  assert.equal(areIdSidesLikelySwapped(
+    {
+      ocrConfidence: 74,
+      nameMatchAccuracy: 0,
+      firstNameMatched: false,
+      lastNameMatched: false,
+      detectedIdType: "Unknown",
+      extractedText: "RESTRICTIONS QR CODE BARCODE",
+    },
+    {
+      ocrConfidence: 56,
+      nameMatchAccuracy: 0,
+      firstNameMatched: false,
+      lastNameMatched: false,
+      detectedIdType: "Driver's License",
+      extractedText: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE SURNAME GIVEN NAMES DATE OF BIRTH SEX",
+    }
+  ), true);
+});
+
+test("ID side pair check does not reject uncertain or correctly assigned sides", () => {
+  assert.equal(areIdSidesLikelySwapped(
+    {
+      ocrConfidence: 76,
+      nameMatchAccuracy: 100,
+      firstNameMatched: true,
+      lastNameMatched: true,
+    },
+    {
+      ocrConfidence: 86,
+      nameMatchAccuracy: 100,
+      firstNameMatched: true,
+      lastNameMatched: true,
+    }
+  ), false);
+  assert.equal(areIdSidesLikelySwapped(
+    { ocrConfidence: 35, nameMatchAccuracy: 75, firstNameMatched: true, lastNameMatched: true },
+    { ocrConfidence: 59, nameMatchAccuracy: 100, firstNameMatched: true, lastNameMatched: true }
+  ), false);
 });
 
 test("OCR selects a full account-name match over higher-confidence unrelated layout output", () => {
@@ -104,6 +210,7 @@ test("OCR selects a full account-name match over higher-confidence unrelated lay
   ], "Ana Beatriz Cruz");
 
   assert.equal(result.confidence, 63);
+  assert.equal(result.text, "ANA BEATRIZ CRUZ");
   assert.equal(result.nameMatch.accuracy, 1);
   assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), true);
 });

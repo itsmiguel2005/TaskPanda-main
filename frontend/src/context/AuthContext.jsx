@@ -133,6 +133,7 @@ export function AuthProvider({ children }) {
     if (!token) return false;
     try {
       const response = await fetch("/api/profile", {
+        cache: "no-store",
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) return false;
@@ -148,6 +149,14 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (isAuthLoading || !isLoggedIn || !token || !["client", "provider"].includes(role)) return;
     void refreshProfile();
+  }, [isAuthLoading, isLoggedIn, token, role, refreshProfile]);
+
+  useEffect(() => {
+    if (isAuthLoading || !isLoggedIn || !token || !["client", "provider"].includes(role)) return undefined;
+    const intervalId = window.setInterval(() => {
+      void refreshProfile();
+    }, 30_000);
+    return () => window.clearInterval(intervalId);
   }, [isAuthLoading, isLoggedIn, token, role, refreshProfile]);
 
   return (

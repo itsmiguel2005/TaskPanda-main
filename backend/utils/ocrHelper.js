@@ -31,14 +31,19 @@ const IGNORED_NAME_PARTS = new Set([
 ]);
 const ID_TYPE_SIGNATURES = [
   { pattern: /\bphilsys\b/i, type: "PhilSys National ID" },
-  { pattern: /\blto\b/i, type: "Driver's License" },
+  { pattern: /\b(?:lto|land\s+transportation\s+office|driver'?s?\s+licen[sc]e)\b/i, type: "Driver's License" },
   { pattern: /\bumid\b/i, type: "UMID" },
-  { pattern: /\bphilpost\b/i, type: "Postal ID" },
+  { pattern: /\b(?:philpost|postal\s+id)\b/i, type: "Postal ID" },
   { pattern: /\bcomelec\b/i, type: "Voter's ID" },
   { pattern: /\bpassport\b/i, type: "Passport" },
 ];
 const UNKNOWN_ID_TYPE = "Unknown";
 const MINIMUM_NAME_MATCH_ACCURACY = 0.75;
+const BACK_SIDE_SIGNATURES = [
+  /\bsignature\b/i,
+  /\b(?:thumb\s?mark|thumbprint|fingerprint|left\s+thumb|right\s+thumb)\b/i,
+  /\b(?:emergency\s+contact|in\s+case\s+of\s+emergency)\b/i,
+];
 
 function normalizeWords(value) {
   return String(value || "")
@@ -54,6 +59,66 @@ function normalizeWords(value) {
 function detectIdType(extractedText) {
   const signature = ID_TYPE_SIGNATURES.find(({ pattern }) => pattern.test(String(extractedText || "")));
   return signature?.type || UNKNOWN_ID_TYPE;
+}
+
+function classifyIdSide({ extractedText, ocrConfidence, nameMatch, detectedIdType }) {
+  const text = String(extractedText || "");
+  const matchingBackSignatures = BACK_SIDE_SIGNATURES.map((pattern) => pattern.test(text));
+  const hasCoreNameMatch = Boolean(nameMatch?.firstNameMatched && nameMatch?.lastNameMatched);
+  const hasRecognizedIdType = Boolean(detectedIdType && detectedIdType !== UNKNOWN_ID_TYPE);
+
+  if (
+    Number(ocrConfidence) >= 50 &&
+    matchingBackSignatures[1] &&
+    (matchingBackSignatures[0] || matchingBackSignatures[2]) &&
+    !hasCoreNameMatch &&
+    !hasRecognizedIdType
+  ) {
+    return "back";
+  }
+
+  if (
+    (Number(ocrConfidence) >= 60 && hasCoreNameMatch) ||
+    hasFrontFaceEvidence({
+    ocrConfidence,
+    nameMatchAccuracy: nameMatch?.accuracy === undefined
+      ? undefined
+      : Number(nameMatch.accuracy) * 100,
+    firstNameMatched: nameMatch?.firstNameMatched,
+    lastNameMatched: nameMatch?.lastNameMatched,
+    detectedIdType,
+    extractedText: text,
+    })
+  ) {
+    return "front";
+  }
+
+  return "uncertain";
+}
+
+function hasConfidentCoreNameMatch(ocrResult) {
+  return Number(ocrResult?.ocrConfidence) >= 60 &&
+    Number(ocrResult?.nameMatchAccuracy) >= 75 &&
+    ocrResult?.firstNameMatched === true &&
+    ocrResult?.lastNameMatched === true;
+}
+
+function hasFrontFaceEvidence(ocrResult) {
+  const text = String(ocrResult?.extractedText || "");
+  const hasIdentityHeading = detectIdType(text) !== UNKNOWN_ID_TYPE;
+  const personalFieldMatches = text.match(
+    /\b(?:surname|given\s+names?|middle\s+name|date\s+of\s+birth|birth\s+date|sex|nationality|address|license\s+no)\b/gi
+  ) || [];
+  return Number(ocrResult?.ocrConfidence) >= 40 &&
+    hasIdentityHeading &&
+    (hasConfidentCoreNameMatch(ocrResult) || personalFieldMatches.length >= 2);
+}
+
+function areIdSidesLikelySwapped(frontOCRResult, backOCRResult) {
+  return !hasConfidentCoreNameMatch(frontOCRResult) &&
+    hasConfidentCoreNameMatch(backOCRResult) ||
+    !hasFrontFaceEvidence(frontOCRResult) &&
+      hasFrontFaceEvidence(backOCRResult);
 }
 
 function scoreNameMatch(extractedText, userName) {
@@ -105,7 +170,12 @@ function selectBestOCRCandidate(candidates, userName) {
     .map((candidate) => {
       const confidence = Math.max(0, Math.min(100, Number(candidate.confidence) || 0));
       const nameMatch = scoreNameMatch(candidate.text, userName);
-      return { confidence, nameMatch, detectedIdType: detectIdType(candidate.text) };
+      return {
+        confidence,
+        nameMatch,
+        detectedIdType: detectIdType(candidate.text),
+        text: candidate.text,
+      };
     })
     .sort((left, right) =>
       Number(right.nameMatch.firstNameMatched && right.nameMatch.lastNameMatched) -
@@ -121,9 +191,12 @@ function formatOCRResult(candidate) {
   return {
     ocrConfidence: confidence,
     detectedIdType,
+    extractedText: candidate.text,
     nameMatchAccuracy: Math.round(nameMatch.accuracy * 100),
     matchedNameParts: nameMatch.matchedParts,
     totalNameParts: nameMatch.totalParts,
+    firstNameMatched: nameMatch.firstNameMatched,
+    lastNameMatched: nameMatch.lastNameMatched,
     autoVerified: shouldAutoVerify(confidence, nameMatch),
   };
 }
@@ -211,9 +284,12 @@ async function performOCRVerification(imagePath, userName) {
     return {
       ocrConfidence: 0,
       detectedIdType: UNKNOWN_ID_TYPE,
+      extractedText: "",
       nameMatchAccuracy: 0,
       matchedNameParts: 0,
       totalNameParts: normalizeWords(userName).length,
+      firstNameMatched: false,
+      lastNameMatched: false,
       autoVerified: false,
       ocrUnavailable: true,
     };
@@ -224,6 +300,8 @@ module.exports = {
   OCR_LANGUAGES,
   OCR_ORIENTATION_LANGUAGE,
   OCR_SEGMENTATION_MODES,
+  areIdSidesLikelySwapped,
+  classifyIdSide,
   detectIdType,
   performOCRVerification,
   scoreNameMatch,
