@@ -43,6 +43,10 @@
   animation: contentArrive 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.booking-location-map {
+  isolation: isolate;
+}
+
 @layer components {
   .dashboard-page {
     min-height: 100vh;

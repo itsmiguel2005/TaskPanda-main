@@ -11,7 +11,7 @@ import StatusChangeConfirmation from "../components/StatusChangeConfirmation.jsx
 import CompletionProofModal from "../components/CompletionProofModal.jsx";
 import RevisionReviewPanel from "../components/RevisionReviewPanel.jsx";
 import BookingHistory from "../components/BookingHistory.jsx";
-import AddressActions from "../components/AddressActions.jsx";
+import BookingLocationMap from "../components/BookingLocationMap.jsx";
 import PandaSwipeRefresh from "../components/PandaSwipeRefresh.jsx";
 import { canRequestCancellation, getCancellationLockMessage, requiresCancellationApproval } from "../utils/bookingCancellation.js";
 import { BookingCardSkeletonList, SkeletonBlock } from "../components/Skeletons.jsx";
@@ -359,7 +359,7 @@ export default function ProviderBookingsPage() {
                   {sortedRequests.map((req) => (
                     <div
                       key={req.id}
-                      className="content-arrive overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
+                      className="content-arrive overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition-[border-color,box-shadow] hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
                     >
                       <div className="p-4 sm:p-6">
                         <div className="flex flex-col gap-4 border-b border-sky-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -393,14 +393,18 @@ export default function ProviderBookingsPage() {
                           )}
                         </div>
 
-                        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-600">
-                          <div className="flex items-center gap-1.5">
+                        <div className="mt-4 grid gap-3 text-sm text-slate-600 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                          <div className="min-w-0">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-slate-400">
                               <path fillRule="evenodd" d="M19.5 6.75a3 3 0 00-6 0v7.5a3 3 0 006 0V6.75zM3.75 9.75a3 3 0 016 0v7.5a3 3 0 01-6 0V9.75zM15.75 2.25a3 3 0 016 0v7.5a3 3 0 01-6 0V2.25z" clipRule="evenodd" />
                             </svg>
-                            <span>{req.address}</span>
+                            <BookingLocationMap
+                              address={req.address}
+                              serviceGeoLocation={req.serviceGeoLocation}
+                              className="h-36"
+                            />
                           </div>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 sm:pt-1">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4 text-slate-400">
                               <path fillRule="evenodd" d="M19.5 6.75a3 3 0 00-6 0v7.5a3 3 0 006 0V6.75zM3.75 9.75a3 3 0 016 0v7.5a3 3 0 01-6 0V9.75zM15.75 2.25a3 3 0 016 0v7.5a3 3 0 01-6 0V2.25z" clipRule="evenodd" />
                             </svg>
@@ -454,7 +458,7 @@ export default function ProviderBookingsPage() {
                   {sortedBookings.map((booking) => (
                     <div
                       key={booking.id}
-                      className="content-arrive overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
+                      className="content-arrive overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition-[border-color,box-shadow] hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
                     >
                       <div className="p-4 sm:p-6">
                         <div className="flex flex-col gap-4 border-b border-sky-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -521,11 +525,14 @@ export default function ProviderBookingsPage() {
                         </div>
 
                           <div className="space-y-3 border-t border-sky-100 pt-4 text-sm text-slate-700 md:border-l md:border-t-0 md:pl-4 md:pt-0">
-                          <div className="flex items-start gap-2">
+                          <div>
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="mt-0.5 h-4 w-4 text-slate-400">
                               <path fillRule="evenodd" d="M19.5 6.75a3 3 0 00-6 0v7.5a3 3 0 006 0V6.75zM3.75 9.75a3 3 0 016 0v7.5a3 3 0 01-6 0V9.75zM15.75 2.25a3 3 0 016 0v7.5a3 3 0 01-6 0V2.25z" clipRule="evenodd" />
                             </svg>
-                            <AddressActions address={booking.address} />
+                            <BookingLocationMap
+                              address={booking.address}
+                              serviceGeoLocation={booking.serviceGeoLocation}
+                            />
                           </div>
                           <div className="flex items-start gap-2">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="mt-0.5 h-4 w-4 text-slate-400">
@@ -818,13 +825,17 @@ export default function ProviderBookingsPage() {
               {detailItem.status && <BookingProgress status={detailItem.status} />}
 
               <div className="mt-4 grid gap-3 rounded-xl border border-sky-100 bg-white p-4 text-sm sm:grid-cols-2">
-                <div>
+                <div className="sm:col-span-2">
                   <p className="dashboard-kicker">Scheduled</p>
                   <p className="mt-1 font-semibold text-slate-900">{detailItem.date} at {detailItem.time}</p>
                 </div>
-                <div>
+                <div className="sm:col-span-2">
                   <p className="dashboard-kicker">Service address</p>
-                  <div className="mt-1 text-slate-700"><AddressActions address={detailItem.address} /></div>
+                  <BookingLocationMap
+                    address={detailItem.address}
+                    serviceGeoLocation={detailItem.serviceGeoLocation}
+                    className="h-48"
+                  />
                 </div>
                 <div className="sm:col-span-2">
                   <p className="dashboard-kicker">Task details</p>

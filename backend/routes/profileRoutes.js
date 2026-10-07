@@ -21,6 +21,7 @@ router.put("/", [
 	body("province").optional().isString().isLength({ max: 100 }),
 	body("city").optional().isString().isLength({ max: 100 }),
 	body("barangay").optional().isString().isLength({ max: 100 }),
+	body("address").optional().isString().trim().isLength({ max: 300 }),
 	body("geoLocation").optional().isObject(),
 	body("geoLocation.type").optional().equals("Point"),
 	body("geoLocation.coordinates").optional().isArray({ min: 2, max: 2 }),

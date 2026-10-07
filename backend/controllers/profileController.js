@@ -113,7 +113,7 @@ async function handleUpdateProfile(req, res) {
     const province = String(req.body.province || user.province || "").trim();
     const city = String(req.body.city || user.city || "").trim();
     const barangay = String(req.body.barangay || user.barangay || "").trim();
-    const address = [barangay, city, province].filter(Boolean).join(", ");
+    const address = String(req.body.address || [barangay, city, province].filter(Boolean).join(", ")).trim();
     const geoLocationInput = req.body.geoLocation;
     const bio = String(req.body.bio || "").trim();
     const hasStructuredName = ["firstName", "middleName", "lastName"].some((field) =>
@@ -140,25 +140,30 @@ async function handleUpdateProfile(req, res) {
     if (address.length > 300) {
       return res.status(400).json({ message: "Location must be under 300 characters.", field: "location" });
     }
-    const locationChanged = province !== user.province || city !== user.city || barangay !== user.barangay;
-    let geoLocation = locationChanged && address
-      ? await geocodeAddress(address, { barangay, city, province })
-      : null;
+    const locationChanged = province !== user.province
+      || city !== user.city
+      || barangay !== user.barangay
+      || address !== user.address;
+    let geoLocation = null;
     if (geoLocationInput != null) {
-      if (geoLocationInput.type === "Point" && Array.isArray(geoLocationInput.coordinates) && geoLocationInput.coordinates.length === 2) {
-        const [longitude, latitude] = geoLocationInput.coordinates.map(Number);
-          if (!geoLocation && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180 && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90) {
-          geoLocation = {
-            type: "Point",
-            coordinates: [Number(longitude.toFixed(6)), Number(latitude.toFixed(6))],
-          };
-        }
-      } else if (!geoLocation) {
-        return res.status(400).json({ message: "Choose a valid map location.", field: "geoLocation" });
+      if (geoLocationInput.type !== "Point" || !Array.isArray(geoLocationInput.coordinates) || geoLocationInput.coordinates.length !== 2) {
+        return res.status(400).json({ message: "Choose a valid map location.", field: "location" });
       }
+      const [longitude, latitude] = geoLocationInput.coordinates.map(Number);
+      if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180 || !Number.isFinite(latitude) || latitude < -90 || latitude > 90) {
+        return res.status(400).json({ message: "Choose a valid map location.", field: "location" });
+      }
+      geoLocation = {
+        type: "Point",
+        coordinates: [Number(longitude.toFixed(6)), Number(latitude.toFixed(6))],
+      };
+    } else if (locationChanged && address) {
+      geoLocation = await geocodeAddress(address, { barangay, city, province });
+    } else {
+      geoLocation = user.geoLocation || null;
     }
-    if (!geoLocation && !locationChanged) {
-      return res.status(400).json({ message: "Set your location using the selectors or current location pin.", field: "location" });
+    if (!geoLocation) {
+      return res.status(400).json({ message: "Pin your exact location on the map before saving.", field: "location" });
     }
     if (bio.length > 500) {
       return res.status(400).json({ message: "Bio must be 500 characters or fewer.", field: "bio" });
@@ -185,8 +190,7 @@ async function handleUpdateProfile(req, res) {
     user.username = username;
     user.mobileNumber = mobileNumber;
     user.address = address;
-    if (geoLocation) user.geoLocation = geoLocation;
-    else if (locationChanged) user.geoLocation = undefined;
+    user.geoLocation = geoLocation;
     user.province = province;
     user.city = city;
     user.barangay = barangay;

@@ -6,7 +6,7 @@ import Header from "./Header.jsx";
 import BookingPriceBreakdown from "./BookingPriceBreakdown.jsx";
 import BookingProgress from "./BookingProgress.jsx";
 import BookingHistory from "./BookingHistory.jsx";
-import AddressActions from "./AddressActions.jsx";
+import BookingLocationMap from "./BookingLocationMap.jsx";
 import ProviderStreak from "./ProviderStreak.jsx";
 import { canRequestCancellation, getCancellationLockMessage } from "../utils/bookingCancellation.js";
 import StatusChangeConfirmation from "./StatusChangeConfirmation.jsx";
@@ -356,7 +356,7 @@ export default function Dashboard() {
       longitude: String(longitude),
       latitude: String(latitude),
       minKm: "0",
-      maxKm: "25",
+      maxKm: "10",
       limit: "50",
     });
 
@@ -920,7 +920,7 @@ export default function Dashboard() {
                   return (
                     <div
                       key={booking.id}
-                      className="content-arrive mb-3 min-w-0 rounded-xl border border-sky-100 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)] active:translate-y-0"
+                      className="content-arrive mb-3 min-w-0 rounded-xl border border-sky-100 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-[border-color,box-shadow] duration-200 ease-out hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)]"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
@@ -996,7 +996,7 @@ export default function Dashboard() {
                             )}
                           </div>
                         ))}
-                        <div className="mt-2 break-words text-xs text-gray-600"><AddressActions address={booking.address} /></div>
+                        <div className="mt-2"><BookingLocationMap address={booking.address} serviceGeoLocation={booking.serviceGeoLocation} /></div>
                       </div>
                       <BookingPriceBreakdown booking={booking} className="mt-3" />
                       {booking.statusHistory?.length > 0 && (

@@ -13,9 +13,10 @@ const {
   handleForgotPassword,
   handleResetPassword,
 } = require("../controllers/authController");
-const { body } = require("express-validator");
-const { limitAuthAttempts, limitRegistrationChecks } = require("../middleware/rateLimits");
+const { body, query } = require("express-validator");
+const { limitAuthAttempts, limitRegistrationChecks, limitLocationLookups } = require("../middleware/rateLimits");
 const { validateRequest } = require("../middleware/validateRequest");
+const { handleLocationSearch, handleLocationReverseLookup } = require("../controllers/locationController");
 
 const router = express.Router();
 const emailField = () => body("email").isString().trim().isEmail().isLength({ max: 254 });
@@ -72,6 +73,8 @@ router.post("/check-registration", limitRegistrationChecks, [
   body("email").optional().isString().trim().isLength({ max: 254 }),
   body("username").optional().isString().trim().matches(usernamePattern).withMessage("Username must be 4-15 characters and use only letters, numbers, dots, underscores, or hyphens."),
 ], validateRequest, handleRegistrationAvailability);
+router.get("/location/search", limitLocationLookups, query("q").isString().isLength({ min: 3, max: 200 }), validateRequest, handleLocationSearch);
+router.get("/location/reverse", limitLocationLookups, query("latitude").isFloat({ min: -90, max: 90 }), query("longitude").isFloat({ min: -180, max: 180 }), validateRequest, handleLocationReverseLookup);
 router.get("/registration-status", handleRegistrationStatus);
 router.post("/registration-resume", limitAuthAttempts, body("code").isString().matches(/^[a-f\d]{12}$/i), validateRequest, handleResumeRegistration);
 router.post("/registration-tab-closed", limitAuthAttempts, handleRegistrationTabClosed);

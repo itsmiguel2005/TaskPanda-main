@@ -1,8 +1,9 @@
 const SystemSettings = require("../models/SystemSettings");
+const { DEFAULT_TRAVEL_BASE_FEE } = require("./bookingPricing");
 
 const DEFAULT_SYSTEM_SETTINGS = Object.freeze({
   maxTravelDistanceKm: 50,
-  travelBaseFee: 20,
+  travelBaseFee: DEFAULT_TRAVEL_BASE_FEE,
   travelFeePerKm: 10,
   maintenanceMode: false,
 });
@@ -10,7 +11,7 @@ const DEFAULT_SYSTEM_SETTINGS = Object.freeze({
 function serializeSettings(settings) {
   return {
     maxTravelDistanceKm: Number(settings.maxTravelDistanceKm),
-    travelBaseFee: Number(settings.travelBaseFee),
+    travelBaseFee: DEFAULT_TRAVEL_BASE_FEE,
     travelFeePerKm: Number(settings.travelFeePerKm),
     maintenanceMode: settings.maintenanceMode === true,
     updatedAt: settings.updatedAt || null,
@@ -42,7 +43,7 @@ async function updateGlobalSettings(values, updatedBy) {
     {
       $set: {
         maxTravelDistanceKm: values.maxTravelDistanceKm,
-        travelBaseFee: values.travelBaseFee,
+        travelBaseFee: DEFAULT_TRAVEL_BASE_FEE,
         travelFeePerKm: values.travelFeePerKm,
         maintenanceMode: values.maintenanceMode,
         updatedBy,

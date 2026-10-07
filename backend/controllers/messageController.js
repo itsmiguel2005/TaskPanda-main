@@ -4,6 +4,7 @@ const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
 const { ensureBookingConversation, appendBookingSystemMessage, formatAmount } = require("../services/bookingMessaging");
 const { calculateTotalPrice } = require("../services/bookingPricing");
+const { DEFAULT_ESTIMATED_DURATION_MINUTES } = require("../services/bookingLifecycle");
 const { awardSettledBookingStamp } = require("../services/rewards");
 const {
   deleteChatPhoto,
@@ -17,7 +18,7 @@ const MESSAGE_PAGE_SIZE = 50;
 const conversationPopulate = [
   { path: "clientId", select: "fullName username email profileImage" },
   { path: "providerId", select: "fullName username email professions profileImage" },
-  { path: "bookingId", select: "repairDescription status serviceDate timeSlot offeredPrice travelDistanceKm travelFee travelFeeBeforeDiscount travelFeeDiscount tipAmount paymentMethod cashPaidConfirmedAt cashReceivedConfirmedAt clientConfirmedCash providerConfirmedCash workCompletedAt settledAt cashReceipt completionNote completionPhotos completionSubmittedAt revisionRequests createdAt counterOffers clientRating clientReview clientReviewPhotos reviewedAt" },
+  { path: "bookingId", select: "repairDescription status serviceDate timeSlot estimatedDurationMinutes offeredPrice travelDistanceKm travelFee travelFeeBeforeDiscount travelFeeDiscount tipAmount paymentMethod cashPaidConfirmedAt cashReceivedConfirmedAt clientConfirmedCash providerConfirmedCash workCompletedAt settledAt cashReceipt completionNote completionPhotos completionSubmittedAt revisionRequests createdAt counterOffers clientRating clientReview clientReviewPhotos reviewedAt" },
 ];
 
 function serializeConversation(conversation, role) {
@@ -38,6 +39,7 @@ function serializeConversation(conversation, role) {
     bookingCreatedAt: booking?.createdAt || null,
     serviceDate: booking?.serviceDate || null,
     timeSlot: booking?.timeSlot || "",
+    estimatedDurationMinutes: booking?.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
     offeredPrice: booking?.offeredPrice ?? 0,
     travelDistanceKm: booking?.travelDistanceKm ?? null,
     travelFee: booking?.travelFee ?? 0,
@@ -71,6 +73,7 @@ function serializeConversation(conversation, role) {
       id: String(booking.counterOffers.find((offer) => offer.status === "pending")._id),
       proposedBy: booking.counterOffers.find((offer) => offer.status === "pending").proposedBy,
       proposedPrice: booking.counterOffers.find((offer) => offer.status === "pending").proposedPrice ?? booking.offeredPrice,
+      counterOfferDurationMinutes: booking.counterOffers.find((offer) => offer.status === "pending").counterOfferDurationMinutes ?? booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
       proposedServiceDate: booking.counterOffers.find((offer) => offer.status === "pending").proposedServiceDate || booking.serviceDate,
       proposedTimeSlot: booking.counterOffers.find((offer) => offer.status === "pending").proposedTimeSlot || booking.timeSlot,
       proposedRepairDescription: booking.counterOffers.find((offer) => offer.status === "pending").proposedRepairDescription || booking.repairDescription,

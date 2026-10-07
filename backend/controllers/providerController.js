@@ -1,7 +1,7 @@
 const User = require("../models/User");
 const { getProviderStreaks } = require("../services/providerStreak");
 
-const MAX_DISTANCE_KM = 100;
+const MAX_DISTANCE_KM = 10;
 const DEFAULT_LIMIT = 24;
 
 function escapeRegex(value) {
@@ -12,7 +12,7 @@ async function handleDiscoverProviders(req, res) {
   const latitude = Number(req.query.latitude);
   const longitude = Number(req.query.longitude);
   const minKm = Number(req.query.minKm ?? 0);
-  const maxKm = Number(req.query.maxKm ?? 25);
+  const maxKm = Number(req.query.maxKm ?? MAX_DISTANCE_KM);
   const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
   const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || DEFAULT_LIMIT));
   const search = String(req.query.q || "").trim().slice(0, 100);

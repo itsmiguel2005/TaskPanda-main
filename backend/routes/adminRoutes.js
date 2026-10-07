@@ -112,7 +112,6 @@ router.patch(
   requireAdmin,
   [
     body("maxTravelDistanceKm").isFloat({ min: 1, max: 500 }),
-    body("travelBaseFee").isFloat({ min: 0, max: 100000 }),
     body("travelFeePerKm").isFloat({ min: 0, max: 100000 }),
     body("maintenanceMode").isBoolean(),
   ],

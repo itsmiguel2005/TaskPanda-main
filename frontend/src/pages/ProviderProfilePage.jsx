@@ -248,7 +248,7 @@ export default function ProviderProfilePage() {
               <div className="p-5 sm:p-6">
                 <div className="rounded-xl bg-slate-50 p-4">
                   <p className="text-sm font-semibold text-slate-900">Set your service offer per request</p>
-                  <p className="mt-1.5 text-sm leading-6 text-slate-600">Task pricing is agreed for each booking. Travel fare is calculated from the client-to-provider distance: ₱20 for the first 2 km, then ₱10 per additional kilometer.</p>
+                  <p className="mt-1.5 text-sm leading-6 text-slate-600">Task pricing is agreed for each booking. Travel fare is calculated from the client-to-provider distance: the ₱20 base fare covers the first 2 km, then the configured per-kilometer rate applies to any remaining distance.</p>
                 </div>
                 <p className="mt-3 text-xs leading-5 text-slate-600">The travel estimate is shown to clients when they request a booking; it is not a profile-wide rate setting.</p>
               </div>

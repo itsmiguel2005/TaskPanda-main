@@ -2,6 +2,10 @@ const SAME_DAY_REQUEST_TTL_MS = 15 * 60 * 1000;
 const PH_TIMEZONE_OFFSET_MINUTES = 8 * 60;
 const ESTIMATED_TRAVEL_SPEED_KMH = 30;
 const TRAVEL_BUFFER_MINUTES = 15;
+const SCHEDULE_BUFFER_MINUTES = 30;
+const DEFAULT_ESTIMATED_DURATION_MINUTES = 60;
+const MIN_ESTIMATED_DURATION_MINUTES = 15;
+const MAX_ESTIMATED_DURATION_MINUTES = 720;
 
 function getServiceDayParts(serviceDate) {
   const date = new Date(serviceDate);
@@ -35,6 +39,44 @@ function getScheduledServiceTime(serviceDate, timeSlot) {
   ));
 }
 
+function isValidEstimatedDurationMinutes(value) {
+  const duration = Number(value);
+  return Number.isInteger(duration)
+    && duration >= MIN_ESTIMATED_DURATION_MINUTES
+    && duration <= MAX_ESTIMATED_DURATION_MINUTES
+    && duration % MIN_ESTIMATED_DURATION_MINUTES === 0;
+}
+
+function getEstimatedDurationMinutes(value) {
+  const duration = Number(value);
+  return isValidEstimatedDurationMinutes(duration) ? duration : DEFAULT_ESTIMATED_DURATION_MINUTES;
+}
+
+function getBookingOccupiedWindow(booking) {
+  const startAt = getScheduledServiceTime(booking?.serviceDate, booking?.timeSlot || booking?.time);
+  if (!startAt) return null;
+  const durationMinutes = getEstimatedDurationMinutes(
+    booking?.estimatedDurationMinutes ?? booking?.counterOfferDurationMinutes
+  );
+  return {
+    startAt,
+    endAt: new Date(startAt.getTime() + (durationMinutes + SCHEDULE_BUFFER_MINUTES) * 60 * 1000),
+    durationMinutes,
+  };
+}
+
+function hasScheduleConflict(candidate, existingBookings = [], excludeBookingId = "") {
+  const candidateWindow = getBookingOccupiedWindow(candidate);
+  if (!candidateWindow) return true;
+  return existingBookings.some((booking) => {
+    if (excludeBookingId && String(booking?._id || booking?.id || "") === String(excludeBookingId)) return false;
+    const existingWindow = getBookingOccupiedWindow(booking);
+    return existingWindow
+      && candidateWindow.startAt < existingWindow.endAt
+      && existingWindow.startAt < candidateWindow.endAt;
+  });
+}
+
 function getEstimatedTravelDurationMinutes(distanceKm) {
   if (distanceKm == null || String(distanceKm).trim() === "") return null;
   const distance = Number(distanceKm);
@@ -57,9 +99,17 @@ function getBookingRequestExpiration(serviceDate, submittedAt = new Date()) {
 
 module.exports = {
   SAME_DAY_REQUEST_TTL_MS,
+  DEFAULT_ESTIMATED_DURATION_MINUTES,
+  MAX_ESTIMATED_DURATION_MINUTES,
+  MIN_ESTIMATED_DURATION_MINUTES,
+  SCHEDULE_BUFFER_MINUTES,
   canArriveForSameDayBooking,
+  getBookingOccupiedWindow,
+  getEstimatedDurationMinutes,
   getBookingRequestExpiration,
   getEstimatedTravelDurationMinutes,
   getScheduledServiceTime,
+  hasScheduleConflict,
+  isValidEstimatedDurationMinutes,
   isSamePhilippineCalendarDay,
 };

@@ -1,3 +1,5 @@
+import { DEFAULT_ESTIMATED_DURATION_MINUTES, formatEstimatedDuration } from "../utils/bookingDuration.js";
+
 function toAmount(value, fallback = 0) {
   const amount = typeof value === "number" ? value : Number(String(value ?? "").replace(/[^\d.-]/g, ""));
   return Number.isFinite(amount) ? amount : fallback;
@@ -22,9 +24,10 @@ export default function BookingPriceBreakdown({
   const totalPrice = booking?.totalPrice == null
     ? taskOffer + travelFee + tipAmount
     : toAmount(booking.totalPrice, taskOffer + travelFee + tipAmount);
+  const durationMinutes = booking?.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES;
   const distanceText = booking?.travelDistanceKm == null
     ? "Distance not recorded"
-    : `${Number(booking.travelDistanceKm).toFixed(2)} km · distance-based rate`;
+    : `${Number(booking.travelDistanceKm).toFixed(2)} km · quoted fare`;
 
   return (
     <section aria-label="Price breakdown" className={`rounded-xl border border-sky-100 bg-slate-50/80 p-4 ${className}`.trim()}>
@@ -33,6 +36,10 @@ export default function BookingPriceBreakdown({
         <span className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-slate-500 ring-1 ring-slate-200">Cost summary</span>
       </div>
       <dl className="mt-3 space-y-2.5 text-xs sm:text-sm">
+        <div className="flex items-start justify-between gap-3">
+          <dt className="text-slate-600">Estimated task duration</dt>
+          <dd className="shrink-0 font-semibold tabular-nums text-slate-900">{formatEstimatedDuration(durationMinutes)}</dd>
+        </div>
         <div className="flex items-start justify-between gap-3">
           <dt className="text-slate-600">{taskLabel}</dt>
           <dd className="shrink-0 font-semibold tabular-nums text-slate-900">{formatPhpAmount(taskOffer)}</dd>

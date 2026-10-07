@@ -1,5 +1,5 @@
 const express = require("express");
-const { body } = require("express-validator");
+const { body, query } = require("express-validator");
 const { requireAuth, requireRole } = require("../middleware/requireAuth");
 const upload = require("../storage/upload");
 const { sanitizeMongoInput } = require("../middleware/sanitizeMongoInput");
@@ -9,6 +9,8 @@ const { getGlobalSettings } = require("../services/systemSettings");
 const {
   handleListBookings,
   handleProviderAvailability,
+  handleServiceLocationSearch,
+  handleServiceLocationReverseLookup,
   handleCreateBooking,
   handleUpdateBookingStatus,
   handleCancellation,
@@ -47,6 +49,16 @@ const validateBookingCreation = [
   body("serviceDetails").optional().isString().isLength({ min: 1, max: 2000 }),
   body("address").optional().isString().isLength({ max: 300 }),
   body("location").optional().isString().isLength({ max: 300 }),
+  body("serviceGeoLocation").optional({ values: "falsy" }).custom((value) => {
+    if (typeof value === "object") return true;
+    if (typeof value !== "string") return false;
+    try {
+      JSON.parse(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }),
   body("serviceDate").optional().isISO8601(),
   body("date").optional().isISO8601(),
   body("timeSlot").optional().isString().isLength({ min: 1, max: 24 }),
@@ -55,6 +67,7 @@ const validateBookingCreation = [
   body("offerPrice").optional().isFloat({ min: 100, max: 10000000 }),
   body("offer").optional().isFloat({ min: 100, max: 10000000 }),
   body("price").optional().isFloat({ min: 100, max: 10000000 }),
+  body("estimatedDurationMinutes").optional().isInt({ min: 15, max: 720 }).custom((value) => Number(value) % 15 === 0),
   body("tipAmount").optional().isFloat({ min: 0, max: 1000000 }),
   body("voucherId").optional({ values: "falsy" }).isMongoId(),
   body("urgency").optional().isIn(["Emergency", "Flexible"]),
@@ -90,6 +103,7 @@ const validateProviderUpdateResponse = [
 
 const validateCounterOffer = [
   body("proposedPrice").optional({ values: "falsy" }).isFloat({ min: 100, max: 10000000 }),
+  body("counterOfferDurationMinutes").optional({ values: "falsy" }).isInt({ min: 15, max: 720 }).custom((value) => Number(value) % 15 === 0),
   body("proposedServiceDate").optional({ values: "falsy" }).isISO8601(),
   body("proposedTimeSlot").optional({ values: "falsy" }).isString().isLength({ max: 24 }),
   body("proposedRepairDescription").optional({ values: "falsy" }).isString().isLength({ max: 2000 }),
@@ -112,6 +126,8 @@ router.param("counterOfferId", (req, res, next, id) => {
 });
 
 router.use(requireAuth, requireRole("client", "provider"));
+router.get("/service-location/search", query("q").isString().isLength({ min: 3, max: 200 }), validateRequest, handleServiceLocationSearch);
+router.get("/service-location/reverse", query("latitude").isFloat({ min: -90, max: 90 }), query("longitude").isFloat({ min: -180, max: 180 }), validateRequest, handleServiceLocationReverseLookup);
 router.get("/availability/:providerId", handleProviderAvailability);
 router.get("/", handleListBookings);
 router.post("/", (req, _res, next) => {

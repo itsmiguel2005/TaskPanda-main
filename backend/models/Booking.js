@@ -16,6 +16,16 @@ const bookingSchema = new mongoose.Schema(
     },
     repairDescription: { type: String, required: true, trim: true, maxlength: 2000 },
     address: { type: String, default: "", trim: true, maxlength: 300 },
+    serviceGeoLocation: {
+      type: {
+        type: String,
+        enum: ["Point"],
+      },
+      coordinates: {
+        type: [Number],
+        default: undefined,
+      },
+    },
     photoUrl: { type: String, default: "", trim: true, maxlength: 500 },
     urgency: { type: String, enum: ["Emergency", "Flexible"], default: "Flexible" },
     serviceDate: { type: Date, required: true },
@@ -24,6 +34,7 @@ const bookingSchema = new mongoose.Schema(
       enum: ["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"],
       required: true,
     },
+    estimatedDurationMinutes: { type: Number, min: 15, max: 720, default: 60 },
     offeredPrice: { type: Number, required: true, min: 100 },
     travelDistanceKm: { type: Number, min: 0 },
     travelBaseFee: { type: Number, min: 0 },
@@ -106,6 +117,7 @@ const bookingSchema = new mongoose.Schema(
     counterOffers: [{
       proposedBy: { type: String, enum: ["client", "provider"], required: true },
       proposedPrice: { type: Number, min: 100 },
+      counterOfferDurationMinutes: { type: Number, min: 15, max: 720 },
       proposedServiceDate: { type: Date },
       proposedTimeSlot: { type: String, enum: ["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"] },
       proposedRepairDescription: { type: String, trim: true, maxlength: 2000 },

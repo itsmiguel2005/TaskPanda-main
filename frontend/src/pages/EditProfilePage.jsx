@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
-import PHLocationPicker from "../components/PHLocationPicker.jsx";
+import AccountLocationPicker from "../components/AccountLocationPicker.jsx";
 import ProfessionSelector from "../components/ProfessionSelector.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 
@@ -26,19 +26,17 @@ const getFormFromUser = (user = {}) => {
     username: user.username || "",
     email: user.email || "",
     phone: user.mobileNumber || "",
+    address: user.address || "",
     province: user.province || "",
     city: user.city || "",
     barangay: user.barangay || "",
-    provinceCode: "",
-    cityCode: "",
-    barangayCode: "",
     geoLocation: user.geoLocation || null,
     bio: user.bio || "",
     professions: Array.isArray(user.professions) ? [...user.professions] : [],
   };
 };
 
-const comparableForm = ({ provinceCode, cityCode, barangayCode, ...values }) => values;
+const comparableForm = (values) => values;
 
 function validateForm(form, role) {
   const errors = {};
@@ -49,7 +47,8 @@ function validateForm(form, role) {
   if (!form.email.trim()) errors.email = "Email is required";
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errors.email = "Invalid email format";
   if (form.phone && !/^09\d{9}$/.test(form.phone)) errors.phone = "Enter an 11-digit number starting with 09";
-  if (!form.province || !form.city || !form.barangay) errors.location = "Select your province, city, and barangay";
+  if (!form.province || !form.city || !form.barangay) errors.location = "Confirm your barangay, city, and province.";
+  else if (!Array.isArray(form.geoLocation?.coordinates) || form.geoLocation.coordinates.length !== 2) errors.location = "Pin your exact location on the map.";
   if (role === "provider" && !form.professions.some((profession) => profession.trim())) errors.professions = "Add at least one service you offer";
   if (form.bio.length > 500) errors.bio = "Maximum 500 characters";
   return errors;
@@ -72,9 +71,13 @@ export default function EditProfilePage() {
   const [photoError, setPhotoError] = useState("");
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [isDiscardDialogOpen, setIsDiscardDialogOpen] = useState(false);
   const initialFormRef = useRef(JSON.stringify(getFormFromUser()));
   const photoInputRef = useRef(null);
+  const discardDialogRef = useRef(null);
+  const keepEditingButtonRef = useRef(null);
   const savedToastTimersRef = useRef({ fade: null, hide: null });
+  const hasUnsavedChanges = dirty || Boolean(selectedPhoto);
 
   const dismissSavedToast = () => {
     window.clearTimeout(savedToastTimersRef.current.fade);
@@ -120,15 +123,37 @@ export default function EditProfilePage() {
   }, [form]);
 
   useEffect(() => {
+    if (!isDiscardDialogOpen) return undefined;
+    keepEditingButtonRef.current?.focus();
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setIsDiscardDialogOpen(false);
+      if (event.key !== "Tab") return;
+      const buttons = discardDialogRef.current?.querySelectorAll("button:not(:disabled)");
+      if (!buttons?.length) return;
+      const firstButton = buttons[0];
+      const lastButton = buttons[buttons.length - 1];
+      if (event.shiftKey && document.activeElement === firstButton) {
+        event.preventDefault();
+        lastButton.focus();
+      } else if (!event.shiftKey && document.activeElement === lastButton) {
+        event.preventDefault();
+        firstButton.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isDiscardDialogOpen]);
+
+  useEffect(() => {
     const handler = (e) => {
-      if (dirty) {
+      if (hasUnsavedChanges) {
         e.preventDefault();
         e.returnValue = "";
       }
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [dirty]);
+  }, [hasUnsavedChanges]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -165,60 +190,6 @@ export default function EditProfilePage() {
         return next;
       });
     }
-  };
-
-  const handleCaptureLocation = () => {
-    setLocationError("");
-    if (!navigator.geolocation) {
-      setLocationError("Location is not available in this browser.");
-      return;
-    }
-
-    let bestPosition = null;
-    let attempts = 0;
-
-    const tryCapture = () => {
-      navigator.geolocation.getCurrentPosition(
-        ({ coords }) => {
-          const candidate = {
-            longitude: Number(coords.longitude.toFixed(6)),
-            latitude: Number(coords.latitude.toFixed(6)),
-            accuracy: Number(coords.accuracy || 0),
-          };
-
-          if (!bestPosition || candidate.accuracy < bestPosition.accuracy) {
-            bestPosition = candidate;
-          }
-
-          if (candidate.accuracy <= 50 || attempts >= 2) {
-            const nextForm = {
-              ...form,
-              geoLocation: {
-                type: "Point",
-                coordinates: [bestPosition.longitude, bestPosition.latitude],
-              },
-            };
-            setForm(nextForm);
-            setDirty(JSON.stringify(comparableForm(nextForm)) !== initialFormRef.current);
-            return;
-          }
-
-          attempts += 1;
-          tryCapture();
-        },
-        () => {
-          if (attempts >= 2) {
-            setLocationError("Unable to get a precise location. Try again or set a nearby-search pin manually.");
-            return;
-          }
-          attempts += 1;
-          tryCapture();
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-      );
-    };
-
-    tryCapture();
   };
 
   const handleProfilePhotoChange = async (event) => {
@@ -261,7 +232,7 @@ export default function EditProfilePage() {
           lastName: form.lastName,
           username: form.username,
           mobileNumber: form.phone,
-          address: [form.barangay, form.city, form.province].filter(Boolean).join(", "),
+          address: form.address,
           province: form.province,
           city: form.city,
           barangay: form.barangay,
@@ -323,16 +294,22 @@ export default function EditProfilePage() {
   };
 
   const handleCancel = () => {
-    if (dirty) {
-      if (window.confirm("You have unsaved changes. Are you sure you want to discard them?")) {
-        setForm(getFormFromUser(user));
-        setErrors({});
-        setDirty(false);
-        navigate(profilePath);
-      }
+    if (hasUnsavedChanges) {
+      setIsDiscardDialogOpen(true);
     } else {
       navigate(profilePath);
     }
+  };
+
+  const discardChanges = () => {
+    setForm(getFormFromUser(user));
+    setSelectedPhoto(null);
+    setPhotoPreview("");
+    setPhotoError("");
+    setErrors({});
+    setDirty(false);
+    setIsDiscardDialogOpen(false);
+    navigate(profilePath);
   };
 
   return (
@@ -486,12 +463,13 @@ export default function EditProfilePage() {
             <p className="mb-2 block text-sm font-medium text-gray-700">
               Location <span className="text-red-500">*</span>
             </p>
-            <PHLocationPicker formData={form} setFormData={setForm} />
+            <AccountLocationPicker
+              formData={form}
+              setFormData={setForm}
+              token={token}
+              provider={role === "provider"}
+            />
             {errors.location && <p className="mt-1 text-xs text-red-500">{errors.location}</p>}
-            <button type="button" onClick={handleCaptureLocation} className="mt-2 text-sm font-medium text-primary-700 hover:text-primary-900">
-              {form.geoLocation?.coordinates ? "Update nearby-search pin" : "Set nearby-search pin"}
-            </button>
-            <p className="mt-1 text-xs text-gray-500">Your precise pin is used only for nearby matching and isn’t shown publicly.</p>
             {locationError && <p className="mt-1 text-xs text-red-600" role="alert">{locationError}</p>}
           </div>
 
@@ -543,6 +521,53 @@ export default function EditProfilePage() {
           <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-100 text-xs font-bold text-green-700">✓</span>
           <p className="flex-1 font-semibold">Profile saved successfully!</p>
           <button type="button" onClick={dismissSavedToast} className="text-green-600 hover:text-green-900" aria-label="Dismiss notification">×</button>
+        </div>
+      )}
+      {isDiscardDialogOpen && (
+        <div
+          className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-slate-950/55 p-4"
+          onClick={() => setIsDiscardDialogOpen(false)}
+        >
+          <section
+            ref={discardDialogRef}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="discard-profile-title"
+            aria-describedby="discard-profile-description"
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start gap-4">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-800" aria-hidden="true">
+                <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M12 8v4m0 4h.01M10.3 3.86 1.82 18.5A2 2 0 0 0 3.55 21h16.9a2 2 0 0 0 1.73-2.5L13.7 3.86a2 2 0 0 0-3.4 0Z" />
+                </svg>
+              </span>
+              <div>
+                <h2 id="discard-profile-title" className="text-lg font-bold text-slate-950">Discard unsaved changes?</h2>
+                <p id="discard-profile-description" className="mt-2 text-sm leading-6 text-slate-600">
+                  Your profile edits{selectedPhoto ? " and selected photo" : ""} haven’t been saved. If you leave now, those changes will be lost.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                ref={keepEditingButtonRef}
+                type="button"
+                onClick={() => setIsDiscardDialogOpen(false)}
+                className="dashboard-secondary-button dashboard-focus w-full px-4 py-2.5 text-sm sm:w-auto"
+              >
+                Keep editing
+              </button>
+              <button
+                type="button"
+                onClick={discardChanges}
+                className="dashboard-focus w-full rounded-lg bg-red-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-800 focus-visible:outline-red-700 sm:w-auto"
+              >
+                Discard changes
+              </button>
+            </div>
+          </section>
         </div>
       )}
       </main>

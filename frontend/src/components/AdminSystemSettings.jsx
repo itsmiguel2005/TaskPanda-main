@@ -5,7 +5,6 @@ import { adminRequest } from "../services/adminApi.js";
 
 const DEFAULT_SETTINGS = {
   maxTravelDistanceKm: 50,
-  travelBaseFee: 20,
   travelFeePerKm: 10,
   maintenanceMode: false,
 };
@@ -73,7 +72,6 @@ function AdminSystemSettings() {
         setSavedSettings(result.settings);
         setDraft({
           maxTravelDistanceKm: result.settings.maxTravelDistanceKm,
-          travelBaseFee: result.settings.travelBaseFee,
           travelFeePerKm: result.settings.travelFeePerKm,
           maintenanceMode: result.settings.maintenanceMode,
         });
@@ -96,7 +94,6 @@ function AdminSystemSettings() {
 
   const hasChanges = savedSettings && (
     Number(draft.maxTravelDistanceKm) !== Number(savedSettings.maxTravelDistanceKm)
-    || Number(draft.travelBaseFee) !== Number(savedSettings.travelBaseFee)
     || Number(draft.travelFeePerKm) !== Number(savedSettings.travelFeePerKm)
     || draft.maintenanceMode !== savedSettings.maintenanceMode
   );
@@ -131,7 +128,6 @@ function AdminSystemSettings() {
         method: "PATCH",
         body: JSON.stringify({
           maxTravelDistanceKm: Number(draft.maxTravelDistanceKm),
-          travelBaseFee: Number(draft.travelBaseFee),
           travelFeePerKm: Number(draft.travelFeePerKm),
           maintenanceMode: draft.maintenanceMode,
         }),
@@ -139,7 +135,6 @@ function AdminSystemSettings() {
       setSavedSettings(result.settings);
       setDraft({
         maxTravelDistanceKm: result.settings.maxTravelDistanceKm,
-        travelBaseFee: result.settings.travelBaseFee,
         travelFeePerKm: result.settings.travelFeePerKm,
         maintenanceMode: result.settings.maintenanceMode,
       });
@@ -198,9 +193,9 @@ function AdminSystemSettings() {
       <form onSubmit={saveSettings} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
           <h2 className="text-sm font-bold text-slate-950">Travel pricing & service range</h2>
-          <p className="mt-1 text-xs leading-5 text-slate-600">New quotes use the base fare plus the per-kilometer rate across the full provider distance. Existing bookings keep their original quote.</p>
+          <p className="mt-1 text-xs leading-5 text-slate-600">The ₱20 base fare covers the first 2 km. The configured per-kilometer rate is added only to distance beyond 2 km. Existing bookings keep their original quote.</p>
         </div>
-        <div className="grid gap-4 px-4 py-5 sm:grid-cols-3 sm:px-5">
+        <div className="grid gap-4 px-4 py-5 sm:grid-cols-2 sm:px-5">
           <label className="block text-sm font-semibold text-slate-800">
             Maximum travel distance
             <span className="relative mt-1.5 block">
@@ -210,21 +205,13 @@ function AdminSystemSettings() {
             <span id="travel-distance-help" className="mt-1.5 block text-xs font-normal leading-5 text-slate-600">Requests beyond this distance are declined before booking.</span>
           </label>
           <label className="block text-sm font-semibold text-slate-800">
-            Travel fee baseline
-            <span className="relative mt-1.5 block">
-              <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-xs font-medium text-slate-600">₱</span>
-              <input type="number" min="0" max="100000" step="0.01" required value={draft.travelBaseFee} onChange={(event) => updateDraft("travelBaseFee", event.target.value)} disabled={isLoading || isSaving} aria-describedby="travel-base-help" className="dashboard-focus h-11 w-full rounded-xl border border-slate-300 bg-white pl-8 pr-3 text-sm font-medium tabular-nums text-slate-950 disabled:bg-slate-50" />
-            </span>
-            <span id="travel-base-help" className="mt-1.5 block text-xs font-normal leading-5 text-slate-600">Added once to each travel quote.</span>
-          </label>
-          <label className="block text-sm font-semibold text-slate-800">
             Per-kilometer rate
             <span className="relative mt-1.5 block">
               <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-xs font-medium text-slate-600">₱</span>
               <input type="number" min="0" max="100000" step="0.01" required value={draft.travelFeePerKm} onChange={(event) => updateDraft("travelFeePerKm", event.target.value)} disabled={isLoading || isSaving} aria-describedby="travel-km-help" className="dashboard-focus h-11 w-full rounded-xl border border-slate-300 bg-white pl-8 pr-14 text-sm font-medium tabular-nums text-slate-950 disabled:bg-slate-50" />
               <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-medium text-slate-600">/ km</span>
             </span>
-            <span id="travel-km-help" className="mt-1.5 block text-xs font-normal leading-5 text-slate-600">Applied to every kilometer travelled.</span>
+            <span id="travel-km-help" className="mt-1.5 block text-xs font-normal leading-5 text-slate-600">Added for each kilometer beyond the 2 km covered by the base fare.</span>
           </label>
         </div>
 

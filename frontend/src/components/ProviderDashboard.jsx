@@ -8,7 +8,7 @@ import StatusChangeConfirmation from "./StatusChangeConfirmation.jsx";
 import { BookingCardSkeletonList } from "./Skeletons.jsx";
 import CompletionProofModal from "./CompletionProofModal.jsx";
 import { canRequestCancellation, requiresCancellationApproval } from "../utils/bookingCancellation.js";
-import { canArriveForSameDayBooking } from "../utils/bookingArrival.js";
+import { canArriveForSameDayBooking, hasScheduleConflict } from "../utils/bookingArrival.js";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -145,7 +145,7 @@ const FILTERS = [
 
 // ─── Incoming Request card ───────────────────────────────────────────────────
 
-function RequestCard({ booking, onAccept, onDecline, onOpenConversation, currentTime }) {
+function RequestCard({ booking, allBookings, onAccept, onDecline, onOpenConversation, currentTime }) {
   const clientName = booking.client || booking.clientName || booking.worker || "Client";
   // Use pre-formatted date string from API + raw timeSlot string — avoids UTC offset conversion bug
   const requestedDate = booking.date || (booking.serviceDate ? new Date(booking.serviceDate).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" }) : "");
@@ -157,7 +157,8 @@ function RequestCard({ booking, onAccept, onDecline, onOpenConversation, current
   const secondsRemaining = requestExpiresAt == null ? null : Math.max(0, Math.ceil((requestExpiresAt - currentTime.getTime()) / 1000));
   const requestExpired = secondsRemaining === 0;
   const arrivalFeasible = canArriveForSameDayBooking(booking, currentTime);
-  const acceptDisabled = requestExpired || !arrivalFeasible;
+  const scheduleConflict = hasScheduleConflict(booking, allBookings, booking.id);
+  const acceptDisabled = requestExpired || !arrivalFeasible || scheduleConflict;
 
   return (
     <div className="content-arrive border-b border-sky-100/80 px-4 py-5 last:border-b-0 sm:px-5">
@@ -226,6 +227,11 @@ function RequestCard({ booking, onAccept, onDecline, onOpenConversation, current
           Arrival time missed—please request a schedule adjustment
         </p>
       )}
+      {scheduleConflict && (
+        <p id={`schedule-notice-${booking.id}`} className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900" role="status">
+          This task duration overlaps another booking. Ask the client to choose a shorter duration or another time.
+        </p>
+      )}
 
       <BookingPriceBreakdown booking={booking} className="mt-4" />
 
@@ -234,7 +240,7 @@ function RequestCard({ booking, onAccept, onDecline, onOpenConversation, current
             type="button"
             onClick={() => onAccept(booking.id)}
             disabled={acceptDisabled}
-            aria-describedby={!arrivalFeasible ? `arrival-notice-${booking.id}` : undefined}
+            aria-describedby={scheduleConflict ? `schedule-notice-${booking.id}` : !arrivalFeasible ? `arrival-notice-${booking.id}` : undefined}
             className="dashboard-primary-button dashboard-focus px-4 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
           >
             Accept
@@ -661,6 +667,9 @@ export default function ProviderDashboard() {
   const pendingRequest = requests.find((r) => r.id === acceptingId);
   const pendingRequestExpired = !pendingRequest || Boolean(pendingRequest.requestExpiresAt
     && new Date(pendingRequest.requestExpiresAt).getTime() <= currentTime.getTime());
+  const pendingScheduleConflict = pendingRequest
+    ? hasScheduleConflict(pendingRequest, bookings, pendingRequest.id)
+    : false;
   const pendingArrivalFeasible = pendingRequest
     ? canArriveForSameDayBooking(pendingRequest, currentTime)
     : false;
@@ -794,7 +803,7 @@ export default function ProviderDashboard() {
                 ) : (
                   <div>
                     {requests.map((req) => (
-                      <RequestCard key={req.id} booking={req} onAccept={handleAccept} onDecline={handleDecline} onOpenConversation={(bookingId) => navigate(`/provider/messages?bookingId=${bookingId}`)} currentTime={currentTime} />
+                      <RequestCard key={req.id} booking={req} allBookings={bookings} onAccept={handleAccept} onDecline={handleDecline} onOpenConversation={(bookingId) => navigate(`/provider/messages?bookingId=${bookingId}`)} currentTime={currentTime} />
                     ))}
                   </div>
                 )}
@@ -974,11 +983,16 @@ export default function ProviderDashboard() {
                   Arrival time missed—please request a schedule adjustment
                 </p>
               )}
+              {!pendingRequestExpired && pendingScheduleConflict && (
+                <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900" role="alert">
+                  This task duration overlaps another booking. Ask the client to choose a shorter duration or another time.
+                </p>
+              )}
               <div className="mt-6 flex gap-3">
                 <button type="button" onClick={() => setAcceptingId(null)} className="dashboard-secondary-button dashboard-focus flex-1 py-2.5 text-sm">
                   Cancel
                 </button>
-                <button type="button" onClick={confirmAccept} disabled={pendingRequestExpired || !pendingArrivalFeasible} className="dashboard-primary-button dashboard-focus flex-1 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50">
+                <button type="button" onClick={confirmAccept} disabled={pendingRequestExpired || !pendingArrivalFeasible || pendingScheduleConflict} className="dashboard-primary-button dashboard-focus flex-1 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50">
                   Accept
                 </button>
               </div>

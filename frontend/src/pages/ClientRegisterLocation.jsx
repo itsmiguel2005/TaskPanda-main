@@ -1,15 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
-import PHLocationPicker from "../components/PHLocationPicker.jsx";
+import AccountLocationPicker from "../components/AccountLocationPicker.jsx";
 import { readRegistrationDraft, saveRegistrationDraft } from "../utils/registrationDraft.js";
 
 export default function ClientRegisterLocation() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState(() => readRegistrationDraft("clientLocationStep", {
-    provinceCode: "",
-    cityCode: "",
-    barangayCode: "",
     province: "",
     city: "",
     barangay: "",
@@ -25,8 +22,8 @@ export default function ClientRegisterLocation() {
     e.preventDefault();
     setError("");
 
-    if (!formData.province || !formData.city || !formData.barangay) {
-      setError("Please select your complete location.");
+    if (!formData.province || !formData.city || !formData.barangay || !formData.geoLocation?.coordinates) {
+      setError("Pin your location on the map and confirm your barangay, city, and province.");
       return;
     }
 
@@ -83,7 +80,7 @@ export default function ClientRegisterLocation() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <PHLocationPicker
+              <AccountLocationPicker
                 formData={formData}
                 setFormData={setFormData}
                 accent="primary"

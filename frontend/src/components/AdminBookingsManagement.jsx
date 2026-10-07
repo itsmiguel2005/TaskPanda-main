@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { SkeletonBlock } from "./Skeletons.jsx";
 import { adminRequest } from "../services/adminApi.js";
+import { DEFAULT_ESTIMATED_DURATION_MINUTES, formatEstimatedDuration } from "../utils/bookingDuration.js";
 
 const currency = new Intl.NumberFormat("en-PH", {
   style: "currency",
@@ -222,11 +223,9 @@ function BookingDrawer({ booking, onClose, onOverride }) {
                   {booking.travelDistanceKm == null
                     ? "Distance quote not recorded"
                     : `${booking.travelDistanceKm.toFixed(2)} km`}
-                  {booking.travelBaseFee != null && booking.travelFeePerKm != null
-                    ? ` · ${amount(booking.travelBaseFee)} base + ${booking.travelDistanceKm?.toFixed(2) || "—"} km × ${amount(booking.travelFeePerKm)}/km`
-                    : booking.travelDistanceKm == null
-                      ? ""
-                      : " · original rate details unavailable"}
+                  {booking.travelDistanceKm == null
+                    ? ""
+                    : " · amount is the fare saved with this booking"}
                 </p>
                 {booking.travelFeeDiscount > 0 && (
                   <p className="mt-1 text-xs text-emerald-800">Voucher discount: −{amount(booking.travelFeeDiscount)} · original quote {amount(booking.travelFeeBeforeDiscount)}</p>
@@ -250,6 +249,7 @@ function BookingDrawer({ booking, onClose, onOverride }) {
             <dl className="mt-3 grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
               <dt className="text-slate-500">Requested</dt><dd className="break-words text-slate-800">{formatDate(booking.createdAt)}</dd>
               <dt className="text-slate-500">Address</dt><dd className="break-words text-slate-800">{booking.address || "Not provided"}</dd>
+              <dt className="text-slate-500">Estimated duration</dt><dd className="text-slate-800">{formatEstimatedDuration(booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES)}</dd>
               <dt className="text-slate-500">Urgency</dt><dd className="text-slate-800">{booking.urgency}</dd>
               {booking.requestExpiresAt && <><dt className="text-slate-500">Request TTL</dt><dd className="text-slate-800">{formatDate(booking.requestExpiresAt)}</dd></>}
               {booking.workCompletedAt && <><dt className="text-slate-500">Work completed</dt><dd className="text-slate-800">{formatDate(booking.workCompletedAt)}</dd></>}

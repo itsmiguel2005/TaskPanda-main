@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useAuth } from "./AuthContext.jsx";
+import { DEFAULT_ESTIMATED_DURATION_MINUTES } from "../utils/bookingDuration.js";
 
 const BookingContext = createContext(null);
 
@@ -32,6 +33,7 @@ export function BookingProvider({ children }) {
     if (!silent) setIsLoading(true);
     try {
       const response = await fetch("/api/bookings", {
+        cache: "no-store",
         headers: { Authorization: `Bearer ${token}` },
         signal,
       });
@@ -81,6 +83,7 @@ export function BookingProvider({ children }) {
       serviceDate: normalizedDetails.serviceDate || normalizedDetails.date || "",
       timeSlot: normalizedDetails.timeSlot || normalizedDetails.time || "",
       offeredPrice: normalizedDetails.offeredPrice ?? normalizedDetails.offerPrice ?? normalizedDetails.offer ?? 0,
+      estimatedDurationMinutes: normalizedDetails.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
       tipAmount: normalizedDetails.tipAmount ?? 0,
       voucherId: normalizedDetails.voucherId || "",
       urgency: normalizedDetails.urgency || "Flexible",
@@ -96,6 +99,7 @@ export function BookingProvider({ children }) {
     const serviceDate = normalizedDetails.serviceDate || normalizedDetails.date || "";
     const timeSlot = normalizedDetails.timeSlot || normalizedDetails.time || "";
     const offerPrice = normalizedDetails.offeredPrice ?? normalizedDetails.offerPrice ?? normalizedDetails.offer ?? 0;
+    const estimatedDurationMinutes = normalizedDetails.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES;
     const tipAmount = normalizedDetails.tipAmount ?? 0;
     const paymentMethod = normalizedDetails.paymentMethod || "cash";
     const termsAccepted = normalizedDetails.termsAccepted ?? true;
@@ -104,11 +108,15 @@ export function BookingProvider({ children }) {
     formData.append("repairDescription", description);
     formData.append("description", description);
     formData.append("address", normalizedDetails.address || "");
+    if (normalizedDetails.serviceGeoLocation) {
+      formData.append("serviceGeoLocation", JSON.stringify(normalizedDetails.serviceGeoLocation));
+    }
     formData.append("serviceDate", String(serviceDate));
     formData.append("date", String(serviceDate));
     formData.append("timeSlot", String(timeSlot));
     formData.append("time", String(timeSlot));
     formData.append("offeredPrice", String(offerPrice));
+    formData.append("estimatedDurationMinutes", String(estimatedDurationMinutes));
     formData.append("tipAmount", String(tipAmount));
     if (normalizedDetails.voucherId) formData.append("voucherId", String(normalizedDetails.voucherId));
     formData.append("offer", String(offerPrice));

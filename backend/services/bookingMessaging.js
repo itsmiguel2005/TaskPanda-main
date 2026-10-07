@@ -6,6 +6,7 @@ function idOf(value) {
 }
 
 const { calculateTotalPrice } = require("./bookingPricing");
+const { DEFAULT_ESTIMATED_DURATION_MINUTES } = require("./bookingLifecycle");
 
 function formatAmount(value) {
   return `₱${Number(value || 0).toLocaleString("en-PH")}`;
@@ -72,6 +73,7 @@ async function ensureBookingConversation(booking) {
       bookingId: String(idOf(booking)),
       repairDescription: booking.repairDescription,
       offeredPrice: booking.offeredPrice,
+      estimatedDurationMinutes: booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
       travelDistanceKm: booking.travelDistanceKm ?? null,
       travelFee: booking.travelFee || 0,
       tipAmount: booking.tipAmount || 0,

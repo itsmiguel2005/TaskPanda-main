@@ -4,6 +4,7 @@ import Header from "./Header.jsx";
 import ProviderModal from "./ProviderModal.jsx";
 import ProviderStreak from "./ProviderStreak.jsx";
 import RequestBookingModal from "./RequestBookingModal.jsx";
+import ServiceLocationPicker from "./ServiceLocationPicker.jsx";
 import PandaSwipeRefresh from "./PandaSwipeRefresh.jsx";
 import { SkeletonProviderGrid } from "./Skeletons.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -18,6 +19,7 @@ const sortOptions = [
 ];
 const FAVORITES_SYNC_EVENT = "taskpanda:favorites-sync";
 const MINIMUM_TASK_OFFER = 100;
+const MAX_DISCOVERY_DISTANCE_KM = 10;
 
 function formatPhpAmount(value) {
   const amount = Number(value);
@@ -57,13 +59,16 @@ export default function Explore() {
   const [searchQuery, setSearchQuery] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
   const [searchCoordinates, setSearchCoordinates] = useState(null);
+  const [searchLocation, setSearchLocation] = useState({ address: "", geoLocation: null });
+  const [draftSearchLocation, setDraftSearchLocation] = useState({ address: "", geoLocation: null });
+  const [showSearchLocationPicker, setShowSearchLocationPicker] = useState(false);
   const [locationError, setLocationError] = useState("");
   const [showAllCats, setShowAllCats] = useState(false);
   const [sortBy, setSortBy] = useState("distance");
   const [selectedCategories, setSelectedCategories] = useState(new Set());
   const [tesdaOnly, setTesdaOnly] = useState(false);
   const [minKm] = useState(0);
-  const [maxKm, setMaxKm] = useState(25);
+  const [maxKm, setMaxKm] = useState(MAX_DISCOVERY_DISTANCE_KM);
   const [providers, setProviders] = useState([]);
   const [totalProviders, setTotalProviders] = useState(0);
   const [favoriteProviderIds, setFavoriteProviderIds] = useState(new Set());
@@ -74,8 +79,21 @@ export default function Explore() {
 
   useEffect(() => {
     const coordinates = user?.geoLocation?.coordinates;
-    if (coordinates?.length === 2) setSearchCoordinates({ type: "Point", coordinates });
+    if (coordinates?.length === 2) {
+      const geoLocation = { type: "Point", coordinates };
+      setSearchCoordinates(geoLocation);
+      setSearchLocation({ address: user.address || "", geoLocation });
+    }
   }, [user]);
+
+  useEffect(() => {
+    if (!showSearchLocationPicker) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setShowSearchLocationPicker(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [showSearchLocationPicker]);
 
   useEffect(() => {
     const service = searchParams.get("service");
@@ -149,11 +167,12 @@ export default function Explore() {
       setLoading(true);
       setSearchError("");
       const [longitude, latitude] = searchCoordinates.coordinates;
+      const requestedMaxKm = Math.min(MAX_DISCOVERY_DISTANCE_KM, Math.max(0.5, Number(maxKm) || MAX_DISCOVERY_DISTANCE_KM));
       const params = new URLSearchParams({
         longitude: String(longitude),
         latitude: String(latitude),
         minKm: String(minKm),
-        maxKm: String(maxKm),
+        maxKm: String(requestedMaxKm),
       });
       if (appliedQuery) params.set("q", appliedQuery);
       if (selectedCategories.size) params.set("categories", [...selectedCategories].join(","));
@@ -194,59 +213,31 @@ export default function Explore() {
     setAppliedQuery(searchQuery.trim());
   };
 
-  const handleUseCurrentLocation = () => {
+  const openSearchLocationPicker = () => {
     setLocationError("");
-    if (!navigator.geolocation) {
-      setLocationError("Location is not available in this browser.");
+    setDraftSearchLocation(searchLocation.geoLocation ? searchLocation : {
+      address: user?.address || registeredLocationLabel,
+      geoLocation: user?.geoLocation || null,
+    });
+    setShowSearchLocationPicker(true);
+  };
+
+  const applySearchLocation = () => {
+    const coordinates = draftSearchLocation.geoLocation?.coordinates;
+    if (!Array.isArray(coordinates) || coordinates.length !== 2) {
+      setLocationError("Choose a point on the map before applying your search location.");
       return;
     }
-
-    let bestPosition = null;
-    let attempts = 0;
-
-    const tryCapture = () => {
-      navigator.geolocation.getCurrentPosition(
-        ({ coords }) => {
-          const candidate = {
-            longitude: Number(coords.longitude.toFixed(6)),
-            latitude: Number(coords.latitude.toFixed(6)),
-            accuracy: Number(coords.accuracy || 0),
-          };
-
-          if (!bestPosition || candidate.accuracy < bestPosition.accuracy) {
-            bestPosition = candidate;
-          }
-
-          if (candidate.accuracy <= 50 || attempts >= 2) {
-            setSearchCoordinates({
-              type: "Point",
-              coordinates: [bestPosition.longitude, bestPosition.latitude],
-            });
-            return;
-          }
-
-          attempts += 1;
-          tryCapture();
-        },
-        () => {
-          if (attempts >= 2) {
-            setLocationError("Unable to get a precise location. Set a nearby-search pin in your profile instead.");
-            return;
-          }
-          attempts += 1;
-          tryCapture();
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-      );
-    };
-
-    tryCapture();
+    setSearchLocation(draftSearchLocation);
+    setSearchCoordinates(draftSearchLocation.geoLocation);
+    setLocationError("");
+    setShowSearchLocationPicker(false);
   };
 
   const clearFilters = () => {
     setSelectedCategories(new Set());
     setTesdaOnly(false);
-    setMaxKm(25);
+    setMaxKm(MAX_DISCOVERY_DISTANCE_KM);
     setSearchQuery("");
     setAppliedQuery("");
     setSortBy("distance");
@@ -330,8 +321,9 @@ export default function Explore() {
     activeFilters.push({ type: "tesda", label: "TESDA Certified", value: "tesda" });
   }
 
+  const distanceRangeMaxKm = Math.min(MAX_DISCOVERY_DISTANCE_KM, Math.max(0.5, Number(maxKm) || MAX_DISCOVERY_DISTANCE_KM));
   const resultsSubtitle = () => {
-    return `Showing providers ${minKm}–${maxKm} km away${appliedQuery ? ` matching “${appliedQuery}”` : ""}`;
+    return `Showing providers ${minKm}–${distanceRangeMaxKm} km away${appliedQuery ? ` matching “${appliedQuery}”` : ""}`;
   };
 
   const refreshProviders = async () => {
@@ -343,7 +335,7 @@ export default function Explore() {
       longitude: String(longitude),
       latitude: String(latitude),
       minKm: String(minKm),
-      maxKm: String(maxKm),
+      maxKm: String(distanceRangeMaxKm),
     });
     if (appliedQuery) params.set("q", appliedQuery);
     if (selectedCategories.size) params.set("categories", [...selectedCategories].join(","));
@@ -398,13 +390,13 @@ export default function Explore() {
                 </button>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-                <button type="button" onClick={handleUseCurrentLocation} className="dashboard-focus rounded text-sm font-semibold text-blue-700 underline-offset-4 hover:text-blue-900 hover:underline">
-                  {searchCoordinates ? "Update search location" : "Use my current location"}
+                <button type="button" onClick={openSearchLocationPicker} className="dashboard-focus rounded text-sm font-semibold text-blue-700 underline-offset-4 hover:text-blue-900 hover:underline">
+                  {searchCoordinates ? "Update search location" : "Choose search location"}
                 </button>
                 {searchCoordinates && (
                   <span className="text-xs text-slate-600">
-                    {registeredLocationLabel
-                      ? `Showing providers near ${registeredLocationLabel}`
+                    {searchLocation.address || registeredLocationLabel
+                      ? `Showing providers near ${searchLocation.address || registeredLocationLabel}`
                       : "Nearby search is active"}
                   </span>
                 )}
@@ -485,19 +477,19 @@ export default function Explore() {
               <h3 className="dashboard-kicker mb-3">
                 Distance range
               </h3>
-              <p className="mb-3 text-sm font-semibold tabular-nums text-slate-800">0–{Number(maxKm).toFixed(1)} km</p>
+              <p className="mb-3 text-sm font-semibold tabular-nums text-slate-800">0–{distanceRangeMaxKm.toFixed(1)} km</p>
               <div className="relative mx-2 h-8">
                 <div className="absolute left-0 right-0 top-3 h-1 rounded bg-sky-100" />
-                <div className="absolute top-3 h-1 rounded bg-blue-600" style={{ left: '0%', right: `${100 - (maxKm / 100) * 100}%` }} />
+                <div className="absolute top-3 h-1 rounded bg-blue-600" style={{ left: '0%', right: `${100 - (distanceRangeMaxKm / 10) * 100}%` }} />
                 <label className="sr-only" htmlFor="max-distance">Maximum distance</label>
                 <input
                   id="max-distance"
                   type="range"
                   min="0.5"
-                  max="100"
+                  max={MAX_DISCOVERY_DISTANCE_KM}
                   step="0.5"
-                  value={maxKm}
-                  onChange={(event) => setMaxKm(Math.max(0.5, Number(event.target.value)))}
+                  value={distanceRangeMaxKm}
+                  onChange={(event) => setMaxKm(Math.min(MAX_DISCOVERY_DISTANCE_KM, Math.max(0.5, Number(event.target.value))))}
                   className="absolute inset-0 z-10 h-7 w-full appearance-none bg-transparent accent-blue-700 pointer-events-auto"
                   style={{ pointerEvents: "auto" }}
                 />
@@ -687,7 +679,7 @@ export default function Explore() {
                         <div className="min-w-0 pl-2.5">
                           <p className="dashboard-kicker text-blue-900">Travel estimate</p>
                           <p className="mt-1 text-sm font-bold tabular-nums text-slate-900">{travelEstimate == null ? "Unavailable" : formatPhpAmount(travelEstimate)}</p>
-                          <p className="mt-0.5 text-[10px] leading-4 text-blue-950">{distanceLabel} · ₱20 base + ₱10/km after 2 km</p>
+                          <p className="mt-0.5 text-[10px] leading-4 text-blue-950">{distanceLabel} · ₱20 base fare covers the first 2 km, then the current per-kilometer rate</p>
                           <p className="mt-0.5 text-[10px] leading-4 text-slate-500">Approximate; confirmed in request</p>
                         </div>
                       </div>
@@ -751,6 +743,56 @@ export default function Explore() {
           onClose={() => setBookingProvider(null)}
           onSubmit={createBooking}
         />
+        {showSearchLocationPicker && (
+          <div
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-3 sm:p-5"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setShowSearchLocationPicker(false);
+            }}
+          >
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="nearby-search-location-title"
+              className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-4 shadow-xl sm:p-6"
+            >
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 id="nearby-search-location-title" className="text-lg font-bold text-slate-900">Choose your search location</h2>
+                <button
+                  type="button"
+                  onClick={() => setShowSearchLocationPicker(false)}
+                  aria-label="Close location picker"
+                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true">
+                    <path d="m6 6 12 12M18 6 6 18" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+              <ServiceLocationPicker
+                key={showSearchLocationPicker ? "open" : "closed"}
+                value={draftSearchLocation}
+                onChange={setDraftSearchLocation}
+                token={token}
+                heading="Pin the center of your provider search"
+                description="Search your street or landmark, use your current location, or move the pin. Providers will be searched within your selected 0–10 km radius."
+                searchPlaceholder="Street, barangay, city, or landmark"
+                addressLabel="Search area"
+                addressPlaceholder="Address or nearby landmark"
+                mapLabel="OpenStreetMap nearby provider search location"
+              />
+              {locationError && <p className="mt-3 text-sm text-red-700" role="alert">{locationError}</p>}
+              <div className="mt-4 flex gap-3 border-t border-slate-100 pt-4">
+                <button type="button" onClick={() => setShowSearchLocationPicker(false)} className="flex-1 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
+                  Cancel
+                </button>
+                <button type="button" onClick={applySearchLocation} className="flex-1 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
+                  Search this area
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
     </div>
   );
 }

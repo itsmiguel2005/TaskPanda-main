@@ -9,6 +9,7 @@ import BookingPriceBreakdown from "./BookingPriceBreakdown.jsx";
 import MessagePhoto from "./MessagePhoto.jsx";
 import { ConversationSkeletonList, MessageSkeletonList } from "./Skeletons.jsx";
 import { canRequestCancellation, getCancellationLockMessage } from "../utils/bookingCancellation.js";
+import { DEFAULT_ESTIMATED_DURATION_MINUTES } from "../utils/bookingDuration.js";
 
 const MAX_MESSAGE_INPUT_HEIGHT = 144;
 const CONVERSATION_READ_EVENT = "taskpanda:conversation-read";
@@ -224,6 +225,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const [actionError, setActionError] = useState("");
   const [counterFormOpen, setCounterFormOpen] = useState(false);
   const [counterOfferPrice, setCounterOfferPrice] = useState("");
+  const [counterOfferDurationMinutes, setCounterOfferDurationMinutes] = useState(String(DEFAULT_ESTIMATED_DURATION_MINUTES));
   const [counterOfferNote, setCounterOfferNote] = useState("");
   const [remoteCounterTypingUntil, setRemoteCounterTypingUntil] = useState(0);
   const [cancelReason, setCancelReason] = useState("");
@@ -828,11 +830,13 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     setActionError("");
     const data = await postChatApiAction(`/api/bookings/${selectedConversation.bookingId}/counter-offers`, "POST", {
       proposedPrice: counterOfferPrice,
+      ...(role === "provider" ? { counterOfferDurationMinutes } : {}),
       note: counterOfferNote,
     });
     if (data) {
       setCounterFormOpen(false);
       setCounterOfferPrice("");
+      setCounterOfferDurationMinutes(String(DEFAULT_ESTIMATED_DURATION_MINUTES));
       setCounterOfferNote("");
       setActionMessage(null);
     }
@@ -863,6 +867,11 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     setActionError("");
     setActionModalView(action === "approve" ? "CONFIRM_APPROVE" : action === "decline" ? "CONFIRM_DECLINE" : "DETAILS");
     setCounterFormOpen(action === "counter");
+    if (action === "counter") {
+      setCounterOfferPrice("");
+      setCounterOfferDurationMinutes(String(selectedConversation.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES));
+      setCounterOfferNote("");
+    }
   };
 
   const handleCancellationResponse = async (bookingId, action) => {
@@ -1546,6 +1555,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                       booking={{
                         ...selectedConversation,
                         offeredPrice: actionMessage.eventData.proposedPrice,
+                        estimatedDurationMinutes: actionMessage.eventData.counterOfferDurationMinutes ?? selectedConversation.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
                         totalPrice: Number(actionMessage.eventData.proposedPrice || 0) + Number(selectedConversation.travelFee || 0) + Number(selectedConversation.tipAmount || 0),
                       }}
                       className="mt-3 bg-white"
@@ -1564,13 +1574,27 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                   <form onSubmit={handleCounterOfferSubmit} className="mt-3 space-y-3 rounded-xl border border-sky-100 bg-slate-50/70 p-4">
                     <div>
                       <p className="text-sm font-bold text-slate-900">Counter the task offer</p>
-                      <p className="mt-1 text-xs leading-relaxed text-slate-600">Only the task price is negotiable. Travel fare and tip stay unchanged.</p>
+                      <p className="mt-1 text-xs leading-relaxed text-slate-600">{role === "provider" ? "Propose a task price and duration. Travel fare and tip stay unchanged." : "Propose a task price for the current duration. Travel fare and tip stay unchanged."}</p>
                     </div>
                     <BookingPriceBreakdown booking={selectedConversation} className="bg-white" taskLabel="Current task offer" totalLabel="Current total" />
                     <div className="grid grid-cols-1 gap-3">
-                      <label className="text-xs font-semibold text-slate-700">New task offer (PHP)
+                      <label className="text-xs font-semibold text-slate-700">Task offer for {role === "provider" ? counterOfferDurationMinutes : selectedConversation.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES} minutes (PHP)
                         <input type="number" min="100" step="1" value={counterOfferPrice} onChange={(event) => { setCounterOfferPrice(event.target.value); updateCounterOfferTyping(Boolean(event.target.value.trim() || counterOfferNote.trim())); }} placeholder={`Current ₱${Number(selectedConversation.offeredPrice || 0).toLocaleString("en-PH")}`} className="dashboard-focus mt-1 block min-h-11 w-full rounded-xl border border-sky-100 bg-white px-3 py-2 text-sm text-slate-900" />
                       </label>
+                      {role === "provider" && (
+                        <label className="text-xs font-semibold text-slate-700">Proposed duration (minutes)
+                          <input
+                            type="number"
+                            min="15"
+                            max="720"
+                            step="15"
+                            value={counterOfferDurationMinutes}
+                            onChange={(event) => { setCounterOfferDurationMinutes(event.target.value); updateCounterOfferTyping(Boolean(counterOfferPrice.trim() || counterOfferNote.trim() || event.target.value.trim())); }}
+                            className="dashboard-focus mt-1 block min-h-11 w-full rounded-xl border border-sky-100 bg-white px-3 py-2 text-sm text-slate-900"
+                          />
+                          <span className="mt-1 block font-normal text-slate-500">15-minute increments, up to 12 hours. Schedule conflicts are checked before the offer is sent and again when accepted.</span>
+                        </label>
+                      )}
                     </div>
                     <label className="block text-xs font-semibold text-slate-700">Note
                       <textarea maxLength={500} rows={2} value={counterOfferNote} onChange={(event) => { setCounterOfferNote(event.target.value); updateCounterOfferTyping(Boolean(counterOfferPrice.trim() || event.target.value.trim())); }} placeholder="Add context for your task-price counter" className="dashboard-focus mt-1 block w-full rounded-xl border border-sky-100 bg-white px-3 py-2 text-sm text-slate-900" />

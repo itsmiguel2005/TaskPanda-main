@@ -8,13 +8,14 @@ import { useBookings } from "../context/BookingContext.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import BookingProgress from "../components/BookingProgress.jsx";
 import BookingHistory from "../components/BookingHistory.jsx";
-import AddressActions from "../components/AddressActions.jsx";
+import BookingLocationMap from "../components/BookingLocationMap.jsx";
 import { canRequestCancellation, getCancellationLockMessage } from "../utils/bookingCancellation.js";
 import StatusChangeConfirmation from "../components/StatusChangeConfirmation.jsx";
 import RevisionRequestModal from "../components/RevisionRequestModal.jsx";
 import RequestBookingModal from "../components/RequestBookingModal.jsx";
 import PandaSwipeRefresh from "../components/PandaSwipeRefresh.jsx";
 import { BookingCardSkeletonList, SkeletonBlock } from "../components/Skeletons.jsx";
+import { DEFAULT_ESTIMATED_DURATION_MINUTES } from "../utils/bookingDuration.js";
 
 const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined", "Expired"];
 
@@ -260,7 +261,7 @@ export default function BookingsPage() {
             filteredBookings.map((booking) => (
               <div
                 key={booking.id}
-                className="content-arrive overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
+                className="content-arrive overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition-[border-color,box-shadow] hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
               >
                 <div className="p-5 sm:p-6">
                   <div className="flex flex-col gap-4 border-b border-sky-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -366,7 +367,7 @@ export default function BookingsPage() {
                       <span>{booking.time}</span>
                     </div>
                     {booking.createdAt && <p className="pl-6 text-xs text-slate-500">Submitted {new Date(booking.createdAt).toLocaleString()}</p>}
-                    <div className="flex items-start gap-2">
+                    <div className="min-w-0">
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         viewBox="0 0 24 24"
@@ -379,7 +380,10 @@ export default function BookingsPage() {
                           clipRule="evenodd"
                         />
                       </svg>
-                      <AddressActions address={booking.address} />
+                      <BookingLocationMap
+                        address={booking.address}
+                        serviceGeoLocation={booking.serviceGeoLocation}
+                      />
                     </div>
                     <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-[11px] font-semibold ${booking.urgency === "Emergency" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>
                       {booking.urgency || "Flexible"} service
@@ -563,7 +567,10 @@ export default function BookingsPage() {
           }}
           initialValues={{
             task: rebookingBooking.description || rebookingBooking.task,
-            offer: rebookingBooking.offeredPrice ?? rebookingBooking.offer ?? "",
+            address: rebookingBooking.address || "",
+            serviceGeoLocation: rebookingBooking.serviceGeoLocation || null,
+            offer: Math.round((Number(rebookingBooking.offeredPrice ?? rebookingBooking.offer ?? 0) * DEFAULT_ESTIMATED_DURATION_MINUTES / Number(rebookingBooking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES)) * 100) / 100,
+            estimatedDurationMinutes: rebookingBooking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
             urgency: rebookingBooking.urgency || "Flexible",
           }}
           onClose={() => setRebookingBooking(null)}
@@ -616,7 +623,11 @@ export default function BookingsPage() {
                 </div>
                 <div className="sm:col-span-2">
                   <p className="dashboard-kicker">Service address</p>
-                  <div className="mt-1 text-slate-700"><AddressActions address={detailBooking.address} /></div>
+                  <BookingLocationMap
+                    address={detailBooking.address}
+                    serviceGeoLocation={detailBooking.serviceGeoLocation}
+                    className="h-48"
+                  />
                 </div>
                 <div className="sm:col-span-2">
                   <p className="dashboard-kicker">Task details</p>

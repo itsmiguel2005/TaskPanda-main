@@ -6,15 +6,21 @@ const { ensureBookingConversation, appendBookingSystemMessage } = require("../se
 const { sendPushNotification } = require("../services/oneSignal");
 const {
   calculateDistanceKm,
+  calculateDurationAdjustedTaskOffer,
   calculateTravelFare,
   calculateTravelFeeDiscount,
   calculateTotalPrice,
 } = require("../services/bookingPricing");
 const { awardSettledBookingStamp, restoreVoucherForBooking } = require("../services/rewards");
 const { getGlobalSettings } = require("../services/systemSettings");
+const { searchServiceLocations, reverseGeocodeServiceLocation } = require("../services/geocoder");
 const {
   canArriveForSameDayBooking,
+  DEFAULT_ESTIMATED_DURATION_MINUTES,
+  getBookingOccupiedWindow,
   getBookingRequestExpiration,
+  hasScheduleConflict,
+  isValidEstimatedDurationMinutes,
 } = require("../services/bookingLifecycle");
 
 const TIME_SLOTS = new Set(["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"]);
@@ -49,6 +55,10 @@ const STATUS_LABELS = {
 
 const GRACE_PERIOD_MS = 10 * 60 * 1000;
 const CASH_SETTLEMENT_GRACE_MS = 48 * 60 * 60 * 1000;
+const ACTIVE_BOOKING_STATUSES = [
+  "pending", "approved", "en_route", "in_progress", "cancel_requested",
+  "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested",
+];
 
 async function notifyBooking(options) {
   try {
@@ -109,6 +119,7 @@ function serializeBooking(booking) {
   const serviceDate = booking.serviceDate || booking.date || booking.createdAt;
   const timeSlot = booking.timeSlot || booking.time || "";
   const offeredPrice = booking.offeredPrice ?? booking.offer ?? 0;
+  const estimatedDurationMinutes = booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES;
   const travelDistanceKm = booking.travelDistanceKm ?? null;
   const travelFee = booking.travelFee ?? 0;
   const tipAmount = booking.tipAmount ?? 0;
@@ -133,6 +144,7 @@ function serializeBooking(booking) {
     description: repairDescription,
     repairDescription,
     address: booking.address || "Address to be confirmed",
+    serviceGeoLocation: booking.serviceGeoLocation || null,
     date: new Date(serviceDate).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" }),
     serviceDate: new Date(serviceDate).toISOString(),
     time: timeSlot,
@@ -141,6 +153,7 @@ function serializeBooking(booking) {
     offer: offeredPrice,
     offeredPrice,
     taskOffer: offeredPrice,
+    estimatedDurationMinutes,
     travelDistanceKm,
     travelFee,
     travelFeeBeforeDiscount: booking.travelFeeBeforeDiscount ?? travelFee,
@@ -196,9 +209,45 @@ function serializeBooking(booking) {
       requestedAt: update.requestedAt,
       respondedAt: update.respondedAt || null,
     })),
+    counterOffers: (booking.counterOffers || []).map((offer) => ({
+      id: String(offer._id),
+      proposedBy: offer.proposedBy,
+      proposedPrice: offer.proposedPrice ?? offeredPrice,
+      counterOfferDurationMinutes: offer.counterOfferDurationMinutes ?? estimatedDurationMinutes,
+      note: offer.note || "",
+      status: offer.status,
+      createdAt: offer.createdAt,
+      respondedAt: offer.respondedAt || null,
+    })),
     createdAt: booking.createdAt,
     updatedAt: booking.updatedAt,
   };
+}
+
+function normalizeServiceGeoLocation(value) {
+  let location = value;
+  if (typeof location === "string") {
+    try {
+      location = JSON.parse(location);
+    } catch {
+      return null;
+    }
+  }
+  const coordinates = location?.coordinates;
+  if (!Array.isArray(coordinates) || coordinates.length !== 2) return null;
+  if (coordinates.some((coordinate) =>
+    (typeof coordinate !== "number" && typeof coordinate !== "string") ||
+    (typeof coordinate === "string" && !/^-?\d+(?:\.\d+)?$/.test(coordinate.trim()))
+  )) return null;
+  const longitude = Number(coordinates[0]);
+  const latitude = Number(coordinates[1]);
+  if (
+    !Number.isFinite(longitude) ||
+    Math.abs(longitude) > 180 ||
+    !Number.isFinite(latitude) ||
+    Math.abs(latitude) > 90
+  ) return null;
+  return { type: "Point", coordinates: [longitude, latitude] };
 }
 
 const populatePaths = [
@@ -280,25 +329,46 @@ async function handleProviderAvailability(req, res) {
   if (req.user.role !== "client") return res.status(403).json({ message: "Only clients can check provider availability." });
 
   try {
-    const travelQuote = await getBookingTravelQuote(req.user, providerId);
+    const hasLatitude = req.query.latitude !== undefined;
+    const hasLongitude = req.query.longitude !== undefined;
+    if (hasLatitude !== hasLongitude) {
+      return res.status(400).json({ message: "Choose a valid service location pin." });
+    }
+    const serviceGeoLocation = hasLatitude
+      ? normalizeServiceGeoLocation({
+        type: "Point",
+        coordinates: [req.query.longitude, req.query.latitude],
+      })
+      : null;
+    if (hasLatitude && !serviceGeoLocation) {
+      return res.status(400).json({ message: "Choose a valid service location pin." });
+    }
+
+    const travelQuote = await getBookingTravelQuote(req.user, providerId, null, serviceGeoLocation);
     if (travelQuote.errorStatus) return res.status(travelQuote.errorStatus).json({ message: travelQuote.message });
     const provider = travelQuote.provider;
     if (!provider) return res.status(404).json({ message: "That provider is no longer available." });
 
     const startOfToday = new Date();
     startOfToday.setUTCHours(0, 0, 0, 0);
-    const activeStatuses = ["pending", "approved", "en_route", "in_progress", "cancel_requested", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested"];
     const bookings = await Booking.find({
       providerId: provider._id,
       serviceDate: mongoose.trusted({ $gte: startOfToday }),
-      status: mongoose.trusted({ $in: activeStatuses }),
-    }).select("serviceDate timeSlot").lean();
+      status: mongoose.trusted({ $in: ACTIVE_BOOKING_STATUSES }),
+    }).select("_id serviceDate timeSlot estimatedDurationMinutes").lean();
 
     return res.json({
-      bookedSlots: bookings.map((booking) => ({
-        date: new Date(booking.serviceDate).toISOString().slice(0, 10),
-        timeSlot: booking.timeSlot,
-      })),
+      bookedSlots: bookings.map((booking) => {
+        const occupiedWindow = getBookingOccupiedWindow(booking);
+        return {
+          id: String(booking._id),
+          date: new Date(booking.serviceDate).toISOString().slice(0, 10),
+          timeSlot: booking.timeSlot,
+          estimatedDurationMinutes: booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
+          startAt: occupiedWindow?.startAt.toISOString() || null,
+          occupiedUntil: occupiedWindow?.endAt.toISOString() || null,
+        };
+      }),
       travelDistanceKm: travelQuote.travelDistanceKm,
       travelFee: travelQuote.travelFee,
       travelBaseFee: travelQuote.travelBaseFee,
@@ -310,7 +380,39 @@ async function handleProviderAvailability(req, res) {
   }
 }
 
-async function getBookingTravelQuote(client, providerId, settings) {
+async function handleServiceLocationSearch(req, res) {
+  if (req.user.role !== "client") return res.status(403).json({ message: "Only clients can search for service locations." });
+  const query = String(req.query.q || "").trim();
+  if (query.length < 3 || query.length > 200) {
+    return res.status(400).json({ message: "Enter an address between 3 and 200 characters." });
+  }
+  try {
+    const results = await searchServiceLocations(query);
+    return res.json({ results });
+  } catch (error) {
+    if (error instanceof TypeError) return res.status(400).json({ message: error.message });
+    console.error("Service location search error:", error);
+    return res.status(502).json({ message: "Address search is temporarily unavailable. Try again or place the pin on the map." });
+  }
+}
+
+async function handleServiceLocationReverseLookup(req, res) {
+  if (req.user.role !== "client") return res.status(403).json({ message: "Only clients can look up service locations." });
+  const { latitude, longitude } = req.query;
+  if (latitude === undefined || longitude === undefined) {
+    return res.status(400).json({ message: "Choose a valid map location." });
+  }
+  try {
+    const result = await reverseGeocodeServiceLocation(latitude, longitude);
+    return res.json({ result });
+  } catch (error) {
+    if (error instanceof TypeError) return res.status(400).json({ message: error.message });
+    console.error("Service location reverse lookup error:", error);
+    return res.status(502).json({ message: "The address for this pin could not be found. You can enter it manually." });
+  }
+}
+
+async function getBookingTravelQuote(client, providerId, settings, serviceGeoLocation = null) {
   const provider = await User.findOne({
     _id: providerId,
     role: "provider",
@@ -320,9 +422,10 @@ async function getBookingTravelQuote(client, providerId, settings) {
   }).select("_id geoLocation");
   if (!provider) return { errorStatus: 404, message: "That provider is no longer available." };
 
-  const calculatedDistanceKm = calculateDistanceKm(client.geoLocation?.coordinates, provider.geoLocation?.coordinates);
+  const originCoordinates = serviceGeoLocation?.coordinates || client.geoLocation?.coordinates;
+  const calculatedDistanceKm = calculateDistanceKm(originCoordinates, provider.geoLocation?.coordinates);
   if (calculatedDistanceKm == null) {
-    return { errorStatus: 400, message: "A map location is required for both accounts to calculate the travel fare." };
+    return { errorStatus: 400, message: "A map location is required for the service address and provider to calculate the travel fare." };
   }
 
   const travelDistanceKm = Math.round(calculatedDistanceKm * 100) / 100;
@@ -362,10 +465,20 @@ async function handleCreateBooking(req, res) {
   const providerId = String(req.body.providerId || req.body.provider || "").trim();
   const repairDescription = String(req.body.repairDescription || req.body.description || req.body.task || req.body.serviceDetails || "").trim();
   const address = String(req.body.address || req.body.location || "").trim();
+  const requestedServiceGeoLocation = normalizeServiceGeoLocation(req.body.serviceGeoLocation);
+  if (req.body.serviceGeoLocation && !requestedServiceGeoLocation) {
+    return res.status(400).json({ message: "Choose a valid service location pin." });
+  }
+  if (requestedServiceGeoLocation && !address) {
+    return res.status(400).json({ message: "Add the exact address for the selected service location." });
+  }
+  const serviceGeoLocation = requestedServiceGeoLocation || req.user.geoLocation || null;
+  const serviceAddress = address || String(req.user.address || "").trim();
   const serviceDate = parseServiceDate(req.body.serviceDate || req.body.date || req.body.service_details?.date || "");
   const timeSlot = String(req.body.timeSlot || req.body.time || req.body.service_details?.time || "").trim();
   const urgency = String(req.body.urgency || "Flexible").trim();
   const offeredPrice = Number(req.body.offeredPrice ?? req.body.offerPrice ?? req.body.offer ?? req.body.price ?? 0);
+  const estimatedDurationMinutes = Number(req.body.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES);
   const tipAmount = Number(req.body.tipAmount ?? 0);
   const voucherId = String(req.body.voucherId || "").trim();
   const paymentMethod = String(req.body.paymentMethod || "cash").trim().toLowerCase();
@@ -378,6 +491,9 @@ async function handleCreateBooking(req, res) {
   if (!serviceDate) return res.status(400).json({ message: "Choose a valid service date." });
   if (!TIME_SLOTS.has(timeSlot)) return res.status(400).json({ message: "Choose an available time slot." });
   if (!Number.isFinite(offeredPrice) || offeredPrice < 100) return res.status(400).json({ message: "Your offer must be at least PHP 100." });
+  if (!isValidEstimatedDurationMinutes(estimatedDurationMinutes)) return res.status(400).json({ message: "Choose a task duration from 15 minutes to 12 hours in 15-minute increments." });
+  const adjustedTaskOffer = calculateDurationAdjustedTaskOffer(offeredPrice, estimatedDurationMinutes);
+  if (adjustedTaskOffer < 100) return res.status(400).json({ message: "The duration-adjusted task offer must be at least PHP 100." });
   if (!Number.isFinite(tipAmount) || tipAmount < 0 || tipAmount > 1000000) return res.status(400).json({ message: "Enter a valid tip amount." });
   if (voucherId && !mongoose.isValidObjectId(voucherId)) return res.status(400).json({ message: "Choose a valid travel-fee voucher." });
   if (paymentMethod !== "cash") return res.status(400).json({ message: "Cash on completion is the only supported payment method." });
@@ -386,7 +502,7 @@ async function handleCreateBooking(req, res) {
 
   try {
     await processExpiredBookingRequests();
-    const travelQuote = await getBookingTravelQuote(req.user, providerId, settings);
+    const travelQuote = await getBookingTravelQuote(req.user, providerId, settings, serviceGeoLocation);
     if (travelQuote.errorStatus) return res.status(travelQuote.errorStatus).json({ message: travelQuote.message });
     const { provider, travelDistanceKm } = travelQuote;
     const travelFeeBeforeDiscount = travelQuote.travelFee;
@@ -434,11 +550,20 @@ async function handleCreateBooking(req, res) {
     const serviceDayEnd = new Date(serviceDayStart);
     serviceDayEnd.setUTCDate(serviceDayEnd.getUTCDate() + 1);
 
+    const existingBookings = await findProviderBookingsForSchedule(provider._id, serviceDate);
+    if (hasScheduleConflict({
+      serviceDate,
+      timeSlot,
+      estimatedDurationMinutes,
+    }, existingBookings)) {
+      return res.status(409).json({ message: "That time overlaps another provider booking. Please choose a different time or shorter duration." });
+    }
+
     const existingBooking = await Booking.findOne({
       providerId: provider._id,
       serviceDate: mongoose.trusted({ $gte: serviceDayStart, $lt: serviceDayEnd }),
       timeSlot,
-      status: mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested"] }),
+      status: mongoose.trusted({ $in: ACTIVE_BOOKING_STATUSES }),
     });
 
     if (existingBooking) {
@@ -484,10 +609,12 @@ async function handleCreateBooking(req, res) {
         clientId: req.user._id,
         providerId: provider._id,
         repairDescription,
-        address,
+        address: serviceAddress,
+        serviceGeoLocation,
         serviceDate,
         timeSlot,
-        offeredPrice,
+        estimatedDurationMinutes,
+        offeredPrice: adjustedTaskOffer,
         travelDistanceKm,
         travelBaseFee: travelQuote.travelBaseFee,
         travelFeePerKm: travelQuote.travelFeePerKm,
@@ -677,7 +804,7 @@ async function handleUpdateBookingStatus(req, res) {
         _id: bookingId,
         providerId: req.user._id,
         status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
-      }).select("serviceDate timeSlot travelDistanceKm requestExpiresAt");
+      }).select("serviceDate timeSlot travelDistanceKm requestExpiresAt estimatedDurationMinutes");
       if (!pendingBooking) return res.status(404).json({ message: "Booking not found or it has already been updated." });
       now = new Date();
       if (pendingBooking.requestExpiresAt && pendingBooking.requestExpiresAt <= now) {
@@ -702,6 +829,10 @@ async function handleUpdateBookingStatus(req, res) {
         now
       )) {
         return res.status(409).json({ message: "Arrival time missed—please request a schedule adjustment" });
+      }
+      const scheduleBookings = await findProviderBookingsForSchedule(req.user._id, pendingBooking.serviceDate, pendingBooking._id);
+      if (hasScheduleConflict(pendingBooking, scheduleBookings, pendingBooking._id)) {
+        return res.status(409).json({ message: "This request overlaps another provider booking and cannot be accepted at this duration." });
       }
       filter.$or = mongoose.trusted([
         { requestExpiresAt: mongoose.trusted({ $exists: false }) },
@@ -1186,18 +1317,28 @@ async function processCashSettlementFallbacks() {
   }
 }
 
-async function hasConflictingSlot(providerId, serviceDate, timeSlot, excludeBookingId) {
+async function hasConflictingSlot(providerId, serviceDate, timeSlot, excludeBookingId, estimatedDurationMinutes = DEFAULT_ESTIMATED_DURATION_MINUTES) {
+  const bookings = await findProviderBookingsForSchedule(providerId, serviceDate, excludeBookingId);
+  return hasScheduleConflict({
+    serviceDate,
+    timeSlot,
+    estimatedDurationMinutes,
+  }, bookings, excludeBookingId);
+}
+
+async function findProviderBookingsForSchedule(providerId, serviceDate, excludeBookingId = "") {
   const dayStart = new Date(serviceDate);
   dayStart.setUTCHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
-  return Booking.exists({
+  const rangeStart = new Date(dayStart);
+  rangeStart.setUTCDate(rangeStart.getUTCDate() - 1);
+  const rangeEnd = new Date(dayStart);
+  rangeEnd.setUTCDate(rangeEnd.getUTCDate() + 2);
+  return Booking.find({
     providerId,
     _id: mongoose.trusted({ $ne: excludeBookingId || null }),
-    serviceDate: mongoose.trusted({ $gte: dayStart, $lt: dayEnd }),
-    timeSlot,
-    status: mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested"] }),
-  });
+    serviceDate: mongoose.trusted({ $gte: rangeStart, $lt: rangeEnd }),
+    status: mongoose.trusted({ $in: ACTIVE_BOOKING_STATUSES }),
+  }).select("_id serviceDate timeSlot estimatedDurationMinutes").lean();
 }
 
 async function handleProviderUpdate(req, res) {
@@ -1222,7 +1363,13 @@ async function handleProviderUpdate(req, res) {
     if (isReschedule && booking.providerUpdates.some((update) => update.type === "reschedule" && update.status === "pending")) {
       return res.status(409).json({ message: "Wait for the client to respond to the current time-change request first." });
     }
-    if (isReschedule && await hasConflictingSlot(booking.providerId, proposedServiceDate, proposedTimeSlot, booking._id)) {
+    if (isReschedule && await hasConflictingSlot(
+      booking.providerId,
+      proposedServiceDate,
+      proposedTimeSlot,
+      booking._id,
+      booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES
+    )) {
       return res.status(409).json({ message: "That proposed time slot is no longer available." });
     }
     booking.providerUpdates.push({
@@ -1278,7 +1425,13 @@ async function handleProviderUpdateResponse(req, res) {
     }
     if (action === "accept") {
       if (booking.status !== "approved") return res.status(409).json({ message: "The booking has already started and can no longer be rescheduled." });
-      if (await hasConflictingSlot(booking.providerId, update.proposedServiceDate, update.proposedTimeSlot, booking._id)) {
+      if (await hasConflictingSlot(
+        booking.providerId,
+        update.proposedServiceDate,
+        update.proposedTimeSlot,
+        booking._id,
+        booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES
+      )) {
         return res.status(409).json({ message: "That proposed time slot is no longer available." });
       }
       booking.serviceDate = update.proposedServiceDate;
@@ -1306,37 +1459,71 @@ async function handleCreateCounterOffer(req, res) {
   const note = String(req.body.note || "").trim();
   const hasPrice = proposedPriceValue !== "";
   const proposedPrice = hasPrice ? Number(proposedPriceValue) : undefined;
+  const requestedDuration = req.body.counterOfferDurationMinutes;
 
   if (!mongoose.isValidObjectId(bookingId)) return res.status(400).json({ message: "Choose a valid booking." });
   if (!["client", "provider"].includes(req.user.role)) return res.status(403).json({ message: "Only booking participants can negotiate booking terms." });
   if (!hasPrice) return res.status(400).json({ message: "Enter a task offer amount to counter the booking." });
   if (proposedDateValue || proposedTimeSlot || proposedRepairDescription) {
-    return res.status(400).json({ message: "Counter-offers can only change the task offer amount." });
+    return res.status(400).json({ message: "Counter-offers can only change the task price and, for providers, task duration." });
   }
+  if (req.user.role === "client" && requestedDuration != null) return res.status(400).json({ message: "Only providers can propose a different task duration." });
   if (hasPrice && (!Number.isFinite(proposedPrice) || proposedPrice < 100)) return res.status(400).json({ message: "Counter-offer price must be at least PHP 100." });
   if (note.length > 500) return res.status(400).json({ message: "The counter-offer note exceeds the allowed length." });
 
   try {
     const participantField = req.user.role === "client" ? "clientId" : "providerId";
-    const booking = await Booking.findOne({ _id: bookingId, [participantField]: req.user._id });
+    let booking = await Booking.findOne({ _id: bookingId, [participantField]: req.user._id });
     if (!booking) return res.status(404).json({ message: "Booking not found." });
     if (booking.status !== "pending") return res.status(409).json({ message: "Terms can only be negotiated before the booking is accepted." });
     if (booking.counterOffers.some((offer) => offer.status === "pending")) {
       return res.status(409).json({ message: "Wait for the other participant to respond to the current offer." });
     }
-    booking.counterOffers.push({
+    const currentDuration = booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES;
+    const counterOfferDurationMinutes = req.user.role === "provider"
+      ? Number(requestedDuration ?? currentDuration)
+      : undefined;
+    if (counterOfferDurationMinutes != null && !isValidEstimatedDurationMinutes(counterOfferDurationMinutes)) {
+      return res.status(400).json({ message: "Choose a counter-offer duration from 15 minutes to 12 hours in 15-minute increments." });
+    }
+    const candidateDuration = counterOfferDurationMinutes ?? currentDuration;
+    const scheduleBookings = await findProviderBookingsForSchedule(booking.providerId, booking.serviceDate, booking._id);
+    if (hasScheduleConflict({
+      serviceDate: booking.serviceDate,
+      timeSlot: booking.timeSlot,
+      estimatedDurationMinutes: candidateDuration,
+    }, scheduleBookings, booking._id)) {
+      return res.status(409).json({ message: "That task duration overlaps another provider booking. Shorten the duration or choose a different schedule." });
+    }
+
+    const counterOfferId = new mongoose.Types.ObjectId();
+    const pendingOffer = {
+      _id: counterOfferId,
       proposedBy: req.user.role,
       proposedPrice,
+      ...(counterOfferDurationMinutes == null ? {} : { counterOfferDurationMinutes }),
       note,
       status: "pending",
       createdAt: new Date(),
-    });
-    const offer = booking.counterOffers[booking.counterOffers.length - 1];
-    await booking.save();
+    };
+    const updatedBooking = await Booking.findOneAndUpdate(
+      {
+        _id: booking._id,
+        [participantField]: req.user._id,
+        status: "pending",
+        counterOffers: mongoose.trusted({ $not: mongoose.trusted({ $elemMatch: { status: "pending" } }) }),
+      },
+      { $push: { counterOffers: pendingOffer } },
+      { new: true, runValidators: true }
+    );
+    if (!updatedBooking) return res.status(409).json({ message: "Another counter-offer is already awaiting a response. Refresh the booking and try again." });
+    booking.counterOffers = updatedBooking.counterOffers;
+    const offer = booking.counterOffers.id(counterOfferId);
     const eventData = {
       counterOfferId: String(offer._id),
       proposedBy: offer.proposedBy,
       proposedPrice: offer.proposedPrice ?? booking.offeredPrice,
+      counterOfferDurationMinutes: offer.counterOfferDurationMinutes ?? booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
       note: offer.note || "",
       status: "pending",
     };
@@ -1375,7 +1562,7 @@ async function handleRespondToCounterOffer(req, res) {
 
   try {
     const participantField = req.user.role === "client" ? "clientId" : "providerId";
-    const booking = await Booking.findOne({ _id: bookingId, [participantField]: req.user._id });
+    let booking = await Booking.findOne({ _id: bookingId, [participantField]: req.user._id });
     if (!booking) return res.status(404).json({ message: "Booking not found." });
     if (booking.status !== "pending") return res.status(409).json({ message: "This booking is no longer open for negotiation." });
     const offer = booking.counterOffers.id(counterOfferId);
@@ -1384,17 +1571,52 @@ async function handleRespondToCounterOffer(req, res) {
 
     const now = new Date();
     if (action === "accept") {
-      if (offer.proposedPrice != null) booking.offeredPrice = offer.proposedPrice;
-      booking.status = "approved";
-      booking.statusHistory.push({ status: "approved", at: now });
-      offer.status = "accepted";
+      const acceptedDuration = offer.counterOfferDurationMinutes
+        ?? booking.estimatedDurationMinutes
+        ?? DEFAULT_ESTIMATED_DURATION_MINUTES;
+      const scheduleBookings = await findProviderBookingsForSchedule(booking.providerId, booking.serviceDate, booking._id);
+      if (hasScheduleConflict({
+        serviceDate: booking.serviceDate,
+        timeSlot: booking.timeSlot,
+        estimatedDurationMinutes: acceptedDuration,
+      }, scheduleBookings, booking._id)) {
+        return res.status(409).json({ message: "That counter-offer duration now overlaps another provider booking. The offer cannot be accepted." });
+      }
+      const acceptedBooking = await Booking.findOneAndUpdate(
+        {
+          _id: booking._id,
+          [participantField]: req.user._id,
+          status: "pending",
+          counterOffers: mongoose.trusted({
+            $elemMatch: {
+              _id: offer._id,
+              status: "pending",
+              proposedBy: mongoose.trusted({ $ne: req.user.role }),
+            },
+          }),
+        },
+        {
+          $set: {
+            offeredPrice: offer.proposedPrice ?? booking.offeredPrice,
+            estimatedDurationMinutes: acceptedDuration,
+            status: "approved",
+            "counterOffers.$.status": "accepted",
+            "counterOffers.$.respondedAt": now,
+          },
+          $push: { statusHistory: { status: "approved", at: now } },
+        },
+        { new: true, runValidators: true }
+      );
+      if (!acceptedBooking) return res.status(409).json({ message: "This counter-offer has already been answered or the booking has changed." });
+      booking = acceptedBooking;
     } else {
       offer.status = "rejected";
+      offer.respondedAt = now;
+      await booking.save();
     }
-    offer.respondedAt = now;
-    await booking.save();
+    const resolvedOffer = booking.counterOffers.id(counterOfferId);
     const bookingIdValue = String(booking._id);
-    const proposerRole = offer.proposedBy;
+    const proposerRole = resolvedOffer.proposedBy;
     const proposerId = proposerRole === "provider" ? booking.providerId : booking.clientId;
     await notifyBooking({
       userIds: [String(proposerId)],
@@ -1404,14 +1626,15 @@ async function handleRespondToCounterOffer(req, res) {
       data: { event: `booking.counter_offer_${action === "accept" ? "accepted" : "declined"}`, bookingId: bookingIdValue, counterOfferId: String(offer._id) },
     });
     const eventData = {
-      counterOfferId: String(offer._id),
-      proposedBy: offer.proposedBy,
-      proposedPrice: offer.proposedPrice ?? booking.offeredPrice,
+      counterOfferId: String(resolvedOffer._id),
+      proposedBy: resolvedOffer.proposedBy,
+      proposedPrice: resolvedOffer.proposedPrice ?? booking.offeredPrice,
+      counterOfferDurationMinutes: resolvedOffer.counterOfferDurationMinutes ?? booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
       proposedServiceDate: booking.serviceDate,
       proposedTimeSlot: booking.timeSlot,
       proposedRepairDescription: booking.repairDescription,
-      note: offer.note || "",
-      status: offer.status,
+      note: resolvedOffer.note || "",
+      status: resolvedOffer.status,
     };
     await appendBookingSystemMessage(
       booking,
@@ -1430,6 +1653,7 @@ async function handleRespondToCounterOffer(req, res) {
           resurfaced: true,
           repairDescription: booking.repairDescription,
           offeredPrice: booking.offeredPrice,
+          estimatedDurationMinutes: booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
           travelDistanceKm: booking.travelDistanceKm ?? null,
           travelFee: booking.travelFee || 0,
           tipAmount: booking.tipAmount || 0,
@@ -1463,4 +1687,4 @@ async function processExpiredBookingRequests() {
   return result.modifiedCount;
 }
 
-module.exports = { handleListBookings, handleProviderAvailability, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks, processExpiredBookingRequests };
+module.exports = { handleListBookings, handleProviderAvailability, handleServiceLocationSearch, handleServiceLocationReverseLookup, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks, processExpiredBookingRequests };

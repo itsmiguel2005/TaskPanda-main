@@ -1,4 +1,5 @@
 import MessagePhoto from "./MessagePhoto.jsx";
+import { DEFAULT_ESTIMATED_DURATION_MINUTES, formatEstimatedDuration } from "../utils/bookingDuration.js";
 
 function formatPrice(value) {
   const amount = Number(value || 0);
@@ -105,6 +106,9 @@ function renderReviewStars(rating) {
 
 export default function SystemMessageCard({ message, role, actorName, bookingPricing, requestHeaders, onOpen, onRespondToOffer, onRespondToCancellation, onBookingRequestAction, isBookingRequestPending = false, isCancellationPending = false, isActionSubmitting = false }) {
   const event = message.eventData || {};
+  const requestDuration = bookingPricing?.estimatedDurationMinutes
+    ?? event.estimatedDurationMinutes
+    ?? DEFAULT_ESTIMATED_DURATION_MINUTES;
   const presentation = getEventPresentation(message);
   const cardTones = {
     slate: "border-slate-200",
@@ -156,6 +160,7 @@ export default function SystemMessageCard({ message, role, actorName, bookingPri
           <p className="mt-2 text-sm font-bold leading-relaxed text-amber-950">{event.repairDescription || message.text}</p>
           <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-medium text-amber-800">
             {event.serviceDate && <span className="rounded-full bg-white px-2 py-1 ring-1 ring-amber-200">{formatAppointment(event.serviceDate, event.timeSlot)}</span>}
+            <span className="rounded-full bg-white px-2 py-1 ring-1 ring-amber-200">Estimated duration · {formatEstimatedDuration(requestDuration)}</span>
             <span className="rounded-full bg-white px-2 py-1 ring-1 ring-amber-200">{event.paymentMethod === "cash" ? "Cash on completion" : String(event.paymentMethod || "Payment arranged")}</span>
           </div>
           <dl className="mt-3 space-y-1.5 border-t border-dashed border-amber-300 pt-2.5 text-xs text-amber-950">
@@ -173,6 +178,7 @@ export default function SystemMessageCard({ message, role, actorName, bookingPri
               <div>
                 <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Proposed task price</span>
                 <span className="mt-1 block text-lg font-extrabold tabular-nums text-slate-950">{formatPrice(event.proposedPrice)}</span>
+                <span className="mt-1 block text-xs font-medium text-slate-600">Estimated duration · {formatEstimatedDuration(event.counterOfferDurationMinutes ?? bookingPricing?.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES)}</span>
               </div>
               {event.status !== "pending" && <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold capitalize ${event.status === "accepted" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>Offer {event.status}</span>}
             </div>

@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
-const { getBookingRequestExpiration } = require("../services/bookingLifecycle");
+const { DEFAULT_ESTIMATED_DURATION_MINUTES, getBookingRequestExpiration } = require("../services/bookingLifecycle");
 
 const PAGE_SIZE = 25;
 const OVERRIDE_STATUSES = Object.freeze({
@@ -80,8 +80,10 @@ function serializeAdminBooking(booking) {
     client: participant(booking.clientId, "Client"),
     provider: participant(booking.providerId, "Provider"),
     address: booking.address || "",
+    serviceGeoLocation: booking.serviceGeoLocation || null,
     serviceDate: booking.serviceDate || null,
     timeSlot: booking.timeSlot || "",
+    estimatedDurationMinutes: booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
     createdAt: booking.createdAt || null,
     updatedAt: booking.updatedAt || null,
     photoUrl: booking.photoUrl || "",

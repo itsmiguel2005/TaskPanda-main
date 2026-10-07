@@ -673,11 +673,14 @@ async function handleCompleteRegistration(req, res) {
   if (!mobileNumber) {
     return res.status(400).json({ message: "Enter a valid Philippine mobile number, such as +63 9XX XXX XXXX." });
   }
-  const address = formatAddress(req.body.address, barangay, city, province);
-  let geoLocation = address ? await geocodeAddress(address, { barangay, city, province }) : null;
-  geoLocation ||= normalizeGeoLocation(req.body.geoLocation);
-  if (req.body.geoLocation != null && !normalizeGeoLocation(req.body.geoLocation) && !geoLocation) {
+  const address = String(req.body.address || formatAddress("", barangay, city, province)).trim();
+  let geoLocation = normalizeGeoLocation(req.body.geoLocation);
+  if (req.body.geoLocation != null && !geoLocation) {
     return res.status(400).json({ message: "Choose a valid map location." });
+  }
+  geoLocation ||= address ? await geocodeAddress(address, { barangay, city, province }) : null;
+  if (!geoLocation) {
+    return res.status(400).json({ message: "Pin your exact location on the map before completing registration." });
   }
   const dateOfBirth = String(req.body.dateOfBirth || "").trim();
 

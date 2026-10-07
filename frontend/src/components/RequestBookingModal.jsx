@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { hasScheduleConflict } from "../utils/bookingArrival.js";
+import { DEFAULT_ESTIMATED_DURATION_MINUTES, formatEstimatedDuration } from "../utils/bookingDuration.js";
+import ServiceLocationPicker from "./ServiceLocationPicker.jsx";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -10,6 +13,8 @@ const MONTHS = [
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const TIME_SLOTS = ["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"];
 const TIP_PRESETS = [0, 20, 50, 100];
+const MIN_ESTIMATED_DURATION_MINUTES = 15;
+const MAX_ESTIMATED_DURATION_MINUTES = 720;
 
 function formatPhpAmount(amount) {
   return `₱${Number(amount || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
@@ -17,6 +22,15 @@ function formatPhpAmount(amount) {
 
 function roundCurrency(amount) {
   return Math.round((amount + Number.EPSILON) * 100) / 100;
+}
+
+function getServiceLocationKey(geoLocation) {
+  const coordinates = geoLocation?.coordinates;
+  if (!Array.isArray(coordinates) || coordinates.length !== 2) return "";
+  const longitude = Number(coordinates[0]);
+  const latitude = Number(coordinates[1]);
+  if (!Number.isFinite(longitude) || Math.abs(longitude) > 180 || !Number.isFinite(latitude) || Math.abs(latitude) > 90) return "";
+  return `${longitude},${latitude}`;
 }
 
 function ProviderAvatar({ name, profileImage }) {
@@ -181,7 +195,7 @@ function CalendarPicker({ selectedDate, onSelect, onClose }) {
 
 export default function RequestBookingModal({ provider, onClose, onSubmit, initialValues = {} }) {
   const navigate = useNavigate();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [taskDescription, setTaskDescription] = useState(initialValues.task || "");
   const [step, setStep] = useState(1);
   const [selectedDate, setSelectedDate] = useState("");
@@ -190,12 +204,18 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const [availabilityStatus, setAvailabilityStatus] = useState("loading");
   const [availabilityRetry, setAvailabilityRetry] = useState(0);
   const [travelQuote, setTravelQuote] = useState(null);
+  const [travelQuoteLocationKey, setTravelQuoteLocationKey] = useState("");
   const [travelQuoteStatus, setTravelQuoteStatus] = useState("loading");
   const [travelQuoteError, setTravelQuoteError] = useState("");
   const [travelQuoteRetry, setTravelQuoteRetry] = useState(0);
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [urgency, setUrgency] = useState(initialValues.urgency || "Flexible");
   const [offer, setOffer] = useState(initialValues.offer == null ? "" : String(initialValues.offer));
+  const [duration, setDuration] = useState(String(initialValues.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES));
+  const [serviceLocation, setServiceLocation] = useState(() => ({
+    address: initialValues.address || user?.address || "",
+    geoLocation: initialValues.serviceGeoLocation || user?.geoLocation || null,
+  }));
   const [tipAmount, setTipAmount] = useState(String(initialValues.tipAmount ?? 0));
   const [rewards, setRewards] = useState({ vouchers: [] });
   const [rewardsStatus, setRewardsStatus] = useState("loading");
@@ -212,9 +232,23 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [photoPreviews, setPhotoPreviews] = useState([]);
   const fileInputRef = useRef(null);
+  const estimatedDurationMinutes = Number(duration);
+  const durationIsValid = Number.isInteger(estimatedDurationMinutes)
+    && estimatedDurationMinutes >= MIN_ESTIMATED_DURATION_MINUTES
+    && estimatedDurationMinutes <= MAX_ESTIMATED_DURATION_MINUTES
+    && estimatedDurationMinutes % MIN_ESTIMATED_DURATION_MINUTES === 0;
+  const serviceLocationKey = getServiceLocationKey(serviceLocation.geoLocation);
+  const isTimeSlotBooked = (date, time, requestedDuration = estimatedDurationMinutes) => hasScheduleConflict({
+    serviceDate: date ? `${date}T00:00:00.000Z` : "",
+    timeSlot: time,
+    estimatedDurationMinutes: requestedDuration,
+  }, bookedSlots);
   const requestExpiresInSeconds = submittedBooking?.requestExpiresAt
     ? Math.max(0, Math.ceil((new Date(submittedBooking.requestExpiresAt).getTime() - countdownNow.getTime()) / 1000))
     : null;
+  const savedDurationMinutes = Number(submittedBooking?.estimatedDurationMinutes);
+  const durationWasSaved = Number.isInteger(savedDurationMinutes)
+    && savedDurationMinutes === estimatedDurationMinutes;
 
   useEffect(() => {
     const nextPreviews = selectedFiles.map((file) => URL.createObjectURL(file));
@@ -299,7 +333,14 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
       if (isLoadingAvailability) return;
       isLoadingAvailability = true;
       try {
-        const response = await fetch(`/api/bookings/availability/${provider._id}`, {
+        const query = new URLSearchParams();
+        if (serviceLocationKey) {
+          const [longitude, latitude] = serviceLocationKey.split(",");
+          query.set("longitude", longitude);
+          query.set("latitude", latitude);
+        }
+        const queryString = query.size ? `?${query}` : "";
+        const response = await fetch(`/api/bookings/availability/${provider._id}${queryString}`, {
           headers: { Authorization: `Bearer ${token}` },
           signal: controller.signal,
         });
@@ -322,6 +363,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
             travelBaseFee: data.travelBaseFee,
             travelFeePerKm: data.travelFeePerKm,
           });
+          setTravelQuoteLocationKey(serviceLocationKey);
           setTravelQuoteStatus("loaded");
           setBookedSlots(Array.isArray(data.bookedSlots) ? data.bookedSlots : []);
           setAvailabilityStatus("loaded");
@@ -343,7 +385,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
       controller.abort();
       window.clearInterval(intervalId);
     };
-  }, [provider?._id, token, availabilityRetry, travelQuoteRetry]);
+  }, [provider?._id, token, availabilityRetry, travelQuoteRetry, serviceLocationKey]);
 
   useEffect(() => {
     if (isPastTimeSlot(selectedDate, selectedTime, currentTime)) setSelectedTime("");
@@ -351,11 +393,11 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
 
   useEffect(() => {
     if (availabilityStatus !== "loaded" || !selectedDate || !selectedTime) return;
-    if (bookedSlots.some((slot) => slot.date === selectedDate && slot.timeSlot === selectedTime)) {
+    if (!durationIsValid || isTimeSlotBooked(selectedDate, selectedTime, estimatedDurationMinutes)) {
       setSelectedTime("");
-      setFormError("That time slot was just booked. Please choose another time.");
+      setFormError("That duration overlaps another provider booking. Choose a different time or shorter duration.");
     }
-  }, [availabilityStatus, bookedSlots, selectedDate, selectedTime]);
+  }, [availabilityStatus, bookedSlots, selectedDate, selectedTime, estimatedDurationMinutes, durationIsValid]);
 
   if (!provider) return null;
 
@@ -364,7 +406,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const travelDistanceKm = travelQuote?.travelDistanceKm ?? null;
   const travelFee = travelQuote?.travelFee ?? 0;
   const travelFeeDescription = travelQuote
-    ? `${formatPhpAmount(travelQuote.travelBaseFee)} base + ${formatPhpAmount(travelQuote.travelFeePerKm)}/km`
+    ? `${formatPhpAmount(travelQuote.travelBaseFee)} base fare covers first 2 km + ${Math.max(0, travelDistanceKm - 2).toFixed(2)} km × ${formatPhpAmount(travelQuote.travelFeePerKm)}/km`
     : "distance-based rate";
   const availableVouchers = (rewards.vouchers || []).filter((voucher) =>
     voucher.status === "active" && (!voucher.expiresAt || new Date(voucher.expiresAt) > new Date())
@@ -373,9 +415,12 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const travelFeeDiscount = selectedVoucher ? Math.min(travelFee, Number(selectedVoucher.amount) || 0) : 0;
   const discountedTravelFee = Math.max(0, travelFee - travelFeeDiscount);
   const offerAmount = Number(offer);
+  const adjustedTaskOffer = durationIsValid && Number.isFinite(offerAmount)
+    ? roundCurrency(offerAmount * estimatedDurationMinutes / DEFAULT_ESTIMATED_DURATION_MINUTES)
+    : 0;
   const selectedTip = Number(tipAmount);
   const safeTipAmount = Number.isFinite(selectedTip) && selectedTip >= 0 ? selectedTip : 0;
-  const totalAmount = roundCurrency(offerAmount + discountedTravelFee + safeTipAmount);
+  const totalAmount = roundCurrency(adjustedTaskOffer + discountedTravelFee + safeTipAmount);
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files);
@@ -402,19 +447,23 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
 
   const validateRequestDetails = () => {
     if (!taskDescription.trim()) return setFormError("Please describe the item or issue you want repaired."), false;
+    if (!serviceLocation.address.trim() || serviceLocation.address.trim().length > 300) return setFormError("Choose or enter the exact service address."), false;
+    if (!serviceLocationKey) return setFormError("Select a service location pin on the map to calculate travel distance."), false;
     if (!selectedDate) return setFormError("Please select a service date."), false;
     if (!selectedTime) return setFormError("Please select an available time."), false;
+    if (!durationIsValid) return setFormError("Enter a duration from 15 minutes to 12 hours in 15-minute increments."), false;
     if (isPastTimeSlot(selectedDate, selectedTime, new Date())) {
       setSelectedTime("");
       return setFormError("That time has passed. Please choose another time."), false;
     }
     if (availabilityStatus !== "loaded") return setFormError("Provider availability could not be confirmed. Please try again."), false;
-    if (bookedSlots.some((slot) => slot.date === selectedDate && slot.timeSlot === selectedTime)) {
+    if (isTimeSlotBooked(selectedDate, selectedTime, estimatedDurationMinutes)) {
       setSelectedTime("");
-      return setFormError("That time slot is no longer available. Please choose another time."), false;
+      return setFormError("That duration overlaps another provider booking. Choose a different time or shorter duration."), false;
     }
-    if (travelQuoteStatus !== "loaded" || travelDistanceKm == null) return setFormError("The travel quote is not ready. Retry it above before reviewing."), false;
-    if (!Number.isFinite(offerAmount) || offerAmount < 100) return setFormError("Your offer must be at least PHP 100."), false;
+    if (travelQuoteStatus !== "loaded" || travelQuoteLocationKey !== serviceLocationKey || travelDistanceKm == null) return setFormError("The travel quote for this service location is not ready. Retry it above before reviewing."), false;
+    if (!Number.isFinite(offerAmount) || offerAmount < 100) return setFormError("Your 60-minute baseline offer must be at least PHP 100."), false;
+    if (adjustedTaskOffer < 100) return setFormError("The duration-adjusted task offer must be at least PHP 100. Increase your baseline offer or choose a longer duration."), false;
     if (!Number.isFinite(selectedTip) || selectedTip < 0 || selectedTip > 1000000) return setFormError("Enter a valid tip amount."), false;
     if (!termsAccepted) return setFormError("Please agree to the terms and cancellation policy."), false;
     setFormError("");
@@ -452,11 +501,13 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
         date: selectedDate,
         time: selectedTime,
         offer: offerAmount,
+        estimatedDurationMinutes,
+        serviceGeoLocation: serviceLocation.geoLocation,
         tipAmount: selectedTip,
         voucherId: selectedVoucherId,
         urgency,
         photos: selectedFiles,
-        address: provider.address || [provider.barangay, provider.city, provider.province].filter(Boolean).join(", "),
+        address: serviceLocation.address.trim(),
         termsAccepted: true,
       });
       setCountdownNow(new Date());
@@ -523,8 +574,14 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                   Future-dated request · no 15-minute expiry applies.
                 </p>
               )}
+              {submittedBooking && !durationWasSaved && (
+                <p role="alert" className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950">
+                  The server did not confirm the selected task duration. {Number.isInteger(savedDurationMinutes) ? `It saved ${formatEstimatedDuration(savedDurationMinutes)} instead of ${formatEstimatedDuration(estimatedDurationMinutes)}.` : "The saved duration is unavailable."} Restart the backend before creating another booking, then verify this booking with the provider.
+                </p>
+              )}
               <dl className="mx-auto mt-5 max-w-sm space-y-2 border-y border-dashed border-gray-200 py-4 text-left text-sm">
-                <div className="flex justify-between gap-3"><dt className="text-gray-600">Task offer</dt><dd className="font-medium tabular-nums">{formatPhpAmount(submittedBooking?.offeredPrice ?? offerAmount)}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-gray-600">Duration-adjusted task offer</dt><dd className="font-medium tabular-nums">{formatPhpAmount(submittedBooking?.offeredPrice ?? adjustedTaskOffer)}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-gray-600">Estimated duration</dt><dd className="font-medium tabular-nums">{Number.isInteger(savedDurationMinutes) ? formatEstimatedDuration(savedDurationMinutes) : "Not confirmed"}</dd></div>
                 <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare{(submittedBooking?.travelDistanceKm ?? travelDistanceKm) == null ? "" : ` · ${Number(submittedBooking?.travelDistanceKm ?? travelDistanceKm).toFixed(2)} km`}</dt><dd className="font-medium tabular-nums">{formatPhpAmount(submittedBooking?.travelFeeBeforeDiscount ?? travelFee)}</dd></div>
                 {Number(submittedBooking?.travelFeeDiscount ?? travelFeeDiscount) > 0 && <div className="flex justify-between gap-3 text-emerald-700"><dt>Travel-fee voucher</dt><dd className="font-semibold tabular-nums">−{formatPhpAmount(submittedBooking?.travelFeeDiscount ?? travelFeeDiscount)}</dd></div>}
                 {(submittedBooking?.travelFeeDiscount ?? travelFeeDiscount) > 0 && <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare after voucher</dt><dd className="font-medium tabular-nums">{formatPhpAmount(submittedBooking?.travelFee ?? discountedTravelFee)}</dd></div>}
@@ -619,6 +676,12 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
           ) : step === 2 ? (
             <div className="space-y-4">
 
+          <ServiceLocationPicker
+            value={serviceLocation}
+            onChange={setServiceLocation}
+            token={token}
+          />
+
           {/* Schedule */}
           <section className="relative rounded-xl border border-gray-200 bg-gray-50 p-4">
             <div className="grid gap-4 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
@@ -658,7 +721,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {TIME_SLOTS.map((time) => {
                     const isPast = selectedDate && isPastTimeSlot(selectedDate, time, currentTime);
-                    const isBooked = selectedDate && bookedSlots.some((slot) => slot.date === selectedDate && slot.timeSlot === time);
+                    const isBooked = selectedDate && isTimeSlotBooked(selectedDate, time);
                     const isDisabled = !selectedDate || isPast || isBooked || availabilityStatus !== "loaded";
                     const isSelected = Boolean(selectedDate) && selectedTime === time && !isPast && !isBooked;
                     return (
@@ -666,7 +729,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                         key={time}
                         type="button"
                         disabled={isDisabled}
-                        title={!selectedDate ? "Choose a date first" : isPast ? "This time has passed" : isBooked ? "This time is already booked" : availabilityStatus !== "loaded" ? "Checking availability" : undefined}
+                        title={!selectedDate ? "Choose a date first" : isPast ? "This time has passed" : isBooked ? "This time overlaps another booking for the selected duration" : availabilityStatus !== "loaded" ? "Checking availability" : undefined}
                         onClick={() => { setSelectedTime(time); setFormError(""); }}
                         className={`min-h-9 rounded-full border px-2 py-2 text-xs font-semibold transition ${
                           isSelected
@@ -681,6 +744,24 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                     );
                   })}
                 </div>
+                <label htmlFor="estimated-duration" className="mt-4 block text-sm font-medium text-gray-700">Estimated task duration
+                  <div className="mt-1 flex items-center gap-2">
+                    <input
+                      id="estimated-duration"
+                      type="number"
+                      min={MIN_ESTIMATED_DURATION_MINUTES}
+                      max={MAX_ESTIMATED_DURATION_MINUTES}
+                      step={MIN_ESTIMATED_DURATION_MINUTES}
+                      value={duration}
+                      onChange={(event) => { setDuration(event.target.value); setFormError(""); }}
+                      className="w-32 rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-800 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                    />
+                    <span className="text-xs text-gray-500">minutes · 15-minute increments</span>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-600" aria-live="polite">
+                    Selected duration: {formatEstimatedDuration(estimatedDurationMinutes)}
+                  </p>
+                </label>
               </div>
             </div>
           </section>
@@ -701,17 +782,17 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
             </div>
 
             <div>
-              <label htmlFor="offer" className="mb-1.5 block text-sm font-medium text-gray-700">Your proposed budget</label>
+              <label htmlFor="offer" className="mb-1.5 block text-sm font-medium text-gray-700">Your 60-minute baseline offer (PHP)</label>
               <input
                 id="offer"
                 type="number"
                 min="100"
                 value={offer}
                 onChange={(e) => setOffer(e.target.value)}
-                placeholder="Enter your proposed budget (Min. ₱100)"
+                placeholder="Enter baseline offer (Min. ₱100)"
                 className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
               />
-              <p className="mt-1 text-xs text-gray-500">Offer-based pricing, not hourly.</p>
+              <p className="mt-1 text-xs text-gray-500">For {durationIsValid ? estimatedDurationMinutes : "your selected"} minutes, the task offer is {formatPhpAmount(adjustedTaskOffer)}. Travel fare and vouchers are unchanged.</p>
             </div>
           </div>
 
@@ -773,12 +854,14 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                   <div className="flex justify-between gap-3"><dt className="text-gray-500">Service</dt><dd className="max-w-[65%] text-right font-medium text-gray-900">{trade}</dd></div>
                   <div className="flex justify-between gap-3"><dt className="text-gray-500">Task</dt><dd className="max-w-[65%] whitespace-pre-wrap text-right font-medium text-gray-900">{taskDescription.trim()}</dd></div>
                   <div className="flex justify-between gap-3"><dt className="text-gray-500">Schedule</dt><dd className="text-right font-medium text-gray-900">{formatDate(selectedDate)} · {selectedTime}</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-gray-500">Service location</dt><dd className="max-w-[65%] text-right font-medium text-gray-900">{serviceLocation.address}</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-gray-500">Estimated duration</dt><dd className="font-medium text-gray-900">{formatEstimatedDuration(estimatedDurationMinutes)}</dd></div>
                   <div className="flex justify-between gap-3"><dt className="text-gray-500">Urgency</dt><dd className="font-medium text-gray-900">{urgency}</dd></div>
                 </dl>
                 <div className="border-t border-dashed border-gray-200 pt-3">
                   <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Price breakdown</p>
                   <dl className="space-y-2 text-sm">
-                    <div className="flex justify-between gap-3"><dt className="text-gray-600">Task offer</dt><dd className="font-semibold tabular-nums text-gray-900">{formatPhpAmount(offerAmount)}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-gray-600">Duration-adjusted task offer</dt><dd className="font-semibold tabular-nums text-gray-900">{formatPhpAmount(adjustedTaskOffer)}</dd></div>
                     <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare <span className="block text-xs font-normal text-gray-500">{travelDistanceKm.toFixed(2)} km · {travelFeeDescription}</span></dt><dd className="font-semibold tabular-nums text-gray-900">{formatPhpAmount(travelFee)}</dd></div>
                     {travelFeeDiscount > 0 && <div className="flex justify-between gap-3 text-emerald-700"><dt>Travel-fee voucher</dt><dd className="font-semibold tabular-nums">−{formatPhpAmount(travelFeeDiscount)}</dd></div>}
                     {travelFeeDiscount > 0 && <div className="flex justify-between gap-3"><dt className="text-gray-600">Travel fare after voucher</dt><dd className="font-semibold tabular-nums text-gray-900">{formatPhpAmount(discountedTravelFee)}</dd></div>}
