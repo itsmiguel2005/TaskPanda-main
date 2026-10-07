@@ -36,6 +36,30 @@ function getAdminUserStatus(user) {
   return "Active";
 }
 
+function getIdentityVerificationLabel(user) {
+  const status = String(user.verificationStatus || "").toLowerCase();
+  const detailStatus = String(user.verificationDetails?.status || "").toLowerCase();
+  if (user.isVerified === true || status === "verified" || detailStatus === "active") return "Verified";
+  if (status === "pending" || detailStatus === "pending") return "Pending review";
+  if (status === "rejected" || detailStatus === "rejected") return "Rejected";
+  return "Not verified";
+}
+
+function getTesdaVerificationSummary(certificates = []) {
+  const counts = { approved: 0, pending: 0, rejected: 0 };
+  for (const certificate of certificates) {
+    const status = String(certificate.status || "").toLowerCase();
+    if (Object.hasOwn(counts, status)) counts[status] += 1;
+  }
+  const summary = [
+    [counts.approved, "verified"],
+    [counts.pending, "pending"],
+    [counts.rejected, "update requested"],
+  ].filter(([count]) => count > 0)
+    .map(([count, label]) => `${count} ${label}`);
+  return summary.length ? summary.join(", ") : "Not submitted";
+}
+
 async function handleGetAdminAnalytics(_req, res) {
   try {
     const now = new Date();
@@ -209,7 +233,7 @@ async function handleGetAdminUsers(req, res) {
 async function handleGetAdminUserDetails(req, res) {
   try {
     const user = await User.findOne({ _id: req.params.userId, role: mongoose.trusted({ $in: ADMINISTRABLE_ROLES }) })
-      .select("+adminActivity fullName firstName middleName lastName username email role emailVerified registrationComplete isVerified verificationStatus profileImage professions bio mobileNumber province city barangay address createdAt updatedAt referralCode referredBy stampProgress completedBookings vouchers isSuspended suspendedAt archivedAt")
+      .select("+adminActivity fullName firstName middleName lastName username email role emailVerified registrationComplete isVerified verificationStatus verificationDetails.status verificationDetails.rejectionReason tesdaCertificates.trade tesdaCertificates.status averageRating totalReviews profileImage professions bio mobileNumber province city barangay address createdAt updatedAt referralCode referredBy stampProgress completedBookings vouchers isSuspended suspendedAt archivedAt")
       .lean();
     if (!user) return res.status(404).json({ message: "User account not found." });
 
@@ -265,6 +289,12 @@ async function handleGetAdminUserDetails(req, res) {
         role: user.role,
         verified: user.isVerified === true,
         verificationStatus: user.verificationStatus || "unverified",
+        identityVerificationStatus: getIdentityVerificationLabel(user),
+        verificationDetailsStatus: user.verificationDetails?.status || "",
+        verificationRejectionReason: user.verificationDetails?.rejectionReason || "",
+        tesdaVerificationStatus: getTesdaVerificationSummary(user.tesdaCertificates),
+        averageRating: Number(user.averageRating || 0),
+        totalReviews: Number(user.totalReviews || 0),
         profileImage: user.profileImage || "",
         professions: user.professions || [],
         bio: user.bio || "",

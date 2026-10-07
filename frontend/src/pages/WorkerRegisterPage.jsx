@@ -3,6 +3,8 @@ import { useNavigate, Link } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import ProfessionSelector from "../components/ProfessionSelector.jsx";
 import TermsModal from "../components/TermsModal.jsx";
+import PasswordStrengthMeter from "../components/PasswordStrengthMeter.jsx";
+import { getPasswordStrength, getUsernameError } from "../utils/registrationValidation.js";
 
 export default function WorkerRegisterPage() {
   console.log("[WorkerRegisterPage] MOUNTED");
@@ -27,28 +29,16 @@ export default function WorkerRegisterPage() {
 
   const passwordError = (password) => {
     if (!password) return "Password is required";
-    const missing = [];
-    if (/\s/.test(password)) missing.push("no spaces");
-    if (password.length < 8) missing.push("at least 8 characters");
-    if (password.length > 15) missing.push("no more than 15 characters");
-    if (!/[A-Z]/.test(password)) missing.push("one uppercase letter");
-    if (!/[^A-Za-z0-9]/.test(password)) missing.push("one special character");
-    return missing.length ? `Password needs ${missing.join(", ")}.` : "";
+    if (/\s/.test(password)) return "Password cannot contain spaces.";
+    if (password.length < 8) return "Password must be at least 8 characters.";
+    return getPasswordStrength(password).isGood ? "" : "Use at least 8 characters and meet the Good strength threshold.";
   };
 
   const errors = {
-    username: !formData.username.trim()
-      ? "Username is required"
-      : /\s/.test(formData.username)
-      ? "Username cannot contain spaces"
-      : emailValid(formData.username.trim())
-      ? "Username cannot be an email address"
-      : formData.username.trim().length < 3
-      ? "Username must be at least 3 characters"
-      : "",
+    username: getUsernameError(formData.username),
     email: !formData.email.trim()
       ? "Email is required"
-      : !emailValid(formData.email)
+      : !emailValid(formData.email.trim())
       ? "Please enter a valid email address"
       : "",
     professions: formData.professions.length === 0
@@ -62,7 +52,9 @@ export default function WorkerRegisterPage() {
       : "",
   };
 
-  const showFieldError = (field) => touched[field] && errors[field];
+  const showFieldError = (field) => (
+    (field === "username" && formData.username.length > 0 || touched[field]) && errors[field]
+  );
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -74,10 +66,17 @@ export default function WorkerRegisterPage() {
   };
 
   useEffect(() => {
-    const email = formData.email.trim();
-    const username = formData.username.trim();
+    const email = formData.email.trim().toLowerCase();
+    const username = formData.username;
+    const hasValidEmail = emailValid(email);
+    const hasValidUsername = !getUsernameError(username);
     setAvailability({ field: "", message: "", checking: false });
-    if (!emailValid(email) && username.length < 3) return undefined;
+    if (!hasValidEmail && !hasValidUsername) return undefined;
+    const lookup = {
+      role: "provider",
+      ...(hasValidEmail ? { email } : {}),
+      ...(hasValidUsername ? { username } : {}),
+    };
 
     const controller = new AbortController();
     const timer = setTimeout(async () => {
@@ -86,7 +85,7 @@ export default function WorkerRegisterPage() {
         const response = await fetch("/api/auth/check-registration", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ role: "provider", email, username }),
+          body: JSON.stringify(lookup),
           signal: controller.signal,
         });
         const data = await response.json().catch(() => ({}));
@@ -125,7 +124,11 @@ export default function WorkerRegisterPage() {
       const response = await fetch("/api/auth/check-registration", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role: "provider", email: formData.email, username: formData.username }),
+        body: JSON.stringify({
+          role: "provider",
+          email: formData.email.trim().toLowerCase(),
+          username: formData.username.trim(),
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -148,8 +151,8 @@ export default function WorkerRegisterPage() {
         body: JSON.stringify({
           role: "provider",
           registrationPhase: "start",
-          username: formData.username,
-          email: formData.email,
+          username: formData.username.trim(),
+          email: formData.email.trim().toLowerCase(),
           professions: formData.professions,
           password: formData.password,
         }),
@@ -160,10 +163,10 @@ export default function WorkerRegisterPage() {
         return;
       }
 
-      const step1 = { username: formData.username, email: formData.email, professions: formData.professions };
+      const step1 = { username: formData.username.trim(), email: formData.email.trim().toLowerCase(), professions: formData.professions };
       sessionStorage.setItem("workerStep1", JSON.stringify(step1));
       localStorage.removeItem("workerStep1");
-      navigate(`/verify-email?email=${encodeURIComponent(formData.email)}`);
+      navigate(`/verify-email?email=${encodeURIComponent(formData.email.trim().toLowerCase())}`);
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -231,6 +234,7 @@ export default function WorkerRegisterPage() {
                   name="username"
                   autoComplete="username"
                   required
+                  maxLength={50}
                   placeholder="johndoe"
                   value={formData.username}
                   onChange={handleChange}
@@ -303,7 +307,7 @@ export default function WorkerRegisterPage() {
                     id="password"
                     name="password"
                     autoComplete="new-password"
-                    maxLength={15}
+                    maxLength={72}
                     placeholder="&#9679;&#9679;&#9679;&#9679;&#9679;&#9679;&#9679;&#9679;"
                     value={formData.password}
                     onChange={handleChange}
@@ -338,6 +342,7 @@ export default function WorkerRegisterPage() {
                 {showFieldError("password") && (
                   <p className="text-xs text-red-600">{errors.password}</p>
                 )}
+                <PasswordStrengthMeter password={formData.password} />
               </div>
 
               <div className="space-y-2">
@@ -350,7 +355,7 @@ export default function WorkerRegisterPage() {
                     id="confirm-password"
                     name="confirm-password"
                     autoComplete="new-password"
-                    maxLength={15}
+                    maxLength={72}
                     placeholder="&#9679;&#9679;&#9679;&#9679;&#9679;&#9679;&#9679;&#9679;"
                     value={formData["confirm-password"]}
                     onChange={handleChange}

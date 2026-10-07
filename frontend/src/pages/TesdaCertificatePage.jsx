@@ -6,15 +6,58 @@ import { useAuth } from "../context/AuthContext.jsx";
 
 const MAX_CERTIFICATE_IMAGE_SIZE = 8 * 1024 * 1024;
 
+function formatRateLimitWait(seconds) {
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (!hours) return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+  if (!remainingMinutes) return `${hours} ${hours === 1 ? "hour" : "hours"}`;
+  return `${hours} ${hours === 1 ? "hour" : "hours"} and ${remainingMinutes} ${remainingMinutes === 1 ? "minute" : "minutes"}`;
+}
+
 export default function TesdaCertificatePage() {
   const navigate = useNavigate();
-  const { token, isVerified, updateUser, user } = useAuth();
+  const { token, isVerified, updateUser, user, refreshProfile } = useAuth();
   const [trade, setTrade] = useState("");
   const [certificateFile, setCertificateFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [error, setError] = useState("");
+  const [statusNotice, setStatusNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [justSubmittedTrade, setJustSubmittedTrade] = useState("");
+  const [pendingCertificateOverride, setPendingCertificateOverride] = useState(null);
+  const [isRefreshingProfile, setIsRefreshingProfile] = useState(true);
+  const [profileRefreshError, setProfileRefreshError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    refreshProfile().then((refreshed) => {
+      if (!active) return;
+      setIsRefreshingProfile(false);
+      setProfileRefreshError(!refreshed);
+    });
+    return () => {
+      active = false;
+    };
+  }, [refreshProfile]);
+
+  const certificates = user?.tesdaCertificates || [];
+  const pendingCertificates = certificates
+    .filter((certificate) => String(certificate.status || "").toLowerCase() === "pending");
+  if (
+    pendingCertificateOverride?.status === "pending"
+    && !certificates.some((certificate) => certificate.id === pendingCertificateOverride.id)
+  ) {
+    pendingCertificates.push(pendingCertificateOverride);
+  }
+  const selectedTradeCertificate = [...certificates, ...(pendingCertificateOverride ? [pendingCertificateOverride] : [])].find((certificate) =>
+    certificate.trade?.trim().toLowerCase() === trade.trim().toLowerCase()
+    && String(certificate.status || "").toLowerCase() === "pending"
+  );
+  const approvedTradeCertificate = certificates.find((certificate) =>
+    certificate.trade?.trim().toLowerCase() === trade.trim().toLowerCase()
+    && String(certificate.status || "").toLowerCase() === "approved"
+  );
 
   useEffect(() => {
     if (!certificateFile) {
@@ -47,6 +90,7 @@ export default function TesdaCertificatePage() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+    setStatusNotice("");
     if (!isVerified) {
       setError("Complete identity verification before submitting a TESDA certificate.");
       return;
@@ -72,11 +116,44 @@ export default function TesdaCertificatePage() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.success) {
+        if (response.status === 429) {
+          const retryAfterSeconds = Number(response.headers.get("Retry-After"));
+          const retryMessage = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+            ? ` Please try again in about ${formatRateLimitWait(retryAfterSeconds)}.`
+            : " Please try again later.";
+          setError(`${data.message || "You've reached the TESDA certificate submission limit."}${retryMessage}`);
+          return;
+        }
+        if (response.status === 409) {
+          setIsRefreshingProfile(true);
+          const refreshed = await refreshProfile();
+          setIsRefreshingProfile(false);
+          setProfileRefreshError(!refreshed);
+          const existingCertificate = data.certificate;
+          if (String(existingCertificate?.status || "").toLowerCase() === "pending") {
+            setPendingCertificateOverride(existingCertificate);
+            setJustSubmittedTrade(existingCertificate.trade);
+            setStatusNotice("");
+          } else {
+            setStatusNotice(refreshed
+              ? data.message || "The certificate could not be submitted. Please try again."
+              : data.message || "We couldn’t refresh your certificate status just now. Please try again shortly.");
+          }
+          if (refreshed) {
+            setTrade("");
+            setCertificateFile(null);
+          }
+          return;
+        }
         setError(data.message || "Could not submit your TESDA certificate. Please try again.");
         return;
       }
       updateUser(data.user);
-      setSubmitted(true);
+      setPendingCertificateOverride(data.certificate || null);
+      setStatusNotice("");
+      setJustSubmittedTrade(trade.trim());
+      setTrade("");
+      setCertificateFile(null);
     } catch (requestError) {
       console.error("TESDA certificate submission failed:", requestError);
       setError(requestError instanceof TypeError
@@ -121,23 +198,91 @@ export default function TesdaCertificatePage() {
                   Verify identity
                 </button>
               </div>
-            ) : submitted ? (
-              <div className="p-5 sm:p-6" role="status">
-                <p className="text-sm font-bold text-emerald-900">Certificate submitted for review</p>
-                <p className="mt-1 text-sm leading-6 text-slate-600">We’ll update your profile when an administrator finishes reviewing your {trade.trim()} certificate.</p>
-                <button
-                  type="button"
-                  onClick={() => navigate("/provider-profile")}
-                  className="dashboard-primary-button dashboard-focus mt-4 px-4 py-2.5 text-sm"
-                >
-                  Return to profile
-                </button>
-              </div>
             ) : (
+              <>
+                {isRefreshingProfile && (
+                  <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50 px-5 py-4 text-sm text-slate-700 sm:px-6" role="status" aria-live="polite">
+                    <svg className="h-4 w-4 shrink-0 animate-spin text-sky-800 motion-reduce:animate-none" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                    Checking your TESDA certificate review status…
+                  </div>
+                )}
+
+                {profileRefreshError && !isRefreshingProfile && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm leading-5 text-amber-950 sm:px-6" role="status">
+                    <span>We couldn’t refresh your certificate status. Saved submissions are shown below if available.</span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setIsRefreshingProfile(true);
+                        const refreshed = await refreshProfile();
+                        setProfileRefreshError(!refreshed);
+                        setIsRefreshingProfile(false);
+                      }}
+                      className="dashboard-focus rounded-lg px-2 py-1 font-semibold underline underline-offset-2"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                )}
+
+                {statusNotice && (
+                  <div className="border-b border-sky-200 bg-sky-50 px-5 py-3 text-sm leading-5 text-sky-950 sm:px-6" role="status">
+                    {statusNotice}
+                  </div>
+                )}
+
+                {(pendingCertificates.length > 0 || justSubmittedTrade) && (
+                  <div className="border-b border-amber-200 bg-amber-50/80 px-5 py-5 sm:px-6" role="status" aria-live="polite">
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-amber-800 ring-1 ring-amber-200" aria-hidden="true">
+                        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="9" />
+                          <path d="M12 7v5l3 2" />
+                        </svg>
+                      </span>
+                      <div className="min-w-0">
+                        <h2 className="text-sm font-extrabold text-amber-950">
+                          {justSubmittedTrade ? "Your certificate is in review" : "Your TESDA certificate is under review"}
+                        </h2>
+                        <p className="mt-1 text-sm leading-6 text-amber-950/90">
+                          {justSubmittedTrade
+                            ? `We’ve received your ${justSubmittedTrade} certificate. Our team is reviewing it; no further action is needed. You can keep using TaskPanda and we’ll update your profile when there’s a decision.`
+                            : `Our team is reviewing ${pendingCertificates.length === 1 ? "your certificate" : "your certificates"}${pendingCertificates.length === 1 ? ` for ${pendingCertificates[0].trade}` : ""}. No further action is needed. You can keep using TaskPanda and we’ll update your profile when there’s a decision.`}
+                        </p>
+                        {pendingCertificates.length > 1 && (
+                          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-950/90">
+                            {pendingCertificates.map((certificate) => <li key={certificate.id}>{certificate.trade}</li>)}
+                          </ul>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => navigate("/explore")}
+                          className="dashboard-focus mt-3 inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white transition hover:bg-sky-800"
+                        >
+                          Continue exploring
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
               <form onSubmit={handleSubmit} className="space-y-5 p-5 sm:p-6">
                 <div>
                   <label htmlFor="tesda-trade" className="block text-sm font-semibold text-slate-800">TESDA trade or qualification</label>
                   <TesdaQualificationSelector value={trade} onChange={setTrade} disabled={submitting} />
+                  {selectedTradeCertificate && (
+                    <p className="mt-2 text-sm font-medium text-amber-900" role="status">
+                      A certificate for this trade is already under review.
+                    </p>
+                  )}
+                  {!selectedTradeCertificate && approvedTradeCertificate && (
+                    <p className="mt-2 text-sm font-medium text-sky-900" role="status">
+                      This qualification is already verified. Upload an updated certificate to request a new review.
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -175,7 +320,7 @@ export default function TesdaCertificatePage() {
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                   <button
                     type="button"
-                    onClick={() => navigate("/provider-profile")}
+                    onClick={() => navigate(user?.role === "provider" ? "/provider-profile" : "/profile")}
                     disabled={submitting}
                     className="dashboard-focus min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -183,13 +328,14 @@ export default function TesdaCertificatePage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={submitting || trade.trim().length < 2 || !certificateFile}
+                    disabled={submitting || trade.trim().length < 2 || !certificateFile || Boolean(selectedTradeCertificate)}
                     className="dashboard-primary-button dashboard-focus min-h-11 px-4 text-sm disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {submitting ? "Submitting…" : "Submit for review"}
                   </button>
                 </div>
               </form>
+              </>
             )}
           </section>
 

@@ -35,6 +35,10 @@ export default function ClientRegisterName() {
       setError("Names may contain letters, spaces, apostrophes, hyphens, and periods only.");
       return;
     }
+    if ([firstName, formData.middleName.trim(), lastName].filter(Boolean).join(" ").length > 100) {
+      setError("Your full name must be 100 characters or fewer.");
+      return;
+    }
 
     const nameData = {
       firstName,

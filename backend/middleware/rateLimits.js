@@ -1,12 +1,13 @@
-const { rateLimit } = require("express-rate-limit");
+const { ipKeyGenerator, rateLimit } = require("express-rate-limit");
 
-function createRateLimiter(limit, windowMs = 15 * 60 * 1000) {
+function createRateLimiter(limit, windowMs = 15 * 60 * 1000, message = "Too many requests. Please try again later.", options = {}) {
   return rateLimit({
     windowMs,
     limit,
     standardHeaders: "draft-8",
     legacyHeaders: false,
-    handler: (_req, res) => res.status(429).json({ message: "Too many requests. Please try again later." }),
+    ...options,
+    handler: (_req, res) => res.status(429).json({ message }),
   });
 }
 
@@ -30,8 +31,19 @@ function limitAuthAttempts(req, res, next) {
 const limitRegistrationChecks = createRateLimiter(30);
 const limitBookingCreation = createRateLimiter(10);
 const limitVerificationUploads = createRateLimiter(5, 60 * 60 * 1000);
+const limitTesdaCertificateUploads = createRateLimiter(
+  10,
+  60 * 60 * 1000,
+  "TESDA certificate submission limit reached.",
+  {
+    identifier: "tesda-certificate-uploads",
+    keyGenerator: (req) => req.user?._id
+      ? `user:${String(req.user._id)}`
+      : `ip:${ipKeyGenerator(req.ip)}`,
+  },
+);
 const limitChatPhotoUploads = createRateLimiter(30, 15 * 60 * 1000);
 const limitTypingUpdates = createRateLimiter(60, 60 * 1000);
 const limitProfilePhotoUploads = createRateLimiter(30, 15 * 60 * 1000);
 
-module.exports = { limitAuthAttempts, limitRegistrationChecks, limitBookingCreation, limitVerificationUploads, limitChatPhotoUploads, limitTypingUpdates, limitProfilePhotoUploads };
+module.exports = { limitAuthAttempts, limitRegistrationChecks, limitBookingCreation, limitVerificationUploads, limitTesdaCertificateUploads, limitChatPhotoUploads, limitTypingUpdates, limitProfilePhotoUploads };

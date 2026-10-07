@@ -23,6 +23,10 @@ export default function WorkerRegisterName() {
       setError("Names may contain letters, spaces, apostrophes, hyphens, and periods only.");
       return;
     }
+    if ([firstName, formData.middleName.trim(), lastName].filter(Boolean).join(" ").length > 100) {
+      setError("Your full name must be 100 characters or fewer.");
+      return;
+    }
     const data = { firstName, middleName: formData.middleName.trim(), lastName };
     sessionStorage.setItem("workerNameStep", JSON.stringify(data));
     localStorage.setItem("workerNameStep", JSON.stringify(data));

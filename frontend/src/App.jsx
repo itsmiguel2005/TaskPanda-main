@@ -136,6 +136,7 @@ export default function App() {
         <Route path="/provider-profile" element={<ProtectedRoute roles={["provider"]}><ProviderProfilePage /></ProtectedRoute>} />
         <Route path="/provider-profile/verify" element={<ProtectedRoute roles={["provider"]}><VerificationPage /></ProtectedRoute>} />
         <Route path="/provider-profile/tesda" element={<ProtectedRoute roles={["provider"]}><TesdaCertificatePage /></ProtectedRoute>} />
+        <Route path="/profile/tesda" element={<ProtectedRoute roles={["client", "provider"]}><TesdaCertificatePage /></ProtectedRoute>} />
         <Route path="/explore" element={<ProtectedRoute roles={["client", "provider"]}><ExplorePage /></ProtectedRoute>} />
           <Route path="/about" element={<AboutUsPage />} />
           <Route path="/admin" element={<ProtectedRoute roles={["admin"]}><AdminDashboardPage /></ProtectedRoute>} />

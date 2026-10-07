@@ -99,6 +99,89 @@ function DetailValue({ label, value }) {
   );
 }
 
+function getIdentityVerificationStatus(user) {
+  const status = String(user.identityVerificationStatus || user.verificationStatus || "").toLowerCase();
+  const detailStatus = String(user.verificationDetailsStatus || "").toLowerCase();
+  if (user.verified === true || status === "verified" || detailStatus === "active") return "Verified";
+  if (status === "pending" || status === "pending review" || detailStatus === "pending") return "Pending review";
+  if (status === "rejected" || status === "update requested" || detailStatus === "rejected") return "Rejected";
+  return "Not verified";
+}
+
+function IdentityVerificationValue({ user }) {
+  const status = getIdentityVerificationStatus(user);
+  const statusStyles = {
+    Verified: "border-emerald-200 bg-emerald-50 text-emerald-900",
+    "Pending review": "border-amber-200 bg-amber-50 text-amber-950",
+    Rejected: "border-rose-200 bg-rose-50 text-rose-900",
+    "Not verified": "border-slate-200 bg-slate-50 text-slate-800",
+  };
+
+  return (
+    <div className={`min-w-0 rounded-xl border p-3 ${statusStyles[status]}`}>
+      <p className="text-[11px] font-semibold uppercase tracking-wide opacity-75">Identity verification</p>
+      <p className="mt-1 text-sm font-bold">{status}</p>
+      {status === "Rejected" && user.verificationRejectionReason && (
+        <p className="mt-1.5 break-words text-xs leading-5">
+          <span className="font-semibold">Reason:</span> {user.verificationRejectionReason}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ReferralCodeValue({ code, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`View full referral code ${code}`}
+      className="min-w-0 rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 text-left transition hover:border-sky-300 hover:bg-sky-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600"
+    >
+      <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Referral code</span>
+      <span className="mt-1 block truncate text-sm font-semibold text-slate-900">{code}</span>
+      <span className="mt-1 block text-xs font-medium text-sky-800">View full code</span>
+    </button>
+  );
+}
+
+function ReferralCodeModal({ code, onClose }) {
+  if (!code) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[3px]"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="referral-code-title"
+        className="w-full max-w-md rounded-2xl border border-white/80 bg-white p-5 shadow-[0_24px_70px_rgba(15,23,42,0.24)] sm:p-6"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 id="referral-code-title" className="text-lg font-bold tracking-tight text-slate-950">Referral code</h2>
+            <p className="mt-1 text-sm text-slate-600">Full code for this client account</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            autoFocus
+            aria-label="Close referral code"
+            className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600"
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+        <p className="mt-5 select-all break-all rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-base font-bold tracking-wide text-slate-950">
+          {code}
+        </p>
+      </section>
+    </div>
+  );
+}
+
 function AccountActionModal({ action, busy, error, onClose, onConfirm }) {
   if (!action) return null;
   const copy = {
@@ -190,6 +273,7 @@ export default function AdminUsersManagement() {
   const [pendingAction, setPendingAction] = useState(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [viewingReferralCode, setViewingReferralCode] = useState("");
 
   useEffect(() => {
     const requestedUserId = searchParams.get("userId");
@@ -283,6 +367,8 @@ export default function AdminUsersManagement() {
       if (pendingAction) {
         setPendingAction(null);
         setActionError("");
+      } else if (viewingReferralCode) {
+        setViewingReferralCode("");
       } else {
         setSelectedUserId(null);
         setDetails(null);
@@ -295,7 +381,7 @@ export default function AdminUsersManagement() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [actionBusy, pendingAction, selectedUserId]);
+  }, [actionBusy, pendingAction, selectedUserId, viewingReferralCode]);
 
   const openAction = (type, target = details?.user) => {
     if (!target) return;
@@ -370,6 +456,7 @@ export default function AdminUsersManagement() {
 
   const closeDetails = () => {
     if (actionBusy) return;
+    setViewingReferralCode("");
     setSelectedUserId(null);
     setDetails(null);
     setSearchParams((current) => {
@@ -576,20 +663,36 @@ export default function AdminUsersManagement() {
                     <div className="mt-3 grid grid-cols-2 gap-2.5">
                       <DetailValue label="Registered" value={formatDate(selectedUser.createdAt)} />
                       <DetailValue label="Active bookings" value={selectedUser.activeBookings} />
-                      <DetailValue label="Stamp progress" value={`${selectedUser.stampProgress} / 5 stamps`} />
+                      {selectedUser.role === "client" && <DetailValue label="Stamp progress" value={`${selectedUser.stampProgress} / 5 stamps`} />}
                       <DetailValue label="Completed bookings" value={selectedUser.completedBookings} />
-                      <DetailValue label="Referral code" value={selectedUser.referralCode || "Not issued"} />
-                      <DetailValue label="Referral uses" value={selectedUser.referralUses} />
+                      {selectedUser.role === "provider" && (
+                        <>
+                          <DetailValue label="Average rating" value={selectedUser.totalReviews > 0 ? `${selectedUser.averageRating.toFixed(1)} / 5` : "No reviews"} />
+                          <DetailValue label="Reviews" value={selectedUser.totalReviews} />
+                          <DetailValue label="TESDA certificates" value={selectedUser.tesdaVerificationStatus} />
+                        </>
+                      )}
+                      {selectedUser.role === "client" && (
+                        <>
+                          {selectedUser.referralCode
+                            ? <ReferralCodeValue code={selectedUser.referralCode} onClick={() => setViewingReferralCode(selectedUser.referralCode)} />
+                            : <DetailValue label="Referral code" value="Not issued" />}
+                          <DetailValue label="Referral uses" value={selectedUser.referralUses} />
+                        </>
+                      )}
                     </div>
                     <div className="mt-2.5 grid grid-cols-2 gap-2.5">
                       <DetailValue label="Email" value={selectedUser.email} />
                       <DetailValue label="Mobile" value={selectedUser.mobileNumber} />
                     </div>
+                    {selectedUser.referredBy && <p className="mt-2 text-xs leading-5 text-slate-600"><span className="font-semibold text-slate-800">Referred by:</span> account {selectedUser.referredBy}</p>}
+                    <div className="mt-3">
+                      <IdentityVerificationValue user={selectedUser} />
+                    </div>
                     {selectedUser.role === "provider" && selectedUser.professions?.length > 0 && (
-                      <p className="mt-3 text-xs leading-5 text-slate-600"><span className="font-semibold text-slate-800">Services:</span> {selectedUser.professions.join(", ")}</p>
+                      <p className="mt-2 text-xs leading-5 text-slate-600"><span className="font-semibold text-slate-800">Services:</span> {selectedUser.professions.join(", ")}</p>
                     )}
                     {selectedUser.location && <p className="mt-2 text-xs leading-5 text-slate-600"><span className="font-semibold text-slate-800">Location:</span> {selectedUser.location}</p>}
-                    {selectedUser.referredBy && <p className="mt-2 text-xs leading-5 text-slate-600"><span className="font-semibold text-slate-800">Referred by:</span> account {selectedUser.referredBy}</p>}
                   </section>
 
                   <section>
@@ -650,6 +753,7 @@ export default function AdminUsersManagement() {
               </div>
             )}
           </aside>
+          <ReferralCodeModal code={viewingReferralCode} onClose={() => setViewingReferralCode("")} />
         </div>
       )}
 

@@ -4,6 +4,17 @@ const { waitUntil } = require("@vercel/functions");
 const User = require("../models/User");
 const tesdaSectors = require("../../shared/tesdaQualifications.json");
 const TESDA_QUALIFICATIONS = new Set(tesdaSectors.flatMap(({ qualifications }) => qualifications));
+
+function tesdaCertificateResponse(certificate) {
+  return {
+    id: String(certificate._id),
+    trade: certificate.trade || "",
+    status: String(certificate.status || "pending").toLowerCase(),
+    submittedAt: certificate.submittedAt || null,
+    reviewedAt: certificate.reviewedAt || null,
+    rejectionReason: certificate.rejectionReason || "",
+  };
+}
 const {
   classifyIdSide,
   performOCRVerification,
@@ -289,75 +300,118 @@ async function handleSubmitTesdaCertificate(req, res) {
 
   let uploadedImage;
   try {
-    const previousUser = await User.findById(req.user._id).select("role isVerified tesdaCertificates");
+    const previousUser = await User.findById(req.user._id)
+      .select("role isVerified tesdaCertificates +tesdaCertificates.certificateImagePublicId");
     if (!previousUser) {
       return res.status(404).json({ message: "Your account could not be found." });
     }
-    if (previousUser.role !== "provider" || previousUser.isVerified !== true) {
+    if (!["client", "provider"].includes(previousUser.role) || previousUser.isVerified !== true) {
       return res.status(403).json({ message: "Complete identity verification before submitting a TESDA certificate." });
     }
 
     const tradeKey = trade.toLowerCase();
-    const alreadySubmitted = (previousUser.tesdaCertificates || []).some((certificate) =>
+    const pendingCertificate = (previousUser.tesdaCertificates || []).find((certificate) =>
       certificate.trade?.trim().toLowerCase() === tradeKey &&
-      ["pending", "approved"].includes(certificate.status)
+      String(certificate.status).toLowerCase() === "pending"
     );
-    if (alreadySubmitted) {
-      return res.status(409).json({ message: "A TESDA certificate for this trade is already pending or approved." });
+    if (pendingCertificate) {
+      return res.status(409).json({
+        message: "A TESDA certificate for this trade is already pending review.",
+        certificate: tesdaCertificateResponse(pendingCertificate),
+      });
     }
+    const approvedCertificate = (previousUser.tesdaCertificates || []).find((certificate) =>
+      certificate.trade?.trim().toLowerCase() === tradeKey &&
+      String(certificate.status).toLowerCase() === "approved"
+    );
+    const previousImagePublicId = approvedCertificate?.certificateImagePublicId;
 
     const buffer = await fs.readFile(file.path);
     uploadedImage = await uploadVerificationImage(buffer, String(req.user._id), "tesda");
-    const certificateId = new mongoose.Types.ObjectId();
+    const certificateId = approvedCertificate?._id || new mongoose.Types.ObjectId();
     const certificateImageUrl = `/api/v1/admin/verifications/${req.user._id}/tesda/${certificateId}/document`;
-    const savedUser = await User.findOneAndUpdate({
-      _id: req.user._id,
-      role: "provider",
-      isVerified: true,
-      tesdaCertificates: {
-        $not: {
+    const submittedAt = new Date();
+    const savedUser = approvedCertificate
+      ? await User.findOneAndUpdate({
+        _id: req.user._id,
+        role: mongoose.trusted({ $in: ["client", "provider"] }),
+        isVerified: true,
+        tesdaCertificates: {
           $elemMatch: {
-            trade: { $regex: `^${trade.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
-            status: { $in: ["pending", "approved"] },
+            _id: approvedCertificate._id,
+            status: "approved",
           },
         },
-      },
-    }, {
-      $push: {
-        tesdaCertificates: {
-          _id: certificateId,
-          trade,
-          status: "pending",
-          submittedAt: new Date(),
-          certificateImageUrl,
-          certificateImagePublicId: uploadedImage.publicId,
-          certificateImageFormat: uploadedImage.format,
+      }, {
+        $set: {
+          "tesdaCertificates.$.status": "pending",
+          "tesdaCertificates.$.submittedAt": submittedAt,
+          "tesdaCertificates.$.reviewedAt": null,
+          "tesdaCertificates.$.rejectionReason": "",
+          "tesdaCertificates.$.certificateImageUrl": certificateImageUrl,
+          "tesdaCertificates.$.certificateImagePublicId": uploadedImage.publicId,
+          "tesdaCertificates.$.certificateImageFormat": uploadedImage.format,
         },
-      },
-    }, {
-      new: true,
-      runValidators: true,
-    });
+      }, {
+        new: true,
+        runValidators: true,
+      })
+      : await User.findOneAndUpdate({
+        _id: req.user._id,
+        role: mongoose.trusted({ $in: ["client", "provider"] }),
+        isVerified: true,
+        tesdaCertificates: {
+          $not: {
+            $elemMatch: {
+              trade: { $regex: `^${trade.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
+              status: "pending",
+            },
+          },
+        },
+      }, {
+        $push: {
+          tesdaCertificates: {
+            _id: certificateId,
+            trade,
+            status: "pending",
+            submittedAt,
+            certificateImageUrl,
+            certificateImagePublicId: uploadedImage.publicId,
+            certificateImageFormat: uploadedImage.format,
+          },
+        },
+      }, {
+        new: true,
+        runValidators: true,
+      });
 
     if (!savedUser) {
-      const error = new Error("A TESDA certificate for this trade was submitted while your upload was processing. Refresh your profile to see its status.");
+      const latestUser = await User.findById(req.user._id).select("tesdaCertificates");
+      const conflictingCertificate = (latestUser?.tesdaCertificates || []).find((certificate) =>
+        certificate.trade?.trim().toLowerCase() === tradeKey &&
+        String(certificate.status).toLowerCase() === "pending"
+      );
+      const error = new Error(conflictingCertificate
+        ? "A TESDA certificate for this trade is already pending review."
+        : "We couldn't save your TESDA certificate. Please try again.");
       error.statusCode = 409;
+      error.certificate = conflictingCertificate
+        ? tesdaCertificateResponse(conflictingCertificate)
+        : undefined;
       throw error;
+    }
+
+    if (previousImagePublicId && previousImagePublicId !== uploadedImage.publicId) {
+      await deleteVerificationImage(previousImagePublicId).catch((deleteError) => {
+        console.error("Could not remove the replaced TESDA certificate image:", deleteError.message);
+      });
     }
 
     return res.status(201).json({
       success: true,
       message: "Your TESDA certificate was submitted for review.",
-      user: {
-        tesdaCertificates: (savedUser.tesdaCertificates || []).map((certificate) => ({
-          id: String(certificate._id),
-          trade: certificate.trade || "",
-          status: certificate.status || "pending",
-          submittedAt: certificate.submittedAt || null,
-          reviewedAt: certificate.reviewedAt || null,
-          rejectionReason: certificate.rejectionReason || "",
-        })),
-      },
+      certificate: tesdaCertificateResponse(savedUser.tesdaCertificates.id(certificateId)),
+      user: { tesdaCertificates: (savedUser.tesdaCertificates || []).map(tesdaCertificateResponse) },
     });
   } catch (error) {
     if (uploadedImage?.publicId) {
@@ -366,7 +420,12 @@ async function handleSubmitTesdaCertificate(req, res) {
       });
     }
     console.error("Submit TESDA certificate error:", error);
-    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+        ...(error.certificate ? { certificate: error.certificate } : {}),
+      });
+    }
     return res.status(500).json({ message: "We could not submit your TESDA certificate. Please try again." });
   } finally {
     await removeUploadedFiles([file]);
@@ -391,10 +450,11 @@ async function handleGetAdminVerifications(_req, res) {
         .select("fullName firstName middleName lastName username email role createdAt verificationStatus isVerified verificationDetails")
         .lean(),
       User.find({
-        "tesdaCertificates.status": "pending",
-        role: "provider",
+        "tesdaCertificates.status": mongoose.trusted({ $regex: "^pending$", $options: "i" }),
+        role: mongoose.trusted({ $in: ["client", "provider"] }),
       })
         .select("fullName firstName middleName lastName username email role createdAt tesdaCertificates")
+        .select("+tesdaCertificates.certificateImagePublicId")
         .lean(),
       User.countDocuments({
         "verificationDetails.status": "Pending",
@@ -426,8 +486,7 @@ async function handleGetAdminVerifications(_req, res) {
     }));
     const tesdaSubmissions = providersWithPendingCertificates.flatMap((user) =>
       (user.tesdaCertificates || [])
-        .filter((certificate) => certificate.status === "pending")
-        .filter((certificate) => certificate.certificateImageUrl)
+        .filter((certificate) => String(certificate.status).toLowerCase() === "pending")
         .map((certificate) => ({
           type: "tesda",
           userId: String(user._id),
@@ -439,7 +498,8 @@ async function handleGetAdminVerifications(_req, res) {
           accountCreatedAt: user.createdAt,
           submittedAt: certificate.submittedAt || null,
           trade: certificate.trade || "",
-          certificateUrl: certificate.certificateImageUrl || "",
+          certificateUrl: certificate.certificateImageUrl || `/api/v1/admin/verifications/${user._id}/tesda/${certificate._id}/document`,
+          hasCertificateImage: Boolean(certificate.certificateImagePublicId),
         }))
     );
     const verifications = [...identitySubmissions, ...tesdaSubmissions]
@@ -458,7 +518,7 @@ async function handleGetTesdaCertificateDocument(req, res) {
   try {
     const user = await User.findOne({
       _id: req.params.userId,
-      role: "provider",
+      role: mongoose.trusted({ $in: ["client", "provider"] }),
       tesdaCertificates: { $elemMatch: { _id: req.params.certificateId } },
     }).select("+tesdaCertificates.certificateImagePublicId +tesdaCertificates.certificateImageFormat");
     const certificate = user?.tesdaCertificates?.id(req.params.certificateId);
@@ -486,18 +546,22 @@ async function handleReviewTesdaCertificate(req, res) {
     return res.status(400).json({ message: "Inspect the TESDA certificate before approving it." });
   }
   const rejectionReason = approved ? "" : String(req.body.rejectionReason || "").trim();
-  const notification = {
-    title: approved ? "TESDA certificate approved" : "TESDA certificate needs changes",
-    message: approved
-      ? "Your TESDA certificate was approved and is now shown on your provider profile."
-      : `Your TESDA certificate was rejected. ${rejectionReason}`.slice(0, 240),
-    href: "/provider-profile",
-    createdAt: new Date(),
-  };
   try {
+    const targetUser = await User.findById(req.params.userId).select("role").lean();
+    if (!targetUser || !["client", "provider"].includes(targetUser.role)) {
+      return res.status(404).json({ message: "This account could not be found." });
+    }
+    const notification = {
+      title: approved ? "TESDA certificate approved" : "TESDA certificate needs changes",
+      message: approved
+        ? "Your TESDA certificate was approved and is now shown on your profile."
+        : `Your TESDA certificate was rejected. ${rejectionReason}`.slice(0, 240),
+      href: userProfilePathForRole(targetUser.role),
+      createdAt: new Date(),
+    };
     const user = await User.findOneAndUpdate({
       _id: req.params.userId,
-      role: "provider",
+      role: mongoose.trusted({ $in: ["client", "provider"] }),
       tesdaCertificates: {
         $elemMatch: {
           _id: req.params.certificateId,

@@ -536,7 +536,7 @@ export default function AdminBookingsManagement() {
   };
 
   return (
-    <section aria-labelledby="admin-bookings-title" className="mt-6 space-y-4 pb-10">
+    <section aria-labelledby="admin-bookings-title" className="space-y-4 pb-10">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 id="admin-bookings-title" className="text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">Bookings</h1>

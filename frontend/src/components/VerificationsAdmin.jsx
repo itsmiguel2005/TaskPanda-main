@@ -51,6 +51,7 @@ function Icon({ name, className = "h-4 w-4" }) {
 export default function VerificationsAdmin() {
   const { token } = useAuth();
   const [verifications, setVerifications] = useState([]);
+  const [activeQueue, setActiveQueue] = useState("identity");
   const [processingIdentityCount, setProcessingIdentityCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -88,12 +89,11 @@ export default function VerificationsAdmin() {
   }, [loadQueue]);
 
   useEffect(() => {
-    if (processingIdentityCount === 0) return undefined;
     const intervalId = window.setInterval(() => {
       if (!document.hidden) void loadQueue(true);
-    }, 10000);
+    }, 15000);
     return () => window.clearInterval(intervalId);
-  }, [loadQueue, processingIdentityCount]);
+  }, [loadQueue]);
 
   useEffect(() => {
     if (!viewing || !token) return undefined;
@@ -201,14 +201,18 @@ export default function VerificationsAdmin() {
     void review(approving, "approve", "", true);
   };
 
+  const identityVerifications = verifications.filter((item) => item.type === "identity");
+  const tesdaVerifications = verifications.filter((item) => item.type === "tesda");
+  const activeVerifications = activeQueue === "identity" ? identityVerifications : tesdaVerifications;
+
   return (
-    <section className="mt-6" aria-labelledby="verification-queue-title">
+    <section aria-labelledby="verification-queue-title">
       <div className="overflow-hidden rounded-3xl border border-white/80 bg-white/85 shadow-[0_18px_48px_rgba(15,23,42,0.07)] backdrop-blur-xl">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200/80 px-5 py-5 sm:px-7">
           <div>
             <h2 id="verification-queue-title" className="text-xl font-extrabold tracking-tight text-slate-950">Verification queue</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Review identity documents and TESDA certification evidence.
+              Identity checks and TESDA qualifications are reviewed in separate queues.
               {processingIdentityCount > 0 && (
                 <span className="ml-1">
                   {processingIdentityCount} ID {processingIdentityCount === 1 ? "check is" : "checks are"} processing; you can review them now.
@@ -218,7 +222,7 @@ export default function VerificationsAdmin() {
           </div>
           <div className="flex items-center gap-3">
             <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-bold tabular-nums text-amber-950">
-              {verifications.length} pending
+              {activeVerifications.length} pending
             </span>
             <button
               type="button"
@@ -237,6 +241,31 @@ export default function VerificationsAdmin() {
             {actionError}
           </p>
         )}
+        {!error && (
+          <div className="flex flex-wrap gap-2 border-b border-slate-200/80 px-5 py-3 sm:px-7" role="group" aria-label="Verification queues">
+            {[
+              { id: "identity", label: "Identity verification", count: identityVerifications.length },
+              { id: "tesda", label: "TESDA / NC II", count: tesdaVerifications.length },
+            ].map((queue) => (
+              <button
+                key={queue.id}
+                type="button"
+                aria-pressed={activeQueue === queue.id}
+                onClick={() => setActiveQueue(queue.id)}
+                className={`dashboard-focus inline-flex min-h-10 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold transition ${
+                  activeQueue === queue.id
+                    ? "bg-sky-950 text-white shadow-sm"
+                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {queue.label}
+                <span className={`rounded-full px-2 py-0.5 text-xs tabular-nums ${
+                  activeQueue === queue.id ? "bg-white/15 text-white" : "bg-slate-100 text-slate-700"
+                }`}>{queue.count}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {error && (
           <div className="m-5 rounded-2xl border border-rose-200 bg-rose-50/90 p-5 sm:m-7">
             <p role="alert" className="text-sm font-semibold text-rose-900">{error}</p>
@@ -250,7 +279,7 @@ export default function VerificationsAdmin() {
           <div className="space-y-3 p-5 sm:p-7" aria-label="Loading verifications">
             {[0, 1, 2].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-slate-100 motion-reduce:animate-none" />)}
           </div>
-        ) : !error && verifications.length === 0 ? (
+        ) : !error && activeVerifications.length === 0 ? (
           <div className="px-6 py-16 text-center">
             <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-100 bg-emerald-50 text-emerald-800">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-6 w-6" aria-hidden="true">
@@ -259,13 +288,15 @@ export default function VerificationsAdmin() {
             </span>
             <h3 className="mt-4 text-base font-bold text-slate-900">Queue is clear</h3>
             <p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-slate-600">
-              {processingIdentityCount > 0
+              {activeQueue === "identity" && processingIdentityCount > 0
                 ? "Processing ID submissions are included in this queue and can be reviewed now."
-                : "New manual-review submissions will appear here."}
+                : activeQueue === "tesda"
+                  ? "New TESDA and NC II certificate submissions will appear here."
+                  : "New identity submissions will appear here."}
             </p>
           </div>
         ) : !error && (
-          <div className="admin-ledger-scroll" tabIndex={0} aria-label="Pending identity and TESDA certificate submissions">
+          <div className="admin-ledger-scroll" tabIndex={0} aria-label={activeQueue === "identity" ? "Pending identity verification submissions" : "Pending TESDA certificate submissions"}>
             <table className="w-full min-w-[820px] text-left">
               <thead className="bg-slate-50/90 text-[11px] font-bold uppercase tracking-wider text-slate-600">
                 <tr>
@@ -277,7 +308,7 @@ export default function VerificationsAdmin() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200/80">
-                {verifications.map((applicant) => (
+                {activeVerifications.map((applicant) => (
                   <tr key={verificationKey(applicant)} className="align-top transition hover:bg-sky-50/35">
                     <td className="px-6 py-4">
                       <p className="font-bold text-slate-950">{applicant.name}</p>
@@ -318,16 +349,22 @@ export default function VerificationsAdmin() {
                     </td>
                     <td className="max-w-48 px-5 py-4 text-sm text-slate-700">
                       <span className="line-clamp-2">{applicant.type === "tesda" ? applicant.trade : applicant.tradeCertificate || "Not provided"}</span>
+                      {applicant.type === "tesda" && !applicant.hasCertificateImage && (
+                        <p className="mt-1 text-xs font-medium text-rose-700">No saved certificate image. Reject this entry or contact support.</p>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex justify-end gap-2">
                         <button
                           type="button"
                           onClick={() => { setActionError(""); setViewing(applicant); }}
-                          className="dashboard-focus inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-sky-950 transition hover:border-sky-300 hover:bg-sky-50"
+                          disabled={applicant.type === "tesda" && !applicant.hasCertificateImage}
+                          className="dashboard-focus inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-sky-950 transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Icon name="image" />
-                          {applicant.type === "tesda" ? "View certificate" : "View ID"}
+                          {applicant.type === "tesda" && !applicant.hasCertificateImage
+                            ? "Certificate unavailable"
+                            : applicant.type === "tesda" ? "View certificate" : "View ID"}
                         </button>
                         <button
                           type="button"

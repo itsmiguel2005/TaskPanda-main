@@ -33,6 +33,25 @@ const {
 const hashToken = (token) => createHash("sha256").update(token).digest("hex");
 const registrationSessionCookie = "taskpanda_registration";
 const ADMIN_LOGIN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const personNamePattern = /^[\p{L}\p{M}]+(?:[ .'-][\p{L}\p{M}]+)*$/u;
+
+function normalizePhilippineMobile(value) {
+  if (/^09\d{9}$/.test(value)) return value;
+  if (/^\+639\d{9}$/.test(value)) return `0${value.slice(3)}`;
+  return "";
+}
+
+function hasGoodRegistrationPassword(password) {
+  const complexityRequirements = [
+    /[A-Z]/.test(password) && /[a-z]/.test(password),
+    /\d/.test(password),
+    /[^A-Za-z0-9\s]/.test(password),
+  ];
+  return password.length >= 8
+    && password.length <= 72
+    && !/\s/.test(password)
+    && complexityRequirements.filter(Boolean).length >= 2;
+}
 
 function rejectAdminRateLimit(res, retryAfterSeconds) {
   res.setHeader("Retry-After", String(retryAfterSeconds));
@@ -223,28 +242,12 @@ async function handleRegister(req, res) {
       return res.status(400).json({ message: "A valid email is required." });
     }
 
-    const passwordRequirements = [];
-    if (!password) passwordRequirements.push("a password");
-    if (/\s/.test(password)) passwordRequirements.push("no spaces");
-    if (password.length < 8) passwordRequirements.push("at least 8 characters");
-    if (password.length > 15) passwordRequirements.push("no more than 15 characters");
-    if (!/[A-Z]/.test(password)) passwordRequirements.push("one uppercase letter");
-    if (!/[^A-Za-z0-9]/.test(password)) passwordRequirements.push("one special character");
-    if (passwordRequirements.length) {
-      return res.status(400).json({ message: `Password needs ${passwordRequirements.join(", ")}.` });
+    if (!hasGoodRegistrationPassword(password)) {
+      return res.status(400).json({ message: "Password must be at least 8 characters, contain no spaces, and meet at least two other strength requirements." });
     }
 
-    if (!username) {
-      return res.status(400).json({ message: "Username is required." });
-    }
-    if (role === "provider" && !username) {
-      return res.status(400).json({ message: "Username is required for providers." });
-    }
-    if (/\s/.test(username)) {
-      return res.status(400).json({ message: "Username cannot contain spaces." });
-    }
-    if (/^\S+@\S+\.\S+$/.test(username)) {
-      return res.status(400).json({ message: "Username cannot be an email address." });
+    if (!/^[A-Za-z0-9_.-]{4,15}$/.test(username)) {
+      return res.status(400).json({ message: "Username must be 4-15 characters and use only letters, numbers, dots, underscores, or hyphens." });
     }
     if (referralCode && role !== "client") {
       return res.status(400).json({ message: "Referral codes are available for client registrations." });
@@ -355,14 +358,11 @@ async function handleRegistrationAvailability(req, res) {
   const username = String(req.body.username || "").trim();
   const filters = [];
 
-  if (/\s/.test(username)) {
-    return res.status(400).json({ field: "username", message: "Username cannot contain spaces." });
-  }
-  if (/^\S+@\S+\.\S+$/.test(username)) {
-    return res.status(400).json({ field: "username", message: "Username cannot be an email address." });
+  if (username && !/^[A-Za-z0-9_.-]{4,15}$/.test(username)) {
+    return res.status(400).json({ field: "username", message: "Username must be 4-15 characters and use only letters, numbers, dots, underscores, or hyphens." });
   }
   if (email && /^\S+@\S+\.\S+$/.test(email)) filters.push({ email });
-  if (username.length >= 3) filters.push({ username });
+  if (username.length >= 4) filters.push({ username });
   if (!filters.length) return res.status(400).json({ message: "Enter a valid email or username." });
 
   const existingUser = await User.findOne({ $or: filters }).select("email username emailVerified registrationComplete");
@@ -663,10 +663,16 @@ async function handleCompleteRegistration(req, res) {
   const middleName = String(req.body.middleName || "").trim();
   const lastName = String(req.body.lastName || "").trim();
   const fullName = String(req.body.fullName || [firstName, middleName, lastName].filter(Boolean).join(" ")).trim();
-  const mobileNumber = String(req.body.mobileNumber || "").trim();
+  const mobileNumber = normalizePhilippineMobile(String(req.body.mobileNumber || "").trim());
   const province = String(req.body.province || "").trim();
   const city = String(req.body.city || "").trim();
   const barangay = String(req.body.barangay || "").trim();
+  if (!fullName || fullName.length > 100 || !personNamePattern.test(fullName)) {
+    return res.status(400).json({ message: "Enter a valid full name of 100 characters or fewer." });
+  }
+  if (!mobileNumber) {
+    return res.status(400).json({ message: "Enter a valid Philippine mobile number, such as +63 9XX XXX XXXX." });
+  }
   const address = formatAddress(req.body.address, barangay, city, province);
   let geoLocation = address ? await geocodeAddress(address, { barangay, city, province }) : null;
   geoLocation ||= normalizeGeoLocation(req.body.geoLocation);
@@ -674,10 +680,6 @@ async function handleCompleteRegistration(req, res) {
     return res.status(400).json({ message: "Choose a valid map location." });
   }
   const dateOfBirth = String(req.body.dateOfBirth || "").trim();
-  if (!fullName) return res.status(400).json({ message: "Your full name is required." });
-  if (!/^09\d{9}$/.test(mobileNumber)) {
-    return res.status(400).json({ message: "Enter a valid 11-digit mobile number starting with 09." });
-  }
 
   let parsedDateOfBirth;
   if (user.role === "provider") {

@@ -13,6 +13,13 @@ function MenuIcon({ children, className = "h-4 w-4" }) {
   );
 }
 
+function getProfileRejectionNoticeId(user) {
+  if (user?.verificationStatus !== "rejected") return null;
+  const reason = String(user.verificationRejectionReason || "").trim();
+  const userId = String(user._id || user.id || user.email || "account");
+  return `verification-rejected:${userId}:${reason}`;
+}
+
 export default function Header({ logoColor = "text-primary-700", showNav = false, activeTab = "Home", role = "client" }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -60,8 +67,11 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
 
   const dismissNotification = (item) => {
     setDismissedNotificationIds((current) => {
-      if (current.includes(item.id)) return current;
-      const next = [...current, item.id];
+      const fallbackId = item.title === "Identity verification rejected"
+        ? getProfileRejectionNoticeId(user)
+        : null;
+      const idsToDismiss = [item.id, fallbackId].filter(Boolean);
+      const next = [...new Set([...current, ...idsToDismiss])];
       try {
         localStorage.setItem(dismissedStorageKey, JSON.stringify(next));
       } catch {
@@ -164,11 +174,11 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
 
     let active = true;
     const getProfileRejectionNotice = () => {
-      if (user?.verificationStatus !== "rejected") return null;
+      const id = getProfileRejectionNoticeId(user);
+      if (!id) return null;
       const reason = String(user.verificationRejectionReason || "").trim();
-      const userId = String(user._id || user.id || user.email || "account");
       return {
-        id: `verification-rejected:${userId}:${reason}`,
+        id,
         title: "Identity verification rejected",
         detail: reason
           ? `Your identity verification was rejected. ${reason}`
@@ -201,17 +211,22 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
             createdAt: notification.createdAt,
             isVerificationNotice: true,
           }));
-        const rejectionNotice = getProfileRejectionNotice();
-        const hasRejectionNotification = notifications.some((notification) =>
-          notification.title === "Identity verification rejected"
-        );
-        if (rejectionNotice && !hasRejectionNotification) notifications.unshift(rejectionNotice);
         setVerificationNotificationItems(notifications);
       } catch (error) {
         if (active) {
           console.warn("Verification notifications refresh failed:", error.message);
           const rejectionNotice = getProfileRejectionNotice();
-          setVerificationNotificationItems(rejectionNotice ? [rejectionNotice] : []);
+          const isDismissed = rejectionNotice
+            && (dismissedNotificationIds.includes(rejectionNotice.id)
+              || (() => {
+                try {
+                  const savedIds = JSON.parse(localStorage.getItem(dismissedStorageKey) || "[]");
+                  return Array.isArray(savedIds) && savedIds.includes(rejectionNotice.id);
+                } catch {
+                  return false;
+                }
+              })());
+          setVerificationNotificationItems(rejectionNotice && !isDismissed ? [rejectionNotice] : []);
         }
       }
     };
@@ -227,6 +242,8 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     isLoggedIn,
     showNav,
     token,
+    dismissedStorageKey,
+    dismissedNotificationIds,
     user?._id,
     user?.id,
     user?.verificationRejectionReason,

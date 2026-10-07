@@ -228,7 +228,7 @@ export default function ProviderProfilePage() {
                   {isVerified ? (
                     <button
                       type="button"
-                      onClick={() => navigate("/provider-profile/tesda")}
+                      onClick={() => navigate("/profile/tesda")}
                       className="dashboard-secondary-button dashboard-focus mt-4 w-full px-4 py-2.5 text-sm sm:w-auto"
                     >
                       Submit TESDA certificate
@@ -294,7 +294,7 @@ export default function ProviderProfilePage() {
               </div>
               <ProfileSetting label="Edit professional profile" description="Update your services, bio, contact information, or service area." onClick={() => navigate("/profile/edit")} />
               {!isVerified && <ProfileSetting label="Verify identity" description="Submit your ID for identity review." onClick={() => navigate("/provider-profile/verify")} />}
-              {isVerified && <ProfileSetting label="Submit TESDA certificate" description="Add or update a TESDA trade credential for separate review." onClick={() => navigate("/provider-profile/tesda")} />}
+              {isVerified && <ProfileSetting label="Submit TESDA certificate" description="Add or update a TESDA trade credential for separate review." onClick={() => navigate("/profile/tesda")} />}
               <ProfileSetting label="Provider bookings" description="View requests and manage your schedule." onClick={() => navigate("/provider-bookings")} />
               <ProfileSetting label="Messages" description="Continue conversations with clients." onClick={() => navigate("/provider-messages")} />
               <ProfileSetting label="Sign out" description="Sign out of this device." onClick={handleSignOut} last tone="danger" />

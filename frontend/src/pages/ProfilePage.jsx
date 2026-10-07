@@ -472,6 +472,7 @@ export default function ProfilePage() {
                 </div>
                 <ProfileSetting label="Edit personal details" description="Update your name, phone, location, and profile photo." onClick={() => navigate("/profile/edit")} />
                 {!isVerified && <ProfileSetting label="Verify your identity" description="Submit an ID to complete account verification." onClick={() => navigate("/profile/verify")} />}
+                {isVerified && <ProfileSetting label="Add TESDA qualification" description="Submit an NC II certificate for a separate review." onClick={() => navigate("/profile/tesda")} />}
                 <ProfileSetting label="Change password" description="Choose a new password for your account." onClick={() => setShowChangePassword(true)} />
                 {isLoggedIn && <ProfileSetting label="Sign out" description="Sign out of this device." onClick={handleSignOut} tone="danger" last />}
               </section>

@@ -15,7 +15,7 @@ function profileFromUser(user) {
     tesdaCertificates: (user.tesdaCertificates || []).map((certificate) => ({
       id: String(certificate._id),
       trade: certificate.trade || "",
-      status: certificate.status || "pending",
+      status: String(certificate.status || "pending").toLowerCase(),
       submittedAt: certificate.submittedAt || null,
       reviewedAt: certificate.reviewedAt || null,
       rejectionReason: certificate.rejectionReason || "",

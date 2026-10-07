@@ -423,18 +423,17 @@ export default function EditProfilePage() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700">
-              Username <span className="text-red-500">*</span>
+              Username
             </label>
             <input
               type="text"
               name="username"
               value={form.username}
-              onChange={handleChange}
-              className="mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-              style={{ borderColor: errors.username ? "#ef4444" : "#e5e7eb" }}
+              readOnly
+              className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-500 outline-none"
               required
             />
-            {errors.username && <p className="mt-1 text-xs text-red-500">{errors.username}</p>}
+            <p className="mt-1 text-xs text-slate-500">Your username can't be changed.</p>
           </div>
 
           <div>

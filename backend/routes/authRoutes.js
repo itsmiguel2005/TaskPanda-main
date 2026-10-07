@@ -21,14 +21,25 @@ const router = express.Router();
 const emailField = () => body("email").isString().trim().isEmail().isLength({ max: 254 });
 const passwordPattern = /^(?=\S{8,15}$)(?=.*[A-Z])(?=.*[^A-Za-z0-9]).*$/;
 const personNamePattern = /^[\p{L}\p{M}]+(?:[ .'-][\p{L}\p{M}]+)*$/u;
+const registrationPasswordIsGood = (password) => {
+  const complexityRequirements = [
+    /[A-Z]/.test(password) && /[a-z]/.test(password),
+    /\d/.test(password),
+    /[^A-Za-z0-9\s]/.test(password),
+  ];
+  return password.length >= 8
+    && !/\s/.test(password)
+    && complexityRequirements.filter(Boolean).length >= 2;
+};
+const usernamePattern = /^[A-Za-z0-9_.-]{4,15}$/;
 
 const registrationValidation = [
   body("role").isString().isIn(["client", "provider"]),
   body("registrationPhase").isString().equals("start"),
   emailField(),
-  body("username").isString().trim().isLength({ min: 3, max: 30 }),
+  body("username").isString().trim().matches(usernamePattern).withMessage("Username must be 4-15 characters and use only letters, numbers, dots, underscores, or hyphens."),
   body("referralCode").optional({ values: "falsy" }).isString().trim().isLength({ max: 32 }).matches(/^[A-Z0-9-]+$/i),
-  body("password").isString().matches(passwordPattern),
+  body("password").isString().bail().isLength({ min: 8, max: 72 }).bail().custom(registrationPasswordIsGood).withMessage("Password must be at least 8 characters and meet at least two other strength requirements."),
   body("professions").custom((value, { req }) => req.body.role !== "provider" || (Array.isArray(value) && value.length > 0)),
   body("professions").optional().isArray({ max: 20 }),
   body("professions.*").optional().isString().trim().isLength({ min: 1, max: 80 }),
@@ -40,10 +51,11 @@ const loginValidation = [
 ];
 
 const completionValidation = [
+  body("fullName").optional().isString().trim().isLength({ min: 1, max: 100 }).matches(personNamePattern),
   body("firstName").isString().trim().isLength({ min: 1, max: 80 }).withMessage("First name must be 1 to 80 characters.").matches(personNamePattern).withMessage("First name may contain letters, spaces, apostrophes, hyphens, and periods only."),
   body("middleName").optional({ values: "falsy" }).isString().trim().isLength({ max: 80 }).withMessage("Middle name must be 80 characters or fewer.").matches(personNamePattern).withMessage("Middle name may contain letters, spaces, apostrophes, hyphens, and periods only."),
   body("lastName").isString().trim().isLength({ min: 1, max: 80 }).withMessage("Last name must be 1 to 80 characters.").matches(personNamePattern).withMessage("Last name may contain letters, spaces, apostrophes, hyphens, and periods only."),
-  body("mobileNumber").isString().matches(/^09\d{9}$/),
+  body("mobileNumber").isString().matches(/^(?:09|\+639)\d{9}$/),
   body("province").isString().trim().isLength({ min: 1, max: 100 }),
   body("city").isString().trim().isLength({ min: 1, max: 100 }),
   body("barangay").isString().trim().isLength({ min: 1, max: 100 }),
@@ -58,7 +70,7 @@ const completionValidation = [
 router.post("/register", limitAuthAttempts, registrationValidation, validateRequest, handleRegister);
 router.post("/check-registration", limitRegistrationChecks, [
   body("email").optional().isString().trim().isLength({ max: 254 }),
-  body("username").optional().isString().trim().isLength({ max: 30 }),
+  body("username").optional().isString().trim().matches(usernamePattern).withMessage("Username must be 4-15 characters and use only letters, numbers, dots, underscores, or hyphens."),
 ], validateRequest, handleRegistrationAvailability);
 router.get("/registration-status", handleRegistrationStatus);
 router.post("/registration-resume", limitAuthAttempts, body("code").isString().matches(/^[a-f\d]{12}$/i), validateRequest, handleResumeRegistration);
