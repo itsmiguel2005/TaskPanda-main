@@ -1,3 +1,5 @@
+const mongoose = require("mongoose");
+const Booking = require("../models/Booking");
 const User = require("../models/User");
 const { getProviderStreaks } = require("../services/providerStreak");
 
@@ -131,4 +133,104 @@ async function handleDiscoverProviders(req, res) {
   }
 }
 
-module.exports = { handleDiscoverProviders, MAX_DISTANCE_KM };
+async function handleGetProviderProfile(req, res) {
+  try {
+    const provider = await User.findOne({
+      _id: req.params.providerId,
+      role: "provider",
+      registrationComplete: true,
+      isSuspended: mongoose.trusted({ $ne: true }),
+      archivedAt: null,
+    })
+      .select("fullName username profileImage professions bio isVerified verificationStatus averageRating totalReviews province city barangay tesdaCertificates")
+      .lean();
+
+    if (!provider) return res.status(404).json({ message: "This provider could not be found." });
+
+    const completedStatuses = ["complete", "closed", "settled", "Completed", "Settled"];
+    const [completedJobs, reviews] = await Promise.all([
+      Booking.countDocuments({
+        providerId: provider._id,
+        status: mongoose.trusted({ $in: completedStatuses }),
+      }),
+      Booking.aggregate([
+        {
+          $match: {
+            providerId: provider._id,
+            status: { $in: completedStatuses },
+            clientRating: { $gte: 1 },
+            clientReview: { $type: "string", $ne: "" },
+          },
+        },
+        { $sort: { reviewedAt: -1, updatedAt: -1, _id: -1 } },
+        {
+          $group: {
+            _id: "$clientId",
+            latestReview: { $first: "$$ROOT" },
+          },
+        },
+        { $replaceRoot: { newRoot: "$latestReview" } },
+        { $sort: { reviewedAt: -1, updatedAt: -1, _id: -1 } },
+        { $limit: 3 },
+        {
+          $lookup: {
+            from: User.collection.name,
+            localField: "clientId",
+            foreignField: "_id",
+            as: "reviewer",
+          },
+        },
+        { $unwind: { path: "$reviewer", preserveNullAndEmptyArrays: true } },
+        {
+          $project: {
+            _id: 1,
+            reviewerName: {
+              $ifNull: ["$reviewer.fullName", { $ifNull: ["$reviewer.username", "Client"] }],
+            },
+            reviewerProfileImage: "$reviewer.profileImage",
+            clientRating: 1,
+            clientReview: 1,
+            clientReviewPhotos: 1,
+            reviewedAt: 1,
+            updatedAt: 1,
+          },
+        },
+      ]),
+    ]);
+
+    return res.json({
+      provider: {
+        id: String(provider._id),
+        name: provider.fullName || provider.username || "Local provider",
+        username: provider.username || "",
+        profileImage: provider.profileImage || "",
+        professions: provider.professions || [],
+        bio: provider.bio || "",
+        verified: provider.isVerified === true || provider.verificationStatus === "verified",
+        tesdaCertificates: (provider.tesdaCertificates || [])
+          .filter((certificate) => String(certificate.status || "").toLowerCase() === "approved")
+          .map((certificate) => ({ trade: certificate.trade || "" })),
+        averageRating: Number(provider.averageRating || 0),
+        totalReviews: Number(provider.totalReviews || 0),
+        completedJobs,
+        serviceAreas: [provider.city, provider.province].filter(Boolean).join(", ")
+          ? [[provider.city, provider.province].filter(Boolean).join(", ")]
+          : [],
+        reviews: reviews.map((review) => ({
+          id: String(review._id),
+          reviewer: review.reviewerName || "Client",
+          reviewerProfileImage: review.reviewerProfileImage || "",
+          rating: Number(review.clientRating),
+          comment: review.clientReview,
+          photos: Array.isArray(review.clientReviewPhotos) ? review.clientReviewPhotos : [],
+          reviewedAt: review.reviewedAt || review.updatedAt,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error("Provider profile error:", error);
+    return res.status(500).json({ message: "Could not load this provider's profile." });
+  }
+}
+
+module.exports = { handleDiscoverProviders, handleGetProviderProfile, MAX_DISTANCE_KM };

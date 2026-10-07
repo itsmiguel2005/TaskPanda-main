@@ -54,6 +54,8 @@ export default function ProviderProfilePage() {
   const rating = Number(user?.averageRating ?? 0);
   const totalReviews = Number(user?.totalReviews ?? 0);
   const verificationStatus = user?.verificationStatus || "unverified";
+  const approvedTesdaCertificates = (user?.tesdaCertificates || [])
+    .filter((certificate) => String(certificate.status || "").toLowerCase() === "approved");
 
   const handleSignOut = () => {
     logout();
@@ -88,6 +90,21 @@ export default function ProviderProfilePage() {
                     <div className="mt-2">
                       <StatusPill verified={isVerified} status={verificationStatus} />
                     </div>
+                    {approvedTesdaCertificates.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {approvedTesdaCertificates.map((certificate) => (
+                          <span
+                            key={certificate.id}
+                            className="inline-flex max-w-full items-center gap-1 rounded border border-green-200 bg-green-50 px-2 py-1 text-[11px] font-semibold text-green-800"
+                          >
+                            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" className="h-3 w-3 shrink-0">
+                              <path fillRule="evenodd" d="M10 1.667a2.5 2.5 0 0 1 2.357 1.666h1.81a2.5 2.5 0 0 1 2.5 2.5v1.81a2.5 2.5 0 0 1 0 4.714v1.81a2.5 2.5 0 0 1-2.5 2.5h-1.81a2.5 2.5 0 0 1-4.714 0h-1.81a2.5 2.5 0 0 1-2.5-2.5v-1.81a2.5 2.5 0 0 1 0-4.714v-1.81a2.5 2.5 0 0 1 2.5-2.5h1.81A2.5 2.5 0 0 1 10 1.667Zm3.09 6.75a.75.75 0 0 0-1.18-.92l-2.74 3.52-1.08-1.08a.75.75 0 0 0-1.06 1.06l1.68 1.68a.75.75 0 0 0 1.12-.07l3.26-4.19Z" clipRule="evenodd" />
+                            </svg>
+                            <span className="truncate">TESDA · {certificate.trade}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
                 {location && <p className="mt-3 text-xs leading-5 text-slate-600">{location}</p>}

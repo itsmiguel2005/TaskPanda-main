@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { SkeletonBlock } from "./Skeletons.jsx";
@@ -148,7 +149,7 @@ function BookingTimeline({ booking }) {
 function BookingDrawer({ booking, onClose, onOverride }) {
   const status = normalizedStatus(booking.status);
   const isException = ["canceled", "declined", "expired"].includes(status);
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50">
       <button type="button" aria-label="Close booking details" onClick={onClose} className="absolute inset-0 h-full w-full cursor-default bg-slate-950/40" />
       <aside
@@ -337,7 +338,8 @@ function BookingDrawer({ booking, onClose, onOverride }) {
           <p className="mt-2 text-center text-xs text-slate-500">Every manual change requires an audit reason.</p>
         </footer>
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -356,7 +358,7 @@ function OverrideDialog({ booking, onCancel, onSubmit, busy, error }) {
           ? [["pending", "Restore to pending"], ["approved", "Restore as confirmed"]]
           : [["canceled", "Force-cancel booking"], ["complete", "Mark as completed"], ["settled", "Mark as settled"]];
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/55 px-4 py-6">
       <section
         role="alertdialog"
@@ -415,7 +417,8 @@ function OverrideDialog({ booking, onCancel, onSubmit, busy, error }) {
           </div>
         </form>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

@@ -166,6 +166,7 @@ async function handleGetAdminUsers(req, res) {
     const search = String(req.query.q || "").trim().slice(0, 100);
     const filter = String(req.query.filter || "all");
     const query = { role: mongoose.trusted({ $in: ADMINISTRABLE_ROLES }) };
+    const additionalFilters = [];
 
     if (filter === "archived") {
       query.archivedAt = mongoose.trusted({ $ne: null });
@@ -173,17 +174,34 @@ async function handleGetAdminUsers(req, res) {
       query.archivedAt = null;
       if (filter === "clients" || filter === "providers") query.role = filter.slice(0, -1);
       if (filter === "suspended") query.isSuspended = true;
+      if (filter === "verified") {
+        additionalFilters.push({
+          $or: [
+            { isVerified: true },
+            { verificationStatus: "verified" },
+            { "verificationDetails.status": "Active" },
+          ],
+        });
+      }
+      if (filter === "tesda-certified") {
+        query.tesdaCertificates = mongoose.trusted({
+          $elemMatch: { status: "approved" },
+        });
+      }
     }
 
     if (search) {
       const pattern = new RegExp(escapeRegex(search), "i");
-      query.$or = [{ fullName: pattern }, { username: pattern }, { email: pattern }];
+      additionalFilters.push({
+        $or: [{ fullName: pattern }, { username: pattern }, { email: pattern }],
+      });
     }
+    if (additionalFilters.length > 0) query.$and = mongoose.trusted(additionalFilters);
 
     const offset = (page - 1) * USER_PAGE_SIZE;
     const [users, total, counts] = await Promise.all([
       User.find(query)
-        .select("fullName firstName lastName username email role emailVerified registrationComplete isVerified verificationStatus profileImage professions createdAt referralCode stampProgress completedBookings isSuspended suspendedAt archivedAt")
+        .select("fullName firstName lastName username email role emailVerified registrationComplete isVerified verificationStatus verificationDetails.status profileImage professions tesdaCertificates.trade tesdaCertificates.status createdAt referralCode stampProgress completedBookings isSuspended suspendedAt archivedAt")
         .sort({ createdAt: -1, _id: -1 })
         .skip(offset)
         .limit(USER_PAGE_SIZE)
@@ -193,6 +211,20 @@ async function handleGetAdminUsers(req, res) {
         User.countDocuments({ role: mongoose.trusted({ $in: ADMINISTRABLE_ROLES }), archivedAt: null }),
         User.countDocuments({ role: mongoose.trusted({ $in: ADMINISTRABLE_ROLES }), isSuspended: true, archivedAt: null }),
         User.countDocuments({ role: mongoose.trusted({ $in: ADMINISTRABLE_ROLES }), archivedAt: mongoose.trusted({ $ne: null }) }),
+        User.countDocuments({
+          role: mongoose.trusted({ $in: ADMINISTRABLE_ROLES }),
+          archivedAt: null,
+          $or: [
+            { isVerified: true },
+            { verificationStatus: "verified" },
+            { "verificationDetails.status": "Active" },
+          ],
+        }),
+        User.countDocuments({
+          role: mongoose.trusted({ $in: ADMINISTRABLE_ROLES }),
+          archivedAt: null,
+          tesdaCertificates: mongoose.trusted({ $elemMatch: { status: "approved" } }),
+        }),
       ]),
     ]);
 
@@ -203,7 +235,10 @@ async function handleGetAdminUsers(req, res) {
         username: user.username || "",
         email: user.email,
         role: user.role,
-        verified: user.isVerified === true,
+        verified: getIdentityVerificationLabel(user) === "Verified",
+        tesdaCertificates: (user.tesdaCertificates || [])
+          .filter((certificate) => String(certificate.status || "").toLowerCase() === "approved")
+          .map((certificate) => ({ trade: certificate.trade || "" })),
         emailVerified: user.emailVerified !== false,
         registrationComplete: user.registrationComplete !== false,
         verificationStatus: user.verificationStatus || "unverified",
@@ -222,7 +257,13 @@ async function handleGetAdminUsers(req, res) {
       page,
       pageSize: USER_PAGE_SIZE,
       pages: Math.max(1, Math.ceil(total / USER_PAGE_SIZE)),
-      counts: { all: counts[0], suspended: counts[1], archived: counts[2] },
+      counts: {
+        all: counts[0],
+        suspended: counts[1],
+        archived: counts[2],
+        verified: counts[3],
+        tesdaCertified: counts[4],
+      },
     });
   } catch (error) {
     console.error("Admin users list error:", error);
@@ -287,12 +328,15 @@ async function handleGetAdminUserDetails(req, res) {
         username: user.username || "",
         email: user.email,
         role: user.role,
-        verified: user.isVerified === true,
+        verified: getIdentityVerificationLabel(user) === "Verified",
         verificationStatus: user.verificationStatus || "unverified",
         identityVerificationStatus: getIdentityVerificationLabel(user),
         verificationDetailsStatus: user.verificationDetails?.status || "",
         verificationRejectionReason: user.verificationDetails?.rejectionReason || "",
         tesdaVerificationStatus: getTesdaVerificationSummary(user.tesdaCertificates),
+        tesdaCertificates: (user.tesdaCertificates || [])
+          .filter((certificate) => String(certificate.status || "").toLowerCase() === "approved")
+          .map((certificate) => ({ trade: certificate.trade || "" })),
         averageRating: Number(user.averageRating || 0),
         totalReviews: Number(user.totalReviews || 0),
         profileImage: user.profileImage || "",

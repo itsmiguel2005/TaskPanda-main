@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import Header from "./Header.jsx";
-import ProviderModal from "./ProviderModal.jsx";
+import ProviderProfileModal from "./ProviderProfileModal.jsx";
 import ProviderStreak from "./ProviderStreak.jsx";
 import RequestBookingModal from "./RequestBookingModal.jsx";
 import ServiceLocationPicker from "./ServiceLocationPicker.jsx";
@@ -728,7 +728,7 @@ export default function Explore() {
         </div>
       </div>
 
-        <ProviderModal
+        <ProviderProfileModal
           provider={viewingProvider}
           onClose={() => setViewingProvider(null)}
           isFavorite={viewingProvider ? favoriteProviderIds.has(String(viewingProvider._id)) : false}

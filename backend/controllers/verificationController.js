@@ -301,7 +301,13 @@ async function handleSubmitTesdaCertificate(req, res) {
   let uploadedImage;
   try {
     const previousUser = await User.findById(req.user._id)
-      .select("role isVerified tesdaCertificates +tesdaCertificates.certificateImagePublicId");
+      .select([
+        "role isVerified",
+        "tesdaCertificates._id",
+        "tesdaCertificates.trade tesdaCertificates.status tesdaCertificates.submittedAt",
+        "tesdaCertificates.reviewedAt tesdaCertificates.rejectionReason tesdaCertificates.certificateImageUrl",
+        "+tesdaCertificates.certificateImagePublicId",
+      ].join(" "));
     if (!previousUser) {
       return res.status(404).json({ message: "Your account could not be found." });
     }
@@ -336,12 +342,12 @@ async function handleSubmitTesdaCertificate(req, res) {
         _id: req.user._id,
         role: mongoose.trusted({ $in: ["client", "provider"] }),
         isVerified: true,
-        tesdaCertificates: {
+        tesdaCertificates: mongoose.trusted({
           $elemMatch: {
             _id: approvedCertificate._id,
             status: "approved",
           },
-        },
+        }),
       }, {
         $set: {
           "tesdaCertificates.$.status": "pending",
@@ -360,14 +366,14 @@ async function handleSubmitTesdaCertificate(req, res) {
         _id: req.user._id,
         role: mongoose.trusted({ $in: ["client", "provider"] }),
         isVerified: true,
-        tesdaCertificates: {
-          $not: {
+        $nor: [{
+          tesdaCertificates: {
             $elemMatch: {
               trade: { $regex: `^${trade.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
               status: "pending",
             },
           },
-        },
+        }],
       }, {
         $push: {
           tesdaCertificates: {
@@ -453,8 +459,11 @@ async function handleGetAdminVerifications(_req, res) {
         "tesdaCertificates.status": mongoose.trusted({ $regex: "^pending$", $options: "i" }),
         role: mongoose.trusted({ $in: ["client", "provider"] }),
       })
-        .select("fullName firstName middleName lastName username email role createdAt tesdaCertificates")
-        .select("+tesdaCertificates.certificateImagePublicId")
+        .select([
+          "fullName firstName middleName lastName username email role createdAt",
+          "tesdaCertificates._id tesdaCertificates.trade tesdaCertificates.status tesdaCertificates.submittedAt tesdaCertificates.certificateImageUrl",
+          "+tesdaCertificates.certificateImagePublicId",
+        ].join(" "))
         .lean(),
       User.countDocuments({
         "verificationDetails.status": "Pending",
@@ -519,7 +528,7 @@ async function handleGetTesdaCertificateDocument(req, res) {
     const user = await User.findOne({
       _id: req.params.userId,
       role: mongoose.trusted({ $in: ["client", "provider"] }),
-      tesdaCertificates: { $elemMatch: { _id: req.params.certificateId } },
+      tesdaCertificates: mongoose.trusted({ $elemMatch: { _id: req.params.certificateId } }),
     }).select("+tesdaCertificates.certificateImagePublicId +tesdaCertificates.certificateImageFormat");
     const certificate = user?.tesdaCertificates?.id(req.params.certificateId);
     if (!certificate?.certificateImagePublicId) {
@@ -562,13 +571,13 @@ async function handleReviewTesdaCertificate(req, res) {
     const user = await User.findOneAndUpdate({
       _id: req.params.userId,
       role: mongoose.trusted({ $in: ["client", "provider"] }),
-      tesdaCertificates: {
+      tesdaCertificates: mongoose.trusted({
         $elemMatch: {
           _id: req.params.certificateId,
           status: "pending",
           certificateImagePublicId: { $exists: true, $ne: "" },
         },
-      },
+      }),
     }, {
       $set: {
         "tesdaCertificates.$.status": approved ? "approved" : "rejected",

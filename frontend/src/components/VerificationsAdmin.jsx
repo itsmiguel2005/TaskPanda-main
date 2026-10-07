@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { adminRequest } from "../services/adminApi.js";
 import { SkeletonBlock } from "./Skeletons.jsx";
@@ -207,64 +208,64 @@ export default function VerificationsAdmin() {
   const activeVerifications = activeQueue === "identity" ? identityVerifications : tesdaVerifications;
 
   return (
-    <section aria-labelledby="verification-queue-title">
-      <div className="overflow-hidden rounded-3xl border border-white/80 bg-white/85 shadow-[0_18px_48px_rgba(15,23,42,0.07)] backdrop-blur-xl">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200/80 px-5 py-5 sm:px-7">
-          <div>
-            <h2 id="verification-queue-title" className="text-xl font-extrabold tracking-tight text-slate-950">Verification queue</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Identity checks and TESDA qualifications are reviewed in separate queues.
-              {processingIdentityCount > 0 && (
-                <span className="ml-1">
-                  {processingIdentityCount} ID {processingIdentityCount === 1 ? "check is" : "checks are"} processing; you can review them now.
-                </span>
-              )}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-bold tabular-nums text-amber-950">
-              {activeVerifications.length} pending
-            </span>
-            <button
-              type="button"
-              onClick={() => void loadQueue(true)}
-              disabled={loading || refreshing}
-              className="dashboard-focus inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 bg-white/90 px-3 text-sm font-semibold text-sky-950 transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-wait disabled:opacity-60"
-            >
-              <Icon name="refresh" className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-              Refresh
-            </button>
-          </div>
+    <section className="space-y-5 pb-10" aria-labelledby="verification-queue-title">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 id="verification-queue-title" className="text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">Verification queue</h1>
+          <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-600">
+            Identity checks and TESDA qualifications are reviewed in separate queues.
+            {processingIdentityCount > 0 && (
+              <span className="ml-1">
+                {processingIdentityCount} ID {processingIdentityCount === 1 ? "check is" : "checks are"} processing; you can review them now.
+              </span>
+            )}
+          </p>
         </div>
+        <button
+          type="button"
+          onClick={() => void loadQueue(true)}
+          disabled={loading || refreshing}
+          className="dashboard-focus inline-flex h-10 shrink-0 items-center justify-center gap-2 self-start rounded-xl border border-slate-300 bg-white px-3.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50/60 hover:text-sky-900 disabled:cursor-wait disabled:opacity-60 sm:self-auto"
+        >
+          <Icon name="refresh" className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
+      </header>
 
+      {!error && (
+        <div className="flex gap-1 overflow-x-auto border-b border-slate-200" role="tablist" aria-label="Verification queues">
+          {[
+            { id: "identity", label: "Identity verification", count: identityVerifications.length },
+            { id: "tesda", label: "TESDA / NC II", count: tesdaVerifications.length },
+          ].map((queue) => (
+            <button
+              key={queue.id}
+              type="button"
+              role="tab"
+              aria-selected={activeQueue === queue.id}
+              onClick={() => setActiveQueue(queue.id)}
+              className={`dashboard-focus inline-flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs font-semibold transition ${
+                activeQueue === queue.id ? "border-blue-800 text-blue-950" : "border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-900"
+              }`}
+            >
+              {queue.label}
+              <span className="tabular-nums text-slate-500">{queue.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-3 overflow-hidden rounded-3xl border border-white/80 bg-white/85 shadow-[0_18px_48px_rgba(15,23,42,0.07)] backdrop-blur-xl">
         {actionError && (
           <p role="alert" className="mx-5 mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-900 sm:mx-7">
             {actionError}
           </p>
         )}
         {!error && (
-          <div className="flex flex-wrap gap-2 border-b border-slate-200/80 px-5 py-3 sm:px-7" role="group" aria-label="Verification queues">
-            {[
-              { id: "identity", label: "Identity verification", count: identityVerifications.length },
-              { id: "tesda", label: "TESDA / NC II", count: tesdaVerifications.length },
-            ].map((queue) => (
-              <button
-                key={queue.id}
-                type="button"
-                aria-pressed={activeQueue === queue.id}
-                onClick={() => setActiveQueue(queue.id)}
-                className={`dashboard-focus inline-flex min-h-10 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold transition ${
-                  activeQueue === queue.id
-                    ? "bg-sky-950 text-white shadow-sm"
-                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                {queue.label}
-                <span className={`rounded-full px-2 py-0.5 text-xs tabular-nums ${
-                  activeQueue === queue.id ? "bg-white/15 text-white" : "bg-slate-100 text-slate-700"
-                }`}>{queue.count}</span>
-              </button>
-            ))}
+          <div className="flex justify-end border-b border-slate-200/80 px-5 py-3 sm:px-7">
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-bold tabular-nums text-amber-950">
+              {activeVerifications.length} pending
+            </span>
           </div>
         )}
         {error && (
@@ -403,56 +404,65 @@ export default function VerificationsAdmin() {
         )}
       </div>
 
-      {viewing && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/75 p-3 backdrop-blur-sm sm:p-6" onMouseDown={() => setViewing(null)}>
+      {viewing && createPortal(
+        <div className="fixed inset-0 z-[120] flex items-center justify-center overflow-y-auto bg-slate-950/75 p-3 backdrop-blur-sm sm:p-6" onMouseDown={() => setViewing(null)}>
           <section
             role="dialog"
             aria-modal="true"
             aria-labelledby="verification-document-title"
-            className="max-h-[94vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-white/50 bg-white/95 p-5 shadow-[0_24px_80px_rgba(2,6,23,0.35)] backdrop-blur-2xl sm:p-7"
+            className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_24px_80px_rgba(2,6,23,0.35)] sm:max-h-[calc(100dvh-3rem)]"
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4">
-              <div>
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-7">
+              <div className="min-w-0">
                 <h3 id="verification-document-title" className="text-lg font-extrabold text-slate-950">
                   {viewing.type === "tesda" ? "TESDA certificate" : "ID documents"}
                 </h3>
-                <p className="mt-1 text-sm text-slate-600">{viewing.name} · {viewing.email}</p>
+                <p className="mt-1 break-words text-sm text-slate-600">{viewing.name} · {viewing.email}</p>
                 <p className="mt-1 text-xs leading-5 text-slate-600">
                   {viewing.type === "tesda"
                     ? `Review the certificate evidence for the ${viewing.trade} trade before approving.`
                     : "Compare the full name on the ID front with this account name before approving."}
                 </p>
               </div>
-              <button type="button" aria-label="Close document viewer" onClick={() => setViewing(null)} className="dashboard-focus rounded-xl p-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950">
+              <button type="button" aria-label="Close document viewer" onClick={() => setViewing(null)} className="dashboard-focus shrink-0 rounded-xl p-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950">
                 <Icon name="close" className="h-5 w-5" />
               </button>
             </div>
-            {documentsLoading && <div role="status" aria-label="Loading secure documents" aria-busy="true" className="grid gap-4 py-5 sm:grid-cols-2"><SkeletonBlock className="h-64 w-full rounded-xl" /><SkeletonBlock className="h-64 w-full rounded-xl" /></div>}
-            {documentsError && <p role="alert" className="mt-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">{documentsError}</p>}
-            {documents && (
-              viewing.type === "tesda" ? (
-                <figure className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80">
-                  <figcaption className="border-b border-slate-200 px-4 py-3 text-sm font-bold text-slate-800">{viewing.trade} certificate</figcaption>
-                  <div className="flex min-h-64 items-center justify-center p-3 sm:min-h-80">
-                    <img src={documents.certificate} alt={`${viewing.name}'s TESDA ${viewing.trade} certificate`} className="max-h-[62vh] w-full rounded-lg object-contain" />
-                  </div>
-                </figure>
-              ) : (
-                <div className="mt-5 grid gap-5 md:grid-cols-2">
-                  {[["Front", documents.front], ["Back", documents.back]].map(([side, url]) => (
-                    <figure key={side} className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80">
-                      <figcaption className="border-b border-slate-200 px-4 py-3 text-sm font-bold text-slate-800">ID {side}</figcaption>
-                      <div className="flex min-h-64 items-center justify-center p-3 sm:min-h-80">
-                        <img src={url} alt={`${viewing.name}'s ID ${side.toLowerCase()}`} className="max-h-[62vh] w-full rounded-lg object-contain" />
-                      </div>
-                    </figure>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
+              {documentsLoading && (
+                <div role="status" aria-label="Loading secure documents" aria-busy="true" className={`grid gap-4 ${viewing.type === "tesda" ? "" : "sm:grid-cols-2"}`}>
+                  {Array.from({ length: viewing.type === "tesda" ? 1 : 2 }, (_, index) => (
+                    <SkeletonBlock key={index} className="h-64 w-full rounded-xl sm:h-80" />
                   ))}
                 </div>
-              )
-            )}
+              )}
+              {documentsError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">{documentsError}</p>}
+              {documents && (
+                viewing.type === "tesda" ? (
+                  <figure className="flex min-h-72 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80 sm:min-h-96">
+                    <figcaption className="shrink-0 border-b border-slate-200 px-4 py-3 text-sm font-bold text-slate-800">{viewing.trade} certificate</figcaption>
+                    <div className="flex min-h-0 flex-1 items-center justify-center p-3">
+                      <img src={documents.certificate} alt={`${viewing.name}'s TESDA ${viewing.trade} certificate`} className="max-h-[calc(100dvh-13rem)] max-w-full rounded-lg object-contain" />
+                    </div>
+                  </figure>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {[["Front", documents.front], ["Back", documents.back]].map(([side, url]) => (
+                      <figure key={side} className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80">
+                        <figcaption className="shrink-0 border-b border-slate-200 px-4 py-3 text-sm font-bold text-slate-800">ID {side}</figcaption>
+                        <div className="flex min-h-64 items-center justify-center p-3 sm:min-h-80">
+                          <img src={url} alt={`${viewing.name}'s ID ${side.toLowerCase()}`} className="max-h-[calc(100dvh-15rem)] max-w-full rounded-lg object-contain" />
+                        </div>
+                      </figure>
+                    ))}
+                  </div>
+                )
+              )}
+            </div>
           </section>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {approving && (

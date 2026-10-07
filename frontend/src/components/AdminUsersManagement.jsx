@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { SkeletonBlock } from "./Skeletons.jsx";
@@ -7,9 +8,13 @@ const FILTERS = [
   { id: "all", label: "All" },
   { id: "clients", label: "Clients" },
   { id: "providers", label: "Providers" },
+  { id: "verified", label: "Verified" },
+  { id: "tesda-certified", label: "TESDA Certified" },
   { id: "suspended", label: "Suspended" },
   { id: "archived", label: "Archived" },
 ];
+
+const EMPTY_COUNTS = { all: 0, suspended: 0, archived: 0, verified: 0, tesdaCertified: 0 };
 
 const STATUS_STYLES = {
   Active: "border-emerald-200 bg-emerald-50 text-emerald-800",
@@ -82,6 +87,41 @@ function StatusPill({ status }) {
   );
 }
 
+function VerificationBadges({ user }) {
+  const approvedCertificates = user.tesdaCertificates || [];
+  if (!user.verified && approvedCertificates.length === 0) return null;
+
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1" aria-label="Account verifications">
+      {user.verified && (
+        <span
+          role="img"
+          aria-label="Identity verified"
+          title="Identity verified"
+          className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-700 text-white"
+        >
+          <svg viewBox="0 0 12 12" fill="none" aria-hidden="true" className="h-2.5 w-2.5">
+            <path d="m2.5 6.2 2.1 2.1 4.9-4.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      )}
+      {approvedCertificates.map((certificate, index) => (
+        <span
+          key={`${certificate.trade}-${index}`}
+          role="img"
+          aria-label={certificate.trade ? `TESDA certificate verified: ${certificate.trade}` : "TESDA certificate verified"}
+          title={certificate.trade ? `TESDA certificate verified: ${certificate.trade}` : "TESDA certificate verified"}
+          className="inline-flex h-4 w-4 items-center justify-center text-green-700"
+        >
+          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" className="h-3.5 w-3.5">
+            <path fillRule="evenodd" d="M10 1.667a2.5 2.5 0 0 1 2.357 1.666h1.81a2.5 2.5 0 0 1 2.5 2.5v1.81a2.5 2.5 0 0 1 0 4.714v1.81a2.5 2.5 0 0 1-2.5 2.5h-1.81a2.5 2.5 0 0 1-4.714 0h-1.81a2.5 2.5 0 0 1-2.5-2.5v-1.81a2.5 2.5 0 0 1 0-4.714v-1.81a2.5 2.5 0 0 1 2.5-2.5h1.81A2.5 2.5 0 0 1 10 1.667Zm3.09 6.75a.75.75 0 0 0-1.18-.92l-2.74 3.52-1.08-1.08a.75.75 0 0 0-1.06 1.06l1.68 1.68a.75.75 0 0 0 1.12-.07l3.26-4.19Z" clipRule="evenodd" />
+          </svg>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function SectionHeading({ icon, children }) {
   return (
     <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
@@ -149,7 +189,7 @@ function ReferralCodeValue({ code, onClick }) {
 function ReferralCodeModal({ code, onClose }) {
   if (!code) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[3px]"
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
@@ -179,7 +219,8 @@ function ReferralCodeModal({ code, onClose }) {
           {code}
         </p>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -223,7 +264,7 @@ function AccountActionModal({ action, busy, error, onClose, onConfirm }) {
     },
   }[action.type];
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[3px]" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
       <section role="dialog" aria-modal="true" aria-labelledby="account-action-title" className="w-full max-w-md rounded-2xl border border-white/80 bg-white p-5 shadow-[0_24px_70px_rgba(15,23,42,0.24)] sm:p-6">
         <div className="flex items-start gap-3">
@@ -248,7 +289,8 @@ function AccountActionModal({ action, busy, error, onClose, onConfirm }) {
           </button>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -257,7 +299,7 @@ export default function AdminUsersManagement() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [users, setUsers] = useState([]);
-  const [counts, setCounts] = useState({ all: 0, suspended: 0, archived: 0 });
+  const [counts, setCounts] = useState(EMPTY_COUNTS);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(1);
   const [resultsRevision, setResultsRevision] = useState(0);
@@ -268,7 +310,7 @@ export default function AdminUsersManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [selectedUserId, setSelectedUserId] = useState(searchParams.get("userId"));
+  const selectedUserId = searchParams.get("userId");
   const [details, setDetails] = useState(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailRefresh, setDetailRefresh] = useState(0);
@@ -276,11 +318,6 @@ export default function AdminUsersManagement() {
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const [viewingReferralCode, setViewingReferralCode] = useState("");
-
-  useEffect(() => {
-    const requestedUserId = searchParams.get("userId");
-    if (requestedUserId !== selectedUserId) setSelectedUserId(requestedUserId);
-  }, [searchParams, selectedUserId]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebouncedSearch(search.trim()), 220);
@@ -315,7 +352,7 @@ export default function AdminUsersManagement() {
       if (!response.ok) throw new Error(data.message || "Could not load user accounts.");
       setUsers(data.users || []);
       setResultsRevision((revision) => revision + 1);
-      setCounts(data.counts || { all: 0, suspended: 0, archived: 0 });
+      setCounts({ ...EMPTY_COUNTS, ...(data.counts || {}) });
       setTotal(data.total || 0);
       setPages(data.pages || 1);
       if (page > (data.pages || 1)) setPage(data.pages || 1);
@@ -373,8 +410,6 @@ export default function AdminUsersManagement() {
       } else if (viewingReferralCode) {
         setViewingReferralCode("");
       } else {
-        setSelectedUserId(null);
-        setDetails(null);
         setSearchParams((current) => {
           const next = new URLSearchParams(current);
           next.delete("userId");
@@ -424,7 +459,6 @@ export default function AdminUsersManagement() {
       setNotice(data.message || "Account updated.");
       setPendingAction(null);
       if (type === "archive") {
-        setSelectedUserId(null);
         setSearchParams((current) => {
           const next = new URLSearchParams(current);
           next.delete("userId");
@@ -449,7 +483,6 @@ export default function AdminUsersManagement() {
   const openUser = (id) => {
     setError("");
     setNotice("");
-    setSelectedUserId(id);
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.set("userId", id);
@@ -460,8 +493,6 @@ export default function AdminUsersManagement() {
   const closeDetails = () => {
     if (actionBusy) return;
     setViewingReferralCode("");
-    setSelectedUserId(null);
-    setDetails(null);
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
       next.delete("userId");
@@ -469,7 +500,10 @@ export default function AdminUsersManagement() {
     }, { replace: true });
   };
 
-  const selectedUser = details?.user;
+  const listUser = users.find((user) => user.id === selectedUserId);
+  const selectedUser = details?.user
+    ? { ...(listUser || {}), ...details.user }
+    : listUser;
   const firstResult = total === 0 ? 0 : (page - 1) * 25 + 1;
   const lastResult = Math.min(page * 25, total);
 
@@ -499,10 +533,41 @@ export default function AdminUsersManagement() {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_12px_34px_rgba(15,23,42,0.055)]">
-        <div className="border-b border-slate-200/80 px-4 py-4 sm:px-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="relative w-full lg:max-w-sm">
+      <div>
+        <div className="flex gap-1 overflow-x-auto border-b border-slate-200" role="tablist" aria-label="Filter user accounts">
+          {FILTERS.map((item) => {
+            const active = filter === item.id;
+            const count = item.id === "all" ? counts.all
+              : item.id === "suspended" ? counts.suspended
+                : item.id === "archived" ? counts.archived
+                  : item.id === "verified" ? counts.verified
+                    : item.id === "tesda-certified" ? counts.tesdaCertified : null;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => chooseFilter(item.id)}
+                className={`dashboard-focus inline-flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs font-semibold transition ${
+                  active ? "border-blue-800 text-blue-950" : "border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                }`}
+              >
+                {item.id === "tesda-certified" && (
+                  <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" className="h-3.5 w-3.5 text-emerald-700">
+                    <path fillRule="evenodd" d="M10 1.667a2.5 2.5 0 0 1 2.357 1.666h1.81a2.5 2.5 0 0 1 2.5 2.5v1.81a2.5 2.5 0 0 1 0 4.714v1.81a2.5 2.5 0 0 1-2.5 2.5h-1.81a2.5 2.5 0 0 1-4.714 0h-1.81a2.5 2.5 0 0 1-2.5-2.5v-1.81a2.5 2.5 0 0 1 0-4.714v-1.81a2.5 2.5 0 0 1 2.5-2.5h1.81A2.5 2.5 0 0 1 10 1.667Zm3.09 6.75a.75.75 0 0 0-1.18-.92l-2.74 3.52-1.08-1.08a.75.75 0 0 0-1.06 1.06l1.68 1.68a.75.75 0 0 0 1.12-.07l3.26-4.19Z" clipRule="evenodd" />
+                  </svg>
+                )}
+                {item.label}
+                {count !== null && <span className="tabular-nums text-slate-500">{(Number(count) || 0).toLocaleString()}</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_12px_34px_rgba(15,23,42,0.055)]">
+          <div className="flex flex-col gap-4 border-b border-slate-200/80 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <div className="relative w-full sm:max-w-sm">
               <Icon name="search" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
               <input
                 type="search"
@@ -518,36 +583,13 @@ export default function AdminUsersManagement() {
             </p>
           </div>
 
-          <div className="mt-4 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Filter user accounts">
-            {FILTERS.map((item) => {
-              const active = filter === item.id;
-              const count = item.id === "all" ? counts.all : item.id === "suspended" ? counts.suspended : item.id === "archived" ? counts.archived : null;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => chooseFilter(item.id)}
-                  className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-full border px-3.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 focus-visible:ring-offset-2 ${
-                    active ? "border-sky-800 bg-sky-800 text-white shadow-sm" : "border-slate-300 bg-white text-sky-900 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-950"
-                  }`}
-                >
-                  {item.label}
-                  {count !== null && <span className={`tabular-nums ${active ? "text-sky-100" : "text-slate-500"}`}>{count.toLocaleString()}</span>}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-100 pt-3 text-xs text-slate-600">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-slate-200/80 px-4 py-3 text-xs text-slate-600 sm:px-6">
             <span>Showing <strong className="font-semibold tabular-nums text-slate-900">{firstResult}–{lastResult}</strong> of <strong className="font-semibold tabular-nums text-slate-900">{total}</strong></span>
             <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-500" />{counts.suspended.toLocaleString()} suspended</span>
             <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-slate-500" />{counts.archived.toLocaleString()} archived</span>
           </div>
-        </div>
 
-        <div key={resultsRevision} className="content-arrive">
+          <div key={resultsRevision} className="content-arrive">
           {loading && users.length === 0 ? (
             <div role="status" aria-label="Loading users" aria-busy="true" className="space-y-3 p-5">
               {Array.from({ length: 5 }, (_, index) => <SkeletonBlock key={index} className="h-15.5 w-full rounded-xl" />)}
@@ -592,7 +634,10 @@ export default function AdminUsersManagement() {
                         <div className="flex min-w-0 items-center gap-3">
                           <Avatar user={user} />
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-900">{user.name}</p>
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <p className="truncate text-sm font-semibold text-slate-900">{user.name}</p>
+                              <VerificationBadges user={user} />
+                            </div>
                             <p className="truncate text-xs text-slate-600">{user.email}</p>
                           </div>
                         </div>
@@ -615,7 +660,10 @@ export default function AdminUsersManagement() {
                 <button key={user.id} type="button" onClick={() => openUser(user.id)} className="flex w-full items-center gap-3 px-4 py-4 text-left outline-none transition hover:bg-sky-50/60 focus-visible:bg-sky-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-600">
                   <Avatar user={user} size="h-11 w-11" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-slate-900">{user.name}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-sm font-semibold text-slate-900">{user.name}</span>
+                      <VerificationBadges user={user} />
+                    </span>
                     <span className="mt-0.5 block truncate text-xs text-slate-600">{user.email}</span>
                     <span className="mt-2 flex flex-wrap items-center gap-2">
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold capitalize ${user.role === "provider" ? "bg-sky-50 text-sky-900" : "bg-indigo-50 text-indigo-900"}`}>{user.role}</span>
@@ -638,8 +686,9 @@ export default function AdminUsersManagement() {
           </div>
         </div>
       </div>
+      </div>
 
-      {selectedUserId && (
+      {selectedUserId && createPortal(
         <div className="fixed inset-0 z-60 flex justify-end bg-slate-950/35 backdrop-blur-[2px]" onMouseDown={(event) => event.target === event.currentTarget && closeDetails()}>
           <aside role="dialog" aria-modal="true" aria-labelledby="user-drawer-title" className="flex h-full w-full max-w-xl flex-col border-l border-white/70 bg-white shadow-[-20px_0_60px_rgba(15,23,42,0.18)]">
             <div className="flex items-start gap-3 border-b border-slate-200 px-5 py-5 sm:px-7">
@@ -647,7 +696,10 @@ export default function AdminUsersManagement() {
                 <SkeletonBlock className="h-12 w-12 rounded-full" />
               ) : selectedUser ? <Avatar user={selectedUser} size="h-12 w-12" /> : null}
               <div className="min-w-0 flex-1">
-                <h2 id="user-drawer-title" className="truncate text-lg font-bold tracking-tight text-slate-950">{selectedUser?.name || "Account details"}</h2>
+                <h2 id="user-drawer-title" className="flex min-w-0 flex-wrap items-center gap-1.5 text-lg font-bold tracking-tight text-slate-950">
+                  <span className="min-w-0 truncate">{selectedUser?.name || "Account details"}</span>
+                  {selectedUser && <VerificationBadges user={selectedUser} />}
+                </h2>
                 <p className="mt-0.5 truncate text-sm text-slate-600">{selectedUser?.email || "Loading account…"}</p>
                 {selectedUser && <div className="mt-2 flex flex-wrap items-center gap-2"><StatusPill status={selectedUser.status} /><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold capitalize text-slate-700">{selectedUser.role}</span></div>}
               </div>
@@ -759,7 +811,8 @@ export default function AdminUsersManagement() {
             )}
           </aside>
           <ReferralCodeModal code={viewingReferralCode} onClose={() => setViewingReferralCode("")} />
-        </div>
+        </div>,
+        document.body,
       )}
 
       <AccountActionModal action={pendingAction} busy={actionBusy} error={actionError} onClose={() => setPendingAction(null)} onConfirm={() => void runAction()} />

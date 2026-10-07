@@ -11,16 +11,87 @@ import ProviderStreak from "./ProviderStreak.jsx";
 import { canRequestCancellation, getCancellationLockMessage } from "../utils/bookingCancellation.js";
 import StatusChangeConfirmation from "./StatusChangeConfirmation.jsx";
 import { BookingCardSkeletonList, SkeletonBlock } from "./Skeletons.jsx";
+import ProviderProfileModal from "./ProviderProfileModal.jsx";
+import RequestBookingModal from "./RequestBookingModal.jsx";
+import { PROFESSIONS } from "../utils/professions.js";
 
 export const categories = [
-  { name: "All Services", icon: "🏠" },
-  { name: "Carpentry", icon: "🪵" },
-  { name: "Electrical", icon: "⚡" },
-  { name: "Plumbing", icon: "🔧" },
-  { name: "Painting", icon: "🎨" },
-  { name: "Cleaning", icon: "🧹" },
-  { name: "Landscaping", icon: "🌱" },
+  {
+    name: "All Services",
+    icon: "house",
+    tileClass: "from-rose-50 via-white to-orange-50 border-rose-100",
+    iconClass: "bg-rose-100/80 text-rose-700",
+  },
+  ...PROFESSIONS.map((name) => {
+    const professionStyles = {
+      Electrician: ["bolt", "from-amber-50 via-white to-orange-50 border-amber-100", "bg-amber-100/80 text-amber-700"],
+      Plumber: ["pipe", "from-cyan-50 via-white to-sky-50 border-cyan-100", "bg-cyan-100/80 text-cyan-700"],
+      "Aircon Tech": ["snowflake", "from-sky-50 via-white to-indigo-50 border-sky-100", "bg-sky-100/80 text-sky-700"],
+      Carpenter: ["hammer", "from-orange-50 via-white to-amber-50 border-orange-100", "bg-orange-100/80 text-orange-800"],
+      Painter: ["paint", "from-fuchsia-50 via-white to-pink-50 border-fuchsia-100", "bg-fuchsia-100/80 text-fuchsia-700"],
+      Welder: ["weld", "from-rose-50 via-white to-orange-50 border-rose-100", "bg-rose-100/80 text-rose-700"],
+      "Construction Worker": ["hardhat", "from-yellow-50 via-white to-amber-50 border-yellow-100", "bg-yellow-100/80 text-yellow-800"],
+      "Appliance Tech": ["appliance", "from-teal-50 via-white to-cyan-50 border-teal-100", "bg-teal-100/80 text-teal-700"],
+      Housekeeper: ["broom", "from-lime-50 via-white to-emerald-50 border-lime-100", "bg-lime-100/80 text-lime-800"],
+      "Home Chef": ["chef", "from-red-50 via-white to-orange-50 border-red-100", "bg-red-100/80 text-red-700"],
+      Gardener: ["leaf", "from-green-50 via-white to-lime-50 border-green-100", "bg-green-100/80 text-green-700"],
+      Disinfection: ["sparkles", "from-emerald-50 via-white to-teal-50 border-emerald-100", "bg-emerald-100/80 text-emerald-700"],
+      "Delivery Rider": ["delivery", "from-blue-50 via-white to-cyan-50 border-blue-100", "bg-blue-100/80 text-blue-700"],
+      "Transport Helper": ["transport", "from-blue-50 via-white to-sky-50 border-blue-100", "bg-blue-100/80 text-blue-700"],
+      "IT Tech": ["laptop", "from-slate-100 via-white to-blue-50 border-slate-200", "bg-slate-200/80 text-slate-700"],
+      "IT Repair": ["wrench", "from-stone-100 via-white to-amber-50 border-stone-200", "bg-stone-200/80 text-stone-700"],
+    };
+    const [icon, tileClass, iconClass] = professionStyles[name] || [
+      "tools",
+      "from-slate-50 via-white to-sky-50 border-slate-200",
+      "bg-slate-100 text-slate-700",
+    ];
+    return {
+      name,
+      icon,
+      tileClass,
+      iconClass,
+    };
+  }),
 ];
+
+function ProfessionIcon({ name }) {
+  const paths = {
+    house: <><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V10Z" /><path d="M2 10h20" /></>,
+    bolt: <path d="m13 2-9 12h7l-1 8 10-13h-7l1-7Z" />,
+    pipe: <><path d="M4 3v5a4 4 0 0 0 4 4h8a4 4 0 0 1 4 4v5" /><path d="M2 3h4M18 21h4M14 10h4v4" /></>,
+    snowflake: <><path d="M12 2v20M4 6l16 12M20 6 4 18" /><path d="m9 5 3-3 3 3M9 19l3 3 3-3M4 10 4 6l4-1M16 19l4-1v-4M16 5l4 1v4M8 19l-4-1v-4" /></>,
+    hammer: <><path d="m14 5 5 5M12 7l5-5 5 5-5 5M3 21l10-10" /><path d="m2 18 4 4" /></>,
+    paint: <><path d="M4 4h16v9H4zM8 13v5a2 2 0 0 0 4 0v-2a2 2 0 0 1 4 0" /><path d="M7 7h.01M11 7h.01M15 7h.01" /></>,
+    weld: <><path d="m12 3 1.5 5.5L19 7l-3.5 4 3.5 4-5.5-1.5L12 19l-1.5-5.5L5 15l3.5-4L5 7l5.5 1.5L12 3Z" /><path d="M4 3v2M20 18v3M3 16v2" /></>,
+    hardhat: <><path d="M3 14a9 9 0 0 1 18 0v2H3v-2ZM2 18h20M12 5v8" /><path d="M5 9 3 14M19 9l2 5" /></>,
+    appliance: <><rect x="5" y="2" width="14" height="20" rx="2" /><path d="M5 8h14M8 5h.01M11 5h.01M9 12h6v6H9z" /></>,
+    broom: <><path d="m15 3 6 6M13 5l6 6M4 20l10-10M3 21l-1-1 5-5 3 3-5 5-2-2Z" /><path d="m13 5 6 6" /></>,
+    chef: <><path d="M6 11a4 4 0 1 1 2-7 4 4 0 1 1 8 0 4 4 0 1 1 2 7v9H6v-9Z" /><path d="M6 15h12" /></>,
+    leaf: <><path d="M20 4c-8 0-14 2-14 9a6 6 0 0 0 6 6c7 0 8-7 8-15Z" /><path d="M3 21c3-6 7-9 13-12" /></>,
+    sparkles: <><path d="m12 3 1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3Z" /><path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15ZM5 2l.7 2.3L8 5l-2.3.7L5 8l-.7-2.3L2 5l2.3-.7L5 2Z" /></>,
+    delivery: <><path d="M3 6h11v11H3zM14 10h4l3 3v4h-7z" /><circle cx="7" cy="19" r="2" /><circle cx="18" cy="19" r="2" /><path d="M5 9h5" /></>,
+    transport: <><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M7 9h10M7 15h.01M12 15h.01M17 15h.01" /></>,
+    laptop: <><rect x="5" y="3" width="14" height="13" rx="1" /><path d="M2 20h20l-2-4H4l-2 4Z" /><path d="M10 18h4" /></>,
+    wrench: <><path d="M14.5 6.5a5 5 0 0 0-6.8 6.8L3 18l3 3 4.7-4.7a5 5 0 0 0 6.8-6.8l-3 3-3-3 3-3Z" /></>,
+    tools: <><path d="m14 7 3-3 4 4-3 3M3 21l11-11M5 4l4 4M3 6l4-4 4 4-4 4M14 14l6 6" /></>,
+  };
+
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="h-6 w-6"
+    >
+      {paths[name] || paths.tools}
+    </svg>
+  );
+}
 
 function hasMutualSettlement(booking) {
   return Boolean((booking?.clientConfirmedCash || booking?.cashPaidConfirmedAt) && (booking?.providerConfirmedCash || booking?.cashReceivedConfirmedAt));
@@ -39,6 +110,107 @@ function VerifiedBadge() {
       </svg>
       Verified
     </span>
+  );
+}
+
+function TesdaBadges({ certificates = [] }) {
+  const approvedCertificates = certificates.filter(
+    (certificate) => String(certificate.status || "").toLowerCase() === "approved"
+  );
+  const firstCertificate = approvedCertificates[0];
+  if (!firstCertificate) return null;
+
+  return (
+    <>
+      <span
+        className="inline-flex max-w-full items-center rounded border border-green-200 bg-green-50 px-1.5 py-0.5 text-[9px] font-semibold text-green-800"
+        aria-label={`TESDA certified: ${firstCertificate.trade}`}
+        title={`TESDA · ${firstCertificate.trade}`}
+      >
+        <span className="truncate">TESDA · {firstCertificate.trade}</span>
+      </span>
+      {approvedCertificates.length > 1 && (
+        <span className="inline-flex items-center rounded border border-green-200 bg-green-50 px-1.5 py-0.5 text-[9px] font-semibold text-green-800">
+          +{approvedCertificates.length - 1}
+        </span>
+      )}
+    </>
+  );
+}
+
+function DashboardProviderCard({
+  name,
+  profession,
+  profileImage,
+  rating,
+  reviews,
+  category,
+  onTimeStreak,
+  tesdaCertificates,
+  isVerified,
+  isFavorite,
+  onToggleFavorite,
+  onBook,
+  onViewProfile,
+}) {
+  const hasRatings = Number(rating) > 0 && Number(reviews) > 0;
+
+  return (
+    <article className="group relative flex h-60 w-65 shrink-0 flex-col rounded-xl border border-sky-100 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)]">
+      <div className="flex h-7 shrink-0 items-center justify-end">
+        <ProviderStreak streak={onTimeStreak} className="max-w-full" />
+      </div>
+
+      <div className="flex h-11 shrink-0 items-center gap-2">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-900 text-sm font-bold text-white">
+          {profileImage ? <img src={profileImage} alt={`${name} profile`} className="h-full w-full object-cover" /> : name.charAt(0)}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold text-slate-900">{name}</p>
+          <p className="truncate text-xs text-slate-600">{profession}</p>
+        </div>
+        {onToggleFavorite && (
+          <button
+            type="button"
+            onClick={onToggleFavorite}
+            aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
+            aria-pressed={isFavorite}
+            className={`dashboard-focus flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition ${isFavorite ? "border-rose-200 bg-rose-100 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:border-rose-200 hover:text-rose-600"}`}
+          >
+            <svg viewBox="0 0 24 24" fill={isFavorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" className="h-4 w-4" aria-hidden="true">
+              <path d="M12 21.35 10.55 20C5.4 15.36 2 12.28 2 8.5A4.5 4.5 0 0 1 6.5 4c1.74 0 3.41.81 4.5 2.09A6.12 6.12 0 0 1 15.5 4 4.5 4.5 0 0 1 20 8.5c0 3.78-3.4 6.86-8.55 11.5L12 21.35Z" />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      <div className="mt-2 flex h-5 shrink-0 items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-amber-500" aria-label={hasRatings ? `${Number(rating).toFixed(1)} out of 5 stars` : "No ratings yet"}>
+          {[1, 2, 3, 4, 5].map((star) => (
+            <span key={star} className={hasRatings && star <= Math.round(Number(rating)) ? "text-amber-500" : "text-slate-300"} aria-hidden="true">★</span>
+          ))}
+          <span className="text-sm font-semibold text-slate-900">{hasRatings ? Number(rating).toFixed(1) : "New"}</span>
+        </div>
+        <span className="truncate text-[10px] font-medium text-slate-500">{hasRatings ? `${reviews} reviews` : "No ratings yet"}</span>
+      </div>
+
+      <div className="mt-2 flex h-12 shrink-0 flex-wrap content-start gap-1 overflow-hidden">
+        <span className="inline-flex max-w-full items-center rounded-full border border-sky-100 bg-sky-50 px-2 py-0.5 text-[9px] font-semibold text-blue-950">
+          <span className="truncate">{category}</span>
+        </span>
+        {isVerified && <VerifiedBadge />}
+        <TesdaBadges certificates={tesdaCertificates} />
+      </div>
+
+      <div className="mt-auto flex h-8 shrink-0 gap-2">
+        <button type="button" onClick={onBook} className="dashboard-primary-button dashboard-focus flex-1 px-3 py-1.5 text-xs">
+          Book now
+        </button>
+        <button type="button" onClick={onViewProfile} className="dashboard-secondary-button dashboard-focus flex-1 px-3 py-1.5 text-xs">
+          View profile
+        </button>
+      </div>
+    </article>
   );
 }
 
@@ -90,7 +262,7 @@ const FAVORITES_SYNC_EVENT = "taskpanda:favorites-sync";
 export default function Dashboard() {
   const navigate = useNavigate();
   const { isLoggedIn, user, token } = useAuth();
-  const { bookings: bookingList, isLoading, error, requestCancellation, respondToProviderUpdate } = useBookings();
+  const { bookings: bookingList, isLoading, error, requestCancellation, respondToProviderUpdate, createBooking } = useBookings();
   const isInitialBookingsLoading = isLoading && bookingList.length === 0;
   const [bannerVisible, setBannerVisible] = useState(true);
   const [activeTab, setActiveTab] = useState("All");
@@ -113,6 +285,8 @@ export default function Dashboard() {
   const [favoriteProviderIds, setFavoriteProviderIds] = useState(new Set());
   const [favoriteProviders, setFavoriteProviders] = useState([]);
   const [topRatedProviders, setTopRatedProviders] = useState([]);
+  const [viewingProfileProvider, setViewingProfileProvider] = useState(null);
+  const [bookingProvider, setBookingProvider] = useState(null);
   const [topRatedProvidersLoading, setTopRatedProvidersLoading] = useState(false);
   const [topRatedProvidersError, setTopRatedProvidersError] = useState("");
   const requestRef = useRef(null);
@@ -366,7 +540,7 @@ export default function Dashboard() {
       if (!response.ok) throw new Error(data.message || "Could not load nearby providers.");
 
       const providers = Array.isArray(data.providers) ? data.providers : [];
-      const nextProviders = providers.map((provider, index) => {
+      const nextProviders = providers.map((provider) => {
         const professions = Array.isArray(provider.professions) ? provider.professions : [];
         const category = professions[0] || "Local Service";
         const backendRating = Number(provider?.averageRating ?? 0);
@@ -375,6 +549,7 @@ export default function Dashboard() {
         const reviews = Number.isFinite(backendReviews) ? backendReviews : 0;
 
         return {
+          ...provider,
           _id: provider._id,
           id: provider.id || provider._id,
           name: provider.fullName || provider.username || "Local pro",
@@ -384,8 +559,9 @@ export default function Dashboard() {
           rating,
           reviews,
           category,
+          tesdaCertificates: (provider.tesdaCertificates || [])
+            .filter((certificate) => String(certificate.status || "").toLowerCase() === "approved"),
           onTimeStreak: provider.onTimeStreak,
-          accent: index === 0 ? "from-sky-50 via-white to-white" : index === 1 ? "from-cyan-50 via-white to-white" : "from-blue-50 via-white to-white",
         };
       })
         .sort((first, second) => (
@@ -402,6 +578,8 @@ export default function Dashboard() {
           provider.rating === nextProviders[index].rating &&
           provider.reviews === nextProviders[index].reviews &&
           provider.isVerified === nextProviders[index].isVerified &&
+          provider.tesdaCertificates?.map((certificate) => certificate.trade).join("|") ===
+            nextProviders[index].tesdaCertificates.map((certificate) => certificate.trade).join("|") &&
           provider.onTimeStreak?.count === nextProviders[index].onTimeStreak?.count &&
           provider.onTimeStreak?.milestone === nextProviders[index].onTimeStreak?.milestone
         ));
@@ -587,9 +765,11 @@ export default function Dashboard() {
                 <div
                   key={cat.name}
                   onClick={() => navigate(`/explore?service=${encodeURIComponent(cat.name)}`)}
-                  className="flex w-30 shrink-0 cursor-pointer flex-col items-center gap-2 rounded-xl border border-sky-100 bg-white px-5 py-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_12px_28px_rgba(15,23,42,0.07)]"
+                  className={`flex w-30 shrink-0 cursor-pointer flex-col items-center gap-2 rounded-xl border bg-linear-to-br px-5 py-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(15,23,42,0.07)] ${cat.tileClass}`}
                 >
-                  <span className="text-2xl">{cat.icon}</span>
+                  <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${cat.iconClass}`}>
+                    <ProfessionIcon name={cat.icon} />
+                  </span>
                   <span className="whitespace-nowrap text-xs font-medium text-gray-700">
                     {cat.name}
                   </span>
@@ -621,87 +801,39 @@ export default function Dashboard() {
               {topRatedProvidersLoading && visibleTopRatedProviders.length === 0 ? (
                 <div role="status" aria-label="Loading nearby top-rated professionals" aria-busy="true" className="flex min-w-max gap-3">
                   {Array.from({ length: 3 }, (_, index) => (
-                    <div key={index} className="w-65 rounded-xl border border-sky-100 bg-white p-4">
-                      <SkeletonBlock className="h-11 w-11 rounded-full" />
-                      <SkeletonBlock className="mt-4 h-4 w-2/3" />
-                      <SkeletonBlock className="mt-2 h-3 w-1/2" />
-                      <SkeletonBlock className="mt-5 h-3 w-full" />
+                    <div key={index} className="h-60 w-65 shrink-0 rounded-xl border border-sky-100 bg-white p-4">
+                      <SkeletonBlock className="h-7 w-1/3" />
+                      <SkeletonBlock className="mt-1 h-11 w-full" />
+                      <SkeletonBlock className="mt-2 h-5 w-full" />
+                      <SkeletonBlock className="mt-2 h-12 w-full" />
+                      <SkeletonBlock className="mt-3 h-8 w-full" />
                     </div>
                   ))}
                 </div>
               ) : visibleTopRatedProviders.length > 0 ? (
                 visibleTopRatedProviders.map((pro) => {
-                  const hasRatings = Number(pro.rating) > 0 && Number(pro.reviews) > 0;
                   const isVerified = pro.isVerified || favoriteProviders.some(
                     (provider) => String(provider?._id || provider?.id) === String(pro._id || pro.id)
                       && (provider.isVerified === true || provider.verificationStatus === "verified")
                   );
 
                   return (
-                    <div
-                      key={`${pro.name}-${pro.category}`}
-                      className={`content-arrive group relative flex min-h-47.5 min-w-65 flex-col justify-between overflow-hidden rounded-xl border border-sky-100 bg-linear-to-br ${pro.accent} p-4 pt-12 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)]`}
-                    >
-                      <ProviderStreak streak={pro.onTimeStreak} className="absolute right-3 top-3 z-10" />
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white shadow-sm overflow-hidden">
-                          {pro.profileImage ? (
-                            <img src={pro.profileImage} alt={pro.name} className="h-full w-full object-cover" />
-                          ) : (
-                            pro.name.charAt(0)
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-bold text-gray-900">{pro.name}</p>
-                          <p className="truncate text-xs text-gray-600">{pro.cred}</p>
-                        </div>
-                        {token && (
-                          <button
-                            type="button"
-                            aria-label={favoriteProviderIds.has(String(pro._id || pro.id || pro.name)) ? "Remove from favorites" : "Add to favorites"}
-                            onClick={() => toggleFavorite(pro._id || pro.id || pro.name)}
-                            className={`flex h-8 w-8 items-center justify-center rounded-full border transition ${favoriteProviderIds.has(String(pro._id || pro.id || pro.name)) ? "border-rose-200 bg-rose-100 text-rose-600" : "border-gray-200 bg-white text-gray-500 hover:border-rose-200 hover:text-rose-600"}`}
-                          >
-                            <svg viewBox="0 0 24 24" fill={favoriteProviderIds.has(String(pro._id || pro.id || pro.name)) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
-                              <path d="M12 21.35 10.55 20C5.4 15.36 2 12.28 2 8.5A4.5 4.5 0 0 1 6.5 4c1.74 0 3.41.81 4.5 2.09A6.12 6.12 0 0 1 15.5 4 4.5 4.5 0 0 1 20 8.5c0 3.78-3.4 6.86-8.55 11.5L12 21.35Z" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="mt-4 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 text-amber-500">
-                          {[1, 2, 3, 4, 5].map((star) => (
-                            <span key={star} className={hasRatings && star <= Math.round(pro.rating) ? "text-amber-500" : "text-gray-300"}>★</span>
-                          ))}
-                          <span className="text-sm font-semibold text-gray-900">{hasRatings ? pro.rating.toFixed(1) : "New"}</span>
-                        </div>
-                        <span className="text-[11px] font-medium text-gray-500">{hasRatings ? `${pro.reviews} reviews` : "No ratings yet"}</span>
-                      </div>
-                      <div className="mt-4 flex items-center justify-start gap-2">
-                        <span className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-gray-700">
-                          {pro.category}
-                        </span>
-                        {isVerified && <VerifiedBadge />}
-                      </div>
-
-                      <div className="mt-auto flex gap-2 pt-4">
-                        <button
-                          type="button"
-                          onClick={() => navigate("/explore")}
-                          className="dashboard-primary-button dashboard-focus flex-1 px-3 py-2 text-xs"
-                        >
-                          Book now
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => navigate("/profile")}
-                          className="flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50"
-                        >
-                          View profile
-                        </button>
-                      </div>
-                    </div>
+                    <DashboardProviderCard
+                      key={String(pro._id || pro.id || pro.name)}
+                      name={pro.name}
+                      profession={pro.cred}
+                      profileImage={pro.profileImage}
+                      rating={pro.rating}
+                      reviews={pro.reviews}
+                      category={pro.category}
+                      onTimeStreak={pro.onTimeStreak}
+                      tesdaCertificates={pro.tesdaCertificates}
+                      isVerified={isVerified}
+                      isFavorite={favoriteProviderIds.has(String(pro._id || pro.id || pro.name))}
+                      onToggleFavorite={token ? () => toggleFavorite(pro._id || pro.id || pro.name) : undefined}
+                      onBook={() => setBookingProvider(pro)}
+                      onViewProfile={() => setViewingProfileProvider(pro)}
+                    />
                   );
                 })
               ) : (
@@ -775,54 +907,24 @@ export default function Dashboard() {
                   const rating = Number(provider?.averageRating ?? 0);
                   const reviews = Number(provider?.totalReviews ?? 0);
                   const category = professions[0] || "Local Service";
-                  const hasRatings = rating > 0 && reviews > 0;
 
                   return (
-                    <div key={normalizedId} className="group relative flex min-h-47.5 min-w-65 flex-col justify-between rounded-xl border border-sky-100 bg-white p-4 pt-12 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)]">
-                      <ProviderStreak streak={provider.onTimeStreak} className="absolute right-3 top-3 z-10" />
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white shadow-sm overflow-hidden">
-                          {provider.profileImage ? (
-                            <img src={provider.profileImage} alt={providerName} className="h-full w-full object-cover" />
-                          ) : (
-                            providerName.charAt(0)
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-bold text-slate-900">{providerName}</p>
-                          <p className="truncate text-xs text-slate-600">{professions.join(" · ") || "Service provider"}</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => toggleFavorite(normalizedId)}
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-rose-200 bg-rose-100 text-rose-600 transition hover:bg-rose-200"
-                          aria-label="Remove from favorites"
-                        >
-                          <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
-                            <path d="M12 21.35 10.55 20C5.4 15.36 2 12.28 2 8.5A4.5 4.5 0 0 1 6.5 4c1.74 0 3.41.81 4.5 2.09A6.12 6.12 0 0 1 15.5 4 4.5 4.5 0 0 1 20 8.5c0 3.78-3.4 6.86-8.55 11.5L12 21.35Z" />
-                          </svg>
-                        </button>
-                      </div>
-
-                      <div className="mt-4 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 text-amber-500">
-                          {[1, 2, 3, 4, 5].map((star) => (
-                            <span key={star} className={hasRatings && star <= Math.round(rating) ? "text-amber-500" : "text-gray-300"}>★</span>
-                          ))}
-                          <span className="text-sm font-semibold text-gray-900">{hasRatings ? rating.toFixed(1) : "New"}</span>
-                        </div>
-                        <span className="text-[11px] font-medium text-gray-500">{hasRatings ? `${reviews} reviews` : "No ratings yet"}</span>
-                      </div>
-                      <div className="mt-4 flex items-center justify-start gap-2">
-                        <span className="rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-blue-950">{category}</span>
-                        {(provider.isVerified === true || provider.verificationStatus === "verified") && <VerifiedBadge />}
-                      </div>
-
-                      <div className="mt-auto flex gap-2 pt-4">
-                        <button type="button" onClick={() => navigate("/explore")} className="dashboard-primary-button dashboard-focus flex-1 px-3 py-2 text-xs">Book now</button>
-                        <button type="button" onClick={() => navigate("/profile")} className="dashboard-secondary-button dashboard-focus flex-1 px-3 py-2 text-xs">View profile</button>
-                      </div>
-                    </div>
+                    <DashboardProviderCard
+                      key={normalizedId}
+                      name={providerName}
+                      profession={professions.join(" · ") || "Service provider"}
+                      profileImage={provider.profileImage}
+                      rating={rating}
+                      reviews={reviews}
+                      category={category}
+                      onTimeStreak={provider.onTimeStreak}
+                      tesdaCertificates={provider.tesdaCertificates}
+                      isVerified={provider.isVerified === true || provider.verificationStatus === "verified"}
+                      isFavorite
+                      onToggleFavorite={() => toggleFavorite(normalizedId)}
+                      onBook={() => setBookingProvider(provider)}
+                      onViewProfile={() => setViewingProfileProvider(provider)}
+                    />
                   );
                 })
               ) : (
@@ -1075,6 +1177,30 @@ export default function Dashboard() {
           )}
         </StatusChangeConfirmation>
       )}
+      <ProviderProfileModal
+        provider={viewingProfileProvider}
+        onClose={() => setViewingProfileProvider(null)}
+        isFavorite={viewingProfileProvider
+          ? favoriteProviderIds.has(String(viewingProfileProvider._id || viewingProfileProvider.id || ""))
+          : false}
+        onToggleFavorite={token && viewingProfileProvider?._id
+          ? () => toggleFavorite(viewingProfileProvider._id)
+          : undefined}
+        onBook={(selectedProvider) => {
+          setBookingProvider({
+            ...selectedProvider,
+            _id: selectedProvider?._id || selectedProvider?.id,
+            fullName: selectedProvider?.fullName || selectedProvider?.name,
+            professions: selectedProvider?.professions || viewingProfileProvider?.professions || [],
+          });
+          setViewingProfileProvider(null);
+        }}
+      />
+      <RequestBookingModal
+        provider={bookingProvider}
+        onClose={() => setBookingProvider(null)}
+        onSubmit={createBooking}
+      />
     </div>
   );
 }
