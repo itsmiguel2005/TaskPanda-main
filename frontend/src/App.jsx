@@ -3,6 +3,7 @@ import { Navigate, Routes, Route, useLocation } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext.jsx";
 import { BookingProvider } from "./context/BookingContext.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
+import PandaBotWidget from "./components/PandaBotWidget.jsx";
 import Footer from "./components/Footer.jsx";
 import CommunityImpactBanner from "./components/CommunityImpactBanner.jsx";
 import { SkeletonBlock } from "./components/Skeletons.jsx";
@@ -196,6 +197,7 @@ export default function App() {
         <Route path="/profile/verify" element={<ProtectedRoute roles={["client", "provider"]}><VerificationPage /></ProtectedRoute>} />
             </Routes>
           </Suspense>
+          <PandaBotWidget />
         </ErrorBoundary>
         {showFooter && <>
           <CommunityImpactBanner />

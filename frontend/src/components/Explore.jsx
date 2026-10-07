@@ -133,6 +133,43 @@ export default function Explore() {
   }, [searchParams]);
 
   useEffect(() => {
+    const providerId = searchParams.get("bookProvider");
+    if (!providerId) return undefined;
+
+    const controller = new AbortController();
+    const openRecommendedProvider = async () => {
+      try {
+        const response = await apiFetch(`/api/providers/${encodeURIComponent(providerId)}/profile`, {
+          signal: controller.signal,
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.provider) {
+          throw new Error(data.message || "That professional is no longer available. Please try Explore.");
+        }
+
+        const provider = data.provider;
+        setBookingProvider({
+          _id: String(provider.id || providerId),
+          fullName: provider.name || provider.username || "TaskPanda professional",
+          username: provider.username || "",
+          profileImage: provider.profileImage || "",
+          professions: Array.isArray(provider.professions) ? provider.professions : [],
+          averageRating: Number(provider.averageRating || 0),
+          totalReviews: Number(provider.totalReviews || 0),
+        });
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.delete("bookProvider");
+        setSearchParams(nextParams, { replace: true });
+      } catch (error) {
+        if (error.name !== "AbortError") setSearchError(error.message || "Could not open this professional.");
+      }
+    };
+
+    void openRecommendedProvider();
+    return () => controller.abort();
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
     const handleFavoritesSync = (event) => {
       const nextIds = Array.isArray(event?.detail?.favoriteProviderIds)
         ? event.detail.favoriteProviderIds

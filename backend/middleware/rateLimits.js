@@ -47,4 +47,4 @@ const limitChatPhotoUploads = createRateLimiter(30, 15 * 60 * 1000);
 const limitTypingUpdates = createRateLimiter(60, 60 * 1000);
 const limitProfilePhotoUploads = createRateLimiter(30, 15 * 60 * 1000);
 
-module.exports = { limitAuthAttempts, limitRegistrationChecks, limitLocationLookups, limitBookingCreation, limitVerificationUploads, limitTesdaCertificateUploads, limitChatPhotoUploads, limitTypingUpdates, limitProfilePhotoUploads };
+module.exports = { createRateLimiter, limitAuthAttempts, limitRegistrationChecks, limitLocationLookups, limitBookingCreation, limitVerificationUploads, limitTesdaCertificateUploads, limitChatPhotoUploads, limitTypingUpdates, limitProfilePhotoUploads };

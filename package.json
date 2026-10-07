@@ -19,6 +19,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@google/genai": "^2.27.0",
     "@vercel/functions": "^3.9.11",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.11.0",

@@ -36,6 +36,25 @@
   animation: dashboardMascotFloat 3.6s ease-in-out infinite;
 }
 
+.pandabot-action-scroll {
+  scrollbar-color: #75a98c #edf5ef;
+  scrollbar-width: thin;
+}
+
+.pandabot-action-scroll::-webkit-scrollbar {
+  height: 5px;
+}
+
+.pandabot-action-scroll::-webkit-scrollbar-track {
+  background: #edf5ef;
+  border-radius: 9999px;
+}
+
+.pandabot-action-scroll::-webkit-scrollbar-thumb {
+  background: #75a98c;
+  border-radius: 9999px;
+}
+
 @keyframes dashboardMascotFloat {
   0%, 100% {
     transform: translateY(0);

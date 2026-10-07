@@ -13,6 +13,7 @@ const messageRoutes = require("./routes/messageRoutes");
 const clientRoutes = require("./routes/clientRoutes");
 const rewardsRoutes = require("./routes/rewardsRoutes");
 const broadcastRoutes = require("./routes/broadcastRoutes");
+const aiRoutes = require("./routes/aiRoutes");
 const { corsOrigins } = require("./config/env");
 const { trackAuthenticatedRequest } = require("./middleware/requireAuth");
 
@@ -46,6 +47,7 @@ app.use("/api", async (req, res, next) => {
   }
 });
 app.use("/api", trackAuthenticatedRequest);
+app.use("/api/ai", aiRoutes);
 
 app.use(express.static(path.join(__dirname, "../dist")));
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
