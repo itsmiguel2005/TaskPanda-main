@@ -545,30 +545,31 @@ async function handleReportRunningLate(req, res) {
       dateStyle: "medium",
       timeStyle: "short",
     });
-    try {
-      await appendBookingSystemMessage(
-        affectedBooking,
-        `Your provider reported a delay. The updated estimated arrival is ${etaText}. Choose whether to wait or request a new time; you may also use the usual cancellation option.`,
-        req.user._id,
-        "booking.running_late",
-        {
-          sourceBookingId: String(currentBooking._id),
-          delayMinutes,
-          eta: affectedBooking.lateNotice.eta,
-        }
-      );
-    } catch (messageError) {
-      console.error("Running-late system message error:", messageError);
-    }
+    const delayMessage = `Your provider reported a ${delayMinutes}-minute delay. Updated estimated arrival: ${etaText}. Choose whether to wait or request a new time; you may also use the usual cancellation option.`;
+    const systemMessage = await appendBookingSystemMessage(
+      affectedBooking,
+      delayMessage,
+      req.user._id,
+      "running_late",
+      {
+        sourceBookingId: String(currentBooking._id),
+        delayMinutes,
+        eta: affectedBooking.lateNotice.eta,
+        status: "pending",
+      }
+    );
     await notifyBooking({
       userIds: [String(affectedBooking.clientId)],
       title: "Your provider is running late",
-      body: `Updated estimated arrival: ${etaText}. Choose whether to wait or request a new time.`,
-      url: bookingUrl("client", affectedBooking._id),
+      body: delayMessage,
+      url: `/client/messages?conversation=${encodeURIComponent(String(systemMessage.conversationId))}`,
       data: {
         event: "booking.running_late",
         bookingId: String(affectedBooking._id),
         sourceBookingId: String(currentBooking._id),
+        conversationId: String(systemMessage.conversationId),
+        delayMinutes,
+        eta: affectedBooking.lateNotice.eta.toISOString(),
       },
     });
     await affectedBooking.populate(populatePaths);
@@ -605,7 +606,7 @@ async function handleRespondToLateNotice(req, res) {
         booking,
         responseMessage,
         req.user._id,
-        "booking.late_response",
+        "late_response",
         { action, sourceBookingId: String(booking.lateNotice.sourceBookingId || "") }
       );
     } catch (messageError) {

@@ -12,6 +12,17 @@ function formatAppointment(date, time) {
   return time ? `${dateText} · ${time}` : dateText;
 }
 
+function formatEstimatedArrival(eta) {
+  if (!eta) return "the updated arrival time";
+  const date = new Date(eta);
+  if (Number.isNaN(date.getTime())) return "the updated arrival time";
+  return date.toLocaleString("en-PH", {
+    timeZone: "Asia/Manila",
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 const EVENT_TITLES = {
   booking_request: "New booking request",
   booking_status: "Booking update",
@@ -19,6 +30,8 @@ const EVENT_TITLES = {
   payment: "Cash payment update",
   digital_receipt: "Digital receipt",
   provider_update: "Provider update",
+  running_late: "Provider running late",
+  late_response: "Delay response",
   cancellation: "Cancellation update",
   revision_request: "Revision requested",
   revision_response: "Revision response",
@@ -46,6 +59,10 @@ function describeEvent(message, actorName, role) {
   if (message.eventType === "payment") return `${actor} confirmed ${event.confirmation === "cash_paid" ? "cash payment" : "cash received"}`;
   if (message.eventType === "digital_receipt") return `${actor} issued a digital receipt`;
   if (message.eventType === "provider_update") return `${actor} sent a booking update`;
+  if (message.eventType === "running_late") return `Your provider reported a ${event.delayMinutes || "short"}-minute delay. Updated estimated arrival: ${formatEstimatedArrival(event.eta)}`;
+  if (message.eventType === "late_response") return event.action === "wait"
+    ? "The client chose to wait for the updated arrival"
+    : "The client requested a new appointment time";
   if (message.eventType === "revision_request") return `${actor} requested a revision`;
   if (message.eventType === "revision_response") return `${actor} responded to the revision request`;
   if (message.eventType === "review") return `${actor} left a ${event.rating || 0}/5 star review`;
@@ -82,6 +99,12 @@ function getEventPresentation(message) {
     if (status === "rejected") return { title: "Counter-offer Declined", badge: "Declined", tone: "rose" };
     if (status === "countered") return { title: "Counter-offer Replied To", badge: "Countered", tone: "amber" };
     return { title: "Counter-offer Proposed", badge: "Awaiting response", tone: "blue" };
+  }
+  if (message.eventType === "running_late") return { title: "Provider Running Late", badge: "ETA updated", tone: "amber" };
+  if (message.eventType === "late_response") {
+    return event.action === "wait"
+      ? { title: "Client Will Wait", badge: "Response received", tone: "emerald" }
+      : { title: "New Time Requested", badge: "Response received", tone: "amber" };
   }
   if (message.eventType === "cancellation") {
     if (event.cancellationOutcome === "rejected") return { title: "Cancellation Declined", badge: "Booking remains active", tone: "amber" };

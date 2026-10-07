@@ -184,7 +184,9 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
           .sort((a, b) => new Date(b.lastMessageAt || b.updatedAt || 0) - new Date(a.lastMessageAt || a.updatedAt || 0))
           .map((conversation) => ({
             id: `${conversation.id}:${conversation.lastMessageAt || conversation.updatedAt || conversation.lastMessage || "latest"}`,
-            title: conversation.task || "New message",
+            title: String(conversation.lastMessage || "").startsWith("Your provider reported a ")
+              ? "Your provider is running late"
+              : conversation.task || "New message",
             detail: conversation.lastMessage || "You have a new message.",
             from: conversation.name || "TaskPanda",
             unreadCount: Math.max(0, Number(conversation.unreadCount) || 0),
