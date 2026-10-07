@@ -20,7 +20,7 @@ export default defineConfig(({ mode }) => {
       outDir: "../dist",
       emptyOutDir: true,
       sourcemap: true,
-      minify: false,
+      minify: true,
       rollupOptions: {
         input: "./index.html",
       },

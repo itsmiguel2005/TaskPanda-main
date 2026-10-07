@@ -113,8 +113,18 @@ export function BookingProvider({ children }) {
 
   useEffect(() => {
     if (!isLoggedIn || !token) return undefined;
-    const interval = window.setInterval(() => fetchBookings(undefined, true), 10000);
-    return () => window.clearInterval(interval);
+    const refreshWhileVisible = () => {
+      if (!document.hidden) void fetchBookings(undefined, true);
+    };
+    const handleVisibilityChange = () => {
+      if (!document.hidden) refreshWhileVisible();
+    };
+    const interval = window.setInterval(refreshWhileVisible, 10000);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [fetchBookings, isLoggedIn, token]);
 
   const dismissDashboardBooking = useCallback(async (bookingId) => {

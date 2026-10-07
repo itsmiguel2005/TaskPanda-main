@@ -214,11 +214,16 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     };
 
     void loadUnreadMessageCount();
-    const intervalId = window.setInterval(loadUnreadMessageCount, 8_000);
+    const refreshWhileVisible = () => {
+      if (!document.hidden) void loadUnreadMessageCount();
+    };
+    const intervalId = window.setInterval(refreshWhileVisible, 8_000);
+    document.addEventListener("visibilitychange", refreshWhileVisible);
     window.addEventListener(CONVERSATION_READ_EVENT, handleConversationRead);
     return () => {
       active = false;
       window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshWhileVisible);
       window.removeEventListener(CONVERSATION_READ_EVENT, handleConversationRead);
     };
   }, [authRole, isLoggedIn, showNav, token]);
@@ -289,10 +294,15 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     };
 
     void loadVerificationNotifications();
-    const intervalId = window.setInterval(loadVerificationNotifications, 30_000);
+    const refreshWhileVisible = () => {
+      if (!document.hidden) void loadVerificationNotifications();
+    };
+    const intervalId = window.setInterval(refreshWhileVisible, 30_000);
+    document.addEventListener("visibilitychange", refreshWhileVisible);
     return () => {
       active = false;
       window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshWhileVisible);
     };
   }, [
     authRole,
@@ -341,10 +351,15 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     };
 
     void loadBroadcasts();
-    const intervalId = window.setInterval(loadBroadcasts, 30_000);
+    const refreshWhileVisible = () => {
+      if (!document.hidden) void loadBroadcasts();
+    };
+    const intervalId = window.setInterval(refreshWhileVisible, 30_000);
+    document.addEventListener("visibilitychange", refreshWhileVisible);
     return () => {
       active = false;
       window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshWhileVisible);
     };
   }, [authRole, isLoggedIn, showNav, token]);
 
@@ -419,10 +434,15 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     };
 
     void loadRewards();
-    const intervalId = window.setInterval(loadRewards, 8_000);
+    const refreshWhileVisible = () => {
+      if (!document.hidden) void loadRewards();
+    };
+    const intervalId = window.setInterval(refreshWhileVisible, 8_000);
+    document.addEventListener("visibilitychange", refreshWhileVisible);
     return () => {
       active = false;
       window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshWhileVisible);
     };
   }, [authRole, isLoggedIn, token, updateUser]);
 

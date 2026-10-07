@@ -1,44 +1,45 @@
-import React from "react";
+import React, { lazy, Suspense } from "react";
 import { Navigate, Routes, Route, useLocation } from "react-router-dom";
-import LandingPage from "./pages/LandingPage.jsx";
-import LoginPage from "./pages/LoginPage.jsx";
-import VerifyEmailPage from "./pages/VerifyEmailPage.jsx";
-import ForgotPasswordPage from "./pages/ForgotPasswordPage.jsx";
-import RegisterPage from "./pages/RegisterPage.jsx";
-import WorkerRegisterPage from "./pages/WorkerRegisterPage.jsx";
-import WorkerRegisterLocation from "./pages/WorkerRegisterLocation.jsx";
-import WorkerRegisterName from "./pages/WorkerRegisterName.jsx";
-import WorkerRegisterDob from "./pages/WorkerRegisterDob.jsx";
-import WorkerRegisterPhone from "./pages/WorkerRegisterPhone.jsx";
-import ClientRegisterPage from "./pages/ClientRegisterPage.jsx";
-import ClientRegisterName from "./pages/ClientRegisterName.jsx";
-import ClientRegisterLocation from "./pages/ClientRegisterLocation.jsx";
-import ClientRegisterPhone from "./pages/ClientRegisterPhone.jsx";
-import ClientDashboardPage from "./pages/ClientDashboardPage.jsx";
-import ProviderDashboardPage from "./pages/ProviderDashboardPage.jsx";
-import ExplorePage from "./pages/ExplorePage.jsx";
-import BookingsPage from "./pages/BookingsPage.jsx";
-import ProviderBookingsPage from "./pages/ProviderBookingsPage.jsx";
-import MessagesPage from "./pages/MessagesPage.jsx";
-import ProviderMessagesPage from "./pages/ProviderMessagesPage.jsx";
-import ProfilePage from "./pages/ProfilePage.jsx";
-import EditProfilePage from "./pages/EditProfilePage.jsx";
-import ProviderProfilePage from "./pages/ProviderProfilePage.jsx";
-import AboutUsPage from "./pages/AboutUsPage.jsx";
-import AdminDashboardPage from "./pages/AdminDashboardPage.jsx";
-import CareersPage from "./pages/CareersPage.jsx";
-import HelpCenterPage from "./pages/HelpCenterPage.jsx";
-import BlogPage from "./pages/BlogPage.jsx";
-import PrivacyPolicyPage from "./pages/PrivacyPolicyPage.jsx";
-import ContactUsPage from "./pages/ContactUsPage.jsx";
-import VerificationPage from "./pages/VerificationPage.jsx";
-import TesdaCertificatePage from "./pages/TesdaCertificatePage.jsx";
 import { AuthProvider } from "./context/AuthContext.jsx";
 import { BookingProvider } from "./context/BookingContext.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
 import Footer from "./components/Footer.jsx";
 import CommunityImpactBanner from "./components/CommunityImpactBanner.jsx";
 import { SkeletonBlock } from "./components/Skeletons.jsx";
+
+const LandingPage = lazy(() => import("./pages/LandingPage.jsx"));
+const LoginPage = lazy(() => import("./pages/LoginPage.jsx"));
+const VerifyEmailPage = lazy(() => import("./pages/VerifyEmailPage.jsx"));
+const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage.jsx"));
+const RegisterPage = lazy(() => import("./pages/RegisterPage.jsx"));
+const WorkerRegisterPage = lazy(() => import("./pages/WorkerRegisterPage.jsx"));
+const WorkerRegisterLocation = lazy(() => import("./pages/WorkerRegisterLocation.jsx"));
+const WorkerRegisterName = lazy(() => import("./pages/WorkerRegisterName.jsx"));
+const WorkerRegisterDob = lazy(() => import("./pages/WorkerRegisterDob.jsx"));
+const WorkerRegisterPhone = lazy(() => import("./pages/WorkerRegisterPhone.jsx"));
+const ClientRegisterPage = lazy(() => import("./pages/ClientRegisterPage.jsx"));
+const ClientRegisterName = lazy(() => import("./pages/ClientRegisterName.jsx"));
+const ClientRegisterLocation = lazy(() => import("./pages/ClientRegisterLocation.jsx"));
+const ClientRegisterPhone = lazy(() => import("./pages/ClientRegisterPhone.jsx"));
+const ClientDashboardPage = lazy(() => import("./pages/ClientDashboardPage.jsx"));
+const ProviderDashboardPage = lazy(() => import("./pages/ProviderDashboardPage.jsx"));
+const ExplorePage = lazy(() => import("./pages/ExplorePage.jsx"));
+const BookingsPage = lazy(() => import("./pages/BookingsPage.jsx"));
+const ProviderBookingsPage = lazy(() => import("./pages/ProviderBookingsPage.jsx"));
+const MessagesPage = lazy(() => import("./pages/MessagesPage.jsx"));
+const ProviderMessagesPage = lazy(() => import("./pages/ProviderMessagesPage.jsx"));
+const ProfilePage = lazy(() => import("./pages/ProfilePage.jsx"));
+const EditProfilePage = lazy(() => import("./pages/EditProfilePage.jsx"));
+const ProviderProfilePage = lazy(() => import("./pages/ProviderProfilePage.jsx"));
+const AboutUsPage = lazy(() => import("./pages/AboutUsPage.jsx"));
+const AdminDashboardPage = lazy(() => import("./pages/AdminDashboardPage.jsx"));
+const CareersPage = lazy(() => import("./pages/CareersPage.jsx"));
+const HelpCenterPage = lazy(() => import("./pages/HelpCenterPage.jsx"));
+const BlogPage = lazy(() => import("./pages/BlogPage.jsx"));
+const PrivacyPolicyPage = lazy(() => import("./pages/PrivacyPolicyPage.jsx"));
+const ContactUsPage = lazy(() => import("./pages/ContactUsPage.jsx"));
+const VerificationPage = lazy(() => import("./pages/VerificationPage.jsx"));
+const TesdaCertificatePage = lazy(() => import("./pages/TesdaCertificatePage.jsx"));
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -133,6 +134,19 @@ function LandingRoute() {
   return <LandingPage />;
 }
 
+function RouteLoadingFallback() {
+  return (
+    <div className="dashboard-page">
+      <div role="status" aria-label="Loading page" aria-busy="true" className="dashboard-shell flex min-h-[60vh] flex-col items-center justify-center gap-4">
+        <span className="sr-only">Loading page…</span>
+        <SkeletonBlock className="h-12 w-12 rounded-full" />
+        <SkeletonBlock className="h-4 w-44" />
+        <SkeletonBlock className="h-3 w-60 max-w-full" />
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const location = useLocation();
   console.log("[App] rendering at:", location.pathname);
@@ -141,7 +155,8 @@ export default function App() {
     <AuthProvider>
       <BookingProvider>
         <ErrorBoundary>
-          <Routes>
+          <Suspense fallback={<RouteLoadingFallback />}>
+            <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -179,7 +194,8 @@ export default function App() {
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/blog" element={<BlogPage />} />
         <Route path="/profile/verify" element={<ProtectedRoute roles={["client", "provider"]}><VerificationPage /></ProtectedRoute>} />
-          </Routes>
+            </Routes>
+          </Suspense>
         </ErrorBoundary>
         {showFooter && <>
           <CommunityImpactBanner />
