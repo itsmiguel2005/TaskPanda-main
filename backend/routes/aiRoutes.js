@@ -20,7 +20,7 @@ const {
 
 const router = express.Router();
 const limitAiSupport = createRateLimiter(20, 15 * 60 * 1000, "Too many support requests. Please try again later.");
-const MODEL = "gemini-3.5-flash-lite";
+const MODEL = "gemini-2.5-flash-lite";
 const MAX_MESSAGE_LENGTH = 4000;
 let ai;
 
