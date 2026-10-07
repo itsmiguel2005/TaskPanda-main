@@ -38,6 +38,7 @@ import { BookingProvider } from "./context/BookingContext.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
 import Footer from "./components/Footer.jsx";
 import CommunityImpactBanner from "./components/CommunityImpactBanner.jsx";
+import { SkeletonBlock } from "./components/Skeletons.jsx";
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -81,7 +82,16 @@ function ProtectedRoute({ children, roles }) {
   const { isLoggedIn, role, user, isAuthLoading } = useAuth();
 
   if (isAuthLoading) {
-    return <div className="flex min-h-screen items-center justify-center text-sm text-gray-600">Checking your session...</div>;
+    return (
+      <div className="dashboard-page">
+        <div role="status" aria-label="Checking your session" aria-busy="true" className="dashboard-shell flex min-h-[60vh] flex-col items-center justify-center gap-4">
+          <span className="sr-only">Checking your session…</span>
+          <SkeletonBlock className="h-12 w-12 rounded-full" />
+          <SkeletonBlock className="h-4 w-44" />
+          <SkeletonBlock className="h-3 w-60 max-w-full" />
+        </div>
+      </div>
+    );
   }
 
   if (!isLoggedIn) {

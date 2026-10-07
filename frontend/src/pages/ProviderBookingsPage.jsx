@@ -14,6 +14,7 @@ import BookingHistory from "../components/BookingHistory.jsx";
 import AddressActions from "../components/AddressActions.jsx";
 import PandaSwipeRefresh from "../components/PandaSwipeRefresh.jsx";
 import { canRequestCancellation, getCancellationLockMessage, requiresCancellationApproval } from "../utils/bookingCancellation.js";
+import { BookingCardSkeletonList, SkeletonBlock } from "../components/Skeletons.jsx";
 
 const STATUS_ACTIONS = {
   Confirmed: { status: "en_route", nextStatus: "On the Way", buttonLabel: "I'm On My Way" },
@@ -115,6 +116,7 @@ export default function ProviderBookingsPage() {
   const [providerUpdateSuccess, setProviderUpdateSuccess] = useState(false);
 
   const safeBookings = Array.isArray(bookings) ? bookings : [];
+  const isInitialLoading = isLoading && safeBookings.length === 0;
   const query = searchQuery.trim().toLowerCase();
   const matchesSearch = (booking) => !query || [booking.client, booking.task, booking.description]
     .some((value) => String(value || "").toLowerCase().includes(query));
@@ -254,8 +256,6 @@ export default function ProviderBookingsPage() {
           </p>
         </div>
         {error && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
-        {isLoading && <p className="mb-4 text-sm text-slate-600">Loading bookings...</p>}
-
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-7">
           {[
             { label: "Total", value: stats.total, tone: "bg-white text-slate-700 border-slate-200" },
@@ -267,7 +267,7 @@ export default function ProviderBookingsPage() {
             { label: "Earnings", value: formatPhpAmount(stats.earnings), tone: "bg-white text-slate-700 border-slate-200" },
           ].map((s) => (
             <div key={s.label} className={`dashboard-stat ${s.tone} px-3 text-center ${s.label === "Earnings" ? "col-span-2 sm:col-span-1" : ""}`}>
-              <p className="text-2xl font-extrabold tabular-nums tracking-tight">{s.value}</p>
+              {isInitialLoading ? <SkeletonBlock className="mx-auto h-7 w-12" /> : <p className="text-2xl font-extrabold tabular-nums tracking-tight">{s.value}</p>}
               <p className="dashboard-kicker mt-1 text-current/75">{s.label}</p>
             </div>
           ))}
@@ -343,6 +343,7 @@ export default function ProviderBookingsPage() {
             await refreshBookings(undefined, false);
           }}
         >
+        {isInitialLoading && <BookingCardSkeletonList count={3} label="Loading bookings" />}
         {/* Incoming Requests */}
         {showIncoming && (
           <div className="mb-8">
@@ -358,7 +359,7 @@ export default function ProviderBookingsPage() {
                   {sortedRequests.map((req) => (
                     <div
                       key={req.id}
-                      className="overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
+                      className="content-arrive overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
                     >
                       <div className="p-4 sm:p-6">
                         <div className="flex flex-col gap-4 border-b border-sky-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -453,7 +454,7 @@ export default function ProviderBookingsPage() {
                   {sortedBookings.map((booking) => (
                     <div
                       key={booking.id}
-                      className="overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
+                      className="content-arrive overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
                     >
                       <div className="p-4 sm:p-6">
                         <div className="flex flex-col gap-4 border-b border-sky-100 pb-4 sm:flex-row sm:items-start sm:justify-between">

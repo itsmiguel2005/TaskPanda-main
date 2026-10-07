@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { SkeletonBlock } from "./Skeletons.jsx";
 
 export default function MessagePhoto({
   photo,
@@ -69,7 +70,7 @@ export default function MessagePhoto({
   }, [isOpen]);
 
   if (loadError) return <span className="inline-flex h-16 items-center rounded-md bg-white/10 px-3 text-xs">Photo unavailable</span>;
-  if (!source) return <span className="inline-flex h-16 w-16 animate-pulse rounded-md bg-slate-200/70" aria-label="Loading photo" />;
+  if (!source) return <span role="status" aria-label="Loading photo" className="inline-flex"><SkeletonBlock className="h-16 w-16 rounded-md" /></span>;
 
   return (
     <>

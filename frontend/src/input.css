@@ -10,6 +10,39 @@
   --taskpanda-blue: #2563eb;
 }
 
+@keyframes skeletonPulse {
+  0%, 100% {
+    opacity: 0.58;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes contentArrive {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.skeleton-block {
+  display: block;
+  border-radius: 0.375rem;
+  background-color: #e7edf4;
+  animation: skeletonPulse 1.55s ease-in-out infinite;
+}
+
+.content-arrive {
+  animation: contentArrive 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 @layer components {
   .dashboard-page {
     min-height: 100vh;
@@ -333,6 +366,35 @@
     animation: fadeInPage 0.4s ease-out;
   }
 
+  button:not(:disabled):not([aria-disabled="true"]),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]),
+  summary,
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  label:has(input[type="checkbox"]:not(:disabled), input[type="radio"]:not(:disabled)) {
+    cursor: pointer;
+  }
+
+  button:not(:disabled):not([aria-disabled="true"]),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]) {
+    transition: transform 140ms ease, filter 140ms ease;
+  }
+
+  button:not(:disabled):not([aria-disabled="true"]):hover,
+  [role="button"]:not([aria-disabled="true"]):hover,
+  [role="tab"]:not([aria-disabled="true"]):hover {
+    filter: brightness(1.035);
+  }
+
+  button:not(:disabled):not([aria-disabled="true"]):active,
+  [role="button"]:not([aria-disabled="true"]):active,
+  [role="tab"]:not([aria-disabled="true"]):active {
+    filter: brightness(0.97);
+    transform: scale(0.98);
+  }
+
   * {
     scrollbar-width: none;
     -ms-overflow-style: none;
@@ -391,6 +453,31 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .skeleton-block {
+    animation: none;
+    opacity: 0.78;
+  }
+
+  .content-arrive {
+    animation: contentArriveReduced 160ms ease-out both;
+  }
+
+  button:not(:disabled):not([aria-disabled="true"]),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]) {
+    transition: none;
+  }
+
+  @keyframes contentArriveReduced {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
   .panda-swipe-indicator,
   .panda-swipe-controls,
   .panda-swipe-button,

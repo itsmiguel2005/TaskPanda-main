@@ -14,6 +14,7 @@ import StatusChangeConfirmation from "../components/StatusChangeConfirmation.jsx
 import RevisionRequestModal from "../components/RevisionRequestModal.jsx";
 import RequestBookingModal from "../components/RequestBookingModal.jsx";
 import PandaSwipeRefresh from "../components/PandaSwipeRefresh.jsx";
+import { BookingCardSkeletonList, SkeletonBlock } from "../components/Skeletons.jsx";
 
 const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined", "Expired"];
 
@@ -47,6 +48,7 @@ export default function BookingsPage() {
   const { token } = useAuth();
   const requestHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
   const { bookings, isLoading, error, requestCancellation, requestRevision, submitReview, respondToProviderUpdate, refreshBookings, confirmCashSettlement, createBooking } = useBookings();
+  const isInitialLoading = isLoading && bookings.length === 0;
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("createdAt");
   const [cancelingId, setCancelingId] = useState(null);
@@ -197,8 +199,6 @@ export default function BookingsPage() {
           </p>
         </div>
         {error && <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
-        {isLoading && <p className="mb-4 text-sm text-slate-600">Loading bookings...</p>}
-
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-6">
           {[
             { label: "Total", value: stats.total, tone: "bg-white text-slate-700 border-slate-200" },
@@ -212,7 +212,7 @@ export default function BookingsPage() {
               key={s.label}
               className={`dashboard-stat ${s.tone} text-center`}
             >
-              <p className="text-2xl font-extrabold tabular-nums tracking-tight">{s.value}</p>
+              {isInitialLoading ? <SkeletonBlock className="mx-auto h-7 w-12" /> : <p className="text-2xl font-extrabold tabular-nums tracking-tight">{s.value}</p>}
               <p className="dashboard-kicker mt-1 text-current/75">{s.label}</p>
             </div>
           ))}
@@ -254,11 +254,13 @@ export default function BookingsPage() {
             await refreshBookings(undefined, false);
           }}
         >
-          {filteredBookings.length > 0 ? (
+          {isInitialLoading ? (
+            <BookingCardSkeletonList count={3} label="Loading bookings" />
+          ) : filteredBookings.length > 0 ? (
             filteredBookings.map((booking) => (
               <div
                 key={booking.id}
-                className="overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
+                className="content-arrive overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
               >
                 <div className="p-5 sm:p-6">
                   <div className="flex flex-col gap-4 border-b border-sky-100 pb-4 sm:flex-row sm:items-start sm:justify-between">

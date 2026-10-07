@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { SkeletonBlock } from "./Skeletons.jsx";
 import { adminRequest } from "../services/adminApi.js";
 
 const currency = new Intl.NumberFormat("en-PH", {
@@ -428,6 +429,7 @@ export default function AdminBookingsManagement() {
   const [query, setQuery] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [page, setPage] = useState(1);
+  const [resultsRevision, setResultsRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -456,6 +458,7 @@ export default function AdminBookingsManagement() {
       const result = await adminRequest(`/api/admin/bookings?${params}`, token, { signal });
       const nextBookings = result.bookings || [];
       setBookings(nextBookings);
+      setResultsRevision((revision) => revision + 1);
       setSelectedBooking((current) => current ? nextBookings.find((booking) => booking.id === current.id) || current : current);
       setPagination(result.pagination || { page: 1, pages: 1, total: 0 });
     } catch (requestError) {
@@ -577,14 +580,15 @@ export default function AdminBookingsManagement() {
           {pagination.pages > 1 && <p className="text-xs text-slate-500">Page {pagination.page} of {pagination.pages}</p>}
         </div>
         <div tabIndex={0} role="region" aria-label="Scrollable booking list" className="min-h-0 flex-1 overflow-y-auto overscroll-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-blue-700">
+          <div key={resultsRevision} className="content-arrive">
           {loading && bookings.length === 0 ? (
-            <div className="divide-y divide-slate-100" aria-label="Loading bookings">
-              {[0, 1, 2, 3].map((row) => <div key={row} className="animate-pulse px-5 py-5"><div className="h-4 w-48 rounded bg-slate-200" /><div className="mt-3 h-3 w-64 rounded bg-slate-100" /></div>)}
+            <div role="status" aria-label="Loading bookings" aria-busy="true" className="divide-y divide-slate-100">
+              {[0, 1, 2, 3].map((row) => <div key={row} aria-hidden="true" className="px-5 py-5"><SkeletonBlock className="h-4 w-48 max-w-full" /><SkeletonBlock className="mt-3 h-3 w-64 max-w-full" /></div>)}
             </div>
           ) : bookings.length > 0 ? (
             <div className="divide-y divide-slate-100">
               {bookings.map((booking) => (
-                <button key={booking.id} type="button" onClick={(event) => { drawerReturnFocus.current = event.currentTarget; setSelectedBooking(booking); }} className="dashboard-focus flex w-full flex-col items-start gap-3 px-4 py-4 text-left transition hover:bg-sky-50/60 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                <button key={booking.id} type="button" onClick={(event) => { drawerReturnFocus.current = event.currentTarget; setSelectedBooking(booking); }} className="content-arrive dashboard-focus flex w-full flex-col items-start gap-3 px-4 py-4 text-left transition hover:bg-sky-50/60 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                   <span className="min-w-0 flex-1">
                     <span className="flex flex-wrap items-center gap-2">
                       <span className="truncate text-sm font-semibold text-slate-950">{booking.task}</span>
@@ -614,6 +618,7 @@ export default function AdminBookingsManagement() {
               {(query || statusFilter) && <button type="button" onClick={() => { setSearchInput(""); setQuery(""); selectFilter(""); }} className="dashboard-focus mt-3 rounded-lg px-3 py-2 text-sm font-semibold text-blue-900 underline underline-offset-2">Clear filters</button>}
             </div>
           )}
+          </div>
         </div>
         {pagination.pages > 1 && (
           <div className="flex shrink-0 items-center justify-between border-t border-slate-200 px-4 py-3 sm:px-5">

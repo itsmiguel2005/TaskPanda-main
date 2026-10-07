@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { SkeletonBlock } from "./Skeletons.jsx";
 
 const FILTERS = [
   { id: "all", label: "All" },
@@ -259,6 +260,7 @@ export default function AdminUsersManagement() {
   const [counts, setCounts] = useState({ all: 0, suspended: 0, archived: 0 });
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(1);
+  const [resultsRevision, setResultsRevision] = useState(0);
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -312,6 +314,7 @@ export default function AdminUsersManagement() {
       }
       if (!response.ok) throw new Error(data.message || "Could not load user accounts.");
       setUsers(data.users || []);
+      setResultsRevision((revision) => revision + 1);
       setCounts(data.counts || { all: 0, suspended: 0, archived: 0 });
       setTotal(data.total || 0);
       setPages(data.pages || 1);
@@ -544,19 +547,20 @@ export default function AdminUsersManagement() {
           </div>
         </div>
 
-        {loading && users.length === 0 ? (
-          <div className="space-y-3 p-5" aria-label="Loading users">
-            {Array.from({ length: 5 }, (_, index) => <div key={index} className="h-[62px] animate-pulse rounded-xl bg-slate-100" />)}
-          </div>
-        ) : users.length === 0 ? (
-          <div className="px-5 py-16 text-center sm:px-8">
-            <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-800"><Icon name="users" className="h-6 w-6" /></span>
-            <h2 className="mt-4 text-base font-bold text-slate-900">{search ? "No matching accounts" : `No ${filter === "all" ? "" : `${filter} `}accounts here`}</h2>
-            <p className="mx-auto mt-1.5 max-w-sm text-sm leading-6 text-slate-600">{search ? "Try another name, username, or email address." : "Accounts will appear here as they register or their status changes."}</p>
-            {search && <button type="button" onClick={() => setSearch("")} className="mt-4 rounded-lg px-3 py-2 text-sm font-semibold text-sky-800 underline underline-offset-2 hover:text-sky-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600">Clear search</button>}
-          </div>
-        ) : (
-          <>
+        <div key={resultsRevision} className="content-arrive">
+          {loading && users.length === 0 ? (
+            <div role="status" aria-label="Loading users" aria-busy="true" className="space-y-3 p-5">
+              {Array.from({ length: 5 }, (_, index) => <SkeletonBlock key={index} className="h-[62px] w-full rounded-xl" />)}
+            </div>
+          ) : users.length === 0 ? (
+            <div className="px-5 py-16 text-center sm:px-8">
+              <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-800"><Icon name="users" className="h-6 w-6" /></span>
+              <h2 className="mt-4 text-base font-bold text-slate-900">{search ? "No matching accounts" : `No ${filter === "all" ? "" : `${filter} `}accounts here`}</h2>
+              <p className="mx-auto mt-1.5 max-w-sm text-sm leading-6 text-slate-600">{search ? "Try another name, username, or email address." : "Accounts will appear here as they register or their status changes."}</p>
+              {search && <button type="button" onClick={() => setSearch("")} className="mt-4 rounded-lg px-3 py-2 text-sm font-semibold text-sky-800 underline underline-offset-2 hover:text-sky-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600">Clear search</button>}
+            </div>
+          ) : (
+            <>
             <div className="hidden overflow-x-auto sm:block">
               <table className="w-full min-w-[760px] text-left">
                 <thead className="bg-slate-50/90 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-600">
@@ -623,7 +627,8 @@ export default function AdminUsersManagement() {
               ))}
             </div>
           </>
-        )}
+          )}
+        </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-slate-200/80 px-4 py-3.5 sm:px-6">
           <p className="text-xs text-slate-600">Page <span className="font-semibold tabular-nums text-slate-900">{page}</span> of <span className="font-semibold tabular-nums text-slate-900">{pages}</span></p>
@@ -639,7 +644,7 @@ export default function AdminUsersManagement() {
           <aside role="dialog" aria-modal="true" aria-labelledby="user-drawer-title" className="flex h-full w-full max-w-xl flex-col border-l border-white/70 bg-white shadow-[-20px_0_60px_rgba(15,23,42,0.18)]">
             <div className="flex items-start gap-3 border-b border-slate-200 px-5 py-5 sm:px-7">
               {detailsLoading && !selectedUser ? (
-                <div className="h-12 w-12 animate-pulse rounded-full bg-slate-100" />
+                <SkeletonBlock className="h-12 w-12 rounded-full" />
               ) : selectedUser ? <Avatar user={selectedUser} size="h-12 w-12" /> : null}
               <div className="min-w-0 flex-1">
                 <h2 id="user-drawer-title" className="truncate text-lg font-bold tracking-tight text-slate-950">{selectedUser?.name || "Account details"}</h2>
@@ -651,10 +656,10 @@ export default function AdminUsersManagement() {
 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
               {detailsLoading && !details ? (
-                <div className="space-y-4" aria-label="Loading account details">
-                  <div className="h-24 animate-pulse rounded-2xl bg-slate-100" />
-                  <div className="h-40 animate-pulse rounded-2xl bg-slate-100" />
-                  <div className="h-32 animate-pulse rounded-2xl bg-slate-100" />
+                <div role="status" aria-label="Loading account details" aria-busy="true" className="space-y-4">
+                  <SkeletonBlock className="h-24 w-full rounded-2xl" />
+                  <SkeletonBlock className="h-40 w-full rounded-2xl" />
+                  <SkeletonBlock className="h-32 w-full rounded-2xl" />
                 </div>
               ) : details ? (
                 <div className="space-y-7">

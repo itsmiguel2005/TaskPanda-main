@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { adminRequest } from "../services/adminApi.js";
+import { SkeletonBlock } from "./Skeletons.jsx";
 
 const integer = new Intl.NumberFormat("en-PH");
 
@@ -127,7 +128,7 @@ function AdminRewardsAnalytics() {
                 </div>
               );
             })}
-            {!data && isLoading && <div aria-label="Loading stamp card analytics" className="space-y-3">{[0, 1, 2, 3].map((item) => <div key={item} className="h-8 animate-pulse rounded bg-slate-100 motion-reduce:animate-none" />)}</div>}
+            {!data && isLoading && <div role="status" aria-label="Loading stamp card analytics" aria-busy="true" className="space-y-4">{[0, 1, 2, 3].map((item) => <div key={item}><SkeletonBlock className="h-3 w-36" /><SkeletonBlock className="mt-2 h-2 w-full rounded-full" /></div>)}</div>}
           </div>
         </section>
       </div>
@@ -140,7 +141,7 @@ function AdminRewardsAnalytics() {
         {data?.topReferralCodes.length ? (
           <ol className="divide-y divide-slate-100">
             {data.topReferralCodes.map((row, index) => (
-              <li key={`${row.code}-${index}`} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 sm:px-5">
+              <li key={`${row.code}-${index}`} className="content-arrive flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 sm:px-5">
                 <div className="flex min-w-0 items-center gap-3">
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold tabular-nums text-slate-700">{index + 1}</span>
                   <div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-900">{row.code}</p><p className="truncate text-xs text-slate-600">{row.referrer}</p></div>
@@ -150,7 +151,19 @@ function AdminRewardsAnalytics() {
             ))}
           </ol>
         ) : (
-          <p className="px-4 py-9 text-center text-sm text-slate-600">{isLoading ? "Loading referral usage…" : "Referral code usage will appear here when clients join."}</p>
+          isLoading ? (
+            <div role="status" aria-label="Loading referral usage" aria-busy="true" className="space-y-4 px-5 py-5">
+              {Array.from({ length: 4 }, (_, index) => (
+                <div key={index} className="flex items-center justify-between gap-4">
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <SkeletonBlock className="h-4 w-40 max-w-full" />
+                    <SkeletonBlock className="h-3 w-28 max-w-full" />
+                  </div>
+                  <SkeletonBlock className="h-4 w-16 shrink-0" />
+                </div>
+              ))}
+            </div>
+          ) : <p className="px-4 py-9 text-center text-sm text-slate-600">Referral code usage will appear here when clients join.</p>
         )}
       </section>
     </section>

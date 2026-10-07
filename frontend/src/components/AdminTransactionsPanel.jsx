@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { SkeletonBlock, SkeletonTableRows } from "./Skeletons.jsx";
 import { adminRequest } from "../services/adminApi.js";
 
 const currency = new Intl.NumberFormat("en-PH", {
@@ -164,13 +165,9 @@ function AdminTransactionsPanel() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
-              {isLoading && !data && Array.from({ length: 5 }, (_, index) => (
-                <tr key={index} aria-hidden="true">
-                  {Array.from({ length: 7 }, (_, column) => <td key={column} className="px-4 py-4"><span className="block h-4 animate-pulse rounded bg-slate-100 motion-reduce:animate-none" /></td>)}
-                </tr>
-              ))}
+              {isLoading && !data && <SkeletonTableRows rows={5} columns={7} />}
               {!isLoading && data?.transactions?.map((row) => (
-                <tr key={row.id} className="align-top transition hover:bg-slate-50/80">
+                <tr key={row.id} className="content-arrive align-top transition hover:bg-slate-50/80">
                   <td className="whitespace-nowrap px-4 py-4 text-xs text-slate-600">{row.completedAt ? dateTime.format(new Date(row.completedAt)) : "Date unavailable"}<span title={`Booking ID ${row.id}`} className="mt-1 block font-mono text-[10px] text-slate-500">#{row.id}</span></td>
                   <td className="max-w-72 px-4 py-4">
                     <p className="truncate font-semibold text-slate-900" title={row.task}>{row.task}</p>
@@ -191,7 +188,7 @@ function AdminTransactionsPanel() {
                 </td></tr>
               )}
               {isLoading && data?.transactions?.map((row) => (
-                <tr key={row.id} aria-hidden="true"><td colSpan="7" className="px-4 py-3"><span className="block h-4 animate-pulse rounded bg-slate-100 motion-reduce:animate-none" /></td></tr>
+                <tr key={row.id} aria-hidden="true"><td colSpan="7" className="px-4 py-3"><SkeletonBlock className="h-4 w-full" /></td></tr>
               ))}
             </tbody>
           </table>

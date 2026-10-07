@@ -513,7 +513,10 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
           {showNav && (
             <div className="relative" ref={notifRef}>
               <button
-                onClick={() => setNotifOpen(!notifOpen)}
+                onClick={() => {
+                  if (!notifOpen) setDropdownOpen(false);
+                  setNotifOpen(!notifOpen);
+                }}
                 className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg p-2 text-gray-600 hover:bg-gray-100"
                 aria-label={`Notifications${totalNotificationCount > 0 ? `, ${totalNotificationCount} unread` : ""}`}
                 aria-expanded={notifOpen}
@@ -547,6 +550,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                             to={item.href}
                             onClick={() => {
                               setNotifOpen(false);
+                              setDropdownOpen(false);
                               if (item.isVerificationNotice) {
                                 if (item.notificationId) void markVerificationNotificationRead(item);
                                 else dismissNotification(item);
@@ -644,7 +648,10 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
           {showNav && (
             <div className="relative">
               <button
-                onClick={() => setDropdownOpen(!dropdownOpen)}
+                onClick={() => {
+                  if (!dropdownOpen) setNotifOpen(false);
+                  setDropdownOpen(!dropdownOpen);
+                }}
                 className="flex min-h-11 min-w-11 items-center justify-center gap-0 rounded-lg text-sm sm:gap-3"
                 aria-expanded={dropdownOpen}
               >

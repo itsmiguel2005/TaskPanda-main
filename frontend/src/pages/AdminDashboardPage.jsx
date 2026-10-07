@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { useSearchParams } from "react-router-dom";
 import Header from "../components/Header.jsx";
+import { SkeletonBlock } from "../components/Skeletons.jsx";
 
 const AdminDashboardOverview = lazy(() => import("../components/AdminDashboardOverview.jsx"));
 const AdminUsersManagement = lazy(() => import("../components/AdminUsersManagement.jsx"));
@@ -54,8 +55,29 @@ export default function AdminDashboardPage() {
 
       <main className="mx-auto max-w-6xl px-4 pt-6 sm:px-6 lg:px-8">
         {Section ? (
-          <Suspense fallback={<div className="rounded-2xl border border-slate-200 bg-white/90 p-8 text-sm text-slate-600">{activeSection.label}</div>}>
-            <Section />
+          <Suspense fallback={
+            <div role="status" aria-label={activeSection.label} aria-busy="true" className="dashboard-panel content-arrive p-5 sm:p-6">
+              <span className="sr-only">{activeSection.label}</span>
+              <SkeletonBlock className="h-6 w-48 max-w-full" />
+              <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 3 }, (_, index) => (
+                  <div key={index} className="rounded-xl border border-slate-100 p-4">
+                    <SkeletonBlock className="h-3 w-24" />
+                    <SkeletonBlock className="mt-3 h-7 w-16" />
+                    <SkeletonBlock className="mt-4 h-3 w-full" />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-6 space-y-3">
+                {Array.from({ length: 4 }, (_, index) => (
+                  <SkeletonBlock key={index} className="h-12 w-full rounded-lg" />
+                ))}
+              </div>
+            </div>
+          }>
+            <div className="content-arrive">
+              <Section />
+            </div>
           </Suspense>
         ) : (
           <section className="rounded-2xl border border-white/80 bg-white/85 p-6 shadow-[0_14px_40px_rgba(15,23,42,0.06)] backdrop-blur-lg">

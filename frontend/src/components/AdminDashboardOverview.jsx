@@ -12,6 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { SkeletonBlock } from "./Skeletons.jsx";
 
 const currency = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 });
 const dateFormatter = new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric", timeZone: "UTC" });
@@ -273,7 +274,13 @@ export default function AdminDashboardOverview() {
                   <Area type="monotone" dataKey="bookings" name="Bookings" stroke="#2563eb" strokeWidth={2.5} fill="url(#bookingVolumeFill)" activeDot={{ r: 5, fill: "#2563eb", stroke: "#fff", strokeWidth: 2 }} />
                 </AreaChart>
               </ResponsiveContainer>
-            ) : <ChartEmpty>{isLoading ? "Loading booking activity…" : "No bookings recorded in this period"}</ChartEmpty>}
+            ) : isLoading ? (
+              <div role="status" aria-label="Loading booking activity" aria-busy="true" className="flex h-full items-end gap-3 px-8 pb-5 pt-8">
+                {[46, 72, 58, 88, 64, 76, 52, 94].map((height, index) => (
+                  <SkeletonBlock key={index} className="min-w-2 flex-1 rounded-t-sm rounded-b-none" style={{ height: `${height}%` }} />
+                ))}
+              </div>
+            ) : <ChartEmpty>No bookings recorded in this period</ChartEmpty>}
           </div>
         </section>
 
@@ -299,7 +306,16 @@ export default function AdminDashboardOverview() {
                   <Bar dataKey="bookings" name="Bookings" fill="url(#categoryBarFill)" radius={[0, 6, 6, 0]} maxBarSize={24} />
                 </BarChart>
               </ResponsiveContainer>
-            ) : <ChartEmpty>{isLoading ? "Loading service demand…" : "No categorized bookings yet"}</ChartEmpty>}
+            ) : isLoading ? (
+              <div role="status" aria-label="Loading service demand" aria-busy="true" className="flex h-full flex-col justify-center gap-4 px-3">
+                {[0, 1, 2, 3, 4].map((index) => (
+                  <div key={index} className="flex items-center gap-3">
+                    <SkeletonBlock className="h-3 w-16 shrink-0" />
+                    <SkeletonBlock className={`h-4 rounded-sm rounded-l-none ${["w-4/5", "w-3/5", "w-2/3", "w-1/2", "w-3/4"][index]}`} />
+                  </div>
+                ))}
+              </div>
+            ) : <ChartEmpty>No categorized bookings yet</ChartEmpty>}
           </div>
         </section>
       </div>
@@ -316,7 +332,7 @@ export default function AdminDashboardOverview() {
           {data?.recentBookings?.length ? (
             <div className="divide-y divide-slate-100">
               {data.recentBookings.map((booking) => (
-                <article key={booking.id} className="flex flex-col items-start justify-between gap-2.5 px-4 py-3.5 transition-colors hover:bg-sky-50/60 sm:flex-row sm:items-center sm:gap-4 sm:px-5">
+                <article key={booking.id} className="content-arrive flex flex-col items-start justify-between gap-2.5 px-4 py-3.5 transition-colors hover:bg-sky-50/60 sm:flex-row sm:items-center sm:gap-4 sm:px-5">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-slate-900">{booking.task}</p>
                     <p className="mt-1 truncate text-xs text-slate-600">{booking.client} <span className="px-1 text-slate-400" aria-hidden="true">→</span> {booking.provider}</p>
@@ -329,7 +345,19 @@ export default function AdminDashboardOverview() {
                 </article>
               ))}
             </div>
-          ) : <div className="px-5 py-8 text-center text-sm text-slate-500">{isLoading ? "Loading recent bookings…" : "No bookings yet"}</div>}
+          ) : isLoading ? (
+            <div role="status" aria-label="Loading recent bookings" aria-busy="true" className="divide-y divide-slate-100 px-4 sm:px-5">
+              {Array.from({ length: 4 }, (_, index) => (
+                <div key={index} className="flex items-center justify-between gap-4 py-4">
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <SkeletonBlock className="h-4 w-2/3" />
+                    <SkeletonBlock className="h-3 w-1/2" />
+                  </div>
+                  <SkeletonBlock className="h-6 w-20 shrink-0 rounded-full" />
+                </div>
+              ))}
+            </div>
+          ) : <div className="px-5 py-8 text-center text-sm text-slate-500">No bookings yet</div>}
         </section>
 
         <section aria-labelledby="system-health-title" className="rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-[0_12px_34px_rgba(15,23,42,0.05)] sm:p-5">

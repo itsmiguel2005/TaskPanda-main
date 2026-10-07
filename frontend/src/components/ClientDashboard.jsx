@@ -10,6 +10,7 @@ import AddressActions from "./AddressActions.jsx";
 import ProviderStreak from "./ProviderStreak.jsx";
 import { canRequestCancellation, getCancellationLockMessage } from "../utils/bookingCancellation.js";
 import StatusChangeConfirmation from "./StatusChangeConfirmation.jsx";
+import { BookingCardSkeletonList, SkeletonBlock } from "./Skeletons.jsx";
 
 export const categories = [
   { name: "All Services", icon: "🏠" },
@@ -90,6 +91,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { isLoggedIn, user, token } = useAuth();
   const { bookings: bookingList, isLoading, error, requestCancellation, respondToProviderUpdate } = useBookings();
+  const isInitialBookingsLoading = isLoading && bookingList.length === 0;
   const [bannerVisible, setBannerVisible] = useState(true);
   const [activeTab, setActiveTab] = useState("All");
   const [search, setSearch] = useState("");
@@ -512,21 +514,21 @@ export default function Dashboard() {
                 independent local specialists.
               </p>
 
-              <div className="mt-5 flex min-w-0 items-center overflow-hidden rounded-xl border border-sky-100 bg-sky-50/60 p-1.5 shadow-sm">
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search for carpentry, plumbing, cleaning, or electrical services..."
-                  className="min-w-0 flex-1 bg-transparent px-3 py-3 text-sm text-slate-800 placeholder-slate-400 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
-                />
-                <button className="dashboard-primary-button dashboard-focus shrink-0 px-5 py-3 text-sm">
-                  Search
-                </button>
-              </div>
             </div>
             <div className="hidden items-end justify-center lg:flex" aria-hidden="true">
               <img src="/assets/Panda Cropped.png" alt="" className="h-36 w-32 object-contain object-bottom" />
+            </div>
+            <div className="mt-1 flex min-w-0 items-center overflow-hidden rounded-xl border border-sky-100 bg-sky-50/60 p-1.5 shadow-sm transition focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/30 lg:col-span-2">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search for carpentry, plumbing, cleaning, or electrical services..."
+                className="min-w-0 flex-1 bg-transparent px-3 py-3 text-sm text-slate-800 placeholder-slate-500 outline-none"
+              />
+              <button type="button" className="dashboard-primary-button dashboard-focus shrink-0 px-5 py-3 text-sm">
+                Search
+              </button>
             </div>
           </div>
 
@@ -616,7 +618,18 @@ export default function Dashboard() {
             )}
 
             <div className="flex min-h-[220px] gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: "thin", contain: "layout paint" }}>
-              {visibleTopRatedProviders.length > 0 ? (
+              {topRatedProvidersLoading && visibleTopRatedProviders.length === 0 ? (
+                <div role="status" aria-label="Loading nearby top-rated professionals" aria-busy="true" className="flex min-w-max gap-3">
+                  {Array.from({ length: 3 }, (_, index) => (
+                    <div key={index} className="w-[260px] rounded-xl border border-sky-100 bg-white p-4">
+                      <SkeletonBlock className="h-11 w-11 rounded-full" />
+                      <SkeletonBlock className="mt-4 h-4 w-2/3" />
+                      <SkeletonBlock className="mt-2 h-3 w-1/2" />
+                      <SkeletonBlock className="mt-5 h-3 w-full" />
+                    </div>
+                  ))}
+                </div>
+              ) : visibleTopRatedProviders.length > 0 ? (
                 visibleTopRatedProviders.map((pro) => {
                   const hasRatings = Number(pro.rating) > 0 && Number(pro.reviews) > 0;
                   const isVerified = pro.isVerified || favoriteProviders.some(
@@ -627,7 +640,7 @@ export default function Dashboard() {
                   return (
                     <div
                       key={`${pro.name}-${pro.category}`}
-                      className={`group relative flex min-h-[190px] min-w-[260px] flex-col justify-between overflow-hidden rounded-xl border border-sky-100 bg-gradient-to-br ${pro.accent} p-4 pt-12 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)]`}
+                      className={`content-arrive group relative flex min-h-[190px] min-w-[260px] flex-col justify-between overflow-hidden rounded-xl border border-sky-100 bg-gradient-to-br ${pro.accent} p-4 pt-12 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)]`}
                     >
                       <ProviderStreak streak={pro.onTimeStreak} className="absolute right-3 top-3 z-10" />
                       <div className="flex items-center gap-3">
@@ -701,9 +714,6 @@ export default function Dashboard() {
               )}
             </div>
 
-            {topRatedProvidersLoading && (
-              <p className="mt-3 text-xs text-gray-500">Loading nearby top-rated pros…</p>
-            )}
           </section>
 
           <section>
@@ -850,7 +860,6 @@ export default function Dashboard() {
               </button>
             </div>
             {error && <p role="alert" className="border-b border-red-100 px-5 py-3 text-xs text-red-700">{error}</p>}
-            {isLoading && <p className="border-b border-gray-100 px-5 py-3 text-xs text-gray-500">Loading bookings...</p>}
             <div className="flex w-full min-w-0 gap-1 overflow-x-auto border-b border-sky-100 px-5 py-3">
               {tabs.map((tab) => (
                 <button
@@ -883,7 +892,9 @@ export default function Dashboard() {
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-7 top-[1.125rem] h-4 w-4 text-gray-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
             </label>
             <div className="max-h-[520px] overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
-              {filteredBookings.length === 0 ? (
+              {isInitialBookingsLoading ? (
+                <BookingCardSkeletonList count={2} label="Loading bookings" />
+              ) : filteredBookings.length === 0 ? (
                 <div className="py-8 text-center">
                   <p className="text-sm font-medium text-gray-500">
                     {hasDismissedBookings
@@ -909,7 +920,7 @@ export default function Dashboard() {
                   return (
                     <div
                       key={booking.id}
-                      className="mb-3 min-w-0 rounded-xl border border-sky-100 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)] active:translate-y-0"
+                      className="content-arrive mb-3 min-w-0 rounded-xl border border-sky-100 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)] active:translate-y-0"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">

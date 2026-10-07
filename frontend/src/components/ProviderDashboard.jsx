@@ -5,6 +5,7 @@ import { useBookings } from "../context/BookingContext.jsx";
 import Header from "../components/Header.jsx";
 import BookingPriceBreakdown from "../components/BookingPriceBreakdown.jsx";
 import StatusChangeConfirmation from "./StatusChangeConfirmation.jsx";
+import { BookingCardSkeletonList } from "./Skeletons.jsx";
 import CompletionProofModal from "./CompletionProofModal.jsx";
 import { canRequestCancellation, requiresCancellationApproval } from "../utils/bookingCancellation.js";
 import { canArriveForSameDayBooking } from "../utils/bookingArrival.js";
@@ -159,7 +160,7 @@ function RequestCard({ booking, onAccept, onDecline, onOpenConversation, current
   const acceptDisabled = requestExpired || !arrivalFeasible;
 
   return (
-    <div className="border-b border-sky-100/80 px-4 py-5 last:border-b-0 sm:px-5">
+    <div className="content-arrive border-b border-sky-100/80 px-4 py-5 last:border-b-0 sm:px-5">
       {/* Row 1: avatar + client + badge */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -371,7 +372,7 @@ function JobCard({
   const canCancel = canRequestCancellation(booking);
 
   return (
-    <div className="border-b border-sky-100/80 p-4 last:border-b-0 sm:p-5">
+    <div className="content-arrive border-b border-sky-100/80 p-4 last:border-b-0 sm:p-5">
       <div className="grid grid-cols-1 gap-6 md:grid-cols-[1fr_190px]">
         {/* Left Column: Details & Progress Tracker */}
         <div className="min-w-0">
@@ -727,40 +728,42 @@ export default function ProviderDashboard() {
         </div>
 
         {/* ── Filter pills + search ─────────────────────────────────────── */}
-        <div className="mt-5 flex items-center gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
-          {FILTERS.map(({ key, label }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setActiveFilter(key)}
-              className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition whitespace-nowrap ${
-                activeFilter === key
-                  ? "bg-slate-900 text-white"
-                  : "border border-sky-100 bg-white text-slate-600 hover:bg-sky-50"
-              }`}
-            >
-              {label}
-              <span className={`inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-bold ${
-                activeFilter === key ? "bg-white/20 text-white" : "bg-sky-50 text-blue-950"
-              }`}>
-                {filterCounts[key] ?? 0}
-              </span>
-            </button>
-          ))}
+        <div className="mt-5 space-y-3">
+          <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+            {FILTERS.map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActiveFilter(key)}
+                className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition whitespace-nowrap ${
+                  activeFilter === key
+                    ? "bg-slate-900 text-white"
+                    : "border border-sky-100 bg-white text-slate-600 hover:bg-sky-50"
+                }`}
+              >
+                {label}
+                <span className={`inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-bold ${
+                  activeFilter === key ? "bg-white/20 text-white" : "bg-sky-50 text-blue-950"
+                }`}>
+                  {filterCounts[key] ?? 0}
+                </span>
+              </button>
+            ))}
+          </div>
 
-          {/* Search */}
-          <div className="ml-auto flex shrink-0 items-center gap-2 rounded-full border border-sky-100 bg-white px-3.5 py-1.5 shadow-sm">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-gray-400">
+          <label className="flex min-h-11 w-full items-center gap-2.5 rounded-xl border border-sky-100 bg-white px-3.5 shadow-sm transition focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/30">
+            <span className="sr-only">Search bookings</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true">
               <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
             </svg>
             <input
-              type="text"
+              type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search client or repair"
-              className="w-36 bg-transparent text-sm text-slate-800 placeholder-slate-400 outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+              className="min-w-0 w-full bg-transparent py-2 text-sm text-slate-800 placeholder:text-slate-500 outline-none"
             />
-          </div>
+          </label>
         </div>
 
         {/* ── Two-column layout ─────────────────────────────────────────── */}
@@ -782,7 +785,7 @@ export default function ProviderDashboard() {
                 </div>
 
                 {isLoading && requests.length === 0 ? (
-                  <div className="py-10 text-center text-sm text-slate-500">Loading requests…</div>
+                  <BookingCardSkeletonList count={2} label="Loading incoming requests" />
                 ) : requests.length === 0 ? (
                   <div className="py-12 text-center">
                     <p className="text-3xl">📭</p>
@@ -806,7 +809,7 @@ export default function ProviderDashboard() {
                 </div>
 
                 {isLoading && filteredJobs.length === 0 ? (
-                  <div className="py-10 text-center text-sm text-slate-500">Loading jobs…</div>
+                  <BookingCardSkeletonList count={2} label="Loading jobs" />
                 ) : filteredJobs.length === 0 ? (
                   <div className="py-12 text-center">
                     <p className="text-3xl">📋</p>

@@ -5,6 +5,7 @@ import ProviderModal from "./ProviderModal.jsx";
 import ProviderStreak from "./ProviderStreak.jsx";
 import RequestBookingModal from "./RequestBookingModal.jsx";
 import PandaSwipeRefresh from "./PandaSwipeRefresh.jsx";
+import { SkeletonProviderGrid } from "./Skeletons.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
 import { PROFESSIONS } from "../utils/professions.js";
@@ -584,7 +585,7 @@ export default function Explore() {
               </p>
             </div>
           ) : loading && filteredProviders.length === 0 ? (
-            <div className="rounded-xl border border-sky-100 bg-white py-12 text-center text-sm text-slate-600">Searching nearby professionals...</div>
+            <SkeletonProviderGrid count={6} label="Searching nearby professionals" />
           ) : filteredProviders.length > 0 ? (
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
               {filteredProviders.map((provider) => {
@@ -603,7 +604,7 @@ export default function Explore() {
                 return (
                   <div
                     key={provider._id}
-                    className="relative flex h-full flex-col justify-between overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)]"
+                    className="content-arrive relative flex h-full flex-col justify-between overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)]"
                   >
                     <ProviderStreak streak={provider.onTimeStreak} className="absolute right-3 top-3 z-10 max-w-[calc(100%-1.5rem)]" />
                     <div className="h-40 overflow-hidden bg-sky-50">

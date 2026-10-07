@@ -7,6 +7,7 @@ import StatusChangeConfirmation from "./StatusChangeConfirmation.jsx";
 import CompletionProofModal from "./CompletionProofModal.jsx";
 import BookingPriceBreakdown from "./BookingPriceBreakdown.jsx";
 import MessagePhoto from "./MessagePhoto.jsx";
+import { ConversationSkeletonList, MessageSkeletonList } from "./Skeletons.jsx";
 import { canRequestCancellation, getCancellationLockMessage } from "../utils/bookingCancellation.js";
 
 const MAX_MESSAGE_INPUT_HEIGHT = 144;
@@ -1103,13 +1104,13 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
           {error && <p role="alert" className="border-b border-red-100 bg-red-50 px-5 py-3 text-xs text-red-700">{error}</p>}
           <div className="chat-scroll-area min-h-0 flex-1 overflow-y-auto bg-slate-50/70 p-2.5">
             {isLoading || openingBooking ? (
-              <p className="p-5 text-sm text-slate-600">{openingBooking ? "Opening booking conversation…" : "Loading conversations…"}</p>
+              <ConversationSkeletonList label={openingBooking ? "Opening booking conversation" : "Loading conversations"} />
             ) : filteredConversations.length ? filteredConversations.map((conversation) => {
               const latestLoadedMessage = conversation.id === selectedId && messages.length ? messages[messages.length - 1] : null;
               const previewText = latestLoadedMessage?.text || conversation.lastMessage;
               const previewIsMine = latestLoadedMessage ? latestLoadedMessage.isMine : conversation.lastMessageIsMine;
               return (
-              <div key={conversation.id} className={`mb-1 flex items-center rounded-xl border pr-2 transition-colors ${selectedId === conversation.id ? "border-sky-200 bg-white shadow-[0_6px_18px_rgba(15,23,42,0.06)]" : "border-transparent hover:border-sky-100 hover:bg-white"}`}>
+              <div key={conversation.id} className={`content-arrive mb-1 flex items-center rounded-xl border pr-2 transition-colors ${selectedId === conversation.id ? "border-sky-200 bg-white shadow-[0_6px_18px_rgba(15,23,42,0.06)]" : "border-transparent hover:border-sky-100 hover:bg-white"}`}>
                 <button onClick={() => selectConversation(conversation.id)} aria-current={selectedId === conversation.id ? "true" : undefined} className="dashboard-focus flex min-w-0 flex-1 items-center gap-3 rounded-xl px-3 py-3.5 text-left">
                   <ConversationAvatar conversation={conversation} size="h-11 w-11" />
                   <span className="min-w-0 flex-1">
@@ -1308,12 +1309,12 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
               {error && <p role="alert" className="border-b border-red-100 bg-red-50 px-4 py-2 text-xs text-red-700">{error}</p>}
               <div ref={messagesContainerRef} className="chat-scroll-area min-h-0 flex-1 space-y-1 overflow-y-auto bg-gradient-to-b from-slate-50/90 to-white px-3 py-4 sm:px-6 sm:py-5">
                 {isLoadingMessages ? (
-                  <p className="py-8 text-center text-sm text-gray-500">Loading messages…</p>
+                  <MessageSkeletonList />
                 ) : (
                   <>
                 {hasMoreMessages && <div className="flex justify-center py-2"><button type="button" disabled={isLoadingOlderMessages} onClick={loadOlderMessages} className="dashboard-focus rounded-xl border border-sky-100 bg-white px-3 py-2 text-xs font-semibold text-sky-900 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50">{isLoadingOlderMessages ? "Loading older messages…" : "Load older messages"}</button></div>}
                 {groupedMessages.length ? groupedMessages.map((group) => (
-                  <section key={group.date}>
+                  <section key={group.date} className="content-arrive">
                     <div className="flex justify-center py-4"><span className="rounded-full border border-sky-100 bg-white px-3 py-1.5 text-[10px] font-bold tracking-wide text-slate-600 shadow-sm">{group.date}</span></div>
                     <div className="space-y-3">
                       {group.messages.map((message) => message.senderRole === "system" ? (

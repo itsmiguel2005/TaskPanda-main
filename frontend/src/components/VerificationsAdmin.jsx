@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import { adminRequest } from "../services/adminApi.js";
+import { SkeletonBlock } from "./Skeletons.jsx";
 
 const dateTimeFormatter = new Intl.DateTimeFormat("en-PH", {
   dateStyle: "medium",
@@ -276,8 +277,8 @@ export default function VerificationsAdmin() {
         )}
 
         {!error && loading ? (
-          <div className="space-y-3 p-5 sm:p-7" aria-label="Loading verifications">
-            {[0, 1, 2].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-slate-100 motion-reduce:animate-none" />)}
+          <div role="status" aria-label="Loading verifications" aria-busy="true" className="space-y-3 p-5 sm:p-7">
+            {[0, 1, 2].map((item) => <div key={item} className="rounded-xl border border-slate-100 p-4"><SkeletonBlock className="h-4 w-48 max-w-full" /><SkeletonBlock className="mt-3 h-3 w-64 max-w-full" /></div>)}
           </div>
         ) : !error && activeVerifications.length === 0 ? (
           <div className="px-6 py-16 text-center">
@@ -309,7 +310,7 @@ export default function VerificationsAdmin() {
               </thead>
               <tbody className="divide-y divide-slate-200/80">
                 {activeVerifications.map((applicant) => (
-                  <tr key={verificationKey(applicant)} className="align-top transition hover:bg-sky-50/35">
+                  <tr key={verificationKey(applicant)} className="content-arrive align-top transition hover:bg-sky-50/35">
                     <td className="px-6 py-4">
                       <p className="font-bold text-slate-950">{applicant.name}</p>
                       <p className="mt-0.5 text-sm text-slate-600">{applicant.email}</p>
@@ -427,7 +428,7 @@ export default function VerificationsAdmin() {
                 <Icon name="close" className="h-5 w-5" />
               </button>
             </div>
-            {documentsLoading && <p className="py-14 text-center text-sm font-medium text-slate-600">Loading secure documents…</p>}
+            {documentsLoading && <div role="status" aria-label="Loading secure documents" aria-busy="true" className="grid gap-4 py-5 sm:grid-cols-2"><SkeletonBlock className="h-64 w-full rounded-xl" /><SkeletonBlock className="h-64 w-full rounded-xl" /></div>}
             {documentsError && <p role="alert" className="mt-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">{documentsError}</p>}
             {documents && (
               viewing.type === "tesda" ? (
