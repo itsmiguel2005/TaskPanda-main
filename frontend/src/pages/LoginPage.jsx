@@ -20,6 +20,7 @@ export default function LoginPage() {
   const [adminOtp, setAdminOtp] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
   const [serverError, setServerError] = useState("");
   const [requiresPasswordReset, setRequiresPasswordReset] = useState(false);
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
@@ -102,6 +103,10 @@ export default function LoginPage() {
 
   const showError = (field) =>
     (touched[field] || (serverError && !errors.email && !errors.password)) && errors[field];
+
+  const updateCapsLockState = (event) => {
+    setCapsLockOn(event.getModifierState("CapsLock"));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -325,13 +330,36 @@ export default function LoginPage() {
                       placeholder="&#9679;&#9679;&#9679;&#9679;&#9679;&#9679;&#9679;&#9679;"
                       value={formData.password}
                       onChange={handleChange}
-                      onBlur={() => handleBlur("password")}
-                      className={`block w-full rounded-lg border px-4 py-2.5 pr-10 text-sm text-gray-800 placeholder-gray-400/70 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500/30 ${
+                      onKeyDown={updateCapsLockState}
+                      onKeyUp={updateCapsLockState}
+                      onBlur={() => {
+                        handleBlur("password");
+                        setCapsLockOn(false);
+                      }}
+                      className={`block w-full rounded-lg border py-2.5 pr-10 text-sm text-gray-800 placeholder-gray-400/70 transition-[padding,border-color,background-color,box-shadow] focus:outline-none focus:ring-2 focus:ring-primary-500/30 ${
+                        capsLockOn ? "pl-12" : "px-4"
+                      } ${
                         showError("password")
                           ? "border-red-400 focus:border-red-500 focus:ring-red-500/30"
                           : "border-primary-200 bg-primary-50/50 focus:border-primary-500 focus:ring-primary-500/30"
                       }`}
                     />
+                    {capsLockOn && (
+                      <span
+                        className="pointer-events-none absolute inset-y-0 left-3 flex items-center"
+                        role="status"
+                        aria-label="Caps Lock is on"
+                        aria-live="polite"
+                      >
+                        <span className="flex h-7 w-7 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-700 shadow-sm">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M12 15V5" />
+                            <path d="m8 9 4-4 4 4" />
+                            <path d="M7 19h10" />
+                          </svg>
+                        </span>
+                      </span>
+                    )}
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
