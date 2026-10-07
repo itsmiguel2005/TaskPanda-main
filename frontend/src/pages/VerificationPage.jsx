@@ -275,7 +275,7 @@ function GuidedCamera({ side, onCancel, onCapture }) {
               aria-label="Live camera preview"
             />
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-5" aria-hidden="true">
-              <div className="aspect-[1.586/1] w-full max-w-[30rem] rounded-xl border-2 border-dashed border-white shadow-[0_0_0_999px_rgba(0,0,0,0.35)]" />
+              <div className="aspect-[1.586/1] w-full max-w-120 rounded-xl border-2 border-dashed border-white shadow-[0_0_0_999px_rgba(0,0,0,0.35)]" />
             </div>
           </div>
           <p className={`mt-3 text-sm ${liveQuality?.isBlurry || liveQuality?.isTooDark || liveQuality?.isOverexposed ? "text-amber-200" : "text-slate-100"}`} role="status" aria-live="polite">
@@ -479,7 +479,7 @@ export default function VerificationPage() {
     <div>
       <Header showNav activeTab="Profile" role={role === "provider" ? "provider" : "client"} />
 
-      <main className="dashboard-page bg-[radial-gradient(ellipse_at_top,_rgba(186,230,253,0.4),_transparent_55%),linear-gradient(180deg,_#eff6ff_0%,_#f8fbff_28rem,_#f8fafc_100%)]">
+      <main className="dashboard-page bg-[radial-gradient(ellipse_at_top,rgba(186,230,253,0.4),transparent_55%),linear-gradient(180deg,#eff6ff_0%,#f8fbff_28rem,#f8fafc_100%)]">
         <div className="dashboard-shell max-w-lg">
           <button
             onClick={() => navigate(profilePath)}

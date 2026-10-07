@@ -152,7 +152,7 @@ function AdminTransactionsPanel() {
           aria-describedby="ledger-scroll-hint"
           tabIndex={0}
         >
-          <table className="w-full min-w-[1120px] border-collapse text-left">
+          <table className="w-full min-w-280 border-collapse text-left">
             <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
               <tr>
                 <th scope="col" className="px-4 py-3">Completed</th>

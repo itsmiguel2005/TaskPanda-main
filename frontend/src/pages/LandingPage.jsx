@@ -182,7 +182,7 @@ export default function LandingPage() {
 
       <main className="pb-20">
         <section className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(186,230,253,0.42),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(207,250,254,0.36),_transparent_26%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(186,230,253,0.42),transparent_32%),radial-gradient(circle_at_bottom_right,rgba(207,250,254,0.36),transparent_26%)]" />
           <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="grid items-center gap-10 py-10 lg:grid-cols-[1.08fr_0.92fr] lg:gap-12 lg:py-16">
               <div className="max-w-xl">
@@ -387,7 +387,7 @@ export default function LandingPage() {
                 <button
                   key={card.name}
                   onClick={() => navigate(`/explore?service=${encodeURIComponent(card.name)}`)}
-                  className={`landing-interactive rounded-[1.6rem] border bg-gradient-to-br p-5 text-left shadow-[0_16px_48px_rgba(15,23,42,0.05)] ${card.tone}`}
+                  className={`landing-interactive rounded-[1.6rem] border bg-linear-to-br p-5 text-left shadow-[0_16px_48px_rgba(15,23,42,0.05)] ${card.tone}`}
                 >
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/80 text-2xl shadow-sm">
                     {card.icon}
@@ -537,7 +537,7 @@ export default function LandingPage() {
         </section>
 
         <section className="px-4 pt-4 sm:px-6 lg:px-8">
-          <div className="mx-auto max-w-6xl rounded-[2.2rem] bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 p-8 text-center shadow-[0_30px_90px_rgba(15,23,42,0.18)] sm:p-12">
+          <div className="mx-auto max-w-6xl rounded-[2.2rem] bg-linear-to-r from-slate-900 via-blue-950 to-slate-900 p-8 text-center shadow-[0_30px_90px_rgba(15,23,42,0.18)] sm:p-12">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-200">
               Ready when you are
             </p>

@@ -203,7 +203,7 @@ export default function ProfilePage() {
                     {user?.profileImage ? <img src={user.profileImage} alt={`${fullName} profile`} className="avatar-image" /> : initials || "?"}
                   </div>
                   <div className="min-w-0 pt-1">
-                    <h2 className="break-words text-lg font-bold leading-6 text-slate-950">{fullName}</h2>
+                    <h2 className="wrap-break-word text-lg font-bold leading-6 text-slate-950">{fullName}</h2>
                     <p className="mt-1 text-sm text-slate-600">{roleLabel}</p>
                     <span className={`mt-2 inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-semibold ${
                       isVerified ? "bg-emerald-50 text-emerald-800"
@@ -302,7 +302,7 @@ export default function ProfilePage() {
                       {Array.from({ length: 5 }, (_, index) => {
                         const filled = index < stampProgress;
                         return (
-                          <div key={index} className={`flex min-h-[4.5rem] flex-col items-center justify-center gap-1.5 rounded-xl ${filled ? "bg-emerald-50" : "bg-slate-50"}`}>
+                          <div key={index} className={`flex min-h-18 flex-col items-center justify-center gap-1.5 rounded-xl ${filled ? "bg-emerald-50" : "bg-slate-50"}`}>
                             <BambooStamp filled={filled} />
                             <span className={`text-[10px] font-semibold ${filled ? "text-emerald-800" : "text-slate-500"}`}>{filled ? "Collected" : "Stamp"}</span>
                           </div>
@@ -472,7 +472,6 @@ export default function ProfilePage() {
                 </div>
                 <ProfileSetting label="Edit personal details" description="Update your name, phone, location, and profile photo." onClick={() => navigate("/profile/edit")} />
                 {!isVerified && <ProfileSetting label="Verify your identity" description="Submit an ID to complete account verification." onClick={() => navigate("/profile/verify")} />}
-                {isVerified && <ProfileSetting label="Add TESDA qualification" description="Submit an NC II certificate for a separate review." onClick={() => navigate("/profile/tesda")} />}
                 <ProfileSetting label="Change password" description="Choose a new password for your account." onClick={() => setShowChangePassword(true)} />
                 {isLoggedIn && <ProfileSetting label="Sign out" description="Sign out of this device." onClick={handleSignOut} tone="danger" last />}
               </section>

@@ -247,8 +247,8 @@ function BookingDrawer({ booking, onClose, onOverride }) {
           <section className="mt-6" aria-labelledby="booking-details-heading">
             <h3 id="booking-details-heading" className="text-sm font-bold text-slate-950">Booking details</h3>
             <dl className="mt-3 grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-              <dt className="text-slate-500">Requested</dt><dd className="break-words text-slate-800">{formatDate(booking.createdAt)}</dd>
-              <dt className="text-slate-500">Address</dt><dd className="break-words text-slate-800">{booking.address || "Not provided"}</dd>
+              <dt className="text-slate-500">Requested</dt><dd className="wrap-break-word text-slate-800">{formatDate(booking.createdAt)}</dd>
+              <dt className="text-slate-500">Address</dt><dd className="wrap-break-word text-slate-800">{booking.address || "Not provided"}</dd>
               <dt className="text-slate-500">Estimated duration</dt><dd className="text-slate-800">{formatEstimatedDuration(booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES)}</dd>
               {booking.requestExpiresAt && <><dt className="text-slate-500">Request TTL</dt><dd className="text-slate-800">{formatDate(booking.requestExpiresAt)}</dd></>}
               {booking.workCompletedAt && <><dt className="text-slate-500">Work completed</dt><dd className="text-slate-800">{formatDate(booking.workCompletedAt)}</dd></>}
@@ -256,13 +256,13 @@ function BookingDrawer({ booking, onClose, onOverride }) {
               {booking.cancellationRequestedAt && <><dt className="text-slate-500">Cancel requested</dt><dd className="text-slate-800">{formatDate(booking.cancellationRequestedAt)}</dd></>}
               {booking.clientConfirmedCash && <><dt className="text-slate-500">Client cash check</dt><dd className="text-slate-800">{formatDate(booking.cashPaidConfirmedAt)}</dd></>}
               {booking.providerConfirmedCash && <><dt className="text-slate-500">Provider cash check</dt><dd className="text-slate-800">{formatDate(booking.cashReceivedConfirmedAt)}</dd></>}
-              {booking.cashReceipt?.receiptNumber && <><dt className="text-slate-500">Receipt</dt><dd className="break-words text-slate-800">{booking.cashReceipt.receiptNumber}{booking.cashReceipt.totalAmount == null ? "" : ` · ${amount(booking.cashReceipt.totalAmount)}`}</dd></>}
-              {booking.completionNote && <><dt className="text-slate-500">Completion note</dt><dd className="whitespace-pre-wrap break-words text-slate-800">{booking.completionNote}</dd></>}
+              {booking.cashReceipt?.receiptNumber && <><dt className="text-slate-500">Receipt</dt><dd className="wrap-break-word text-slate-800">{booking.cashReceipt.receiptNumber}{booking.cashReceipt.totalAmount == null ? "" : ` · ${amount(booking.cashReceipt.totalAmount)}`}</dd></>}
+              {booking.completionNote && <><dt className="text-slate-500">Completion note</dt><dd className="whitespace-pre-wrap wrap-break-word text-slate-800">{booking.completionNote}</dd></>}
             </dl>
             {booking.cancellationReason && (
               <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
                 <p className="text-xs font-semibold text-amber-950">Cancellation note</p>
-                <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-5 text-amber-900">{booking.cancellationReason}</p>
+                <p className="mt-1 whitespace-pre-wrap wrap-break-word text-sm leading-5 text-amber-900">{booking.cancellationReason}</p>
               </div>
             )}
           </section>
@@ -291,7 +291,7 @@ function BookingDrawer({ booking, onClose, onOverride }) {
                         <p className="text-xs font-semibold capitalize text-slate-900">{update.type === "reschedule" ? "Schedule change" : "Provider note"}</p>
                         <span className="text-[11px] text-slate-500">{update.status} · {formatDate(update.requestedAt)}</span>
                       </div>
-                      <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-5 text-slate-700">{update.note}</p>
+                      <p className="mt-1 whitespace-pre-wrap wrap-break-word text-sm leading-5 text-slate-700">{update.note}</p>
                       {update.proposedServiceDate && <p className="mt-1 text-xs text-slate-600">Proposed time: {formatDate(update.proposedServiceDate, dateOnly)}{update.proposedTimeSlot ? ` · ${update.proposedTimeSlot}` : ""}</p>}
                     </li>
                   ))}
@@ -305,8 +305,8 @@ function BookingDrawer({ booking, onClose, onOverride }) {
                         <p className="text-xs font-semibold text-slate-900">{request.requestedBy?.name || "Participant"} · {request.status}</p>
                         <span className="text-[11px] text-slate-500">{formatDate(request.createdAt)}</span>
                       </div>
-                      <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-5 text-slate-800">{request.note}</p>
-                      {request.responseNote && <p className="mt-2 whitespace-pre-wrap break-words border-t border-amber-200 pt-2 text-sm leading-5 text-slate-700">Response: {request.responseNote}</p>}
+                      <p className="mt-1 whitespace-pre-wrap wrap-break-word text-sm leading-5 text-slate-800">{request.note}</p>
+                      {request.responseNote && <p className="mt-2 whitespace-pre-wrap wrap-break-word border-t border-amber-200 pt-2 text-sm leading-5 text-slate-700">Response: {request.responseNote}</p>}
                     </li>
                   ))}
                 </ol>
@@ -321,7 +321,7 @@ function BookingDrawer({ booking, onClose, onOverride }) {
                 {[...booking.adminOverrideHistory].reverse().map((entry, index) => (
                   <li key={`${entry.at}-${index}`} className="rounded-lg bg-slate-50 p-3">
                     <p className="text-xs font-semibold text-slate-900">{entry.fromLabel} → {entry.toLabel}</p>
-                    <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-slate-700">{entry.reason}</p>
+                    <p className="mt-1 whitespace-pre-wrap wrap-break-word text-xs leading-5 text-slate-700">{entry.reason}</p>
                     <p className="mt-1 text-[11px] text-slate-500">{entry.adminEmail} · {formatDate(entry.at)}</p>
                   </li>
                 ))}
@@ -357,7 +357,7 @@ function OverrideDialog({ booking, onCancel, onSubmit, busy, error }) {
           : [["canceled", "Force-cancel booking"], ["complete", "Mark as completed"], ["settled", "Mark as settled"]];
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/55 px-4 py-6">
+    <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/55 px-4 py-6">
       <section
         role="alertdialog"
         aria-modal="true"
@@ -570,7 +570,7 @@ export default function AdminBookingsManagement() {
         </div>
       )}
 
-      <section aria-label="Booking records" aria-busy={loading} className="flex h-[calc(100dvh-25rem)] min-h-56 max-h-[34rem] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <section aria-label="Booking records" aria-busy={loading} className="flex h-[calc(100dvh-25rem)] min-h-56 max-h-136 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 sm:px-5">
           <div>
             <h2 className="text-sm font-bold text-slate-950">Booking records</h2>
@@ -578,7 +578,7 @@ export default function AdminBookingsManagement() {
           </div>
           {pagination.pages > 1 && <p className="text-xs text-slate-500">Page {pagination.page} of {pagination.pages}</p>}
         </div>
-        <div tabIndex={0} role="region" aria-label="Scrollable booking list" className="min-h-0 flex-1 overflow-y-auto overscroll-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-blue-700">
+        <div tabIndex={0} role="region" aria-label="Scrollable booking list" className="min-h-0 flex-1 overflow-y-auto overscroll-contain focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-blue-700">
           <div key={resultsRevision} className="content-arrive">
           {loading && bookings.length === 0 ? (
             <div role="status" aria-label="Loading bookings" aria-busy="true" className="divide-y divide-slate-100">

@@ -223,7 +223,7 @@ function AdminSystemSettings() {
           <label className="inline-flex cursor-pointer items-center gap-3">
             <span className={`text-xs font-semibold ${draft.maintenanceMode ? "text-amber-900" : "text-slate-700"}`}>{draft.maintenanceMode ? "Enabled" : "Disabled"}</span>
             <input type="checkbox" role="switch" checked={draft.maintenanceMode} onChange={(event) => updateDraft("maintenanceMode", event.target.checked)} disabled={isLoading || isSaving} className="peer sr-only" aria-label="Pause new bookings" />
-            <span aria-hidden="true" className="relative h-6 w-11 rounded-full bg-slate-300 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:bg-amber-700 peer-checked:after:translate-x-5 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue-700 peer-disabled:cursor-not-allowed peer-disabled:opacity-50" />
+            <span aria-hidden="true" className="relative h-6 w-11 rounded-full bg-slate-300 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:bg-amber-700 peer-checked:after:translate-x-5 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue-700 peer-disabled:cursor-not-allowed peer-disabled:opacity-50" />
           </label>
         </div>
 

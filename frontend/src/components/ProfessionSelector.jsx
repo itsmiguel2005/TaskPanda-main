@@ -115,7 +115,7 @@ export default function ProfessionSelector({
   return (
     <div ref={containerRef} className="relative">
       <div
-        className={`flex min-h-[48px] w-full cursor-text flex-wrap items-center gap-1.5 rounded-xl border bg-white px-3 py-2 text-sm text-slate-800 transition-[border-color,box-shadow,background-color] ${
+        className={`flex min-h-12 w-full cursor-text flex-wrap items-center gap-1.5 rounded-xl border bg-white px-3 py-2 text-sm text-slate-800 transition-[border-color,box-shadow,background-color] ${
           invalid
             ? "border-red-500 bg-red-50/40 ring-2 ring-red-500/15"
             : isOpen
@@ -136,7 +136,7 @@ export default function ProfessionSelector({
                 event.stopPropagation();
                 removeProfession(profession);
               }}
-              className={`shrink-0 rounded-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-current ${accents.chipAction}`}
+              className={`shrink-0 rounded-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-current ${accents.chipAction}`}
               aria-label={`Remove ${profession}`}
             >
               <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" className="h-3 w-3">
@@ -157,7 +157,7 @@ export default function ProfessionSelector({
           onFocus={() => setIsOpen(true)}
           onKeyDown={handleKeyDown}
           placeholder={value.length === 0 ? placeholder : ""}
-          className="auth-inline-field min-w-[8rem] flex-1 bg-transparent px-1 py-1 text-sm text-slate-900 outline-none placeholder:text-slate-500"
+          className="auth-inline-field min-w-32 flex-1 bg-transparent px-1 py-1 text-sm text-slate-900 outline-none placeholder:text-slate-500"
           role="combobox"
           aria-autocomplete="list"
           aria-expanded={isOpen}

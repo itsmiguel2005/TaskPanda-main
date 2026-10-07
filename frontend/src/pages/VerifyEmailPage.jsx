@@ -222,7 +222,7 @@ export default function VerifyEmailPage() {
                 <button
                   type="submit"
                   disabled={isResending || !email.trim()}
-                  className={`w-full rounded-lg bg-gradient-to-r ${a.button} px-4 py-2.5 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50`}
+                  className={`w-full rounded-lg bg-linear-to-r ${a.button} px-4 py-2.5 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50`}
                 >
                   {isResending ? "Sending..." : "Resend verification email"}
                 </button>
@@ -235,7 +235,7 @@ export default function VerifyEmailPage() {
                 <button
                   type="button"
                   onClick={continueRegistrationOnThisBrowser}
-                  className={`w-full rounded-lg bg-gradient-to-r ${a.button} px-4 py-2.5 font-semibold text-white`}
+                  className={`w-full rounded-lg bg-linear-to-r ${a.button} px-4 py-2.5 font-semibold text-white`}
                 >
                   Check this browser again
                 </button>
@@ -268,7 +268,7 @@ export default function VerifyEmailPage() {
                 <button
                   type="submit"
                   disabled={isResuming || resumeCodeInput.length !== 12}
-                  className={`w-full rounded-lg bg-gradient-to-r ${a.button} px-4 py-2.5 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50`}
+                  className={`w-full rounded-lg bg-linear-to-r ${a.button} px-4 py-2.5 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50`}
                 >
                   {isResuming ? "Continuing..." : "Continue registration"}
                 </button>

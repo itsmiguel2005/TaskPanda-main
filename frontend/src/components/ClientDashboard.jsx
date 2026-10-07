@@ -494,7 +494,7 @@ export default function Dashboard() {
 
       {enRouteBooking && (
         <div role="status" className="border-b border-cyan-200 bg-cyan-50 px-4 py-3 text-cyan-950 sm:px-6 lg:px-8">
-          <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4">
+          <div className="mx-auto flex max-w-400 items-center justify-between gap-4">
             <p className="text-sm font-semibold">{enRouteBooking.worker} is on the way for {enRouteBooking.task}.</p>
             <button onClick={() => navigate("/bookings")} className="shrink-0 text-sm font-semibold underline underline-offset-2">View booking</button>
           </div>
@@ -587,7 +587,7 @@ export default function Dashboard() {
                 <div
                   key={cat.name}
                   onClick={() => navigate(`/explore?service=${encodeURIComponent(cat.name)}`)}
-                  className="flex w-[120px] shrink-0 cursor-pointer flex-col items-center gap-2 rounded-xl border border-sky-100 bg-white px-5 py-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_12px_28px_rgba(15,23,42,0.07)]"
+                  className="flex w-30 shrink-0 cursor-pointer flex-col items-center gap-2 rounded-xl border border-sky-100 bg-white px-5 py-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_12px_28px_rgba(15,23,42,0.07)]"
                 >
                   <span className="text-2xl">{cat.icon}</span>
                   <span className="whitespace-nowrap text-xs font-medium text-gray-700">
@@ -617,11 +617,11 @@ export default function Dashboard() {
               <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">{topRatedProvidersError}</p>
             )}
 
-            <div className="flex min-h-[220px] gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: "thin", contain: "layout paint" }}>
+            <div className="flex min-h-55 gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: "thin", contain: "layout paint" }}>
               {topRatedProvidersLoading && visibleTopRatedProviders.length === 0 ? (
                 <div role="status" aria-label="Loading nearby top-rated professionals" aria-busy="true" className="flex min-w-max gap-3">
                   {Array.from({ length: 3 }, (_, index) => (
-                    <div key={index} className="w-[260px] rounded-xl border border-sky-100 bg-white p-4">
+                    <div key={index} className="w-65 rounded-xl border border-sky-100 bg-white p-4">
                       <SkeletonBlock className="h-11 w-11 rounded-full" />
                       <SkeletonBlock className="mt-4 h-4 w-2/3" />
                       <SkeletonBlock className="mt-2 h-3 w-1/2" />
@@ -640,7 +640,7 @@ export default function Dashboard() {
                   return (
                     <div
                       key={`${pro.name}-${pro.category}`}
-                      className={`content-arrive group relative flex min-h-[190px] min-w-[260px] flex-col justify-between overflow-hidden rounded-xl border border-sky-100 bg-gradient-to-br ${pro.accent} p-4 pt-12 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)]`}
+                      className={`content-arrive group relative flex min-h-47.5 min-w-65 flex-col justify-between overflow-hidden rounded-xl border border-sky-100 bg-linear-to-br ${pro.accent} p-4 pt-12 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)]`}
                     >
                       <ProviderStreak streak={pro.onTimeStreak} className="absolute right-3 top-3 z-10" />
                       <div className="flex items-center gap-3">
@@ -705,7 +705,7 @@ export default function Dashboard() {
                   );
                 })
               ) : (
-                <div className="flex min-h-[200px] w-full items-center justify-center rounded-xl border border-dashed border-sky-200 bg-sky-50/50 px-4 text-center">
+                <div className="flex min-h-50 w-full items-center justify-center rounded-xl border border-dashed border-sky-200 bg-sky-50/50 px-4 text-center">
                   <div>
                     <p className="text-base font-semibold text-gray-700">No nearby providers yet</p>
                     <p className="mt-1 text-sm text-gray-500">Trusted local pros will appear here once they are available.</p>
@@ -778,7 +778,7 @@ export default function Dashboard() {
                   const hasRatings = rating > 0 && reviews > 0;
 
                   return (
-                    <div key={normalizedId} className="group relative flex min-h-[190px] min-w-[260px] flex-col justify-between rounded-xl border border-sky-100 bg-white p-4 pt-12 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)]">
+                    <div key={normalizedId} className="group relative flex min-h-47.5 min-w-65 flex-col justify-between rounded-xl border border-sky-100 bg-white p-4 pt-12 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)]">
                       <ProviderStreak streak={provider.onTimeStreak} className="absolute right-3 top-3 z-10" />
                       <div className="flex items-center gap-3">
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white shadow-sm overflow-hidden">
@@ -834,7 +834,7 @@ export default function Dashboard() {
           </section>
       </div>
 
-      <aside className="w-full shrink-0 lg:w-[420px]">
+      <aside className="w-full shrink-0 lg:w-105">
           <div className="sticky top-20 min-w-0 border-y border-sky-100 bg-white/80">
             {/* Summary */}
             <div className="grid grid-cols-2 divide-x divide-sky-100 border-b border-sky-100">
@@ -874,7 +874,7 @@ export default function Dashboard() {
                   <span className="flex items-center gap-1.5">
                     {tab}
                     <span
-                      className={`inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[9px] font-bold ${
+                      className={`inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold ${
                         activeTab === tab
                           ? "bg-white/20 text-white"
                           : "bg-white text-slate-500"
@@ -889,9 +889,9 @@ export default function Dashboard() {
             <label className="relative block px-4 pt-3">
               <span className="sr-only">Search bookings</span>
               <input type="search" value={bookingSearchQuery} onChange={(event) => setBookingSearchQuery(event.target.value)} placeholder="Search provider or repair" className="w-full rounded-lg border border-sky-100 bg-white py-2 pl-9 pr-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20" />
-              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-7 top-[1.125rem] h-4 w-4 text-gray-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute left-7 top-4.5 h-4 w-4 text-gray-400"><circle cx="10.8" cy="10.8" r="6.3" /><path strokeLinecap="round" d="m16 16 4.2 4.2" /></svg>
             </label>
-            <div className="max-h-[520px] overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+            <div className="max-h-130 overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
               {isInitialBookingsLoading ? (
                 <BookingCardSkeletonList count={2} label="Loading bookings" />
               ) : filteredBookings.length === 0 ? (
@@ -958,10 +958,10 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <div className="mt-3 border-t border-sky-100 pt-2.5">
-                        <p className="break-words text-sm font-medium leading-relaxed text-gray-800">
+                        <p className="wrap-break-word text-sm font-medium leading-relaxed text-gray-800">
                           {booking.task}
                         </p>
-                        <p className="mt-1 break-words text-xs text-gray-500">{booking.date}</p>
+                        <p className="mt-1 wrap-break-word text-xs text-gray-500">{booking.date}</p>
                         {booking.status === "Cancellation Requested" && booking.cancellationExpiresAt && (
                           <p className="mt-1 text-xs text-amber-700">
                             Response due {new Date(booking.cancellationExpiresAt).toLocaleString()}

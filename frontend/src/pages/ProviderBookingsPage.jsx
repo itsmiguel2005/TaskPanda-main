@@ -324,7 +324,7 @@ export default function ProviderBookingsPage() {
               >
                 {tab.label}
                 <span
-                  className={`inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${
+                  className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${
                     activeTab === tab.key
                       ? "bg-white/15 text-white"
                       : "bg-sky-50 text-blue-950"
@@ -373,7 +373,7 @@ export default function ProviderBookingsPage() {
               <>
                 <h2 className="mb-4 text-lg font-bold tracking-tight text-slate-900">
                   Incoming requests
-                  <span className="ml-2 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-blue-100 px-2 text-xs font-semibold text-blue-800">
+                  <span className="ml-2 inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-blue-100 px-2 text-xs font-semibold text-blue-800">
                     {requests.length}
                   </span>
                 </h2>
@@ -450,7 +450,7 @@ export default function ProviderBookingsPage() {
                           <div className="flex gap-2">
                             <button
                               onClick={() => setRejectingId(req.id)}
-                              className="rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
+                              className="rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
                             >
                               Decline
                             </button>
@@ -622,7 +622,7 @@ export default function ProviderBookingsPage() {
                                   setIsRescheduleRequest(false);
                                   setProviderUpdateError("");
                                 }}
-                                className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-blue-950 transition hover:bg-sky-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                                className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-blue-950 transition hover:bg-sky-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                               >
                                 Send Update
                               </button>
@@ -775,7 +775,7 @@ export default function ProviderBookingsPage() {
       />}
 
       {runningLateBookingId && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 p-4" onClick={() => setRunningLateBookingId("")}>
+        <div className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/55 p-4" onClick={() => setRunningLateBookingId("")}>
           <form role="dialog" aria-modal="true" aria-labelledby="running-late-title" onSubmit={handleReportRunningLate} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
             <h2 id="running-late-title" className="text-lg font-bold text-slate-950">Notify your next client</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">We’ll find your next confirmed booking and update the client’s estimated arrival based on this delay. You can report delays only for a task currently in progress.</p>
@@ -794,7 +794,7 @@ export default function ProviderBookingsPage() {
       )}
 
       {runningLateSuccess && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 p-4" onClick={() => setRunningLateSuccess("")}>
+        <div className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/45 p-4" onClick={() => setRunningLateSuccess("")}>
           <section role="dialog" aria-modal="true" className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
             <h2 className="text-lg font-bold text-slate-950">Client notified</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">{runningLateSuccess}</p>
@@ -804,7 +804,7 @@ export default function ProviderBookingsPage() {
       )}
 
       {providerUpdateId && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={() => setProviderUpdateId(null)}>
+        <div className="fixed inset-0 z-70 flex items-center justify-center bg-black/50 p-4" onClick={() => setProviderUpdateId(null)}>
           <form onSubmit={handleSendProviderUpdate} className="w-full max-w-md rounded-xl bg-white shadow-xl" onClick={(event) => event.stopPropagation()}>
             <div className="p-6">
               <h2 className="text-lg font-bold text-gray-900">Update the client</h2>
@@ -838,7 +838,7 @@ export default function ProviderBookingsPage() {
       )}
 
       {providerUpdateSuccess && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={() => setProviderUpdateSuccess(false)}>
+        <div className="fixed inset-0 z-70 flex items-center justify-center bg-black/50 p-4" onClick={() => setProviderUpdateSuccess(false)}>
           <section role="dialog" aria-modal="true" className="w-full max-w-sm rounded-xl bg-white p-6 text-center shadow-xl" onClick={(event) => event.stopPropagation()}>
             <p className="text-lg font-bold text-gray-900">Update sent to client</p>
             <button onClick={() => setProviderUpdateSuccess(false)} className="mt-5 w-full rounded-lg bg-primary-600 py-2.5 text-sm font-semibold text-white">Done</button>
@@ -869,7 +869,7 @@ export default function ProviderBookingsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="relative">
-              <div className="relative h-14 bg-gradient-to-br from-sky-50 via-white to-white">
+              <div className="relative h-14 bg-linear-to-br from-sky-50 via-white to-white">
                 <div className="absolute -bottom-7 left-5">
                   <div className="flex h-14 w-14 items-center justify-center rounded-full border-4 border-white text-lg font-bold bg-sky-100 text-blue-950">
                     {detailItem.client.charAt(0)}

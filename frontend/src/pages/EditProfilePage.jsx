@@ -525,7 +525,7 @@ export default function EditProfilePage() {
       )}
       {isDiscardDialogOpen && (
         <div
-          className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-slate-950/55 p-4"
+          className="fixed inset-0 z-2147483647 flex items-center justify-center bg-slate-950/55 p-4"
           onClick={() => setIsDiscardDialogOpen(false)}
         >
           <section

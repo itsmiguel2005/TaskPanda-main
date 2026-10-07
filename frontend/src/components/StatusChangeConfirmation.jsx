@@ -62,7 +62,7 @@ export default function StatusChangeConfirmation({ nextStatus, onConfirm, onClos
 
   return (
     <div
-      className={embedded ? "w-full" : "fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"}
+      className={embedded ? "w-full" : "fixed inset-0 z-70 flex items-center justify-center bg-black/50 p-4"}
       onClick={embedded ? undefined : closeDialog}
     >
       <DialogContainer

@@ -74,7 +74,7 @@ export default function BookingLocationMap({ address, serviceGeoLocation, classN
 
   return (
     <div className="min-w-0">
-      <p className="break-words text-sm leading-5 text-slate-800">{safeAddress || "Address to be confirmed"}</p>
+      <p className="wrap-break-word text-sm leading-5 text-slate-800">{safeAddress || "Address to be confirmed"}</p>
       {location ? (
         <>
           <div

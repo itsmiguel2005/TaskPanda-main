@@ -256,7 +256,7 @@ export default function LoginPage() {
                   <button
                     type="submit"
                     disabled={isSubmitting || adminOtp.length !== 6}
-                    className={`w-full rounded-xl bg-gradient-to-r ${a.button} px-4 py-3 font-semibold text-white transition-opacity hover:brightness-110 focus:outline-none focus:ring-2 ${a.buttonHover} focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50`}
+                    className={`w-full rounded-xl bg-linear-to-r ${a.button} px-4 py-3 font-semibold text-white transition-opacity hover:brightness-110 focus:outline-none focus:ring-2 ${a.buttonHover} focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50`}
                   >
                     {isSubmitting ? "Verifying..." : "Verify and sign in"}
                   </button>
@@ -410,7 +410,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={isSubmitting || lockoutSeconds > 0}
-                className={`w-full rounded-lg bg-gradient-to-r ${a.button} py-2.5 px-4 font-semibold text-white transition-opacity hover:brightness-110 focus:outline-none focus:ring-2 ${a.buttonHover} focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50`}
+                className={`w-full rounded-lg bg-linear-to-r ${a.button} py-2.5 px-4 font-semibold text-white transition-opacity hover:brightness-110 focus:outline-none focus:ring-2 ${a.buttonHover} focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50`}
               >
                 {isSubmitting ? "Signing in..." : "Login"}
               </button>

@@ -131,7 +131,7 @@ export default function CareersPage() {
       {/* CTA */}
       <section className="py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="rounded-2xl bg-gradient-to-r from-primary-600 to-teal-600 px-6 py-12 text-center sm:px-12 sm:py-16">
+          <div className="rounded-2xl bg-linear-to-r from-primary-600 to-teal-600 px-6 py-12 text-center sm:px-12 sm:py-16">
             <h2 className="text-3xl font-extrabold text-white sm:text-4xl">
               Don't See Your Role?
             </h2>

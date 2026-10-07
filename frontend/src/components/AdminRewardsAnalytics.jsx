@@ -89,7 +89,7 @@ function AdminRewardsAnalytics() {
             <p className="mt-0.5 text-xs text-slate-600">Redemption rate is redeemed vouchers divided by all issued perks.</p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[540px] text-left text-sm">
+            <table className="w-full min-w-135 text-left text-sm">
               <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                 <tr><th scope="col" className="px-4 py-3">Reward source</th><th scope="col" className="px-4 py-3 text-right">Issued</th><th scope="col" className="px-4 py-3 text-right">Active</th><th scope="col" className="px-4 py-3 text-right">Redeemed</th><th scope="col" className="px-4 py-3 text-right">Expired</th></tr>
               </thead>

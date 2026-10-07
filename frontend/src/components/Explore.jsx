@@ -745,7 +745,7 @@ export default function Explore() {
         />
         {showSearchLocationPicker && (
           <div
-            className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-3 sm:p-5"
+            className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/50 p-3 sm:p-5"
             onMouseDown={(event) => {
               if (event.target === event.currentTarget) setShowSearchLocationPicker(false);
             }}
@@ -762,7 +762,7 @@ export default function Explore() {
                   type="button"
                   onClick={() => setShowSearchLocationPicker(false)}
                   aria-label="Close location picker"
-                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true">
                     <path d="m6 6 12 12M18 6 6 18" strokeLinecap="round" />
@@ -783,10 +783,10 @@ export default function Explore() {
               />
               {locationError && <p className="mt-3 text-sm text-red-700" role="alert">{locationError}</p>}
               <div className="mt-4 flex gap-3 border-t border-slate-100 pt-4">
-                <button type="button" onClick={() => setShowSearchLocationPicker(false)} className="flex-1 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
+                <button type="button" onClick={() => setShowSearchLocationPicker(false)} className="flex-1 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
                   Cancel
                 </button>
-                <button type="button" onClick={applySearchLocation} className="flex-1 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
+                <button type="button" onClick={applySearchLocation} className="flex-1 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
                   Search this area
                 </button>
               </div>

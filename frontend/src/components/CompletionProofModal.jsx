@@ -22,7 +22,7 @@ export default function CompletionProofModal({ bookingName, onSubmit, onClose })
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={() => !isSubmitting && onClose()}>
+    <div className="fixed inset-0 z-80 flex items-center justify-center bg-black/50 p-4" onClick={() => !isSubmitting && onClose()}>
       <form role="dialog" aria-modal="true" aria-labelledby="completion-proof-title" onSubmit={handleSubmit} onClick={(event) => event.stopPropagation()} className="w-full max-w-lg rounded-xl bg-white shadow-xl">
         <div className="p-5 sm:p-6">
           <h2 id="completion-proof-title" className="text-lg font-bold text-gray-900">Submit completion proof</h2>

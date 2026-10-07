@@ -123,7 +123,7 @@ function IdentityVerificationValue({ user }) {
       <p className="text-[11px] font-semibold uppercase tracking-wide opacity-75">Identity verification</p>
       <p className="mt-1 text-sm font-bold">{status}</p>
       {status === "Rejected" && user.verificationRejectionReason && (
-        <p className="mt-1.5 break-words text-xs leading-5">
+        <p className="mt-1.5 wrap-break-word text-xs leading-5">
           <span className="font-semibold">Reason:</span> {user.verificationRejectionReason}
         </p>
       )}
@@ -151,7 +151,7 @@ function ReferralCodeModal({ code, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[3px]"
+      className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[3px]"
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <section
@@ -224,7 +224,7 @@ function AccountActionModal({ action, busy, error, onClose, onConfirm }) {
   }[action.type];
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[3px]" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
+    <div className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[3px]" onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
       <section role="dialog" aria-modal="true" aria-labelledby="account-action-title" className="w-full max-w-md rounded-2xl border border-white/80 bg-white p-5 shadow-[0_24px_70px_rgba(15,23,42,0.24)] sm:p-6">
         <div className="flex items-start gap-3">
           <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${action.type === "suspend" || action.type === "archive" ? "bg-rose-50 text-rose-700" : "bg-sky-50 text-sky-800"}`}>
@@ -550,7 +550,7 @@ export default function AdminUsersManagement() {
         <div key={resultsRevision} className="content-arrive">
           {loading && users.length === 0 ? (
             <div role="status" aria-label="Loading users" aria-busy="true" className="space-y-3 p-5">
-              {Array.from({ length: 5 }, (_, index) => <SkeletonBlock key={index} className="h-[62px] w-full rounded-xl" />)}
+              {Array.from({ length: 5 }, (_, index) => <SkeletonBlock key={index} className="h-15.5 w-full rounded-xl" />)}
             </div>
           ) : users.length === 0 ? (
             <div className="px-5 py-16 text-center sm:px-8">
@@ -562,7 +562,7 @@ export default function AdminUsersManagement() {
           ) : (
             <>
             <div className="hidden overflow-x-auto sm:block">
-              <table className="w-full min-w-[760px] text-left">
+              <table className="w-full min-w-190 text-left">
                 <thead className="bg-slate-50/90 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-600">
                   <tr>
                     <th scope="col" className="px-6 py-3.5">Account</th>
@@ -640,7 +640,7 @@ export default function AdminUsersManagement() {
       </div>
 
       {selectedUserId && (
-        <div className="fixed inset-0 z-[60] flex justify-end bg-slate-950/35 backdrop-blur-[2px]" onMouseDown={(event) => event.target === event.currentTarget && closeDetails()}>
+        <div className="fixed inset-0 z-60 flex justify-end bg-slate-950/35 backdrop-blur-[2px]" onMouseDown={(event) => event.target === event.currentTarget && closeDetails()}>
           <aside role="dialog" aria-modal="true" aria-labelledby="user-drawer-title" className="flex h-full w-full max-w-xl flex-col border-l border-white/70 bg-white shadow-[-20px_0_60px_rgba(15,23,42,0.18)]">
             <div className="flex items-start gap-3 border-b border-slate-200 px-5 py-5 sm:px-7">
               {detailsLoading && !selectedUser ? (
@@ -711,7 +711,7 @@ export default function AdminUsersManagement() {
                               <p className="mt-1 text-xs text-slate-600">{selectedUser.role === "client" ? "Provider" : "Client"}: {booking.counterpartName}</p>
                               <p className="mt-1 text-[11px] text-slate-500">{formatDate(booking.serviceDate)} · {booking.timeSlot || "Time pending"}</p>
                             </div>
-                            <span className="max-w-[8rem] shrink-0 truncate rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold capitalize text-slate-700">{String(booking.status).replaceAll("_", " ")}</span>
+                            <span className="max-w-32 shrink-0 truncate rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold capitalize text-slate-700">{String(booking.status).replaceAll("_", " ")}</span>
                           </div>
                         ))}
                       </div>
@@ -723,11 +723,11 @@ export default function AdminUsersManagement() {
                     <ol className="mt-3 space-y-0">
                       {details.activity.map((event, index) => (
                         <li key={`${event.title}-${event.occurredAt}-${index}`} className="relative flex gap-3 pb-4 last:pb-0">
-                          {index < details.activity.length - 1 && <span aria-hidden="true" className="absolute left-[7px] top-4 h-[calc(100%-8px)] w-px bg-slate-200" />}
+                          {index < details.activity.length - 1 && <span aria-hidden="true" className="absolute left-1.75 top-4 h-[calc(100%-8px)] w-px bg-slate-200" />}
                           <span className={`relative mt-1 h-4 w-4 shrink-0 rounded-full border-[3px] border-white ring-1 ${event.type === "account" ? "bg-sky-600 ring-sky-200" : "bg-slate-500 ring-slate-200"}`} />
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-semibold text-slate-900">{event.title}</p>
-                            <p className="mt-0.5 break-words text-xs leading-5 text-slate-600">{event.detail}</p>
+                            <p className="mt-0.5 wrap-break-word text-xs leading-5 text-slate-600">{event.detail}</p>
                             <time className="mt-1 block text-[10px] tabular-nums text-slate-500" dateTime={event.occurredAt}>{formatDate(event.occurredAt, dateTimeFormatter)}</time>
                           </div>
                         </li>

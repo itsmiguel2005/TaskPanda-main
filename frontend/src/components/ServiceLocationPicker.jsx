@@ -270,12 +270,12 @@ export default function ServiceLocationPicker({
           placeholder={searchPlaceholder}
           className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-600/20"
         />
-        <button type="button" onClick={() => void searchAddress()} disabled={isSearching} className="shrink-0 rounded-lg bg-primary-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-700 disabled:cursor-wait disabled:opacity-60">
+        <button type="button" onClick={() => void searchAddress()} disabled={isSearching} className="shrink-0 rounded-lg bg-primary-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-700 disabled:cursor-wait disabled:opacity-60">
           {isSearching ? "Searching…" : "Search"}
         </button>
       </div>
 
-      <button type="button" onClick={useCurrentLocation} className="text-sm font-semibold text-primary-800 underline underline-offset-2 hover:text-primary-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-700">
+      <button type="button" onClick={useCurrentLocation} className="text-sm font-semibold text-primary-800 underline underline-offset-2 hover:text-primary-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-700">
         Use my current location
       </button>
 
@@ -283,7 +283,7 @@ export default function ServiceLocationPicker({
         <ul aria-label="Address search results" className="max-h-36 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-200">
           {searchResults.map((result, index) => (
             <li key={`${result.address}-${index}`}>
-              <button type="button" onClick={() => selectSearchResult(result)} className="w-full px-3 py-2 text-left text-xs leading-5 text-gray-800 hover:bg-primary-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-primary-700">
+              <button type="button" onClick={() => selectSearchResult(result)} className="w-full px-3 py-2 text-left text-xs leading-5 text-gray-800 hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-primary-700">
                 {result.address}
               </button>
             </li>

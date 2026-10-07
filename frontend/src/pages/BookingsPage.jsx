@@ -579,7 +579,7 @@ export default function BookingsPage() {
       )}
 
       {reviewSuccessOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={() => { setReviewSuccessOpen(false); refreshBookings(undefined, true); }}>
+        <div className="fixed inset-0 z-70 flex items-center justify-center bg-black/50 p-4" onClick={() => { setReviewSuccessOpen(false); refreshBookings(undefined, true); }}>
           <section role="dialog" aria-modal="true" aria-labelledby="review-success-title" className="w-full max-w-sm rounded-xl bg-white shadow-xl" onClick={(event) => event.stopPropagation()}>
             <div className="p-6 text-center">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-2xl text-green-700" aria-hidden="true">✓</div>
@@ -624,7 +624,7 @@ export default function BookingsPage() {
             className="w-full max-w-xl overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.2)]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start gap-4 border-b border-sky-100 bg-gradient-to-br from-sky-50 via-white to-white px-5 py-5 sm:px-6">
+            <div className="flex items-start gap-4 border-b border-sky-100 bg-linear-to-br from-sky-50 via-white to-white px-5 py-5 sm:px-6">
               <div className={`flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full text-lg font-bold ring-1 ring-sky-200 ${detailBooking.workerProfileImage ? "bg-white" : "bg-sky-100 text-blue-950"}`}>
                 {detailBooking.workerProfileImage ? (
                   <img src={detailBooking.workerProfileImage} alt={`${detailBooking.worker} profile`} className="h-full w-full object-cover" />

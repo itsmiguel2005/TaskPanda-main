@@ -6,7 +6,7 @@ export default function Mascot({ theme = "primary" }) {
 
   return (
     <div className={`relative flex h-72 w-56 shrink-0 items-center justify-center overflow-hidden border-b-4 sm:h-80 sm:w-64 ${border}`}>
-      <div className={`absolute inset-x-4 top-8 bottom-8 rounded-full bg-gradient-to-br blur-2xl ${glow}`} aria-hidden="true" />
+      <div className={`absolute inset-x-4 top-8 bottom-8 rounded-full bg-linear-to-br blur-2xl ${glow}`} aria-hidden="true" />
       <img
         src="/assets/Panda Cropped.png"
         alt="TaskPanda mascot"

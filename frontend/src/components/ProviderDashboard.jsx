@@ -466,7 +466,7 @@ function JobCard({
             <button
               type="button"
               onClick={() => onCancelBooking(booking)}
-              className="w-full rounded-xl border border-rose-200 bg-white py-2.5 text-center text-sm font-semibold text-rose-700 transition hover:bg-rose-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
+              className="w-full rounded-xl border border-rose-200 bg-white py-2.5 text-center text-sm font-semibold text-rose-700 transition hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
             >
               Cancel booking
             </button>
@@ -736,7 +736,7 @@ export default function ProviderDashboard() {
                 }`}
               >
                 {label}
-                <span className={`inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-bold ${
+                <span className={`inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
                   activeFilter === key ? "bg-white/20 text-white" : "bg-sky-50 text-blue-950"
                 }`}>
                   {filterCounts[key] ?? 0}
@@ -772,7 +772,7 @@ export default function ProviderDashboard() {
                 <div className="flex items-center gap-2 border-b border-sky-100 px-5 py-4">
                   <h2 className="text-base font-bold tracking-tight text-slate-900">Incoming requests</h2>
                   {requests.length > 0 && (
-                    <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-blue-100 px-1.5 text-xs font-bold text-blue-700">
+                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-100 px-1.5 text-xs font-bold text-blue-700">
                       {requests.length}
                     </span>
                   )}
@@ -810,7 +810,7 @@ export default function ProviderDashboard() {
                     <p className="mt-2 text-sm text-slate-500">No jobs yet</p>
                   </div>
                 ) : (
-                  <div className="max-h-[720px] overflow-y-auto divide-y divide-sky-100/80">
+                  <div className="max-h-180 overflow-y-auto divide-y divide-sky-100/80">
                     {filteredJobs.map((job) => (
                       <JobCard
                         key={job.id}

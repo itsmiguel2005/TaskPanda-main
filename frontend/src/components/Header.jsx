@@ -480,7 +480,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
               to="/profile#rewards"
               aria-label={`Rewards${availablePerkCount ? `, ${availablePerkCount} available` : ""}`}
               title={availablePerkCount ? `${availablePerkCount} travel-fee ${availablePerkCount === 1 ? "voucher" : "vouchers"} available` : "Vouchers and rewards"}
-              className="relative hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 sm:inline-flex"
+              className="relative hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 sm:inline-flex"
             >
               <MenuIcon className="h-5 w-5">
                 <path d="M5 7.5h14v13H5z" />
@@ -556,7 +556,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                                 else dismissNotification(item);
                               }
                             }}
-                            className="flex min-w-0 flex-1 gap-3 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+                            className="flex min-w-0 flex-1 gap-3 rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
                           >
                             {item.isSystemAnnouncement && (
                               <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-800" aria-hidden="true">
@@ -577,8 +577,8 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                                       </time>
                                     )}
                                   </span>
-                                  <span className="mt-1 block break-words text-sm font-semibold leading-5 text-slate-950">{item.title}</span>
-                                  <span className="mt-0.5 block break-words text-xs leading-5 text-slate-700">{item.detail}</span>
+                                  <span className="mt-1 block wrap-break-word text-sm font-semibold leading-5 text-slate-950">{item.title}</span>
+                                  <span className="mt-0.5 block wrap-break-word text-xs leading-5 text-slate-700">{item.detail}</span>
                                 </>
                               ) : item.isVerificationNotice ? (
                                 <>
@@ -590,8 +590,8 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                                       </time>
                                     )}
                                   </span>
-                                  <span className="mt-1 block break-words text-sm font-semibold leading-5 text-slate-950">{item.title}</span>
-                                  <span className="mt-0.5 block break-words text-xs leading-5 text-slate-700">{item.detail}</span>
+                                  <span className="mt-1 block wrap-break-word text-sm font-semibold leading-5 text-slate-950">{item.title}</span>
+                                  <span className="mt-0.5 block wrap-break-word text-xs leading-5 text-slate-700">{item.detail}</span>
                                 </>
                               ) : (
                                 <>
@@ -676,7 +676,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                 <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 shadow-[0_22px_44px_rgba(15,23,42,0.12)] backdrop-blur-xl">
                   <div className="border-b border-slate-200 bg-slate-50/90 px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className={`avatar-shell h-11 w-11 border border-slate-200 bg-slate-100 text-sm font-semibold text-white shadow-sm ${user?.profileImage ? "bg-transparent" : "bg-gradient-to-br from-slate-800 to-slate-600"}`}>
+                      <div className={`avatar-shell h-11 w-11 border border-slate-200 bg-slate-100 text-sm font-semibold text-white shadow-sm ${user?.profileImage ? "bg-transparent" : "bg-linear-to-br from-slate-800 to-slate-600"}`}>
                         {user?.profileImage ? <img src={user.profileImage} alt={`${displayName} profile`} className="avatar-image" /> : initials}
                       </div>
                       <div className="min-w-0 flex-1">
@@ -805,7 +805,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
         </div>
       )}
       {rewardToast && (
-        <div className="reward-toast fixed right-4 top-20 z-[70] w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-emerald-200 bg-white px-4 py-4 shadow-[0_18px_48px_rgba(15,23,42,0.18)]" role="status" aria-live="polite">
+        <div className="reward-toast fixed right-4 top-20 z-70 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-emerald-200 bg-white px-4 py-4 shadow-[0_18px_48px_rgba(15,23,42,0.18)]" role="status" aria-live="polite">
           <div className="reward-toast-confetti" aria-hidden="true">
             {Array.from({ length: 9 }, (_, index) => (
               <span key={index} style={{ left: `${8 + ((index * 13) % 84)}%`, animationDelay: `${(index % 4) * 90}ms` }} />

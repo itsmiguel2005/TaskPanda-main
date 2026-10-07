@@ -22,7 +22,7 @@ export default function RevisionRequestModal({ booking, revisionCount, onSubmit,
   };
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4" onClick={() => !isSubmitting && onClose()}>
+    <div className="fixed inset-0 z-90 flex items-center justify-center bg-black/50 p-4" onClick={() => !isSubmitting && onClose()}>
       <form role="dialog" aria-modal="true" aria-labelledby="revision-request-title" onSubmit={handleSubmit} onClick={(event) => event.stopPropagation()} className="w-full max-w-md rounded-xl bg-white shadow-xl">
         <div className="p-5 sm:p-6">
           <div className="flex items-start justify-between gap-3">

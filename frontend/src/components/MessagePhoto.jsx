@@ -84,7 +84,7 @@ export default function MessagePhoto({
       </button>
       {isOpen && createPortal(
         <div
-          className="fixed inset-0 z-[120] flex overflow-y-auto bg-slate-950/90 p-4 sm:p-8"
+          className="fixed inset-0 z-120 flex overflow-y-auto bg-slate-950/90 p-4 sm:p-8"
           onClick={(event) => {
             if (event.target === event.currentTarget) setIsOpen(false);
           }}

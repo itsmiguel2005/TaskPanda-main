@@ -543,7 +543,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-60 flex items-center justify-center bg-black/50 p-4"
     >
       <div
         className={`w-full ${step === 2 ? "max-w-lg" : "max-w-md"} max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl`}
@@ -921,7 +921,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                   {TIP_PRESETS.map((amount) => {
                     const isSelected = selectedTip === amount;
                     return (
-                      <button key={amount} type="button" aria-pressed={isSelected} onClick={() => { setTipAmount(String(amount)); setTipFeedback(`${amount}-${Date.now()}`); }} className={`tip-preset rounded-full border px-3.5 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 active:scale-[0.97] ${isSelected ? "is-selected border-primary-700 bg-primary-700 text-white" : "border-gray-300 bg-white text-gray-700 hover:border-primary-400 hover:bg-primary-50"}`}>
+                      <button key={amount} type="button" aria-pressed={isSelected} onClick={() => { setTipAmount(String(amount)); setTipFeedback(`${amount}-${Date.now()}`); }} className={`tip-preset rounded-full border px-3.5 py-2 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 active:scale-[0.97] ${isSelected ? "is-selected border-primary-700 bg-primary-700 text-white" : "border-gray-300 bg-white text-gray-700 hover:border-primary-400 hover:bg-primary-50"}`}>
                         {tipFeedback.startsWith(`${amount}-`) && <span key={tipFeedback} className="tip-ripple" aria-hidden="true" />}
                         <span className="relative z-10">{amount === 0 ? "No tip" : formatPhpAmount(amount)}</span>
                       </button>

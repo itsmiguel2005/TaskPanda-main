@@ -184,7 +184,7 @@ export default function ClientRegisterPage() {
               <button
                 type="button"
                 onClick={() => navigate("/register")}
-                className="auth-back-link group inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-500"
+                className="auth-back-link group inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-sky-500 focus-visible:outline-offset-4"
                 aria-label="Back to role selection"
               >
                 <svg
@@ -443,7 +443,7 @@ export default function ClientRegisterPage() {
               <button
                 type="submit"
                 disabled={!agreedToTerms || isChecking}
-                className={`w-full rounded-lg bg-gradient-to-r ${a.button} px-4 py-2.5 font-semibold text-white transition-opacity hover:brightness-110 focus:outline-none focus:ring-2 ${a.buttonHover} focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 lg:col-span-2`}
+                className={`w-full rounded-lg bg-linear-to-r ${a.button} px-4 py-2.5 font-semibold text-white transition-opacity hover:brightness-110 focus:outline-none focus:ring-2 ${a.buttonHover} focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 lg:col-span-2`}
               >
                 {isChecking ? "Checking..." : "Next"}
               </button>

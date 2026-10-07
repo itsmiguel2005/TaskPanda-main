@@ -50,7 +50,7 @@ export default function AdminDashboardPage() {
   const Section = activeSection?.component;
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_rgba(219,234,254,0.5),_transparent_48%),linear-gradient(180deg,_#eff6ff_0%,_#f8fbff_28rem,_#f8fafc_100%)] pt-16 pb-12">
+    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,rgba(219,234,254,0.5),transparent_48%),linear-gradient(180deg,#eff6ff_0%,#f8fbff_28rem,#f8fafc_100%)] pt-16 pb-12">
       <Header showNav activeTab={activeTab} role="admin" />
 
       <main className="mx-auto max-w-6xl px-4 pt-6 sm:px-6 lg:px-8">

@@ -298,7 +298,7 @@ export default function VerificationsAdmin() {
           </div>
         ) : !error && (
           <div className="admin-ledger-scroll" tabIndex={0} aria-label={activeQueue === "identity" ? "Pending identity verification submissions" : "Pending TESDA certificate submissions"}>
-            <table className="w-full min-w-[820px] text-left">
+            <table className="w-full min-w-205 text-left">
               <thead className="bg-slate-50/90 text-[11px] font-bold uppercase tracking-wider text-slate-600">
                 <tr>
                   <th scope="col" className="px-6 py-3">Applicant</th>
@@ -404,7 +404,7 @@ export default function VerificationsAdmin() {
       </div>
 
       {viewing && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/75 p-3 backdrop-blur-sm sm:p-6" onMouseDown={() => setViewing(null)}>
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/75 p-3 backdrop-blur-sm sm:p-6" onMouseDown={() => setViewing(null)}>
           <section
             role="dialog"
             aria-modal="true"
@@ -456,7 +456,7 @@ export default function VerificationsAdmin() {
       )}
 
       {approving && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm" onMouseDown={() => { setApproving(null); setNameMatchConfirmed(false); }}>
+        <div className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm" onMouseDown={() => { setApproving(null); setNameMatchConfirmed(false); }}>
           <form
             role="dialog"
             aria-modal="true"
@@ -502,7 +502,7 @@ export default function VerificationsAdmin() {
       )}
 
       {rejecting && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm" onMouseDown={() => setRejecting(null)}>
+        <div className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm" onMouseDown={() => setRejecting(null)}>
           <form
             role="dialog"
             aria-modal="true"

@@ -1086,7 +1086,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   };
 
   return (
-    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-gradient-to-b from-sky-50 to-slate-50 pt-16">
+    <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-linear-to-b from-sky-50 to-slate-50 pt-16">
       <Header showNav activeTab="Messages" role={role} />
       <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 overflow-hidden border-y border-sky-100 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.08)] sm:my-4 sm:rounded-2xl sm:border">
         <aside className={`flex min-h-0 w-full shrink-0 flex-col border-r border-sky-100 bg-slate-50/70 md:w-80 lg:w-96 ${selectedConversation ? "hidden md:flex" : ""}`}>
@@ -1159,10 +1159,10 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                 </button>
                 <ConversationAvatar conversation={selectedConversation} size="h-10 w-10 ring-2 ring-sky-100" />
                 <span className="min-w-0 flex-1">
-                  <span className="block max-w-[200px] truncate text-sm font-bold text-slate-900">{selectedConversation.name}</span>
-                  <span className="block max-w-[200px] truncate text-xs text-slate-600">{role === "client" ? selectedConversation.cred : otherRoleLabel}</span>
+                  <span className="block max-w-50 truncate text-sm font-bold text-slate-900">{selectedConversation.name}</span>
+                  <span className="block max-w-50 truncate text-xs text-slate-600">{role === "client" ? selectedConversation.cred : otherRoleLabel}</span>
                 </span>
-                <span className="hidden max-w-[180px] truncate text-right text-xs text-slate-600 lg:block">{selectedConversation.task}</span>
+                <span className="hidden max-w-45 truncate text-right text-xs text-slate-600 lg:block">{selectedConversation.task}</span>
                 <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold ${getStatusBadgeClass(selectedConversation.bookingStatus)}`}>
                   <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
                   {getStatusLabel(selectedConversation.bookingStatus)}
@@ -1316,7 +1316,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                 <p className="border-b border-red-200 bg-red-50 px-4 py-3 text-xs font-medium text-red-900 sm:px-5">The provider disputed this revision. It has been escalated for manual review. <button type="button" onClick={() => { setSupportReportDetails(""); setSupportReportOpen(true); }} className="ml-1 underline">Contact support</button></p>
               )}
               {error && <p role="alert" className="border-b border-red-100 bg-red-50 px-4 py-2 text-xs text-red-700">{error}</p>}
-              <div ref={messagesContainerRef} className="chat-scroll-area min-h-0 flex-1 space-y-1 overflow-y-auto bg-gradient-to-b from-slate-50/90 to-white px-3 py-4 sm:px-6 sm:py-5">
+              <div ref={messagesContainerRef} className="chat-scroll-area min-h-0 flex-1 space-y-1 overflow-y-auto bg-linear-to-b from-slate-50/90 to-white px-3 py-4 sm:px-6 sm:py-5">
                 {isLoadingMessages ? (
                   <MessageSkeletonList />
                 ) : (
@@ -1347,7 +1347,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                         <div key={message.id} className={`flex items-end gap-2 ${message.isMine ? "justify-end" : "justify-start"}`}>
                           {!message.isMine && <ConversationAvatar conversation={selectedConversation} size="h-7 w-7 ring-1 ring-sky-100" />}
                           <div className={`max-w-[88%] rounded-2xl border px-3.5 py-2.5 text-[13px] leading-relaxed shadow-[0_4px_14px_rgba(15,23,42,0.045)] sm:max-w-[78%] sm:px-4 ${message.isMine ? "rounded-br-md border-slate-900 bg-slate-900 text-white" : "rounded-bl-md border-sky-100 bg-white text-slate-800"}`}>
-                            {message.text && <p className="whitespace-pre-wrap break-words">{message.text}</p>}
+                            {message.text && <p className="whitespace-pre-wrap wrap-break-word">{message.text}</p>}
                             {message.photos?.length > 0 && (
                               <div className={`flex flex-wrap gap-2 ${message.text ? "mt-2" : ""}`}>
                                 {message.photos.map((photo) => <MessagePhoto key={photo} photo={photo} requestHeaders={requestHeaders} alt="Chat photo" />)}
@@ -1421,7 +1421,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
           )}
         </main>
         {actionMessage && selectedConversation && (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={() => {
+          <div className="fixed inset-0 z-80 flex items-center justify-center bg-black/50 p-4" onClick={() => {
             if (actionModalView !== "DETAILS") {
               setActionModalView("DETAILS");
               return;
@@ -1616,7 +1616,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
           </div>
         )}
         {revisionRequestOpen && selectedConversation && (
-          <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4" onClick={() => setRevisionRequestOpen(false)}>
+          <div className="fixed inset-0 z-90 flex items-center justify-center bg-black/50 p-4" onClick={() => setRevisionRequestOpen(false)}>
             <form onSubmit={handleRevisionRequest} className="w-full max-w-md rounded-xl bg-white shadow-xl" onClick={(event) => event.stopPropagation()}>
               <div className="p-5">
                 <h2 className="text-lg font-bold text-gray-900">Request a revision</h2>
@@ -1648,7 +1648,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
           />
         )}
         {supportReportOpen && selectedConversation && (
-          <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4" onClick={() => setSupportReportOpen(false)}>
+          <div className="fixed inset-0 z-90 flex items-center justify-center bg-black/50 p-4" onClick={() => setSupportReportOpen(false)}>
             <form onSubmit={handleSupportReport} className="w-full max-w-md rounded-xl bg-white shadow-xl" onClick={(event) => event.stopPropagation()}>
               <div className="p-5">
                 <h2 className="text-lg font-bold text-gray-900">Report a conversation issue</h2>

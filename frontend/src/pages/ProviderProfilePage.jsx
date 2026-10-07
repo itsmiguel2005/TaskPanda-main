@@ -83,7 +83,7 @@ export default function ProviderProfilePage() {
                     {user?.profileImage ? <img src={user.profileImage} alt={`${fullName} profile`} className="avatar-image" /> : initials || "?"}
                   </div>
                   <div className="min-w-0 pt-1">
-                    <h2 className="break-words text-lg font-bold leading-6 text-slate-950">{fullName}</h2>
+                    <h2 className="wrap-break-word text-lg font-bold leading-6 text-slate-950">{fullName}</h2>
                     <p className="mt-1 text-sm text-slate-600">Service provider{user?.username ? ` · @${user.username}` : ""}</p>
                     <div className="mt-2">
                       <StatusPill verified={isVerified} status={verificationStatus} />
