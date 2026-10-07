@@ -1,9 +1,20 @@
+import { useState } from "react";
 import MessagePhoto from "./MessagePhoto.jsx";
 import { DEFAULT_ESTIMATED_DURATION_MINUTES, formatEstimatedDuration } from "../utils/bookingDuration.js";
 
 function formatPrice(value) {
   const amount = Number(value || 0);
   return `₱${(Number.isFinite(amount) ? amount : 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
+}
+
+function formatReceiptDate(value) {
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.getTime())) return "Date unavailable";
+  return date.toLocaleString("en-PH", {
+    timeZone: "Asia/Manila",
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
 
 function formatAppointment(date, time) {
@@ -131,7 +142,8 @@ function renderReviewStars(rating) {
   );
 }
 
-export default function SystemMessageCard({ message, role, actorName, bookingPricing, requestHeaders, onOpen, onRespondToOffer, onCounterOffer, onRespondToCancellation, onBookingRequestAction, isBookingRequestPending = false, isCancellationPending = false, isActionSubmitting = false }) {
+export default function SystemMessageCard({ message, role, actorName, bookingPricing, receipt = null, onDownloadReceipt, requestHeaders, onOpen, onRespondToOffer, onCounterOffer, onRespondToCancellation, onBookingRequestAction, isBookingRequestPending = false, isCancellationPending = false, isActionSubmitting = false }) {
+  const [isDownloadingReceipt, setIsDownloadingReceipt] = useState(false);
   const event = message.eventData || {};
   const requestDuration = bookingPricing?.estimatedDurationMinutes
     ?? event.estimatedDurationMinutes
@@ -165,6 +177,84 @@ export default function SystemMessageCard({ message, role, actorName, bookingPri
     && message.eventType === "booking_request"
     && isBookingRequestPending
     && event.bookingId;
+
+  if (message.eventType === "digital_receipt" && receipt?.receiptNumber) {
+    const serviceDescription = receipt.serviceDescription || bookingPricing?.task || "Home service";
+    const serviceFee = bookingPricing?.offeredPrice ?? receipt.serviceFee;
+    const travelFee = bookingPricing?.travelFee ?? receipt.travelFee;
+    const tipAmount = bookingPricing?.tipAmount ?? receipt.tipAmount;
+    const completionNote = receipt.completionNote || bookingPricing?.completionNote;
+
+    return (
+      <article className="my-2 w-full max-w-xl rounded-2xl border border-emerald-200 bg-white px-3.5 py-3.5 text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.06)] sm:px-4">
+        <header className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-slate-900">Cash payment received</h3>
+            <p className="mt-0.5 text-xs leading-relaxed text-slate-600">Digital receipt · {serviceDescription}</p>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-800">
+            <svg viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+              <path d="m5 10 3.2 3.2L15.5 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.4" />
+            </svg>
+            Paid
+          </span>
+        </header>
+        <dl className="mt-3 space-y-1.5 border-t border-dashed border-slate-200 pt-2.5 text-xs">
+          <div className="flex items-center justify-between gap-4">
+            <dt className="text-slate-600">Service Fee</dt>
+            <dd className="shrink-0 font-medium tabular-nums text-slate-900">{formatPrice(serviceFee)}</dd>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <dt className="text-slate-600">Travel Fee</dt>
+            <dd className="shrink-0 font-medium tabular-nums text-slate-900">{formatPrice(travelFee)}</dd>
+          </div>
+          {Number(tipAmount) > 0 && (
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-slate-600">Tip</dt>
+              <dd className="shrink-0 font-medium tabular-nums text-slate-900">{formatPrice(tipAmount)}</dd>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-4 border-t border-slate-200 pt-2">
+            <dt className="font-bold text-slate-950">Total Amount</dt>
+            <dd className="shrink-0 text-sm font-extrabold tabular-nums text-slate-950">{formatPrice(receipt.totalAmount)}</dd>
+          </div>
+        </dl>
+        {completionNote && (
+          <p className="mt-2 border-t border-slate-100 pt-2 text-xs leading-relaxed text-slate-600">
+            <span className="font-semibold text-slate-800">Work completed: </span>{completionNote}
+          </p>
+        )}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2">
+          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-800">Receipt ID</span>
+          <span className="min-w-0 break-all text-sm font-extrabold tracking-wide text-slate-950">{receipt.receiptNumber}</span>
+        </div>
+        <footer className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2.5">
+          <p className="min-w-0 text-[10px] leading-relaxed text-slate-500">Issued {formatReceiptDate(receipt.issuedAt || message.createdAt)}</p>
+          <button
+            type="button"
+            onClick={async () => {
+              setIsDownloadingReceipt(true);
+              try {
+                await onDownloadReceipt(receipt, bookingPricing);
+              } finally {
+                setIsDownloadingReceipt(false);
+              }
+            }}
+            disabled={isDownloadingReceipt}
+            className="dashboard-focus inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+            aria-label={`Download receipt ${receipt.receiptNumber} as PDF`}
+            title="Download a PDF copy of this receipt."
+          >
+            <svg viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+              <path d="M10 3.5v8m0 0 3-3m-3 3-3-3M4 13v3.5h12V13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {isDownloadingReceipt ? "Preparing PDF…" : "Download PDF"}
+          </button>
+        </footer>
+      </article>
+    );
+  }
 
   return (
     <article className={`my-2 w-full max-w-xl rounded-2xl border bg-white px-3.5 py-3.5 text-sm text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.06)] sm:px-4 ${cardTones[presentation.tone] || cardTones.slate}`}>

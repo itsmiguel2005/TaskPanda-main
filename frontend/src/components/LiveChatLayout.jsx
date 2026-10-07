@@ -32,6 +32,16 @@ function formatConversationTime(value) {
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+function formatReceiptDate(value) {
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.getTime())) return "Date unavailable";
+  return date.toLocaleString("en-PH", {
+    timeZone: "Asia/Manila",
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 function groupByDate(messages) {
   const groups = [];
   let currentDate = "";
@@ -650,7 +660,30 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     return sorted.filter((conversation) => [conversation.name, conversation.task, conversation.lastMessage]
       .some((value) => String(value || "").toLowerCase().includes(query)));
   }, [conversations, role, search, showArchived]);
-  const groupedMessages = useMemo(() => groupByDate(messages), [messages]);
+  const hasIssuedCashReceipt = Boolean(selectedConversation?.cashReceipt?.receiptNumber);
+  const timelineMessages = useMemo(() => {
+    if (!hasIssuedCashReceipt) return messages;
+    const receipt = selectedConversation.cashReceipt;
+    const receiptMessage = messages.find((message) => (
+      message.eventType === "digital_receipt"
+      && (!message.eventData?.receiptNumber || message.eventData.receiptNumber === receipt.receiptNumber)
+    ));
+    const otherMessages = messages.filter((message) => message.eventType !== "digital_receipt");
+    const issuedAt = receipt.issuedAt || selectedConversation.updatedAt || messages.at(-1)?.createdAt || new Date().toISOString();
+    const timelineReceiptMessage = receiptMessage || {
+      id: `digital-receipt-${receipt.receiptNumber}`,
+      senderRole: "system",
+      isMine: false,
+      text: "",
+      createdAt: issuedAt,
+      eventType: "digital_receipt",
+      eventData: { receiptNumber: receipt.receiptNumber, totalAmount: receipt.totalAmount },
+    };
+    return [...otherMessages, timelineReceiptMessage].sort((first, second) => (
+      new Date(first.createdAt) - new Date(second.createdAt)
+    ));
+  }, [messages, selectedConversation, hasIssuedCashReceipt]);
+  const visibleMessageGroups = useMemo(() => groupByDate(timelineMessages), [timelineMessages]);
 
   useEffect(() => {
     const container = messagesContainerRef.current;
@@ -1190,6 +1223,111 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  const handleDownloadReceipt = async (receipt, bookingPricing) => {
+    try {
+      setError("");
+      const { jsPDF } = await import("jspdf");
+      const pdf = new jsPDF({ unit: "mm", format: "a4" });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const margin = 20;
+      const contentWidth = pageWidth - margin * 2;
+      const amountText = (value) => {
+        const amount = Number(value || 0);
+        return `PHP ${(Number.isFinite(amount) ? amount : 0).toLocaleString("en-PH", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`;
+      };
+      const serviceDescription = receipt.serviceDescription || bookingPricing?.task || "Home service";
+      const completionNote = receipt.completionNote || bookingPricing?.completionNote;
+      const issuedAt = formatReceiptDate(receipt.issuedAt);
+
+      pdf.setFillColor(236, 253, 245);
+      pdf.roundedRect(margin, 20, contentWidth, 35, 3, 3, "F");
+      pdf.setTextColor(6, 95, 70);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(10);
+      pdf.text("TASKPANDA", margin + 8, 29);
+      pdf.setTextColor(15, 23, 42);
+      pdf.setFontSize(20);
+      pdf.text("Digital Receipt", margin + 8, 39);
+      pdf.setTextColor(4, 120, 87);
+      pdf.setFontSize(10);
+      pdf.text("PAID", pageWidth - margin - 8, 39, { align: "right" });
+
+      let y = 68;
+      pdf.setFontSize(9);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text("RECEIPT ID", margin, y);
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(15, 23, 42);
+      pdf.setFontSize(12);
+      pdf.text(String(receipt.receiptNumber), pageWidth - margin, y, { align: "right" });
+      y += 8;
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(10);
+      pdf.setTextColor(71, 85, 105);
+      pdf.text(`Issued ${issuedAt}`, margin, y);
+      y += 12;
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(12);
+      pdf.setTextColor(15, 23, 42);
+      const descriptionLines = pdf.splitTextToSize(String(serviceDescription), contentWidth);
+      pdf.text(descriptionLines, margin, y);
+      y += descriptionLines.length * 6 + 8;
+      pdf.setDrawColor(226, 232, 240);
+      pdf.line(margin, y, pageWidth - margin, y);
+      y += 9;
+
+      const lineItems = [
+        ["Service Fee", bookingPricing?.offeredPrice ?? receipt.serviceFee],
+        ["Travel Fee", bookingPricing?.travelFee ?? receipt.travelFee],
+      ];
+      const tipAmount = bookingPricing?.tipAmount ?? receipt.tipAmount;
+      if (Number(tipAmount) > 0) lineItems.push(["Tip", tipAmount]);
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(11);
+      for (const [label, amount] of lineItems) {
+        pdf.setTextColor(71, 85, 105);
+        pdf.text(label, margin, y);
+        pdf.setTextColor(15, 23, 42);
+        pdf.text(amountText(amount), pageWidth - margin, y, { align: "right" });
+        y += 8;
+      }
+      pdf.setDrawColor(203, 213, 225);
+      pdf.line(margin, y, pageWidth - margin, y);
+      y += 10;
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(12);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text("Total Amount", margin, y);
+      pdf.setFontSize(15);
+      pdf.text(amountText(receipt.totalAmount), pageWidth - margin, y, { align: "right" });
+      y += 14;
+
+      if (completionNote) {
+        pdf.setDrawColor(226, 232, 240);
+        pdf.line(margin, y, pageWidth - margin, y);
+        y += 8;
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(10);
+        pdf.setTextColor(51, 65, 85);
+        pdf.text("Work completed", margin, y);
+        y += 6;
+        pdf.setFont("helvetica", "normal");
+        pdf.setTextColor(71, 85, 105);
+        pdf.text(pdf.splitTextToSize(String(completionNote), contentWidth), margin, y);
+      }
+
+      pdf.save(`TaskPanda-Receipt-${receipt.receiptNumber}.pdf`);
+    } catch (downloadError) {
+      console.error("Could not generate the receipt PDF.", downloadError);
+      setError("Could not download the receipt PDF. Please try again.");
+    }
+  };
+
   return (
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-linear-to-b from-sky-50 to-slate-50 pt-16">
       <Header showNav activeTab="Messages" role={role} />
@@ -1358,24 +1496,9 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                 )}
                 <span className="w-full rounded-lg bg-amber-50 px-3 py-2 text-[10px] font-medium leading-relaxed text-amber-900 sm:w-auto sm:max-w-xs">Safety: verify the provider and agree on the work. Pay cash only after satisfactory completion.</span>
               </section>
-              {isBookingComplete && selectedConversation.paymentMethod === "cash" && (
-                <section className="border-b border-emerald-100 bg-emerald-50/70 px-4 py-3 sm:px-5">
-                  {selectedConversation.cashReceipt?.receiptNumber ? (
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-950">
-                      <div>
-                        <p className="font-bold">Digital Receipt · {selectedConversation.cashReceipt.receiptNumber}</p>
-                        <p className="mt-0.5">{selectedConversation.cashReceipt.serviceDescription} · ₱{Number(selectedConversation.cashReceipt.totalAmount || 0).toLocaleString("en-PH")} · Cash on Completion</p>
-                        <p className="mt-0.5 text-emerald-800">Paid and received by both parties on {new Date(selectedConversation.cashReceipt.issuedAt).toLocaleString()}.</p>
-                        {(selectedConversation.cashReceipt.completionNote || selectedConversation.completionNote) && <p className="mt-2 font-medium">Work completed: {selectedConversation.cashReceipt.completionNote || selectedConversation.completionNote}</p>}
-                        {(selectedConversation.cashReceipt.completionSubmittedAt || selectedConversation.completionSubmittedAt) && <p className="mt-1 text-emerald-800">Proof submitted {new Date(selectedConversation.cashReceipt.completionSubmittedAt || selectedConversation.completionSubmittedAt).toLocaleString()}.</p>}
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {(selectedConversation.cashReceipt.completionPhotos?.length ? selectedConversation.cashReceipt.completionPhotos : selectedConversation.completionPhotos || []).map((photo) => <MessagePhoto key={photo} photo={photo} requestHeaders={requestHeaders} alt="Provider completion proof" imageClassName="h-16 w-16 rounded-md border border-emerald-200 object-cover" />)}
-                        </div>
-                      </div>
-                      <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-semibold">Receipt issued</span>
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+              {isBookingComplete && selectedConversation.paymentMethod === "cash" && !hasIssuedCashReceipt && (
+                <section className="border-b border-emerald-100 bg-emerald-50/40 px-4 py-4 sm:px-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="text-xs text-emerald-950">
                         <p className="font-semibold">Cash on Completion · ₱{Number(selectedConversation.totalPrice || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}</p>
                         <p className="mt-0.5">
@@ -1406,8 +1529,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                                 ? "Saving…"
                                 : "Confirm Cash Received"}
                       </button>
-                    </div>
-                  )}
+                  </div>
                   {canRequestRevision && <button type="button" onClick={() => setRevisionRequestOpen(true)} className="mt-3 rounded-md border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-100">Request revision</button>}
                   {revisionLimitReached && <p className="mt-3 w-full rounded-md bg-amber-100 px-3 py-2 text-xs font-medium text-amber-900">Two revision cycles have been used. Continue the discussion in chat or report the issue to support.</p>}
                 </section>
@@ -1428,7 +1550,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                 ) : (
                   <>
                 {hasMoreMessages && <div className="flex justify-center py-2"><button type="button" disabled={isLoadingOlderMessages} onClick={loadOlderMessages} className="dashboard-focus rounded-xl border border-sky-100 bg-white px-3 py-2 text-xs font-semibold text-sky-900 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50">{isLoadingOlderMessages ? "Loading older messages…" : "Load older messages"}</button></div>}
-                {groupedMessages.length ? groupedMessages.map((group) => (
+                {visibleMessageGroups.length ? visibleMessageGroups.map((group) => (
                   <section key={group.date} className="content-arrive">
                     <div className="flex justify-center py-4"><span className="rounded-full border border-sky-100 bg-white px-3 py-1.5 text-[10px] font-bold tracking-wide text-slate-600 shadow-sm">{group.date}</span></div>
                     <div className="space-y-3">
@@ -1439,6 +1561,8 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                             role={role}
                             actorName={message.isMine ? "You" : selectedConversation.name}
                             bookingPricing={selectedConversation}
+                            receipt={message.eventType === "digital_receipt" ? selectedConversation.cashReceipt : null}
+                            onDownloadReceipt={handleDownloadReceipt}
                             onOpen={(event) => { setActionModalView("DETAILS"); setActionMessage(event); setActionError(""); setCounterFormOpen(false); }}
                             onRespondToOffer={handleCounterOfferResponse}
                             onCounterOffer={handleCounterOfferAction}
@@ -1486,7 +1610,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
               </div>
               {showScrollButton && <button onClick={scrollToBottom} className="dashboard-focus absolute bottom-20 right-6 z-10 rounded-full border border-sky-100 bg-white p-2.5 text-sky-900 shadow-[0_6px_18px_rgba(15,23,42,0.12)] transition hover:bg-sky-50" aria-label="Scroll to latest message"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4"><path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" /></svg></button>}
               {isManuallyArchivedForRole(selectedConversation, role) ? (
-                <div className="border-t border-gray-100 bg-gray-50 px-4 py-4 text-center text-xs text-gray-500">Restore this conversation from Archived to send messages. The digital receipt remains available above.</div>
+                <div className="border-t border-gray-100 bg-gray-50 px-4 py-4 text-center text-xs text-gray-500">Restore this conversation from Archived to send messages. The digital receipt remains in the conversation history.</div>
               ) : (
                 <div className="border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
                   {chatPhotos.length > 0 && (
