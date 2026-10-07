@@ -266,9 +266,36 @@ function StarIcon({ filled }) {
 
 const FAVORITES_SYNC_EVENT = "taskpanda:favorites-sync";
 
+function normalizeDashboardLocality(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^(city|municipality)\s+of\s+(.+)$/i, "$2 $1");
+}
+
+function getDashboardServiceArea(user) {
+  const profileCity = user?.city || user?.municipality || user?.town;
+  if (typeof profileCity === "string" && profileCity.trim()) {
+    return normalizeDashboardLocality(profileCity);
+  }
+
+  const address = user?.serviceArea?.address
+    || user?.searchLocation?.address
+    || user?.address
+    || "";
+  const addressParts = String(address).split(",").map((part) => part.trim()).filter(Boolean);
+  const namedCity = addressParts.find((part) => /\b(?:city|municipality)$/i.test(part));
+  if (namedCity) return normalizeDashboardLocality(namedCity);
+
+  const provinceIndex = addressParts.findIndex((part) => /^Pangasinan$/i.test(part));
+  if (provinceIndex > 0) return normalizeDashboardLocality(addressParts[provinceIndex - 1]);
+
+  return "Dagupan & Urdaneta";
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const { isLoggedIn, user, token } = useAuth();
+  const serviceArea = getDashboardServiceArea(user);
   const { bookings: bookingList, dismissedBookingIds, isLoading, error, dismissDashboardBooking, restoreDashboardBookings, requestCancellation, respondToProviderUpdate, createBooking } = useBookings();
   const isInitialBookingsLoading = isLoading && bookingList.length === 0;
   const [bannerVisible, setBannerVisible] = useState(true);
@@ -678,22 +705,30 @@ export default function Dashboard() {
 
       <div className="dashboard-shell grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
         <div className="space-y-8">
-          <div className="dashboard-panel grid items-center gap-5 px-5 py-6 sm:px-8 sm:py-8 lg:grid-cols-[minmax(0,1fr)_10rem]">
-            <div className="max-w-2xl">
-              <p className="dashboard-kicker">Your home service dashboard</p>
-              <h1 className="mt-2 text-3xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-4xl">
-                Find trusted local <span className="text-blue-600">pros for your home</span>
-              </h1>
-              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base sm:leading-7">
-                TaskPanda connects with certified tradespeople and trusted
-                independent local specialists.
-              </p>
-
+          <div className="dashboard-panel grid gap-5 p-5 sm:p-8">
+            <div className="grid min-w-0 items-center gap-x-6 gap-y-5 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,19rem)]">
+              <div className="min-w-0 max-w-2xl">
+                <p className="dashboard-kicker">Your home service dashboard</p>
+                <h1 className="mt-2 text-3xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-4xl">
+                  Find trusted local <span className="text-blue-600">pros for your home</span>
+                </h1>
+                <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base sm:leading-7">
+                  TaskPanda connects with certified tradespeople and trusted
+                  independent local specialists.
+                </p>
+              </div>
+              <div className="flex min-w-0 items-center justify-end gap-3">
+                <p className="relative min-w-0 max-w-xs flex-1 rounded-2xl border border-sky-100 bg-white px-3.5 py-3 text-xs font-medium leading-snug text-slate-700 shadow-md after:absolute after:right-[-0.4rem] after:top-1/2 after:h-3 after:w-3 after:-translate-y-1/2 after:rotate-45 after:border-r after:border-t after:border-sky-100 after:bg-white sm:px-4 sm:text-sm">
+                  Need help around the house? Find trusted local pros in {serviceArea} instantly!
+                </p>
+                <img
+                  src="/assets/Panda Cropped.png"
+                  alt="TaskPanda panda mascot"
+                  className="dashboard-mascot-float h-28 w-24 shrink-0 object-contain object-bottom sm:h-36 sm:w-28"
+                />
+              </div>
             </div>
-            <div className="hidden items-end justify-center lg:flex" aria-hidden="true">
-              <img src="/assets/Panda Cropped.png" alt="" className="h-36 w-32 object-contain object-bottom" />
-            </div>
-            <div className="mt-1 flex min-w-0 items-center overflow-hidden rounded-xl border border-sky-100 bg-sky-50/60 p-1.5 shadow-sm transition focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/30 lg:col-span-2">
+            <div className="flex min-w-0 items-center overflow-hidden rounded-xl border border-sky-100 bg-sky-50/60 p-1.5 shadow-sm transition focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/30">
               <input
                 type="text"
                 value={search}

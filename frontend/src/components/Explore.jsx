@@ -35,6 +35,31 @@ function estimateTravelFare(distanceKm) {
   return Math.round((fare + Number.EPSILON) * 100) / 100;
 }
 
+function normalizeLocalityName(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^(?:city|municipality)\s+of\s+/i, "")
+    .replace(/(?:\s+city|\s+municipality)$/i, "")
+    .trim();
+}
+
+function getSearchAreaCity(location, user) {
+  const locality = location.city || location.municipality || location.town;
+  if (locality) return normalizeLocalityName(locality);
+
+  const addressParts = String(location.address || "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const namedCity = addressParts.find((part) => /\bCity$/i.test(part));
+  if (namedCity) return normalizeLocalityName(namedCity);
+
+  const pangasinanIndex = addressParts.findIndex((part) => /^Pangasinan$/i.test(part));
+  if (pangasinanIndex > 0) return normalizeLocalityName(addressParts[pangasinanIndex - 1]);
+
+  return normalizeLocalityName(user?.city) || "Pangasinan";
+}
+
 function CheckBox({ label, count, checked, onChange }) {
   return (
     <label className="flex cursor-pointer items-center gap-2.5">
@@ -208,6 +233,7 @@ export default function Explore() {
 
   const visibleCats = showAllCats ? filterCategories : filterCategories.slice(0, 4);
   const registeredLocationLabel = [user?.barangay, user?.city, user?.province].filter(Boolean).join(", ");
+  const searchAreaCity = getSearchAreaCity(searchLocation, user);
 
   const toggleCategory = (name) => {
     setSelectedCategories((prev) => {
@@ -369,16 +395,29 @@ export default function Explore() {
       <div className="dashboard-shell mt-6 grid grid-cols-1 gap-6 pb-10 lg:grid-cols-[16rem_minmax(0,1fr)]">
         {/* Hero Search Section */}
         <div className="relative lg:col-start-2 lg:row-start-1">
-          <div className="dashboard-panel grid gap-5 px-5 py-6 sm:px-8 sm:py-8 lg:grid-cols-[minmax(0,1fr)_9rem]">
-            <div className="min-w-0 max-w-2xl">
-              <p className="dashboard-kicker">Local services, matched to you</p>
-              <h1 className="mt-2 text-3xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-4xl">
-                Discover local <span className="text-blue-600">professionals</span>
-              </h1>
-              <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base sm:leading-7">
-                Search nearby tradespeople by name, service, or location.
-              </p>
-
+          <div className="dashboard-panel grid gap-5 px-5 py-6 sm:px-8 sm:py-8">
+            <div className="grid min-w-0 items-center gap-x-6 gap-y-5 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,21rem)]">
+              <div className="min-w-0 max-w-2xl">
+                <p className="dashboard-kicker">Local services, matched to you</p>
+                <h1 className="mt-2 text-3xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-4xl">
+                  Discover local <span className="text-blue-600">professionals</span>
+                </h1>
+                <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base sm:leading-7">
+                  Search nearby tradespeople by name, service, or location.
+                </p>
+              </div>
+              <div className="flex min-w-0 items-center justify-end gap-3">
+                <p className="relative min-w-0 flex-1 rounded-2xl border border-sky-100 bg-white px-3.5 py-3 text-xs font-medium leading-5 text-slate-700 shadow-md after:absolute after:right-[-0.4rem] after:top-1/2 after:h-3 after:w-3 after:-translate-y-1/2 after:rotate-45 after:border-r after:border-t after:border-sky-100 after:bg-white sm:px-4 sm:text-sm">
+                  Looking for local pros in {searchAreaCity}? I found these for you!
+                </p>
+                <img
+                  src="/assets/Panda Cropped.png"
+                  alt="TaskPanda panda mascot"
+                  className="dashboard-mascot-float h-28 w-24 shrink-0 object-contain object-bottom sm:h-36 sm:w-28"
+                />
+              </div>
+            </div>
+            <div className="min-w-0">
               <div className="mt-5 flex min-w-0 items-center overflow-hidden rounded-xl border border-sky-100 bg-sky-50/60 p-1.5 shadow-sm">
                 <input
                   type="text"
@@ -418,9 +457,6 @@ export default function Explore() {
                     : "Set a nearby-search pin in your profile or use your current location."}
                 </p>
               )}
-            </div>
-            <div className="hidden items-end justify-center lg:flex" aria-hidden="true">
-              <img src="/assets/Panda Cropped.png" alt="" className="h-36 w-32 object-contain object-bottom" />
             </div>
           </div>
       </div>
