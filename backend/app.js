@@ -14,11 +14,12 @@ const clientRoutes = require("./routes/clientRoutes");
 const rewardsRoutes = require("./routes/rewardsRoutes");
 const broadcastRoutes = require("./routes/broadcastRoutes");
 const aiRoutes = require("./routes/aiRoutes");
-const { corsOrigins } = require("./config/env");
+const { corsOrigins, trustProxy } = require("./config/env");
 const { trackAuthenticatedRequest } = require("./middleware/requireAuth");
 
 const app = express();
 
+app.set("trust proxy", trustProxy);
 app.use(cors({
   origin(origin, callback) {
     callback(null, Boolean(origin && corsOrigins.includes(origin)));

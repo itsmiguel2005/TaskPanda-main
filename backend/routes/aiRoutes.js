@@ -4,6 +4,7 @@ const { createRateLimiter } = require("../middleware/rateLimits");
 const { requireAuth } = require("../middleware/requireAuth");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
+const { selectAvailableGenerateContentModels } = require("../services/geminiModelSelection");
 const {
   buildBookingContext,
   buildProviderContext,
@@ -20,9 +21,35 @@ const {
 
 const router = express.Router();
 const limitAiSupport = createRateLimiter(20, 15 * 60 * 1000, "Too many support requests. Please try again later.");
-const MODEL = "gemini-2.5-flash";
 const MAX_MESSAGE_LENGTH = 4000;
 let ai;
+let availableModelsPromise;
+
+function getAiClient() {
+  ai ||= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  return ai;
+}
+
+async function getAvailableModels() {
+  availableModelsPromise ||= (async () => {
+    const listedModels = [];
+    for await (const model of getAiClient().models.list()) listedModels.push(model);
+    const models = selectAvailableGenerateContentModels(listedModels);
+    if (!models.length) {
+      throw new Error("The configured Gemini API key has no supported generateContent model.");
+    }
+    return models;
+  })().catch((error) => {
+    availableModelsPromise = undefined;
+    throw error;
+  });
+  return availableModelsPromise;
+}
+
+function getErrorStatus(error) {
+  const status = Number(error?.status || error?.code);
+  return Number.isFinite(status) ? status : 0;
+}
 
 router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
   const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
@@ -41,6 +68,7 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
   }
 
   let failedOperation = "provider search";
+  let failedModel = "";
   try {
     const providerFilter = buildProviderFilter(location);
     let providers = await User.find(providerFilter)
@@ -105,19 +133,32 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
       "Select zero to three providers only when relevant to the request. Return their IDs in providerIds.",
     ].join("\n\n");
 
-    failedOperation = `Gemini request (${MODEL})`;
-    ai ||= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const result = await ai.models.generateContent({
-      model: MODEL,
-      contents,
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema,
-        maxOutputTokens: 600,
-        temperature: 0.25,
-      },
-    });
+    failedOperation = "Gemini model discovery";
+    const models = await getAvailableModels();
+    let result;
+    let generationError;
+    for (const model of models) {
+      failedModel = model;
+      failedOperation = `Gemini request (${model})`;
+      try {
+        result = await getAiClient().models.generateContent({
+          model,
+          contents,
+          config: {
+            systemInstruction,
+            responseMimeType: "application/json",
+            responseSchema,
+            maxOutputTokens: 600,
+            temperature: 0.25,
+          },
+        });
+        break;
+      } catch (error) {
+        generationError = error;
+        if (![400, 404].includes(getErrorStatus(error))) throw error;
+      }
+    }
+    if (!result) throw generationError || new Error("Gemini did not return a response.");
     const resultText = result.text?.trim();
 
     if (!resultText) {
@@ -130,8 +171,12 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
   } catch (error) {
     console.error("PandaBot support request failed:", {
       operation: failedOperation,
-      status: error?.status || error?.code || "unknown",
+      model: failedModel || undefined,
+      status: getErrorStatus(error) || "unknown",
       name: error?.name || "unknown error",
+      message: String(error?.message || "No error message returned.")
+        .replace(/([?&]key=)[^&\s]+/gi, "$1[REDACTED]")
+        .replace(/AIza[0-9A-Za-z_-]{20,}/g, "[REDACTED]"),
     });
     return res.status(502).json({ message: "AI support is temporarily unavailable. Please try again." });
   }
