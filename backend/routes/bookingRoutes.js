@@ -8,6 +8,8 @@ const { validateRequest } = require("../middleware/validateRequest");
 const { getGlobalSettings } = require("../services/systemSettings");
 const {
   handleListBookings,
+  handleDismissDashboardBookings,
+  handleRestoreDashboardBookings,
   handleProviderAvailability,
   handleReportRunningLate,
   handleRespondToLateNotice,
@@ -104,6 +106,7 @@ const validateProviderUpdateResponse = [
 ];
 
 const validateCounterOffer = [
+  body("counterOfferId").optional({ values: "falsy" }).isMongoId(),
   body("proposedPrice").optional({ values: "falsy" }).isFloat({ min: 100, max: 10000000 }),
   body("counterOfferDurationMinutes").optional({ values: "falsy" }).isInt({ min: 15, max: 720 }).custom((value) => Number(value) % 15 === 0),
   body("proposedServiceDate").optional({ values: "falsy" }).isISO8601(),
@@ -131,6 +134,8 @@ router.use(requireAuth, requireRole("client", "provider"));
 router.get("/service-location/search", query("q").isString().isLength({ min: 3, max: 200 }), validateRequest, handleServiceLocationSearch);
 router.get("/service-location/reverse", query("latitude").isFloat({ min: -90, max: 90 }), query("longitude").isFloat({ min: -180, max: 180 }), validateRequest, handleServiceLocationReverseLookup);
 router.get("/availability/:providerId", handleProviderAvailability);
+router.post("/dashboard-dismissals", handleDismissDashboardBookings);
+router.post("/dashboard-dismissals/restore", handleRestoreDashboardBookings);
 router.get("/", handleListBookings);
 router.post("/", (req, _res, next) => {
   req.bookingRequestReceivedAt = new Date();

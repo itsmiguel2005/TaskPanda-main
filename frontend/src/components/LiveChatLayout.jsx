@@ -15,6 +15,7 @@ import UserOnlineStatus, { UserLastActive } from "./UserOnlineStatus.jsx";
 
 const MAX_MESSAGE_INPUT_HEIGHT = 144;
 const CONVERSATION_READ_EVENT = "taskpanda:conversation-read";
+const CHAT_POLL_VISIBLE_MS = 1200;
 
 function getLocalDateInputValue(date) {
   if (Number.isNaN(date.getTime())) return "";
@@ -229,10 +230,13 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const [isActionSubmitting, setIsActionSubmitting] = useState(false);
   const [actionError, setActionError] = useState("");
   const [counterFormOpen, setCounterFormOpen] = useState(false);
+  const [counteringOfferId, setCounteringOfferId] = useState("");
   const [counterOfferPrice, setCounterOfferPrice] = useState("");
   const [counterOfferDurationMinutes, setCounterOfferDurationMinutes] = useState(String(DEFAULT_ESTIMATED_DURATION_MINUTES));
   const [counterOfferNote, setCounterOfferNote] = useState("");
   const [remoteCounterTypingUntil, setRemoteCounterTypingUntil] = useState(0);
+  const isRemoteTyping = remoteCounterTypingUntil > Date.now();
+  const [remoteLastReadAt, setRemoteLastReadAt] = useState(null);
   const [cancelReason, setCancelReason] = useState("");
   const [supportReportOpen, setSupportReportOpen] = useState(false);
   const [supportReportDetails, setSupportReportDetails] = useState("");
@@ -270,6 +274,8 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const counterTypingActiveRef = useRef(false);
   const counterTypingHeartbeatRef = useRef(null);
   const counterTypingConversationRef = useRef(null);
+  const messageTypingIdleRef = useRef(null);
+  const messageCursorRef = useRef(null);
   const [openingBooking, setOpeningBooking] = useState(false);
 
   const requestHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
@@ -301,7 +307,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
       if (counterTypingHeartbeatRef.current === null) {
         counterTypingHeartbeatRef.current = window.setInterval(() => {
           if (counterTypingActiveRef.current) void sendCounterTypingUpdate(true, counterTypingConversationRef.current);
-        }, 3000);
+        }, 2000);
       }
       return;
     }
@@ -317,8 +323,24 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     }
   }, [sendCounterTypingUpdate]);
 
+  const updateMessageTyping = useCallback((value) => {
+    if (messageTypingIdleRef.current !== null) {
+      window.clearTimeout(messageTypingIdleRef.current);
+      messageTypingIdleRef.current = null;
+    }
+    const isComposing = Boolean(value.trim());
+    updateCounterOfferTyping(isComposing);
+    if (isComposing) {
+      messageTypingIdleRef.current = window.setTimeout(() => {
+        messageTypingIdleRef.current = null;
+        updateCounterOfferTyping(false);
+      }, 1800);
+    }
+  }, [updateCounterOfferTyping]);
+
   useEffect(() => () => {
     const conversationId = counterTypingConversationRef.current || selectedIdRef.current;
+    if (messageTypingIdleRef.current !== null) window.clearTimeout(messageTypingIdleRef.current);
     if (counterTypingHeartbeatRef.current !== null) window.clearInterval(counterTypingHeartbeatRef.current);
     if (counterTypingActiveRef.current) {
       counterTypingActiveRef.current = false;
@@ -406,7 +428,9 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   useEffect(() => {
     if (!selectedId || !token || authenticatedRole !== role) {
       setMessages([]);
+      messageCursorRef.current = null;
       setRemoteCounterTypingUntil(0);
+      setRemoteLastReadAt(null);
       setIsLoadingMessages(false);
       setHasMoreMessages(false);
       return undefined;
@@ -417,21 +441,46 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     olderPageMergePendingRef.current = false;
     setMessages([]);
     setRemoteCounterTypingUntil(0);
+    setRemoteLastReadAt(null);
     setIsLoadingMessages(true);
     setIsLoadingOlderMessages(false);
     setHasMoreMessages(false);
     let active = true;
     let initialLoadComplete = false;
+    let pollInFlight = false;
+    let pollTimeoutId = null;
     const controller = new AbortController();
     const loadMessages = async (signal) => {
+      if (!active || pollInFlight || document.visibilityState !== "visible") return;
+      pollInFlight = true;
       try {
-        const response = await apiFetch(`/api/messages/${selectedId}`, { headers: requestHeaders, signal });
+        const params = new URLSearchParams();
+        if (initialLoadComplete && messageCursorRef.current) {
+          params.set("after", messageCursorRef.current.createdAt);
+          params.set("afterId", messageCursorRef.current.id);
+        }
+        const query = params.size ? `?${params.toString()}` : "";
+        const response = await apiFetch(`/api/messages/${selectedId}${query}`, { headers: requestHeaders, signal });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.message || "Could not load messages.");
         if (active) {
           const nextMessages = Array.isArray(data.messages) ? data.messages : [];
+          if (nextMessages.length) {
+            const newestMessage = nextMessages[nextMessages.length - 1];
+            messageCursorRef.current = { createdAt: newestMessage.createdAt, id: newestMessage.id };
+          } else if (!initialLoadComplete) {
+            messageCursorRef.current = {
+              createdAt: data.serverTime || new Date().toISOString(),
+              id: "000000000000000000000000",
+            };
+          }
           setMessages((current) => mergeMessages(current, nextMessages));
-          setRemoteCounterTypingUntil(Number(data.remoteTypingUntil) || 0);
+          setRemoteCounterTypingUntil(
+            Number(data.remoteTypingRemainingMs) > 0
+              ? Date.now() + Number(data.remoteTypingRemainingMs)
+              : 0
+          );
+          setRemoteLastReadAt(data.lastReadAtRemote || null);
           setConversations((current) => current.map((conversation) => conversation.id === selectedId ? { ...conversation, unreadCount: 0 } : conversation));
           setError("");
           if (!initialLoadComplete) {
@@ -446,18 +495,40 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
           setError(requestError.message || "Could not load messages.");
           setIsLoadingMessages(false);
         }
+      } finally {
+        pollInFlight = false;
+        if (active && document.visibilityState === "visible") {
+          pollTimeoutId = window.setTimeout(() => loadMessages(), CHAT_POLL_VISIBLE_MS);
+        }
       }
     };
     loadMessages(controller.signal);
-    const intervalId = window.setInterval(() => loadMessages(), 2500);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        if (pollTimeoutId !== null) window.clearTimeout(pollTimeoutId);
+        pollTimeoutId = null;
+        void loadMessages();
+      } else if (pollTimeoutId !== null) {
+        window.clearTimeout(pollTimeoutId);
+        pollTimeoutId = null;
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       active = false;
       controller.abort();
-      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (pollTimeoutId !== null) window.clearTimeout(pollTimeoutId);
     };
   }, [authenticatedRole, requestHeaders, role, selectedId, token]);
 
   const selectedConversation = conversations.find((conversation) => conversation?.id === selectedId) || null;
+  const lastOwnMessageId = [...messages].reverse().find((message) => message.isMine && message.senderRole !== "system")?.id;
+  const hasLastMessageBeenSeen = Boolean(
+    remoteLastReadAt
+    && lastOwnMessageId
+    && messages.some((message) => message.id === lastOwnMessageId && new Date(remoteLastReadAt) >= new Date(message.createdAt))
+  );
   useEffect(() => {
     if (!counterFormOpen || !selectedId) updateCounterOfferTyping(false);
   }, [counterFormOpen, selectedId, updateCounterOfferTyping]);
@@ -608,6 +679,10 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     if (hasNewMessages && wasAtBottomRef.current) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    if (isRemoteTyping && wasAtBottomRef.current) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [isRemoteTyping]);
+
   const selectConversation = (conversationId) => {
     const conversation = conversations.find((item) => item.id === conversationId);
     const unreadCount = Math.max(0, Number(conversation?.unreadCount) || 0);
@@ -667,6 +742,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const handleSend = async () => {
     const text = input.trim();
     if ((!text && !chatPhotos.length) || !selectedId || !selectedConversation || isSending) return;
+    updateMessageTyping("");
     setIsSending(true);
     setError("");
     const uploadedPublicIds = [];
@@ -835,16 +911,40 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     setActionError("");
     const data = await postChatApiAction(`/api/bookings/${selectedConversation.bookingId}/counter-offers`, "POST", {
       proposedPrice: counterOfferPrice,
+      ...(counteringOfferId ? { counterOfferId: counteringOfferId } : {}),
       ...(role === "provider" ? { counterOfferDurationMinutes } : {}),
       note: counterOfferNote,
     });
     if (data) {
       setCounterFormOpen(false);
+      setCounteringOfferId("");
       setCounterOfferPrice("");
       setCounterOfferDurationMinutes(String(DEFAULT_ESTIMATED_DURATION_MINUTES));
       setCounterOfferNote("");
       setActionMessage(null);
+      try {
+        const response = await apiFetch(`/api/messages/${selectedConversation.id}`, { headers: requestHeaders });
+        const messagesData = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(messagesData.message || "Could not refresh the negotiation history.");
+        wasAtBottomRef.current = true;
+        setMessages((current) => mergeMessages(current, messagesData.messages || []));
+      } catch (requestError) {
+        setError(`Your counter-offer was sent, but the chat could not refresh. ${requestError.message || "Reload the conversation to see it."}`);
+      }
     }
+  };
+
+  const handleCounterOfferAction = (message) => {
+    const event = message?.eventData;
+    if (!selectedConversation || !event?.counterOfferId || event.status !== "pending" || event.proposedBy === role) return;
+    setActionMessage(message);
+    setActionModalView("DETAILS");
+    setActionError("");
+    setCounteringOfferId(String(event.counterOfferId));
+    setCounterOfferPrice(String(event.proposedPrice ?? selectedConversation.offeredPrice ?? ""));
+    setCounterOfferDurationMinutes(String(event.counterOfferDurationMinutes ?? selectedConversation.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES));
+    setCounterOfferNote("");
+    setCounterFormOpen(true);
   };
 
   const handleCounterOfferResponse = async (counterOfferId, action) => {
@@ -852,17 +952,16 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     const data = await postChatApiAction(`/api/bookings/${selectedConversation.bookingId}/counter-offers/${counterOfferId}`, "PATCH", { action });
     if (!data) return;
     setActionMessage(null);
-    if (action === "reject") {
-      try {
-        const response = await apiFetch(`/api/messages/${selectedConversation.id}`, { headers: requestHeaders });
-        const messagesData = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(messagesData.message || "Could not refresh the conversation.");
-        wasAtBottomRef.current = true;
-        setMessages((current) => mergeMessages(current, messagesData.messages || []));
-        setError("");
-      } catch (requestError) {
-        setError(`Counter-offer declined, but the original request could not be refreshed. ${requestError.message || "Reload the conversation to see it."}`);
-      }
+    try {
+      const response = await apiFetch(`/api/messages/${selectedConversation.id}`, { headers: requestHeaders });
+      const messagesData = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(messagesData.message || "Could not refresh the negotiation history.");
+      wasAtBottomRef.current = true;
+      setMessages((current) => mergeMessages(current, messagesData.messages || []));
+      setError("");
+    } catch (requestError) {
+      const resolution = action === "accept" ? "accepted" : "declined";
+      setError(`Counter-offer ${resolution}, but the chat could not refresh. ${requestError.message || "Reload the conversation to see it."}`);
     }
   };
 
@@ -872,6 +971,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     setActionError("");
     setActionModalView(action === "approve" ? "CONFIRM_APPROVE" : action === "decline" ? "CONFIRM_DECLINE" : "DETAILS");
     setCounterFormOpen(action === "counter");
+    setCounteringOfferId("");
     if (action === "counter") {
       setCounterOfferPrice("");
       setCounterOfferDurationMinutes(String(selectedConversation.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES));
@@ -1341,6 +1441,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                             bookingPricing={selectedConversation}
                             onOpen={(event) => { setActionModalView("DETAILS"); setActionMessage(event); setActionError(""); setCounterFormOpen(false); }}
                             onRespondToOffer={handleCounterOfferResponse}
+                            onCounterOffer={handleCounterOfferAction}
                             onRespondToCancellation={handleCancellationResponse}
                             onBookingRequestAction={handleBookingRequestAction}
                             isBookingRequestPending={selectedConversation.bookingStatus === "pending" && !selectedConversation.pendingCounterOffer}
@@ -1360,26 +1461,29 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                               </div>
                             )}
                             <time className={`mt-1 block text-right text-[10px] ${message.isMine ? "text-slate-300" : "text-slate-500"}`} dateTime={message.createdAt}>{formatConversationTime(message.createdAt)}</time>
+                            {message.id === lastOwnMessageId && hasLastMessageBeenSeen && (
+                              <span className="mt-0.5 block text-right text-[10px] font-medium text-sky-600" aria-label={`${selectedConversation.name} has seen your message`}>Seen</span>
+                            )}
                           </div>
                         </div>
                       ))}
                     </div>
                   </section>
                 )) : <p className="py-10 text-center text-sm text-slate-600">No messages yet. Send the first message about this booking.</p>}
+                {isRemoteTyping && (
+                  <div role="status" aria-live="polite" aria-label={`${selectedConversation.name} is typing`} className="flex items-end gap-2 py-1">
+                    <ConversationAvatar conversation={selectedConversation} size="h-7 w-7 ring-1 ring-sky-100" />
+                    <span className="inline-flex h-9 items-center gap-1 rounded-2xl rounded-bl-md border border-sky-100 bg-white px-3.5 shadow-[0_4px_14px_rgba(15,23,42,0.045)]" aria-hidden="true">
+                      <span className="counter-typing-dot h-1.5 w-1.5 rounded-full bg-blue-600" />
+                      <span className="counter-typing-dot h-1.5 w-1.5 rounded-full bg-blue-600" />
+                      <span className="counter-typing-dot h-1.5 w-1.5 rounded-full bg-blue-600" />
+                    </span>
+                  </div>
+                )}
                   </>
                 )}
                 <div ref={messagesEndRef} className="h-1" />
               </div>
-              {remoteCounterTypingUntil > Date.now() && (
-                <div role="status" aria-live="polite" className="flex shrink-0 items-center justify-center gap-2 border-t border-sky-100 bg-white px-4 py-2 text-xs font-medium text-sky-950">
-                  <span>{selectedConversation.name} is drafting a counter-offer</span>
-                  <span className="flex items-center gap-1" aria-hidden="true">
-                    <span className="counter-typing-dot h-1.5 w-1.5 rounded-full bg-blue-600" />
-                    <span className="counter-typing-dot h-1.5 w-1.5 rounded-full bg-blue-600" />
-                    <span className="counter-typing-dot h-1.5 w-1.5 rounded-full bg-blue-600" />
-                  </span>
-                </div>
-              )}
               {showScrollButton && <button onClick={scrollToBottom} className="dashboard-focus absolute bottom-20 right-6 z-10 rounded-full border border-sky-100 bg-white p-2.5 text-sky-900 shadow-[0_6px_18px_rgba(15,23,42,0.12)] transition hover:bg-sky-50" aria-label="Scroll to latest message"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4"><path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" /></svg></button>}
               {isManuallyArchivedForRole(selectedConversation, role) ? (
                 <div className="border-t border-gray-100 bg-gray-50 px-4 py-4 text-center text-xs text-gray-500">Restore this conversation from Archived to send messages. The digital receipt remains available above.</div>
@@ -1396,9 +1500,9 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                     </div>
                   )}
                   <div className="mb-2 flex flex-wrap gap-1.5">
-                    {quickReplies.map((reply) => <button key={reply} type="button" onClick={() => setInput(reply)} className="dashboard-focus min-h-8 rounded-full border border-sky-100 bg-white px-3 py-1.5 text-[10px] font-semibold text-sky-900 transition hover:border-sky-200 hover:bg-sky-50">{reply}</button>)}
+                    {quickReplies.map((reply) => <button key={reply} type="button" onClick={() => { setInput(reply); updateMessageTyping(reply); }} className="dashboard-focus min-h-8 rounded-full border border-sky-100 bg-white px-3 py-1.5 text-[10px] font-semibold text-sky-900 transition hover:border-sky-200 hover:bg-sky-50">{reply}</button>)}
                   </div>
-                  <form onSubmit={(event) => { event.preventDefault(); handleSend(); }} className="flex items-end gap-2 rounded-2xl border border-sky-100 bg-slate-50 p-2">
+                  <form onSubmit={(event) => { event.preventDefault(); updateMessageTyping(""); handleSend(); }} className="flex items-end gap-2 rounded-2xl border border-sky-100 bg-slate-50 p-2">
                     <input ref={chatPhotoInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple className="sr-only" onChange={(event) => {
                       const pickedPhotos = Array.from(event.target.files || []);
                       event.target.value = "";
@@ -1413,7 +1517,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                     <button type="button" onClick={() => chatPhotoInputRef.current?.click()} disabled={isSending || chatPhotos.length >= 5} title="Attach photos" aria-label="Attach photos" className="dashboard-focus flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-sky-100 bg-white text-sky-900 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden="true"><path d="m21.4 11.1-8.5 8.5a5.5 5.5 0 0 1-7.8-7.8l9.2-9.2a3.7 3.7 0 0 1 5.2 5.2l-9.2 9.2a1.8 1.8 0 0 1-2.6-2.6l8.5-8.5" /></svg>
                     </button>
-                    <textarea ref={inputRef} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} rows={1} maxLength={2000} placeholder={`Message ${selectedConversation.name}…`} className="dashboard-focus min-h-11 max-h-36 flex-1 resize-none overflow-y-hidden rounded-xl border border-sky-100 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20" />
+                    <textarea ref={inputRef} value={input} onChange={(event) => { setInput(event.target.value); updateMessageTyping(event.target.value); }} onBlur={() => updateMessageTyping("")} onKeyDown={handleKeyDown} rows={1} maxLength={2000} placeholder={`Message ${selectedConversation.name}…`} className="dashboard-focus min-h-11 max-h-36 flex-1 resize-none overflow-y-hidden rounded-xl border border-sky-100 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20" />
                     <button type="submit" disabled={(!input.trim() && !chatPhotos.length) || isSending} className="dashboard-primary-button dashboard-focus flex h-11 shrink-0 items-center justify-center px-4 text-sm disabled:cursor-not-allowed disabled:opacity-40">{isSending ? "Sending…" : "Send"}</button>
                   </form>
                 </div>
@@ -1569,22 +1673,46 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                       totalLabel="Estimated total"
                     />
                     {actionMessage.eventData.note && <p className="mt-3 border-t border-sky-100 pt-2 text-sm leading-relaxed text-slate-600">{actionMessage.eventData.note}</p>}
+                    {!counterFormOpen
+                      && selectedConversation.bookingStatus === "pending"
+                      && actionMessage.eventData.status === "pending"
+                      && actionMessage.eventData.proposedBy !== role
+                      && actionMessage.eventData.counterOfferId && (
+                        <button
+                          type="button"
+                          disabled={isActionSubmitting}
+                          onClick={() => handleCounterOfferAction(actionMessage)}
+                          className="dashboard-focus mt-3 min-h-10 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-semibold text-blue-900 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Make counter-offer
+                        </button>
+                      )}
                   </div>
                 )}
 
-                {selectedConversation.bookingStatus === "pending" && selectedConversation.pendingCounterOffer && (
+                {selectedConversation.bookingStatus === "pending" && selectedConversation.pendingCounterOffer && !counteringOfferId && (
                   <p className="mt-3 rounded-md bg-amber-50 p-3 text-xs text-amber-900">A counter-offer is awaiting the other participant&apos;s response.</p>
                 )}
 
-                {counterFormOpen && selectedConversation.bookingStatus === "pending" && !selectedConversation.pendingCounterOffer && (
+                {counterFormOpen && selectedConversation.bookingStatus === "pending" && (!selectedConversation.pendingCounterOffer || counteringOfferId) && (
                   <form onSubmit={handleCounterOfferSubmit} className="mt-3 space-y-3 rounded-xl border border-sky-100 bg-slate-50/70 p-4">
                     <div>
-                      <p className="text-sm font-bold text-slate-900">Counter the task offer</p>
+                      <p className="text-sm font-bold text-slate-900">{counteringOfferId ? "Reply with a counter-offer" : "Counter the task offer"}</p>
                       <p className="mt-1 text-xs leading-relaxed text-slate-600">{role === "provider" ? "Propose a task price and duration. Travel fare and tip stay unchanged." : "Propose a task price for the current duration. Travel fare and tip stay unchanged."}</p>
                     </div>
-                    <BookingPriceBreakdown booking={selectedConversation} className="bg-white" taskLabel="Current task offer" totalLabel="Current total" />
+                    <BookingPriceBreakdown
+                      booking={counteringOfferId && actionMessage?.eventData ? {
+                        ...selectedConversation,
+                        offeredPrice: actionMessage.eventData.proposedPrice,
+                        estimatedDurationMinutes: actionMessage.eventData.counterOfferDurationMinutes ?? selectedConversation.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
+                        totalPrice: Number(actionMessage.eventData.proposedPrice || 0) + Number(selectedConversation.travelFee || 0) + Number(selectedConversation.tipAmount || 0),
+                      } : selectedConversation}
+                      className="bg-white"
+                      taskLabel={counteringOfferId ? "Current counter-offer" : "Current task offer"}
+                      totalLabel="Current total"
+                    />
                     <div className="grid grid-cols-1 gap-3">
-                      <label className="text-xs font-semibold text-slate-700">Task offer for {role === "provider" ? counterOfferDurationMinutes : selectedConversation.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES} minutes (PHP)
+                      <label className="text-xs font-semibold text-slate-700">Task offer for {role === "provider" ? counterOfferDurationMinutes : (counteringOfferId ? actionMessage?.eventData?.counterOfferDurationMinutes : null) ?? selectedConversation.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES} minutes (PHP)
                         <input type="number" min="100" step="1" value={counterOfferPrice} onChange={(event) => { setCounterOfferPrice(event.target.value); updateCounterOfferTyping(Boolean(event.target.value.trim() || counterOfferNote.trim())); }} placeholder={`Current ₱${Number(selectedConversation.offeredPrice || 0).toLocaleString("en-PH")}`} className="dashboard-focus mt-1 block min-h-11 w-full rounded-xl border border-sky-100 bg-white px-3 py-2 text-sm text-slate-900" />
                       </label>
                       {role === "provider" && (

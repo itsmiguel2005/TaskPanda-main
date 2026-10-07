@@ -269,7 +269,7 @@ const FAVORITES_SYNC_EVENT = "taskpanda:favorites-sync";
 export default function Dashboard() {
   const navigate = useNavigate();
   const { isLoggedIn, user, token } = useAuth();
-  const { bookings: bookingList, isLoading, error, requestCancellation, respondToProviderUpdate, createBooking } = useBookings();
+  const { bookings: bookingList, dismissedBookingIds, isLoading, error, dismissDashboardBooking, restoreDashboardBookings, requestCancellation, respondToProviderUpdate, createBooking } = useBookings();
   const isInitialBookingsLoading = isLoading && bookingList.length === 0;
   const [bannerVisible, setBannerVisible] = useState(true);
   const [activeTab, setActiveTab] = useState("All");
@@ -278,16 +278,6 @@ export default function Dashboard() {
   const [cancelingId, setCancelingId] = useState(null);
   const [cancellationReason, setCancellationReason] = useState("");
   const [activeCategory, setActiveCategory] = useState("");
-  const [dismissedBookingIds, setDismissedBookingIds] = useState(() => {
-    if (typeof window === "undefined") return [];
-
-    try {
-      const savedDismissals = JSON.parse(window.localStorage.getItem("taskpanda-hidden-dashboard-bookings") || "[]");
-      return Array.isArray(savedDismissals) ? savedDismissals : [];
-    } catch {
-      return [];
-    }
-  });
   const [expandedHistoryIds, setExpandedHistoryIds] = useState({});
   const [favoriteProviderIds, setFavoriteProviderIds] = useState(new Set());
   const [favoriteProviders, setFavoriteProviders] = useState([]);
@@ -310,15 +300,9 @@ export default function Dashboard() {
 
   const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined", "Expired"];
   const dashboardDismissableStatuses = new Set(["Completed", "Settled", "Cancelled", "Declined by Provider"]);
-  const nonDismissedBookingList = bookingList.filter((booking) => !dismissedBookingIds.includes(booking.id));
+  const nonDismissedBookingList = bookingList;
 
   const canDismissBookingFromDashboard = (booking) => dashboardDismissableStatuses.has(String(booking?.status || ""));
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("taskpanda-hidden-dashboard-bookings", JSON.stringify(dismissedBookingIds));
-    }
-  }, [dismissedBookingIds]);
 
   const tabCounts = {
     All: nonDismissedBookingList.length,
@@ -642,19 +626,17 @@ export default function Dashboard() {
     };
   }, [locationKey, loadTopRatedProviders]);
 
-  const handleDismissBooking = (bookingId) => {
+  const handleDismissBooking = async (bookingId) => {
     const booking = bookingList.find((item) => item.id === bookingId);
     if (!booking || !canDismissBookingFromDashboard(booking)) {
       return;
     }
 
-    setDismissedBookingIds((currentDismissals) => currentDismissals.includes(bookingId)
-      ? currentDismissals
-      : [...currentDismissals, bookingId]);
+    await dismissDashboardBooking(bookingId);
   };
 
-  const handleRestoreDismissedBookings = () => {
-    setDismissedBookingIds([]);
+  const handleRestoreDismissedBookings = async () => {
+    await restoreDashboardBookings();
   };
 
   const toggleHistory = (bookingId) => {
@@ -973,12 +955,19 @@ export default function Dashboard() {
               <h2 className="text-base font-bold tracking-tight text-slate-900">
                 Active Bookings
               </h2>
-              <button
-                onClick={() => navigate("/bookings")}
-                className="text-sm font-semibold text-blue-700 underline-offset-4 hover:text-blue-800 hover:underline"
-              >
-                See All &gt;
-              </button>
+              <div className="flex items-center gap-3">
+                {dismissedBookingIds.length > 0 && (
+                  <button type="button" onClick={handleRestoreDismissedBookings} className="text-xs font-semibold text-blue-700 underline-offset-4 hover:text-blue-800 hover:underline">
+                    Restore hidden
+                  </button>
+                )}
+                <button
+                  onClick={() => navigate("/bookings")}
+                  className="text-sm font-semibold text-blue-700 underline-offset-4 hover:text-blue-800 hover:underline"
+                >
+                  See All &gt;
+                </button>
+              </div>
             </div>
             {error && <p role="alert" className="border-b border-red-100 px-5 py-3 text-xs text-red-700">{error}</p>}
             <div className="flex w-full min-w-0 gap-1 overflow-x-auto border-b border-sky-100 px-5 py-3">
@@ -1030,9 +1019,6 @@ export default function Dashboard() {
                           Expired: "No expired requests.",
                         }[activeTab] || "No bookings in this view."}
                   </p>
-                  {hasDismissedBookings && (
-                    <button type="button" onClick={handleRestoreDismissedBookings} className="dashboard-focus mt-3 rounded text-xs font-semibold text-blue-700 underline-offset-2 hover:text-blue-800 hover:underline">Restore dismissed bookings</button>
-                  )}
                 </div>
               ) : (
                 filteredBookings.map((booking) => {

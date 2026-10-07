@@ -6,7 +6,7 @@ const {
   handleListConversations,
   handleCreateConversation,
   handleListMessages,
-  handleCounterOfferTyping,
+  handleConversationTyping,
   handleSendMessage,
   handleUploadChatPhoto,
   handleReadChatPhoto,
@@ -24,7 +24,7 @@ router.post("/messages/photos", requireAuth, limitChatPhotoUploads, chatPhotoUpl
 router.post("/messages/photos/cleanup", requireAuth, handleCleanupChatPhotos);
 router.get("/messages/:conversationId/:messageId/photos/:photoIndex", requireAuth, handleReadChatPhoto);
 router.get("/messages/:conversationId", requireAuth, handleListMessages);
-router.put("/conversations/:conversationId/typing", requireAuth, limitTypingUpdates, handleCounterOfferTyping);
+router.put("/conversations/:conversationId/typing", requireAuth, limitTypingUpdates, handleConversationTyping);
 router.post("/messages", requireAuth, handleSendMessage);
 router.patch("/conversations/:conversationId/payment", requireAuth, handleCashConfirmation);
 router.patch("/conversations/:conversationId/archive", requireAuth, handleArchiveConversation);

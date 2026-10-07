@@ -452,8 +452,8 @@
 }
 
 @keyframes counter-typing-pulse {
-  0%, 60%, 100% { opacity: 0.55; }
-  30% { opacity: 1; }
+  0%, 60%, 100% { opacity: 0.58; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
 }
 
 @media (prefers-reduced-motion: reduce) {

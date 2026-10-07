@@ -130,7 +130,7 @@ const bookingSchema = new mongoose.Schema(
       proposedTimeSlot: { type: String, enum: ["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"] },
       proposedRepairDescription: { type: String, trim: true, maxlength: 2000 },
       note: { type: String, trim: true, maxlength: 500 },
-      status: { type: String, enum: ["pending", "accepted", "rejected"], default: "pending" },
+      status: { type: String, enum: ["pending", "accepted", "rejected", "countered"], default: "pending" },
       createdAt: { type: Date, default: Date.now },
       respondedAt: { type: Date },
     }],

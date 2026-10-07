@@ -26,7 +26,7 @@ const EVENT_TITLES = {
   system: "Booking notice",
 };
 
-function describeEvent(message, actorName) {
+function describeEvent(message, actorName, role) {
   const event = message.eventData || {};
   const actor = actorName || "The other participant";
   const status = String(event.status || "").replaceAll("_", " ");
@@ -38,6 +38,9 @@ function describeEvent(message, actorName) {
   if (message.eventType === "counter_offer") {
     if (event.status === "accepted") return `${actor} accepted the counter-offer`;
     if (event.status === "rejected") return `${actor} declined the counter-offer`;
+    if (event.status === "countered") return event.counteredBy === role
+      ? "You replied with a new counter-offer"
+      : `${actor} replied with a new counter-offer`;
     return `${actor} proposed a counter-offer: ${formatPrice(event.proposedPrice)}`;
   }
   if (message.eventType === "payment") return `${actor} confirmed ${event.confirmation === "cash_paid" ? "cash payment" : "cash received"}`;
@@ -77,6 +80,7 @@ function getEventPresentation(message) {
   if (message.eventType === "counter_offer") {
     if (status === "accepted") return { title: "Counter-offer Accepted", badge: "Accepted", tone: "emerald" };
     if (status === "rejected") return { title: "Counter-offer Declined", badge: "Declined", tone: "rose" };
+    if (status === "countered") return { title: "Counter-offer Replied To", badge: "Countered", tone: "amber" };
     return { title: "Counter-offer Proposed", badge: "Awaiting response", tone: "blue" };
   }
   if (message.eventType === "cancellation") {
@@ -104,7 +108,7 @@ function renderReviewStars(rating) {
   );
 }
 
-export default function SystemMessageCard({ message, role, actorName, bookingPricing, requestHeaders, onOpen, onRespondToOffer, onRespondToCancellation, onBookingRequestAction, isBookingRequestPending = false, isCancellationPending = false, isActionSubmitting = false }) {
+export default function SystemMessageCard({ message, role, actorName, bookingPricing, requestHeaders, onOpen, onRespondToOffer, onCounterOffer, onRespondToCancellation, onBookingRequestAction, isBookingRequestPending = false, isCancellationPending = false, isActionSubmitting = false }) {
   const event = message.eventData || {};
   const requestDuration = bookingPricing?.estimatedDurationMinutes
     ?? event.estimatedDurationMinutes
@@ -147,7 +151,7 @@ export default function SystemMessageCard({ message, role, actorName, bookingPri
             <h3 className="text-sm font-bold text-slate-900">{presentation.title}</h3>
             <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${badgeTones[presentation.tone] || badgeTones.slate}`}>{presentation.badge}</span>
           </div>
-          <p className="mt-1 text-xs leading-relaxed text-slate-600">{describeEvent(message, actorName)}</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-600">{describeEvent(message, actorName, role)}</p>
         </div>
         <time className="shrink-0 text-[10px] text-slate-400" dateTime={message.createdAt}>{new Date(message.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time>
       </div>
@@ -180,7 +184,7 @@ export default function SystemMessageCard({ message, role, actorName, bookingPri
                 <span className="mt-1 block text-lg font-extrabold tabular-nums text-slate-950">{formatPrice(event.proposedPrice)}</span>
                 <span className="mt-1 block text-xs font-medium text-slate-600">Estimated duration · {formatEstimatedDuration(event.counterOfferDurationMinutes ?? bookingPricing?.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES)}</span>
               </div>
-              {event.status !== "pending" && <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold capitalize ${event.status === "accepted" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>Offer {event.status}</span>}
+              {event.status !== "pending" && <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold capitalize ${event.status === "accepted" ? "bg-emerald-100 text-emerald-800" : event.status === "countered" ? "bg-amber-100 text-amber-900" : "bg-rose-100 text-rose-800"}`}>Offer {event.status}</span>}
             </div>
             {bookingPricing && (
               <dl className="mt-3 space-y-1.5 border-t border-dashed border-sky-200 pt-2.5 text-xs text-slate-700">
@@ -231,6 +235,7 @@ export default function SystemMessageCard({ message, role, actorName, bookingPri
           <button type="button" onClick={() => onOpen(message)} className="dashboard-focus min-h-9 rounded-xl border border-sky-100 bg-white px-3 py-2 text-[11px] font-semibold text-sky-900 transition hover:bg-sky-50" aria-label={`View ${EVENT_TITLES[message.eventType] || "booking"} details`}>View details</button>
           {canRespond && <>
             <button type="button" disabled={isActionSubmitting} onClick={() => onRespondToOffer(event.counterOfferId, "reject")} className="dashboard-focus min-h-9 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Decline offer</button>
+            <button type="button" disabled={isActionSubmitting} onClick={() => onCounterOffer(message)} className="dashboard-focus min-h-9 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] font-semibold text-blue-900 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50">Make counter-offer</button>
             <button type="button" disabled={isActionSubmitting} onClick={() => onRespondToOffer(event.counterOfferId, "accept")} className="dashboard-primary-button dashboard-focus min-h-9 px-3 py-2 text-[11px] disabled:cursor-not-allowed disabled:opacity-50">Accept offer</button>
           </>}
           {canRespondToCancellation && <>

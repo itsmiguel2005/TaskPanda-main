@@ -149,7 +149,7 @@ export default function ProviderBookingsPage() {
     } else if (sortBy === "price") {
       result.sort((a, b) => parsePrice(b.price) - parsePrice(a.price));
     } else if (sortBy === "status") {
-      const order = { "Pending Request": 0, Confirmed: 1, "On the Way": 2, "In Progress": 3, Completed: 4, Settled: 4, Cancelled: 5, "Declined by Provider": 6 };
+      const order = { "Cancellation Requested": 0, "Pending Request": 1, Confirmed: 2, "On the Way": 3, "In Progress": 4, Completed: 5, Settled: 5, Cancelled: 6, "Declined by Provider": 7 };
       result.sort((a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99));
     }
     return result;

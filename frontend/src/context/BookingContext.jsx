@@ -1,5 +1,6 @@
 import { apiFetch } from "../services/api.js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useAuth } from "./AuthContext.jsx";
 import { DEFAULT_ESTIMATED_DURATION_MINUTES } from "../utils/bookingDuration.js";
 
@@ -10,8 +11,12 @@ function validBookings(value) {
 }
 
 export function BookingProvider({ children }) {
-  const { token, isLoggedIn, refreshProfile } = useAuth();
+  const { token, isLoggedIn, refreshProfile, role } = useAuth();
+  const location = useLocation();
+  const dashboardScope = location.pathname === "/dashboard" || location.pathname === "/provider-dashboard";
   const [bookings, setBookings] = useState([]);
+  const [dismissedBookingIds, setDismissedBookingIds] = useState([]);
+  const [bookingReviewStats, setBookingReviewStats] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -29,19 +34,56 @@ export function BookingProvider({ children }) {
   const fetchBookings = useCallback(async (signal, silent = false) => {
     if (!isLoggedIn || !token) {
       setBookings([]);
+      setDismissedBookingIds([]);
+      setBookingReviewStats(null);
       return false;
     }
     if (!silent) setIsLoading(true);
     try {
-      const response = await apiFetch("/api/bookings", {
+      const headers = { Authorization: `Bearer ${token}` };
+      if (dashboardScope) {
+        const legacyStorageKey = role === "provider"
+          ? "taskpanda-hidden-provider-dashboard-bookings"
+          : "taskpanda-hidden-dashboard-bookings";
+        let legacyIds = [];
+        try {
+          const storedIds = JSON.parse(window.localStorage.getItem(legacyStorageKey) || "[]");
+          legacyIds = Array.isArray(storedIds)
+            ? storedIds.filter((id) => typeof id === "string" && /^[a-f\d]{24}$/i.test(id))
+            : [];
+        } catch {
+          legacyIds = [];
+        }
+        if (legacyIds.length) {
+          for (let offset = 0; offset < legacyIds.length; offset += 500) {
+            const migrationResponse = await apiFetch("/api/bookings/dashboard-dismissals", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", ...headers },
+              body: JSON.stringify({ bookingIds: legacyIds.slice(offset, offset + 500) }),
+              signal,
+            });
+            const migrationData = await migrationResponse.json().catch(() => ({}));
+            if (!migrationResponse.ok) throw new Error(migrationData.message || "Could not sync dismissed bookings.");
+          }
+          try {
+            window.localStorage.removeItem(legacyStorageKey);
+          } catch {
+            // Keep dashboard loading even when browser storage is unavailable.
+          }
+        }
+      }
+      const response = await apiFetch(`/api/bookings${dashboardScope ? "?dashboard=true" : ""}`, {
         cache: "no-store",
-        headers: { Authorization: `Bearer ${token}` },
+        headers,
         signal,
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "Could not load bookings.");
       if (!Array.isArray(data.bookings)) throw new Error("The booking API is outdated. Restart the backend and try again.");
+      if (dashboardScope && !Array.isArray(data.dismissedBookingIds)) throw new Error("The backend is outdated. Restart it to sync dashboard dismissals.");
       const nextBookings = validBookings(data.bookings);
+      setDismissedBookingIds(dashboardScope && Array.isArray(data.dismissedBookingIds) ? data.dismissedBookingIds : []);
+      setBookingReviewStats(dashboardScope && data.reviewStats ? data.reviewStats : null);
       let didChange = false;
       setBookings((currentBookings) => {
         const currentSnapshot = JSON.stringify(currentBookings);
@@ -61,7 +103,7 @@ export function BookingProvider({ children }) {
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
-  }, [isLoggedIn, token]);
+  }, [dashboardScope, isLoggedIn, role, token]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -74,6 +116,50 @@ export function BookingProvider({ children }) {
     const interval = window.setInterval(() => fetchBookings(undefined, true), 10000);
     return () => window.clearInterval(interval);
   }, [fetchBookings, isLoggedIn, token]);
+
+  const dismissDashboardBooking = useCallback(async (bookingId) => {
+    if (!dashboardScope || !bookingId || !token) return false;
+    try {
+      const response = await apiFetch("/api/bookings/dashboard-dismissals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ bookingIds: [bookingId] }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "Could not dismiss the booking.");
+      if (!Array.isArray(data.dismissedBookingIds) || !data.dismissedBookingIds.includes(String(bookingId))) {
+        throw new Error("This booking can no longer be dismissed from the dashboard.");
+      }
+      setDismissedBookingIds((current) => current.includes(String(bookingId)) ? current : [...current, String(bookingId)]);
+      setBookings((current) => current.filter((booking) => booking.id !== String(bookingId)));
+      setError("");
+      notifySync({ type: "booking-dismissed", bookingId: String(bookingId) });
+      return true;
+    } catch (requestError) {
+      setError(requestError.message || "Could not dismiss the booking.");
+      return false;
+    }
+  }, [dashboardScope, notifySync, token]);
+
+  const restoreDashboardBookings = useCallback(async () => {
+    if (!dashboardScope || !token) return false;
+    try {
+      const response = await apiFetch("/api/bookings/dashboard-dismissals/restore", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "Could not restore dismissed bookings.");
+      setDismissedBookingIds([]);
+      setError("");
+      await fetchBookings(undefined, true);
+      notifySync({ type: "bookings-restored" });
+      return true;
+    } catch (requestError) {
+      setError(requestError.message || "Could not restore dismissed bookings.");
+      return false;
+    }
+  }, [dashboardScope, fetchBookings, notifySync, token]);
 
   const createBooking = useCallback(async (details) => {
     const normalizedDetails = details || {};
@@ -393,6 +479,8 @@ export function BookingProvider({ children }) {
 
   const value = useMemo(() => ({
     bookings,
+    dismissedBookingIds,
+    bookingReviewStats,
     isLoading,
     error,
     createBooking,
@@ -407,8 +495,10 @@ export function BookingProvider({ children }) {
     respondToProviderUpdate,
     respondToRevision,
     confirmCashSettlement,
+    dismissDashboardBooking,
+    restoreDashboardBookings,
     refreshBookings: fetchBookings,
-  }), [bookings, isLoading, error, createBooking, updateBookingStatus, submitCompletionProof, requestRevision, requestCancellation, submitReview, sendProviderUpdate, reportRunningLate, respondToLateNotice, respondToProviderUpdate, respondToRevision, confirmCashSettlement, fetchBookings]);
+  }), [bookings, dismissedBookingIds, bookingReviewStats, isLoading, error, createBooking, updateBookingStatus, submitCompletionProof, requestRevision, requestCancellation, submitReview, sendProviderUpdate, reportRunningLate, respondToLateNotice, respondToProviderUpdate, respondToRevision, confirmCashSettlement, dismissDashboardBooking, restoreDashboardBookings, fetchBookings]);
 
   return <BookingContext.Provider value={value}>{children}</BookingContext.Provider>;
 }

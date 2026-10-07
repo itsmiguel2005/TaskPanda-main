@@ -482,7 +482,7 @@ function JobCard({
 export default function ProviderDashboard() {
   const navigate = useNavigate();
   const { user, token, refreshProfile } = useAuth();
-  const { bookings, isLoading, error, updateBookingStatus, requestCancellation, submitCompletionProof } = useBookings();
+  const { bookings, dismissedBookingIds, bookingReviewStats, isLoading, error, dismissDashboardBooking, restoreDashboardBookings, updateBookingStatus, requestCancellation, submitCompletionProof } = useBookings();
 
   const [activeFilter, setActiveFilter] = useState("All");
   const [search, setSearch] = useState("");
@@ -520,26 +520,9 @@ export default function ProviderDashboard() {
     setCompletionBooking(booking);
   }, []);
 
-  // Dismissed jobs from "My Jobs" local view
-  const [dismissedBookingIds, setDismissedBookingIds] = useState(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const saved = JSON.parse(window.localStorage.getItem("taskpanda-hidden-provider-dashboard-bookings") || "[]");
-      return Array.isArray(saved) ? saved : [];
-    } catch {
-      return [];
-    }
-  });
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("taskpanda-hidden-provider-dashboard-bookings", JSON.stringify(dismissedBookingIds));
-    }
-  }, [dismissedBookingIds]);
-
   const handleDismissBooking = useCallback((bookingId) => {
-    setDismissedBookingIds((prev) => (prev.includes(bookingId) ? prev : [...prev, bookingId]));
-  }, []);
+    void dismissDashboardBooking(bookingId);
+  }, [dismissDashboardBooking]);
 
   // On mount: refresh profile so we get the latest averageRating/totalReviews
   useEffect(() => {
@@ -558,6 +541,12 @@ export default function ProviderDashboard() {
   // ── derived data ────────────────────────────────────────────────────────────
   // Calculate rating from provider's bookings with reviews and fall back to user profile
   const ratingData = useMemo(() => {
+    if (bookingReviewStats) {
+      return {
+        rating: Number(bookingReviewStats.averageRating || 0),
+        reviews: Number(bookingReviewStats.totalReviews || 0),
+      };
+    }
     const reviewedBookings = bookings.filter(
       (b) => b.clientRating != null && Number.isFinite(Number(b.clientRating))
     );
@@ -575,7 +564,7 @@ export default function ProviderDashboard() {
       rating: backendRating,
       reviews: backendReviews,
     };
-  }, [bookings, user]);
+  }, [bookings, bookingReviewStats, user]);
 
   const requests = useMemo(
     () => [...bookings.filter((b) => b.status === "Pending Request")].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
@@ -606,7 +595,7 @@ export default function ProviderDashboard() {
 
   // ── filter counts ────────────────────────────────────────────────────────────
   const filterCounts = useMemo(() => {
-    const visibleBookings = bookings.filter((b) => !dismissedBookingIds.includes(b.id));
+    const visibleBookings = bookings;
     const total = visibleBookings.length;
     const pending = visibleBookings.filter((b) => b.status === "Pending Request").length;
     const active = visibleBookings.filter((b) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested"].includes(b.status)).length;
@@ -620,7 +609,7 @@ export default function ProviderDashboard() {
 
   // ── filtered job list ─────────────────────────────────────────────────────
   const filteredJobs = useMemo(() => {
-    let list = jobs.filter((b) => !dismissedBookingIds.includes(b.id));
+    let list = jobs;
     if (activeFilter === "Active") {
       list = list.filter((b) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested"].includes(b.status));
     } else if (activeFilter !== "All" && activeFilter !== "Pending Request") {
@@ -798,8 +787,13 @@ export default function ProviderDashboard() {
             {/* My Jobs */}
             {activeFilter !== "Pending Request" && (
               <div className="dashboard-panel">
-                <div className="border-b border-sky-100 px-5 py-4">
+                <div className="flex items-center justify-between gap-3 border-b border-sky-100 px-5 py-4">
                   <h2 className="text-base font-bold tracking-tight text-slate-900">My jobs</h2>
+                  {dismissedBookingIds.length > 0 && (
+                    <button type="button" onClick={() => void restoreDashboardBookings()} className="text-xs font-semibold text-blue-700 underline-offset-4 hover:text-blue-800 hover:underline">
+                      Restore hidden
+                    </button>
+                  )}
                 </div>
 
                 {isLoading && filteredJobs.length === 0 ? (
@@ -807,7 +801,7 @@ export default function ProviderDashboard() {
                 ) : filteredJobs.length === 0 ? (
                   <div className="py-12 text-center">
                     <p className="text-3xl">📋</p>
-                    <p className="mt-2 text-sm text-slate-500">No jobs yet</p>
+                    <p className="mt-2 text-sm text-slate-500">{dismissedBookingIds.length ? "No jobs match this view." : "No jobs yet"}</p>
                   </div>
                 ) : (
                   <div className="max-h-180 overflow-y-auto divide-y divide-sky-100/80">

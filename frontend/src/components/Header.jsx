@@ -31,6 +31,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   const [broadcastNotificationItems, setBroadcastNotificationItems] = useState([]);
   const [verificationNotificationItems, setVerificationNotificationItems] = useState([]);
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState([]);
+  const [notificationError, setNotificationError] = useState("");
   const [pushPromptStatus, setPushPromptStatus] = useState("");
   const [rewardToast, setRewardToast] = useState(null);
   const navigate = useNavigate();
@@ -67,17 +68,35 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     }
   };
 
-  const dismissNotification = (item) => {
+  const dismissNotification = async (item) => {
+    if (item.isSystemAnnouncement) {
+      try {
+        const broadcastId = String(item.id).replace(/^broadcast:/, "");
+        const response = await apiFetch(`/api/broadcasts/${broadcastId}/dismiss`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.message || "Could not dismiss this system announcement.");
+        setDismissedNotificationIds((current) => current.includes(item.id) ? current : [...current, item.id]);
+        setBroadcastNotificationItems((current) => current.filter((notification) => notification.id !== item.id));
+        setNotificationError("");
+      } catch (error) {
+        setNotificationError(error.message || "Could not dismiss this system announcement.");
+      }
+      return;
+    }
+
+    const fallbackId = item.title === "Identity verification rejected"
+      ? getProfileRejectionNoticeId(user)
+      : null;
+    const idsToDismiss = [item.id, fallbackId].filter(Boolean);
     setDismissedNotificationIds((current) => {
-      const fallbackId = item.title === "Identity verification rejected"
-        ? getProfileRejectionNoticeId(user)
-        : null;
-      const idsToDismiss = [item.id, fallbackId].filter(Boolean);
       const next = [...new Set([...current, ...idsToDismiss])];
       try {
         localStorage.setItem(dismissedStorageKey, JSON.stringify(next));
       } catch {
-        // Keep the dismissal for this page session if storage is unavailable.
+        setNotificationError("This notification could not be saved on this device.");
       }
       return next;
     });
@@ -87,13 +106,47 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   };
 
   useEffect(() => {
+    let active = true;
     try {
       const savedIds = JSON.parse(localStorage.getItem(dismissedStorageKey) || "[]");
-      setDismissedNotificationIds(Array.isArray(savedIds) ? savedIds : []);
+      const safeIds = Array.isArray(savedIds) ? savedIds.filter((id) => typeof id === "string") : [];
+      setDismissedNotificationIds(safeIds);
+      const legacyBroadcastIds = safeIds
+        .filter((id) => id.startsWith("broadcast:"))
+        .map((id) => id.slice("broadcast:".length));
+      if (legacyBroadcastIds.length && token && ["client", "provider"].includes(authRole)) {
+        void (async () => {
+          try {
+            const validBroadcastIds = legacyBroadcastIds.filter((id) => /^[a-f\d]{24}$/i.test(id));
+            if (validBroadcastIds.length) {
+              const response = await apiFetch("/api/broadcasts/dismissals", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ broadcastIds: validBroadcastIds }),
+              });
+              const result = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(result.message || "Could not sync dismissed system announcements.");
+            }
+            if (!active) return;
+            const migratedIds = new Set(legacyBroadcastIds.map((id) => `broadcast:${id}`));
+            const remainingIds = safeIds.filter((id) => !migratedIds.has(id));
+            try {
+              localStorage.setItem(dismissedStorageKey, JSON.stringify(remainingIds));
+            } catch {
+              setNotificationError("Some notification settings could not be saved on this device.");
+            }
+            setDismissedNotificationIds(remainingIds);
+            setBroadcastNotificationItems((current) => current.filter((item) => !migratedIds.has(item.id)));
+          } catch (error) {
+            if (active) setNotificationError(error.message || "Could not sync dismissed system announcements.");
+          }
+        })();
+      }
     } catch {
       setDismissedNotificationIds([]);
     }
-  }, [dismissedStorageKey]);
+    return () => { active = false; };
+  }, [authRole, dismissedStorageKey, token]);
 
   useEffect(() => {
     if (!showNav || !isLoggedIn || !token || !["client", "provider"].includes(authRole)) {
@@ -537,6 +590,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                   <div className="border-b border-gray-100 px-4 py-3">
                     <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
                   </div>
+                  {notificationError && <p role="alert" className="border-b border-red-100 bg-red-50 px-4 py-2 text-xs text-red-700">{notificationError}</p>}
                   <div className="max-h-64 overflow-y-auto">
                     {visibleNotificationList.length > 0 ? (
                       visibleNotificationList.map((item) => (

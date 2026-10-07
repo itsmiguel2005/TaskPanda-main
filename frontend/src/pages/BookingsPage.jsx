@@ -97,13 +97,14 @@ export default function BookingsPage() {
       sorted.sort((a, b) => Number(b.totalPrice ?? b.offeredPrice ?? 0) - Number(a.totalPrice ?? a.offeredPrice ?? 0));
     } else if (sortBy === "status") {
       const order = {
-        "Pending Request": 0,
-        Confirmed: 1,
-        Completed: 2,
-        Settled: 2,
-        Cancelled: 3,
-        "Declined by Provider": 4,
-        "Cancellation Requested": 5,
+        "Cancellation Requested": 0,
+        "Pending Request": 1,
+        Confirmed: 2,
+        Completed: 3,
+        Settled: 3,
+        Cancelled: 4,
+        "Declined by Provider": 5,
+        Declined: 5,
       };
       sorted.sort((a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99));
     }

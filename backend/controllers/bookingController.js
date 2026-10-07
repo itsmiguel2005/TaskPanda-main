@@ -1,7 +1,10 @@
 const mongoose = require("mongoose");
 const { randomBytes } = require("crypto");
 const Booking = require("../models/Booking");
+const Conversation = require("../models/Conversation");
+const Message = require("../models/Message");
 const User = require("../models/User");
+const UserDashboardDismissal = require("../models/UserDashboardDismissal");
 const { ensureBookingConversation, appendBookingSystemMessage } = require("../services/bookingMessaging");
 const { sendPushNotification } = require("../services/oneSignal");
 const {
@@ -72,6 +75,26 @@ async function notifyBooking(options) {
 function bookingUrl(role, bookingId) {
   const page = role === "provider" ? "/provider-bookings" : "/bookings";
   return `${page}?bookingId=${encodeURIComponent(String(bookingId))}`;
+}
+
+async function updateCounterOfferMessageStatus(bookingId, counterOfferId, status, respondedBy, respondedAt) {
+  const conversation = await Conversation.findOne({ bookingId }).select("_id");
+  if (!conversation) return;
+  await Message.updateOne(
+    {
+      conversationId: conversation._id,
+      eventType: "counter_offer",
+      "eventData.counterOfferId": String(counterOfferId),
+      "eventData.status": "pending",
+    },
+    {
+      $set: {
+        "eventData.status": status,
+        "eventData.counteredBy": respondedBy,
+        "eventData.respondedAt": respondedAt,
+      },
+    }
+  );
 }
 
 function normalizeBookingStatus(value) {
@@ -321,14 +344,92 @@ async function handleListBookings(req, res) {
       if (requestedClientId && requestedClientId !== String(req.user._id)) return res.status(403).json({ message: "You can only view your own client bookings." });
     }
 
+    const dashboardMode = req.query.dashboard === "true";
+    let dismissedBookingIds = [];
+    if (dashboardMode) {
+      const dismissals = await UserDashboardDismissal.find({ userId: req.user._id, kind: "booking" })
+        .select("targetId")
+        .lean();
+      dismissedBookingIds = dismissals.map((dismissal) => String(dismissal.targetId));
+      if (dismissedBookingIds.length) {
+        filter._id = mongoose.trusted({ $nin: dismissals.map((dismissal) => dismissal.targetId) });
+      }
+    }
+
     const bookings = await Booking.find(filter).sort({ createdAt: -1, _id: -1 }).populate(populatePaths);
-    return res.json({ bookings: bookings.map(serializeBooking) });
+    let reviewStats = null;
+    if (dashboardMode && req.user.role === "provider") {
+      const [aggregate] = await Booking.aggregate([
+        { $match: { providerId: req.user._id, clientRating: { $type: "number" } } },
+        { $group: { _id: null, averageRating: { $avg: "$clientRating" }, totalReviews: { $sum: 1 } } },
+      ]);
+      reviewStats = {
+        averageRating: Number(aggregate?.averageRating || 0),
+        totalReviews: Number(aggregate?.totalReviews || 0),
+      };
+    }
+    return res.json({ bookings: bookings.map(serializeBooking), dismissedBookingIds, reviewStats });
   } catch (error) {
     console.error("List bookings error:", error);
     return res.status(500).json({
       message: error?.message || "Could not submit the booking.",
       details: process.env.NODE_ENV !== "production" ? String(error?.stack || error) : undefined,
     });
+  }
+}
+
+async function handleDismissDashboardBookings(req, res) {
+  const bookingIds = req.body?.bookingIds;
+  if (!Array.isArray(bookingIds) || bookingIds.length > 500 || bookingIds.some((id) => !mongoose.isValidObjectId(id))) {
+    return res.status(400).json({ message: "Provide up to 500 valid booking IDs." });
+  }
+
+  try {
+    const statuses = req.user.role === "provider"
+      ? ["settled", "canceled", "declined", "expired", "Settled", "Cancelled", "Declined by Provider", "Expired"]
+      : ["complete", "closed", "settled", "canceled", "declined", "Completed", "Closed", "Settled", "Cancelled", "Declined by Provider"];
+    const ownerField = req.user.role === "provider" ? "providerId" : "clientId";
+    const eligibleBookings = await Booking.find({
+      _id: mongoose.trusted({ $in: bookingIds }),
+      [ownerField]: req.user._id,
+      status: mongoose.trusted({ $in: statuses }),
+    }).select("_id").lean();
+
+    if (eligibleBookings.length) {
+      await UserDashboardDismissal.bulkWrite(
+        eligibleBookings.map((booking) => ({
+          updateOne: {
+            filter: { userId: req.user._id, kind: "booking", targetId: booking._id },
+            update: { $setOnInsert: { userId: req.user._id, kind: "booking", targetId: booking._id } },
+            upsert: true,
+          },
+        })),
+        { ordered: false }
+      );
+    }
+
+    return res.json({ dismissedBookingIds: eligibleBookings.map((booking) => String(booking._id)) });
+  } catch (error) {
+    if (error?.code === 11000) {
+      const existingDismissals = await UserDashboardDismissal.find({
+        userId: req.user._id,
+        kind: "booking",
+        targetId: mongoose.trusted({ $in: bookingIds }),
+      }).select("targetId").lean();
+      return res.json({ dismissedBookingIds: existingDismissals.map((item) => String(item.targetId)) });
+    }
+    console.error("Dashboard booking dismissal error:", error);
+    return res.status(500).json({ message: "Could not dismiss the booking from your dashboard." });
+  }
+}
+
+async function handleRestoreDashboardBookings(req, res) {
+  try {
+    await UserDashboardDismissal.deleteMany({ userId: req.user._id, kind: "booking" });
+    return res.json({ restored: true });
+  } catch (error) {
+    console.error("Dashboard booking restore error:", error);
+    return res.status(500).json({ message: "Could not restore dismissed dashboard bookings." });
   }
 }
 
@@ -1586,6 +1687,7 @@ async function handleProviderUpdateResponse(req, res) {
 
 async function handleCreateCounterOffer(req, res) {
   const bookingId = String(req.params.id || "");
+  const counterOfferIdToCounter = String(req.body.counterOfferId || "").trim();
   const proposedPriceValue = String(req.body.proposedPrice ?? "").trim();
   const proposedDateValue = String(req.body.proposedServiceDate || "").trim();
   const proposedTimeSlot = String(req.body.proposedTimeSlot || "").trim();
@@ -1596,6 +1698,7 @@ async function handleCreateCounterOffer(req, res) {
   const requestedDuration = req.body.counterOfferDurationMinutes;
 
   if (!mongoose.isValidObjectId(bookingId)) return res.status(400).json({ message: "Choose a valid booking." });
+  if (counterOfferIdToCounter && !mongoose.isValidObjectId(counterOfferIdToCounter)) return res.status(400).json({ message: "Choose a valid counter-offer to respond to." });
   if (!["client", "provider"].includes(req.user.role)) return res.status(403).json({ message: "Only booking participants can negotiate booking terms." });
   if (!hasPrice) return res.status(400).json({ message: "Enter a task offer amount to counter the booking." });
   if (proposedDateValue || proposedTimeSlot || proposedRepairDescription) {
@@ -1610,10 +1713,22 @@ async function handleCreateCounterOffer(req, res) {
     let booking = await Booking.findOne({ _id: bookingId, [participantField]: req.user._id });
     if (!booking) return res.status(404).json({ message: "Booking not found." });
     if (booking.status !== "pending") return res.status(409).json({ message: "Terms can only be negotiated before the booking is accepted." });
-    if (booking.counterOffers.some((offer) => offer.status === "pending")) {
-      return res.status(409).json({ message: "Wait for the other participant to respond to the current offer." });
+    const pendingOffer = booking.counterOffers.find((offer) => offer.status === "pending");
+    if (pendingOffer && !counterOfferIdToCounter) {
+      return res.status(409).json({ message: "A counter-offer is awaiting a response. Choose Counter-offer on that offer to negotiate back." });
     }
-    const currentDuration = booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES;
+    if (!pendingOffer && counterOfferIdToCounter) {
+      return res.status(409).json({ message: "That offer is no longer awaiting a response. Refresh the conversation and try again." });
+    }
+    if (pendingOffer && String(pendingOffer._id) !== counterOfferIdToCounter) {
+      return res.status(409).json({ message: "The current offer changed. Refresh the conversation and try again." });
+    }
+    if (pendingOffer?.proposedBy === req.user.role) {
+      return res.status(403).json({ message: "You cannot counter your own offer. Wait for the other participant to respond." });
+    }
+    const currentDuration = pendingOffer?.counterOfferDurationMinutes
+      ?? booking.estimatedDurationMinutes
+      ?? DEFAULT_ESTIMATED_DURATION_MINUTES;
     const counterOfferDurationMinutes = req.user.role === "provider"
       ? Number(requestedDuration ?? currentDuration)
       : undefined;
@@ -1632,33 +1747,72 @@ async function handleCreateCounterOffer(req, res) {
     }
 
     const counterOfferId = new mongoose.Types.ObjectId();
-    const pendingOffer = {
+    const nextOffer = {
       _id: counterOfferId,
       proposedBy: req.user.role,
       proposedPrice,
-      ...(counterOfferDurationMinutes == null ? {} : { counterOfferDurationMinutes }),
+      counterOfferDurationMinutes: candidateDuration,
       note,
       status: "pending",
       createdAt: new Date(),
     };
-    const updatedBooking = await Booking.findOneAndUpdate(
-      {
-        _id: booking._id,
-        [participantField]: req.user._id,
-        status: "pending",
-        counterOffers: mongoose.trusted({ $not: mongoose.trusted({ $elemMatch: { status: "pending" } }) }),
-      },
-      { $push: { counterOffers: pendingOffer } },
-      { new: true, runValidators: true }
-    );
+    const updateFilter = {
+      _id: booking._id,
+      [participantField]: req.user._id,
+      status: "pending",
+      counterOffers: pendingOffer
+        ? mongoose.trusted({
+          $elemMatch: {
+            _id: pendingOffer._id,
+            status: "pending",
+            proposedBy: mongoose.trusted({ $ne: req.user.role }),
+          },
+        })
+        : mongoose.trusted({ $not: mongoose.trusted({ $elemMatch: { status: "pending" } }) }),
+    };
+    const updateOperation = pendingOffer
+      ? [{
+        $set: {
+          counterOffers: {
+            $concatArrays: [
+              {
+                $map: {
+                  input: { $ifNull: ["$counterOffers", []] },
+                  as: "existingOffer",
+                  in: {
+                    $cond: [
+                      { $eq: ["$$existingOffer._id", pendingOffer._id] },
+                      { $mergeObjects: ["$$existingOffer", { status: "countered", respondedAt: nextOffer.createdAt }] },
+                      "$$existingOffer",
+                    ],
+                  },
+                },
+              },
+              { $literal: [nextOffer] },
+            ],
+          },
+        },
+      }]
+      : { $push: { counterOffers: nextOffer } };
+    const updatedBooking = await Booking.findOneAndUpdate(updateFilter, updateOperation, {
+      new: true,
+      runValidators: true,
+      ...(pendingOffer ? { updatePipeline: true } : {}),
+    });
     if (!updatedBooking) return res.status(409).json({ message: "Another counter-offer is already awaiting a response. Refresh the booking and try again." });
     booking.counterOffers = updatedBooking.counterOffers;
     const offer = booking.counterOffers.id(counterOfferId);
+    if (pendingOffer) {
+      await updateCounterOfferMessageStatus(booking._id, pendingOffer._id, "countered", req.user.role, nextOffer.createdAt);
+    }
     const eventData = {
       counterOfferId: String(offer._id),
       proposedBy: offer.proposedBy,
       proposedPrice: offer.proposedPrice ?? booking.offeredPrice,
-      counterOfferDurationMinutes: offer.counterOfferDurationMinutes ?? booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
+      counterOfferDurationMinutes: offer.counterOfferDurationMinutes
+        ?? pendingOffer?.counterOfferDurationMinutes
+        ?? booking.estimatedDurationMinutes
+        ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
       note: offer.note || "",
       status: "pending",
     };
@@ -1668,13 +1822,18 @@ async function handleCreateCounterOffer(req, res) {
     await notifyBooking({
       userIds: [String(recipientId)],
       title: "Booking terms updated",
-      body: `${req.user.role === "client" ? "The client" : "The provider"} proposed a change to booking terms.`,
+      body: `${req.user.role === "client" ? "The client" : "The provider"} ${pendingOffer ? "sent a counter-offer" : "proposed updated booking terms"}.`,
       url: bookingUrl(recipientRole, bookingIdValue),
-      data: { event: "booking.counter_offer", bookingId: bookingIdValue, counterOfferId: String(offer._id) },
+      data: {
+        event: "booking.counter_offer",
+        bookingId: bookingIdValue,
+        counterOfferId: String(offer._id),
+        ...(pendingOffer ? { counteredOfferId: String(pendingOffer._id) } : {}),
+      },
     });
     await appendBookingSystemMessage(
       booking,
-      `${req.user.role === "client" ? "Client" : "Provider"} proposed updated booking terms.`,
+      `${req.user.role === "client" ? "Client" : "Provider"} ${pendingOffer ? "countered the offer with new" : "proposed updated"} booking terms.`,
       req.user._id,
       "counter_offer",
       eventData
@@ -1751,6 +1910,7 @@ async function handleRespondToCounterOffer(req, res) {
       await booking.save();
     }
     const resolvedOffer = booking.counterOffers.id(counterOfferId);
+    await updateCounterOfferMessageStatus(booking._id, resolvedOffer._id, resolvedOffer.status, req.user.role, now);
     const bookingIdValue = String(booking._id);
     const proposerRole = resolvedOffer.proposedBy;
     const proposerId = proposerRole === "provider" ? booking.providerId : booking.clientId;
@@ -1823,4 +1983,4 @@ async function processExpiredBookingRequests() {
   return result.modifiedCount;
 }
 
-module.exports = { handleListBookings, handleProviderAvailability, handleReportRunningLate, handleRespondToLateNotice, handleServiceLocationSearch, handleServiceLocationReverseLookup, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks, processExpiredBookingRequests };
+module.exports = { handleListBookings, handleDismissDashboardBookings, handleRestoreDashboardBookings, handleProviderAvailability, handleReportRunningLate, handleRespondToLateNotice, handleServiceLocationSearch, handleServiceLocationReverseLookup, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks, processExpiredBookingRequests };

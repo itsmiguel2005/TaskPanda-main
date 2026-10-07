@@ -89,6 +89,9 @@ function serializeConversation(conversation, role) {
     lastMessage: conversation.lastMessage || "No messages yet",
     updatedAt: conversation.updatedAt,
     lastMessageAt: conversation.lastMessageAt || conversation.updatedAt,
+    lastReadAtRemote: role === "client"
+      ? conversation.lastReadAtProvider || null
+      : conversation.lastReadAtClient || null,
   };
 }
 
@@ -179,10 +182,20 @@ async function handleListMessages(req, res) {
   const conversationId = String(req.params.conversationId || "");
   const beforeDateValue = String(req.query.before || "");
   const beforeId = String(req.query.beforeId || "");
+  const afterDateValue = String(req.query.after || "");
+  const afterId = String(req.query.afterId || "");
   if (!mongoose.isValidObjectId(conversationId)) return res.status(400).json({ message: "Choose a valid conversation." });
-  if (Boolean(beforeDateValue) !== Boolean(beforeId)) return res.status(400).json({ message: "Choose a valid message cursor." });
+  if (
+    Boolean(beforeDateValue) !== Boolean(beforeId)
+    || Boolean(afterDateValue) !== Boolean(afterId)
+    || (beforeDateValue && afterDateValue)
+  ) return res.status(400).json({ message: "Choose a valid message cursor." });
   const beforeDate = beforeDateValue ? new Date(beforeDateValue) : null;
-  if (beforeDate && (Number.isNaN(beforeDate.getTime()) || !mongoose.isValidObjectId(beforeId))) {
+  const afterDate = afterDateValue ? new Date(afterDateValue) : null;
+  if (
+    (beforeDate && (Number.isNaN(beforeDate.getTime()) || !mongoose.isValidObjectId(beforeId)))
+    || (afterDate && (Number.isNaN(afterDate.getTime()) || !mongoose.isValidObjectId(afterId)))
+  ) {
     return res.status(400).json({ message: "Choose a valid message cursor." });
   }
   const filter = participantFilter(req.user);
@@ -190,7 +203,7 @@ async function handleListMessages(req, res) {
 
   try {
     const conversation = await Conversation.findOne({ _id: conversationId, ...filter })
-      .select("_id bookingId clientTypingUntil providerTypingUntil");
+      .select("_id bookingId clientTypingUntil providerTypingUntil lastReadAtClient lastReadAtProvider");
     if (!conversation) return res.status(403).json({ message: "You are not a participant in this conversation." });
     const remoteTypingField = req.user.role === "client" ? "providerTypingUntil" : "clientTypingUntil";
     const remoteTypingUntil = conversation[remoteTypingField];
@@ -202,9 +215,23 @@ async function handleListMessages(req, res) {
       { $unset: { [field]: 1 } },
     )));
     const readAtField = req.user.role === "client" ? "lastReadAtClient" : "lastReadAtProvider";
+    const remoteReadAtField = req.user.role === "client" ? "lastReadAtProvider" : "lastReadAtClient";
     const unreadCountField = req.user.role === "client" ? "unreadCountClient" : "unreadCountProvider";
-    await Conversation.updateOne({ _id: conversation._id }, { $set: { [readAtField]: new Date(), [unreadCountField]: 0 } });
+    const readAtThrottle = new Date(Date.now() - 2000);
+    await Conversation.updateOne(
+      {
+        _id: conversation._id,
+        ...mongoose.trusted({
+          $or: [
+            { [readAtField]: mongoose.trusted({ $exists: false }) },
+            { [readAtField]: mongoose.trusted({ $lt: readAtThrottle }) },
+          ],
+        }),
+      },
+      { $set: { [readAtField]: new Date(), [unreadCountField]: 0 } },
+    );
     const messageFilter = { conversationId: conversation._id };
+    const serverTime = new Date();
     if (beforeDate) {
       const beforeObjectId = new mongoose.Types.ObjectId(beforeId);
       messageFilter.$or = mongoose.trusted([
@@ -212,17 +239,29 @@ async function handleListMessages(req, res) {
         { createdAt: beforeDate, _id: mongoose.trusted({ $lt: beforeObjectId }) },
       ]);
     }
+    if (afterDate) {
+      const afterObjectId = new mongoose.Types.ObjectId(afterId);
+      messageFilter.$or = mongoose.trusted([
+        { createdAt: mongoose.trusted({ $gt: afterDate }) },
+        { createdAt: afterDate, _id: mongoose.trusted({ $gt: afterObjectId }) },
+      ]);
+    }
+    const isDeltaRequest = Boolean(afterDate);
     const page = await Message.find(mongoose.trusted(messageFilter))
       .select("conversationId sender senderRole text photos eventType eventData createdAt")
-      .sort({ createdAt: -1, _id: -1 })
+      .sort(isDeltaRequest ? { createdAt: 1, _id: 1 } : { createdAt: -1, _id: -1 })
       .limit(MESSAGE_PAGE_SIZE + 1)
       .lean();
     const hasMore = page.length > MESSAGE_PAGE_SIZE;
-    const messages = page.slice(0, MESSAGE_PAGE_SIZE).reverse();
+    const messages = page.slice(0, MESSAGE_PAGE_SIZE);
+    if (!isDeltaRequest) messages.reverse();
     return res.json({
       hasMore,
+      serverTime: serverTime.toISOString(),
       remoteTyping,
       remoteTypingUntil: remoteTyping ? remoteTypingUntil.getTime() : null,
+      remoteTypingRemainingMs: remoteTyping ? Math.max(0, remoteTypingUntil.getTime() - Date.now()) : 0,
+      lastReadAtRemote: conversation[remoteReadAtField] || null,
       messages: messages.map((message) => serializeMessage(message, req.user._id)),
     });
   } catch (error) {
@@ -231,7 +270,7 @@ async function handleListMessages(req, res) {
   }
 }
 
-async function handleCounterOfferTyping(req, res) {
+async function handleConversationTyping(req, res) {
   const conversationId = String(req.params.conversationId || "");
   if (!mongoose.isValidObjectId(conversationId)) return res.status(400).json({ message: "Choose a valid conversation." });
   if (!["client", "provider"].includes(req.user.role)) return res.status(403).json({ message: "Messaging is only available to clients and providers." });
@@ -242,15 +281,10 @@ async function handleCounterOfferTyping(req, res) {
   const filter = participantFilter(req.user);
   try {
     const conversation = await Conversation.findOne({ _id: conversationId, ...filter })
-      .select("_id bookingId isArchivedByClient isArchivedByProvider");
+      .select("_id isArchivedByClient isArchivedByProvider");
     if (!conversation) return res.status(403).json({ message: "You are not a participant in this conversation." });
     if (conversation[archivedField]) return res.status(409).json({ message: "Restore this conversation before updating typing status." });
     if (req.body.typing) {
-      const booking = await Booking.findById(conversation.bookingId).select("status counterOffers");
-      const hasPendingOffer = booking?.counterOffers?.some((offer) => offer.status === "pending");
-      if (booking?.status !== "pending" || hasPendingOffer) {
-        return res.status(409).json({ message: "Counter-offer composition is no longer available for this booking." });
-      }
       await Conversation.updateOne(
         { _id: conversation._id },
         { $set: { [typingField]: new Date(Date.now() + 8000) } },
@@ -260,7 +294,7 @@ async function handleCounterOfferTyping(req, res) {
     }
     return res.json({ typing: req.body.typing });
   } catch (error) {
-    console.error("Counter-offer typing update error:", error);
+    console.error("Typing status update error:", error);
     return res.status(500).json({ message: "Could not update typing status." });
   }
 }
@@ -543,4 +577,4 @@ async function handleCashConfirmation(req, res) {
   }
 }
 
-module.exports = { handleListConversations, handleCreateConversation, handleListMessages, handleCounterOfferTyping, handleUploadChatPhoto, handleReadChatPhoto, handleCleanupChatPhotos, handleSendMessage, handleCashConfirmation, handleArchiveConversation, handleReportConversation };
+module.exports = { handleListConversations, handleCreateConversation, handleListMessages, handleConversationTyping, handleUploadChatPhoto, handleReadChatPhoto, handleCleanupChatPhotos, handleSendMessage, handleCashConfirmation, handleArchiveConversation, handleReportConversation };
