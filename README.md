@@ -57,6 +57,8 @@ PORT=3000
 VITE_API_BASE_URL=
 # Optional Vite development proxy target; defaults to the local Express server
 VITE_API_PROXY_TARGET=http://localhost:3000
+# Required for PandaBot support (server-side only; never use a VITE_ prefix)
+GEMINI_API_KEY=your-gemini-api-key
 
 # Optional admin login
 ADMIN_EMAIL=admin@example.com
@@ -88,7 +90,7 @@ TRUST_PROXY=1
 
 Do not commit `.env` or real passwords to source control. For Gmail, use an app password rather than your normal account password.
 
-For a same-origin Vercel deployment, leave `VITE_API_BASE_URL` empty and configure `MONGO_URI` and other server-only settings in the Vercel project's Production environment. If the API is hosted separately, set `VITE_API_BASE_URL` to its HTTPS origin (without a trailing slash) and configure the backend's `CORS_ORIGINS` to include the frontend's exact origin. The default Vercel CSP permits HTTPS API connections; narrow `connect-src` to the API origin when your deployment requires a strict origin allowlist.
+For a same-origin Vercel deployment, leave `VITE_API_BASE_URL` empty and configure `MONGO_URI`, `GEMINI_API_KEY`, and other server-only settings in the Vercel project. Add them to both Preview and Production if you test preview deployments; changing environment variables requires a new deployment. If the API is hosted separately, set `VITE_API_BASE_URL` to its HTTPS origin (without a trailing slash) and configure the backend's `CORS_ORIGINS` to include the frontend's exact origin. The default Vercel CSP permits HTTPS API connections; narrow `connect-src` to the API origin when your deployment requires a strict origin allowlist.
 
 ### Email and Push Setup
 

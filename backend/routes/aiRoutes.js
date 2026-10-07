@@ -36,9 +36,11 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
   }
 
   if (!process.env.GEMINI_API_KEY) {
+    console.error("PandaBot is unavailable because GEMINI_API_KEY is not configured.");
     return res.status(503).json({ message: "AI support is temporarily unavailable." });
   }
 
+  let failedOperation = "provider search";
   try {
     const providerFilter = buildProviderFilter(location);
     let providers = await User.find(providerFilter)
@@ -77,6 +79,7 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
     const accountContext = {};
 
     if (needsBookingContext && ["client", "provider"].includes(req.user.role)) {
+      failedOperation = "booking lookup";
       const bookingFilter = req.user.role === "provider"
         ? { providerId: req.user._id }
         : { clientId: req.user._id };
@@ -102,6 +105,7 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
       "Select zero to three providers only when relevant to the request. Return their IDs in providerIds.",
     ].join("\n\n");
 
+    failedOperation = `Gemini request (${MODEL})`;
     ai ||= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const result = await ai.models.generateContent({
       model: MODEL,
@@ -120,10 +124,15 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
       return res.status(502).json({ message: "AI support returned an empty response. Please try again." });
     }
 
+    failedOperation = "Gemini response parsing";
     const { message: response, recommendations } = parsePandaBotResponse(resultText, recommendationCandidates);
     return res.json({ response, recommendations });
   } catch (error) {
-    console.error("PandaBot support request failed:", error?.status || error?.name || "unknown error");
+    console.error("PandaBot support request failed:", {
+      operation: failedOperation,
+      status: error?.status || error?.code || "unknown",
+      name: error?.name || "unknown error",
+    });
     return res.status(502).json({ message: "AI support is temporarily unavailable. Please try again." });
   }
 });
