@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
-import { hasScheduleConflict } from "../utils/bookingArrival.js";
+import { canArriveForSameDayBooking, hasScheduleConflict } from "../utils/bookingArrival.js";
 import { DEFAULT_ESTIMATED_DURATION_MINUTES, formatEstimatedDuration } from "../utils/bookingDuration.js";
 import ServiceLocationPicker from "./ServiceLocationPicker.jsx";
 
@@ -131,23 +131,25 @@ function CalendarPicker({ selectedDate, onSelect, onClose }) {
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
-      <div className="flex items-center justify-between mb-2">
+    <div className="w-full rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
         <button
+          type="button"
           onClick={prevMonth}
-          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500/40"
           aria-label="Previous month"
         >
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-4 w-4">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
           </svg>
         </button>
-        <span className="text-sm font-semibold text-gray-800">
+        <span className="text-sm font-semibold text-gray-900" aria-live="polite">
           {MONTHS[month]} {year}
         </span>
         <button
+          type="button"
           onClick={nextMonth}
-          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500/40"
           aria-label="Next month"
         >
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-4 w-4">
@@ -155,9 +157,9 @@ function CalendarPicker({ selectedDate, onSelect, onClose }) {
           </svg>
         </button>
       </div>
-      <div className="grid grid-cols-7 gap-0.5">
+      <div className="grid grid-cols-7 gap-1">
         {WEEKDAYS.map((d) => (
-          <div key={d} className="text-center text-[10px] font-medium text-gray-400 py-1">
+          <div key={d} className="py-1.5 text-center text-xs font-medium text-gray-500">
             {d}
           </div>
         ))}
@@ -174,14 +176,17 @@ function CalendarPicker({ selectedDate, onSelect, onClose }) {
               type="button"
               disabled={isPast}
               onClick={() => { onSelect(dateKey); onClose(); }}
-              className={`rounded-full py-1 text-sm transition ${
+              aria-label={dateObj.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+              aria-pressed={isSelected}
+              aria-current={isToday ? "date" : undefined}
+              className={`aspect-square min-h-9 rounded-lg text-sm transition focus:outline-none focus:ring-2 focus:ring-primary-500/40 ${
                 isSelected
-                  ? "bg-gray-900 text-white font-semibold"
+                  ? "bg-primary-700 font-semibold text-white"
                   : isPast
                   ? "cursor-not-allowed text-gray-300"
                   : isToday
-                  ? "bg-gray-100 text-gray-900 font-semibold"
-                  : "text-gray-700 hover:bg-gray-50"
+                  ? "bg-primary-50 font-semibold text-primary-800 hover:bg-primary-100"
+                  : "text-gray-700 hover:bg-gray-100"
               }`}
             >
               {d}
@@ -209,7 +214,6 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const [travelQuoteError, setTravelQuoteError] = useState("");
   const [travelQuoteRetry, setTravelQuoteRetry] = useState(0);
   const [currentTime, setCurrentTime] = useState(() => new Date());
-  const [urgency, setUrgency] = useState(initialValues.urgency || "Flexible");
   const [offer, setOffer] = useState(initialValues.offer == null ? "" : String(initialValues.offer));
   const [duration, setDuration] = useState(String(initialValues.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES));
   const [serviceLocation, setServiceLocation] = useState(() => ({
@@ -242,7 +246,13 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
     serviceDate: date ? `${date}T00:00:00.000Z` : "",
     timeSlot: time,
     estimatedDurationMinutes: requestedDuration,
+    serviceGeoLocation: serviceLocation.geoLocation,
   }, bookedSlots);
+  const isArrivalWindowTooShort = (date, time) => !canArriveForSameDayBooking({
+    serviceDate: date ? `${date}T00:00:00.000Z` : "",
+    timeSlot: time,
+    travelDistanceKm: travelQuote?.travelDistanceKm,
+  }, currentTime);
   const requestExpiresInSeconds = submittedBooking?.requestExpiresAt
     ? Math.max(0, Math.ceil((new Date(submittedBooking.requestExpiresAt).getTime() - countdownNow.getTime()) / 1000))
     : null;
@@ -388,14 +398,22 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   }, [provider?._id, token, availabilityRetry, travelQuoteRetry, serviceLocationKey]);
 
   useEffect(() => {
-    if (isPastTimeSlot(selectedDate, selectedTime, currentTime)) setSelectedTime("");
-  }, [currentTime, selectedDate, selectedTime]);
+    if (!selectedDate || !selectedTime) return;
+    if (isPastTimeSlot(selectedDate, selectedTime, currentTime)) {
+      setSelectedTime("");
+      return;
+    }
+    if (isArrivalWindowTooShort(selectedDate, selectedTime)) {
+      setSelectedTime("");
+      setFormError("That time is too soon for the provider to travel to your location. Choose a later time.");
+    }
+  }, [currentTime, selectedDate, selectedTime, travelQuote?.travelDistanceKm]);
 
   useEffect(() => {
     if (availabilityStatus !== "loaded" || !selectedDate || !selectedTime) return;
     if (!durationIsValid || isTimeSlotBooked(selectedDate, selectedTime, estimatedDurationMinutes)) {
       setSelectedTime("");
-      setFormError("That duration overlaps another provider booking. Choose a different time or shorter duration.");
+      setFormError("That slot does not leave enough time for the task, travel between client locations, and the 30-minute safety buffer.");
     }
   }, [availabilityStatus, bookedSlots, selectedDate, selectedTime, estimatedDurationMinutes, durationIsValid]);
 
@@ -456,10 +474,14 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
       setSelectedTime("");
       return setFormError("That time has passed. Please choose another time."), false;
     }
+    if (isArrivalWindowTooShort(selectedDate, selectedTime)) {
+      setSelectedTime("");
+      return setFormError("That time is too soon for the provider to travel to your location. Choose a later time."), false;
+    }
     if (availabilityStatus !== "loaded") return setFormError("Provider availability could not be confirmed. Please try again."), false;
     if (isTimeSlotBooked(selectedDate, selectedTime, estimatedDurationMinutes)) {
       setSelectedTime("");
-      return setFormError("That duration overlaps another provider booking. Choose a different time or shorter duration."), false;
+      return setFormError("That slot does not leave enough time for the task, travel between client locations, and the 30-minute safety buffer."), false;
     }
     if (travelQuoteStatus !== "loaded" || travelQuoteLocationKey !== serviceLocationKey || travelDistanceKm == null) return setFormError("The travel quote for this service location is not ready. Retry it above before reviewing."), false;
     if (!Number.isFinite(offerAmount) || offerAmount < 100) return setFormError("Your 60-minute baseline offer must be at least PHP 100."), false;
@@ -505,7 +527,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
         serviceGeoLocation: serviceLocation.geoLocation,
         tipAmount: selectedTip,
         voucherId: selectedVoucherId,
-        urgency,
+        urgency: "Flexible",
         photos: selectedFiles,
         address: serviceLocation.address.trim(),
         termsAccepted: true,
@@ -524,7 +546,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
     >
       <div
-        className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl"
+        className={`w-full ${step === 2 ? "max-w-lg" : "max-w-md"} max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -684,12 +706,14 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
 
           {/* Schedule */}
           <section className="relative rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <div className="grid gap-4 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-              <div className="relative">
+            <div className="grid gap-5">
+              <div>
                 <label className="mb-1.5 block text-sm font-medium text-gray-700">Select Date</label>
                 <button
                   type="button"
                   onClick={() => setShowCalendar(!showCalendar)}
+                  aria-expanded={showCalendar}
+                  aria-controls="booking-date-calendar"
                   className={`flex w-full items-center justify-between rounded-xl border bg-white px-3 py-2.5 text-left text-sm transition ${
                     selectedDate
                       ? "border-primary-500 text-gray-900"
@@ -707,7 +731,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                   </svg>
                 </button>
                 {showCalendar && (
-                  <div className="absolute left-0 top-full z-20 mt-1 w-full min-w-[17rem]">
+                  <div id="booking-date-calendar" className="mt-2 w-full">
                     <CalendarPicker selectedDate={selectedDate} onSelect={handleDateSelect} onClose={() => setShowCalendar(false)} />
                   </div>
                 )}
@@ -718,18 +742,20 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                 {!selectedDate && <p className="mb-2 text-xs text-gray-500">Choose a date to see available times.</p>}
                 {availabilityStatus === "loading" && <p className="mb-2 text-xs text-gray-500">Checking provider availability…</p>}
                 {availabilityStatus === "error" && <p role="alert" className="mb-2 text-xs text-red-600">Could not check availability. <button type="button" onClick={() => setAvailabilityRetry((retry) => retry + 1)} className="font-semibold underline">Try again</button></p>}
+                <p className="mb-2 text-xs leading-5 text-gray-500">Times include the previous task duration, straight-line travel between pinned client locations estimated at 30 km/h, and a 30-minute safety buffer. Same-day slots also need enough notice for the provider's trip plus a 15-minute arrival buffer. Actual road travel may vary.</p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {TIME_SLOTS.map((time) => {
                     const isPast = selectedDate && isPastTimeSlot(selectedDate, time, currentTime);
+                    const arrivalWindowTooShort = selectedDate && isArrivalWindowTooShort(selectedDate, time);
                     const isBooked = selectedDate && isTimeSlotBooked(selectedDate, time);
-                    const isDisabled = !selectedDate || isPast || isBooked || availabilityStatus !== "loaded";
-                    const isSelected = Boolean(selectedDate) && selectedTime === time && !isPast && !isBooked;
+                    const isDisabled = !selectedDate || isPast || arrivalWindowTooShort || isBooked || availabilityStatus !== "loaded";
+                    const isSelected = Boolean(selectedDate) && selectedTime === time && !isPast && !arrivalWindowTooShort && !isBooked;
                     return (
                       <button
                         key={time}
                         type="button"
                         disabled={isDisabled}
-                        title={!selectedDate ? "Choose a date first" : isPast ? "This time has passed" : isBooked ? "This time overlaps another booking for the selected duration" : availabilityStatus !== "loaded" ? "Checking availability" : undefined}
+                        title={!selectedDate ? "Choose a date first" : isPast ? "This time has passed" : arrivalWindowTooShort ? "Not enough time for the provider to travel to your location" : isBooked ? "Not enough time for the task, travel, and 30-minute safety buffer" : availabilityStatus !== "loaded" ? "Checking availability" : undefined}
                         onClick={() => { setSelectedTime(time); setFormError(""); }}
                         className={`min-h-9 rounded-full border px-2 py-2 text-xs font-semibold transition ${
                           isSelected
@@ -767,20 +793,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
           </section>
 
           {/* Booking Terms */}
-          <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="urgency" className="mb-1.5 block text-sm font-medium text-gray-700">Service urgency</label>
-              <select
-                id="urgency"
-                value={urgency}
-                onChange={(e) => setUrgency(e.target.value)}
-                className="block w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-800 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-              >
-                <option>Flexible</option>
-                <option>Emergency</option>
-              </select>
-            </div>
-
+          <div>
             <div>
               <label htmlFor="offer" className="mb-1.5 block text-sm font-medium text-gray-700">Your 60-minute baseline offer (PHP)</label>
               <input
@@ -856,7 +869,6 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                   <div className="flex justify-between gap-3"><dt className="text-gray-500">Schedule</dt><dd className="text-right font-medium text-gray-900">{formatDate(selectedDate)} · {selectedTime}</dd></div>
                   <div className="flex justify-between gap-3"><dt className="text-gray-500">Service location</dt><dd className="max-w-[65%] text-right font-medium text-gray-900">{serviceLocation.address}</dd></div>
                   <div className="flex justify-between gap-3"><dt className="text-gray-500">Estimated duration</dt><dd className="font-medium text-gray-900">{formatEstimatedDuration(estimatedDurationMinutes)}</dd></div>
-                  <div className="flex justify-between gap-3"><dt className="text-gray-500">Urgency</dt><dd className="font-medium text-gray-900">{urgency}</dd></div>
                 </dl>
                 <div className="border-t border-dashed border-gray-200 pt-3">
                   <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Price breakdown</p>

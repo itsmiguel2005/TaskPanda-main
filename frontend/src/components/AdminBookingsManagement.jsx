@@ -250,7 +250,6 @@ function BookingDrawer({ booking, onClose, onOverride }) {
               <dt className="text-slate-500">Requested</dt><dd className="break-words text-slate-800">{formatDate(booking.createdAt)}</dd>
               <dt className="text-slate-500">Address</dt><dd className="break-words text-slate-800">{booking.address || "Not provided"}</dd>
               <dt className="text-slate-500">Estimated duration</dt><dd className="text-slate-800">{formatEstimatedDuration(booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES)}</dd>
-              <dt className="text-slate-500">Urgency</dt><dd className="text-slate-800">{booking.urgency}</dd>
               {booking.requestExpiresAt && <><dt className="text-slate-500">Request TTL</dt><dd className="text-slate-800">{formatDate(booking.requestExpiresAt)}</dd></>}
               {booking.workCompletedAt && <><dt className="text-slate-500">Work completed</dt><dd className="text-slate-800">{formatDate(booking.workCompletedAt)}</dd></>}
               {booking.settledAt && <><dt className="text-slate-500">Settled</dt><dd className="text-slate-800">{formatDate(booking.settledAt)}</dd></>}

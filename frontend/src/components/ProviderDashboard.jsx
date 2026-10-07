@@ -151,7 +151,6 @@ function RequestCard({ booking, allBookings, onAccept, onDecline, onOpenConversa
   const requestedDate = booking.date || (booking.serviceDate ? new Date(booking.serviceDate).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" }) : "");
   const requestedTime = [requestedDate, booking.time || booking.timeSlot].filter(Boolean).join(", ");
   const address = booking.address || booking.location || "";
-  const urgency = booking.urgency || "Flexible";
   const totalPrice = booking.totalPrice ?? booking.offeredPrice ?? booking.offer ?? 0;
   const requestExpiresAt = booking.requestExpiresAt ? new Date(booking.requestExpiresAt).getTime() : null;
   const secondsRemaining = requestExpiresAt == null ? null : Math.max(0, Math.ceil((requestExpiresAt - currentTime.getTime()) / 1000));
@@ -202,15 +201,6 @@ function RequestCard({ booking, allBookings, onAccept, onDecline, onOpenConversa
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <span
-            className={`rounded-full border px-3 py-1 text-xs font-normal ${
-              urgency.toLowerCase() === "emergency"
-                ? "border-red-200 bg-red-50 text-red-700"
-                : "border-sky-100 bg-sky-50 text-blue-950"
-            }`}
-          >
-            {urgency}
-          </span>
           <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold tabular-nums text-white">Total {formatPhpAmount(totalPrice)}</span>
         </div>
       </div>
@@ -349,7 +339,6 @@ function JobCard({
     (booking.serviceCategory && booking.serviceCategory !== "General Service" ? booking.serviceCategory : null) ||
     providerProfession ||
     "Professional Service";
-  const urgency = booking.urgency || "";
   // X (dismiss) button only for terminal statuses
   const isDismissable = ["Settled", "Cancelled", "Declined by Provider", "Expired"].includes(booking.status);
 
@@ -437,10 +426,6 @@ function JobCard({
             <div>
               <p className="dashboard-kicker">Service category</p>
               <p className="mt-1 text-sm text-slate-700">{category || "General Service"}</p>
-            </div>
-            <div>
-              <p className="dashboard-kicker">Urgency</p>
-              <p className="mt-1 text-sm text-slate-700">{urgency || "Flexible"}</p>
             </div>
           </div>
           <BookingPriceBreakdown booking={booking} className="mt-4" />
@@ -1114,10 +1099,6 @@ export default function ProviderDashboard() {
                       providerProfession ||
                       "Professional Service"}
                   </p>
-                </div>
-                <div>
-                  <p className="dashboard-kicker">Urgency</p>
-                  <p className="mt-1 font-medium text-slate-800">{detailBooking.urgency || "Flexible"}</p>
                 </div>
               </div>
               <BookingPriceBreakdown booking={detailBooking} />

@@ -5,6 +5,7 @@ const {
   canArriveForSameDayBooking,
   DEFAULT_ESTIMATED_DURATION_MINUTES,
   getBookingOccupiedWindow,
+  getInterBookingTravelDurationMinutes,
   getBookingRequestExpiration,
   getEstimatedTravelDurationMinutes,
   getScheduledServiceTime,
@@ -42,6 +43,8 @@ test("travel duration uses 30 km/h and includes a 15-minute buffer", () => {
 test("same-day acceptance is blocked when travel plus buffer misses the slot", () => {
   assert.equal(canArriveForSameDayBooking(serviceDate, "10:00 AM", 15, new Date("2026-10-03T01:14:59.000Z")), true);
   assert.equal(canArriveForSameDayBooking(serviceDate, "10:00 AM", 15, new Date("2026-10-03T01:15:01.000Z")), false);
+  assert.equal(canArriveForSameDayBooking(serviceDate, "1:30 PM", 0, new Date("2026-10-03T05:22:00.000Z")), false);
+  assert.equal(canArriveForSameDayBooking(serviceDate, "1:30 PM", 0, new Date("2026-10-03T05:15:00.000Z")), true);
   assert.equal(canArriveForSameDayBooking(serviceDate, "10:00 AM", null, new Date("2026-10-03T00:00:00.000Z")), false);
   assert.equal(canArriveForSameDayBooking("2026-10-04T00:00:00.000Z", "7:30 AM", null, new Date("2026-10-03T00:00:00.000Z")), true);
 });
@@ -90,4 +93,44 @@ test("schedule conflict checks duration overlap instead of exact time equality",
     timeSlot: "9:00 AM",
     estimatedDurationMinutes: 90,
   }, existing, "existing-booking"), false);
+});
+
+test("inter-booking travel time uses the two client pins at 30 km/h", () => {
+  const tenKmEast = 10 / (2 * Math.PI * 6371.0088 / 360);
+  assert.equal(getInterBookingTravelDurationMinutes(
+    { type: "Point", coordinates: [0, 0] },
+    { type: "Point", coordinates: [tenKmEast, 0] }
+  ), 20);
+  assert.equal(getInterBookingTravelDurationMinutes(null, {
+    type: "Point",
+    coordinates: [tenKmEast, 0],
+  }), 0);
+});
+
+test("schedule conflicts include client-to-client travel and the separate safety buffer", () => {
+  const firstBooking = {
+    serviceDate,
+    timeSlot: "7:30 AM",
+    estimatedDurationMinutes: 60,
+    serviceGeoLocation: { type: "Point", coordinates: [0, 0] },
+  };
+  const distantNextBooking = {
+    serviceDate,
+    timeSlot: "9:00 AM",
+    estimatedDurationMinutes: 60,
+    serviceGeoLocation: { type: "Point", coordinates: [10 / 111.195, 0] },
+  };
+  assert.equal(hasScheduleConflict(distantNextBooking, [firstBooking]), true);
+  assert.equal(hasScheduleConflict({
+    ...distantNextBooking,
+    timeSlot: "10:30 AM",
+  }, [firstBooking]), false);
+  assert.equal(hasScheduleConflict({
+    ...firstBooking,
+    timeSlot: "7:30 AM",
+    serviceGeoLocation: distantNextBooking.serviceGeoLocation,
+  }, [{
+    ...firstBooking,
+    timeSlot: "9:00 AM",
+  }]), true);
 });

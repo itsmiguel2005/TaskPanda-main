@@ -48,7 +48,7 @@ export default function BookingsPage() {
   const [activeTab, setActiveTab] = useState("All");
   const { token } = useAuth();
   const requestHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
-  const { bookings, isLoading, error, requestCancellation, requestRevision, submitReview, respondToProviderUpdate, refreshBookings, confirmCashSettlement, createBooking } = useBookings();
+  const { bookings, isLoading, error, requestCancellation, requestRevision, submitReview, respondToProviderUpdate, respondToLateNotice, refreshBookings, confirmCashSettlement, createBooking } = useBookings();
   const isInitialLoading = isLoading && bookings.length === 0;
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("createdAt");
@@ -62,6 +62,8 @@ export default function BookingsPage() {
   const [reviewPhotos, setReviewPhotos] = useState([]);
   const [reviewSuccessOpen, setReviewSuccessOpen] = useState(false);
   const [rebookingBooking, setRebookingBooking] = useState(null);
+  const [lateNoticeActionId, setLateNoticeActionId] = useState("");
+  const [lateNoticeError, setLateNoticeError] = useState(null);
 
   const stats = useMemo(() => {
     const total = bookings.length;
@@ -177,6 +179,18 @@ export default function BookingsPage() {
       await respondToProviderUpdate(bookingId, updateId, action);
     } catch (requestError) {
       window.alert(requestError.message);
+    }
+  };
+
+  const handleLateNoticeResponse = async (bookingId, action) => {
+    setLateNoticeActionId(bookingId);
+    setLateNoticeError("");
+    try {
+      await respondToLateNotice(bookingId, action);
+    } catch (responseError) {
+      setLateNoticeError({ bookingId, message: responseError.message || "Could not save your response to the delay notice." });
+    } finally {
+      setLateNoticeActionId("");
     }
   };
 
@@ -303,6 +317,29 @@ export default function BookingsPage() {
                           {booking.cancellationOutcome === "rejected" && (
                             <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">The cancellation was declined. This booking remains active.</p>
                           )}
+                          {booking.lateNotice && (
+                            <section className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950" aria-label="Provider delay notice">
+                              <p className="font-semibold">Your provider is running late</p>
+                              <p className="mt-1">Updated estimated arrival: {new Date(booking.lateNotice.eta).toLocaleString("en-PH", { timeZone: "Asia/Manila", dateStyle: "medium", timeStyle: "short" })}.</p>
+                              {booking.lateNotice.status === "pending" ? (
+                                <>
+                                  <p className="mt-1 text-xs leading-5">Choose to wait, request a new appointment time, or use the usual cancellation option.</p>
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    <button type="button" disabled={lateNoticeActionId === booking.id} onClick={() => handleLateNoticeResponse(booking.id, "wait")} className="dashboard-focus rounded-lg bg-amber-900 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-950 disabled:opacity-50">I’ll wait</button>
+                                    <button type="button" disabled={lateNoticeActionId === booking.id} onClick={() => handleLateNoticeResponse(booking.id, "reschedule")} className="dashboard-focus rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-950 hover:bg-amber-100 disabled:opacity-50">Request a new time</button>
+                                    {canRequestCancellation(booking) && <button type="button" onClick={() => { setCancelingId(booking.id); setCancellationReason(""); }} className="dashboard-focus rounded-lg border border-rose-300 bg-white px-3 py-2 text-xs font-semibold text-rose-800 hover:bg-rose-50">Cancel booking</button>}
+                                  </div>
+                                </>
+                              ) : (
+                                <p className="mt-1 text-xs font-medium">
+                                  {booking.lateNotice.status === "waiting"
+                                    ? "You chose to wait for the updated arrival."
+                                    : "You requested a new appointment time. Message your provider to arrange the schedule."}
+                                </p>
+                              )}
+                              {lateNoticeError?.bookingId === booking.id && <p role="alert" className="mt-2 text-xs font-semibold text-red-800">{lateNoticeError.message}</p>}
+                            </section>
+                          )}
                           {isCompletedLikeStatus(booking.status) && booking.clientRating == null && (
                             <p className="mt-2 rounded-md bg-blue-50 px-3 py-2 text-xs font-medium text-blue-800">Task complete. Share a review of your service.</p>
                           )}
@@ -385,9 +422,6 @@ export default function BookingsPage() {
                         serviceGeoLocation={booking.serviceGeoLocation}
                       />
                     </div>
-                    <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-[11px] font-semibold ${booking.urgency === "Emergency" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>
-                      {booking.urgency || "Flexible"} service
-                    </span>
                   </div>
                   </div>
                   <div className="mt-5 border-y border-sky-100 py-3">
@@ -571,7 +605,6 @@ export default function BookingsPage() {
             serviceGeoLocation: rebookingBooking.serviceGeoLocation || null,
             offer: Math.round((Number(rebookingBooking.offeredPrice ?? rebookingBooking.offer ?? 0) * DEFAULT_ESTIMATED_DURATION_MINUTES / Number(rebookingBooking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES)) * 100) / 100,
             estimatedDurationMinutes: rebookingBooking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
-            urgency: rebookingBooking.urgency || "Flexible",
           }}
           onClose={() => setRebookingBooking(null)}
           onSubmit={createBooking}

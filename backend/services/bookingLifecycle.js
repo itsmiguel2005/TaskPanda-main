@@ -6,6 +6,7 @@ const SCHEDULE_BUFFER_MINUTES = 30;
 const DEFAULT_ESTIMATED_DURATION_MINUTES = 60;
 const MIN_ESTIMATED_DURATION_MINUTES = 15;
 const MAX_ESTIMATED_DURATION_MINUTES = 720;
+const { calculateDistanceKm } = require("./bookingPricing");
 
 function getServiceDayParts(serviceDate) {
   const date = new Date(serviceDate);
@@ -65,15 +66,43 @@ function getBookingOccupiedWindow(booking) {
   };
 }
 
+function getInterBookingTravelDurationMinutes(fromLocation, toLocation) {
+  const distanceKm = calculateDistanceKm(
+    fromLocation?.coordinates,
+    toLocation?.coordinates
+  );
+  return distanceKm == null
+    ? 0
+    : Math.ceil((distanceKm / ESTIMATED_TRAVEL_SPEED_KMH) * 60);
+}
+
 function hasScheduleConflict(candidate, existingBookings = [], excludeBookingId = "") {
   const candidateWindow = getBookingOccupiedWindow(candidate);
   if (!candidateWindow) return true;
+  const candidateDuration = getEstimatedDurationMinutes(
+    candidate?.estimatedDurationMinutes ?? candidate?.counterOfferDurationMinutes
+  );
   return existingBookings.some((booking) => {
     if (excludeBookingId && String(booking?._id || booking?.id || "") === String(excludeBookingId)) return false;
     const existingWindow = getBookingOccupiedWindow(booking);
-    return existingWindow
-      && candidateWindow.startAt < existingWindow.endAt
-      && existingWindow.startAt < candidateWindow.endAt;
+    if (!existingWindow) return false;
+
+    const isCandidateFirst = candidateWindow.startAt <= existingWindow.startAt;
+    const firstStart = isCandidateFirst ? candidateWindow.startAt : existingWindow.startAt;
+    const firstDuration = isCandidateFirst
+      ? candidateDuration
+      : existingWindow.durationMinutes;
+    const firstLocation = isCandidateFirst
+      ? candidate?.serviceGeoLocation
+      : booking?.serviceGeoLocation;
+    const nextStart = isCandidateFirst ? existingWindow.startAt : candidateWindow.startAt;
+    const nextLocation = isCandidateFirst
+      ? booking?.serviceGeoLocation
+      : candidate?.serviceGeoLocation;
+    const requiredGapMinutes = firstDuration
+      + getInterBookingTravelDurationMinutes(firstLocation, nextLocation)
+      + SCHEDULE_BUFFER_MINUTES;
+    return firstStart.getTime() + requiredGapMinutes * 60 * 1000 > nextStart.getTime();
   });
 }
 
@@ -105,6 +134,7 @@ module.exports = {
   SCHEDULE_BUFFER_MINUTES,
   canArriveForSameDayBooking,
   getBookingOccupiedWindow,
+  getInterBookingTravelDurationMinutes,
   getEstimatedDurationMinutes,
   getBookingRequestExpiration,
   getEstimatedTravelDurationMinutes,

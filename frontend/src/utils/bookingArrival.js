@@ -3,6 +3,7 @@ const ESTIMATED_TRAVEL_SPEED_KMH = 30;
 const TRAVEL_BUFFER_MINUTES = 15;
 const SCHEDULE_BUFFER_MINUTES = 30;
 const DEFAULT_ESTIMATED_DURATION_MINUTES = 60;
+const EARTH_RADIUS_KM = 6371.0088;
 
 function getAppointmentStart(serviceDate, timeSlot) {
   const date = new Date(serviceDate);
@@ -34,15 +35,50 @@ export function getBookingOccupiedWindow(booking) {
   return { startAt, occupiedUntil };
 }
 
+function getLocationCoordinates(location) {
+  const coordinates = location?.coordinates;
+  if (!Array.isArray(coordinates) || coordinates.length !== 2) return null;
+  const [longitude, latitude] = coordinates.map(Number);
+  if (!Number.isFinite(longitude) || Math.abs(longitude) > 180
+    || !Number.isFinite(latitude) || Math.abs(latitude) > 90) return null;
+  return [longitude, latitude];
+}
+
+function getInterBookingTravelDurationMinutes(fromLocation, toLocation) {
+  const from = getLocationCoordinates(fromLocation);
+  const to = getLocationCoordinates(toLocation);
+  if (!from || !to) return 0;
+  const toRadians = (degrees) => (degrees * Math.PI) / 180;
+  const latitudeDelta = toRadians(to[1] - from[1]);
+  const longitudeDelta = toRadians(to[0] - from[0]);
+  const haversine = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(toRadians(from[1])) * Math.cos(toRadians(to[1]))
+      * Math.sin(longitudeDelta / 2) ** 2;
+  const distanceKm = 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(Math.min(1, haversine)));
+  return Math.ceil((distanceKm / ESTIMATED_TRAVEL_SPEED_KMH) * 60);
+}
+
 export function hasScheduleConflict(candidate, existingBookings = [], excludeBookingId = "") {
   const candidateWindow = getBookingOccupiedWindow(candidate);
   if (!candidateWindow) return true;
+  const candidateDuration = Number(candidate?.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES);
   return existingBookings.some((booking) => {
     if (excludeBookingId && String(booking?.id || booking?._id || "") === String(excludeBookingId)) return false;
     const existingWindow = getBookingOccupiedWindow(booking);
-    return existingWindow
-      && candidateWindow.startAt < existingWindow.occupiedUntil
-      && existingWindow.startAt < candidateWindow.occupiedUntil;
+    if (!existingWindow) return false;
+
+    const isCandidateFirst = candidateWindow.startAt <= existingWindow.startAt;
+    const firstStart = isCandidateFirst ? candidateWindow.startAt : existingWindow.startAt;
+    const firstDuration = isCandidateFirst ? candidateDuration : Number(
+      booking?.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES
+    );
+    const firstLocation = isCandidateFirst ? candidate?.serviceGeoLocation : booking?.serviceGeoLocation;
+    const nextStart = isCandidateFirst ? existingWindow.startAt : candidateWindow.startAt;
+    const nextLocation = isCandidateFirst ? booking?.serviceGeoLocation : candidate?.serviceGeoLocation;
+    const requiredGapMinutes = firstDuration
+      + getInterBookingTravelDurationMinutes(firstLocation, nextLocation)
+      + SCHEDULE_BUFFER_MINUTES;
+    return firstStart.getTime() + requiredGapMinutes * 60 * 1000 > nextStart.getTime();
   });
 }
 

@@ -114,6 +114,14 @@ const bookingSchema = new mongoose.Schema(
       requestedAt: { type: Date, default: Date.now },
       respondedAt: { type: Date },
     }],
+    lateNotice: {
+      sourceBookingId: { type: mongoose.Schema.Types.ObjectId, ref: "Booking" },
+      delayMinutes: { type: Number, min: 1, max: 720 },
+      eta: { type: Date },
+      status: { type: String, enum: ["pending", "waiting", "reschedule_requested"] },
+      notifiedAt: { type: Date },
+      respondedAt: { type: Date },
+    },
     counterOffers: [{
       proposedBy: { type: String, enum: ["client", "provider"], required: true },
       proposedPrice: { type: Number, min: 100 },

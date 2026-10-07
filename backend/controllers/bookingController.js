@@ -19,6 +19,7 @@ const {
   DEFAULT_ESTIMATED_DURATION_MINUTES,
   getBookingOccupiedWindow,
   getBookingRequestExpiration,
+  getScheduledServiceTime,
   hasScheduleConflict,
   isValidEstimatedDurationMinutes,
 } = require("../services/bookingLifecycle");
@@ -209,6 +210,14 @@ function serializeBooking(booking) {
       requestedAt: update.requestedAt,
       respondedAt: update.respondedAt || null,
     })),
+    lateNotice: booking.lateNotice?.eta ? {
+      sourceBookingId: String(booking.lateNotice.sourceBookingId || ""),
+      delayMinutes: booking.lateNotice.delayMinutes,
+      eta: booking.lateNotice.eta,
+      status: booking.lateNotice.status || "pending",
+      notifiedAt: booking.lateNotice.notifiedAt || null,
+      respondedAt: booking.lateNotice.respondedAt || null,
+    } : null,
     counterOffers: (booking.counterOffers || []).map((offer) => ({
       id: String(offer._id),
       proposedBy: offer.proposedBy,
@@ -355,7 +364,7 @@ async function handleProviderAvailability(req, res) {
       providerId: provider._id,
       serviceDate: mongoose.trusted({ $gte: startOfToday }),
       status: mongoose.trusted({ $in: ACTIVE_BOOKING_STATUSES }),
-    }).select("_id serviceDate timeSlot estimatedDurationMinutes").lean();
+    }).select("_id serviceDate timeSlot estimatedDurationMinutes serviceGeoLocation").lean();
 
     return res.json({
       bookedSlots: bookings.map((booking) => {
@@ -365,6 +374,7 @@ async function handleProviderAvailability(req, res) {
           date: new Date(booking.serviceDate).toISOString().slice(0, 10),
           timeSlot: booking.timeSlot,
           estimatedDurationMinutes: booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
+          serviceGeoLocation: booking.serviceGeoLocation || null,
           startAt: occupiedWindow?.startAt.toISOString() || null,
           occupiedUntil: occupiedWindow?.endAt.toISOString() || null,
         };
@@ -377,6 +387,141 @@ async function handleProviderAvailability(req, res) {
   } catch (error) {
     console.error("Provider availability error:", error);
     return res.status(500).json({ message: "Could not load provider availability." });
+  }
+}
+
+async function handleReportRunningLate(req, res) {
+  const bookingId = String(req.params.id || "");
+  const delayMinutes = Number(req.body.delayMinutes);
+  if (!mongoose.isValidObjectId(bookingId)) return res.status(400).json({ message: "Choose a valid booking." });
+  if (req.user.role !== "provider") return res.status(403).json({ message: "Only the provider can report a delay." });
+  if (!Number.isInteger(delayMinutes) || delayMinutes < 1 || delayMinutes > 720) {
+    return res.status(400).json({ message: "Enter an expected delay from 1 minute to 12 hours." });
+  }
+
+  try {
+    const currentBooking = await Booking.findOne({
+      _id: bookingId,
+      providerId: req.user._id,
+      status: "in_progress",
+    }).select("_id providerId serviceDate timeSlot");
+    if (!currentBooking) return res.status(409).json({ message: "You can report a delay only for a task currently in progress." });
+
+    const currentStart = getScheduledServiceTime(currentBooking.serviceDate, currentBooking.timeSlot);
+    if (!currentStart) return res.status(409).json({ message: "The current booking schedule is invalid." });
+    const scheduledBookings = await findProviderBookingsForSchedule(
+      currentBooking.providerId,
+      currentBooking.serviceDate,
+      currentBooking._id
+    );
+    const nextBooking = scheduledBookings
+      .filter((booking) => ["approved", "Confirmed"].includes(booking.status))
+      .map((booking) => ({ booking, startAt: getScheduledServiceTime(booking.serviceDate, booking.timeSlot) }))
+      .filter(({ startAt }) => startAt && startAt > currentStart)
+      .sort((first, second) => first.startAt - second.startAt)[0];
+    if (!nextBooking) {
+      return res.status(409).json({ message: "There is no later confirmed booking to notify for this schedule." });
+    }
+    const affectedBooking = await Booking.findById(nextBooking.booking._id);
+    if (!affectedBooking) return res.status(409).json({ message: "The next booking is no longer available." });
+    if (affectedBooking.lateNotice?.status === "pending") {
+      return res.status(409).json({ message: "The next client already has a pending delay notice." });
+    }
+
+    const now = new Date();
+    const etaBase = Math.max(nextBooking.startAt.getTime(), now.getTime());
+    affectedBooking.lateNotice = {
+      sourceBookingId: currentBooking._id,
+      delayMinutes,
+      eta: new Date(etaBase + delayMinutes * 60 * 1000),
+      status: "pending",
+      notifiedAt: now,
+    };
+    await affectedBooking.save();
+
+    const etaText = affectedBooking.lateNotice.eta.toLocaleString("en-PH", {
+      timeZone: "Asia/Manila",
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+    try {
+      await appendBookingSystemMessage(
+        affectedBooking,
+        `Your provider reported a delay. The updated estimated arrival is ${etaText}. Choose whether to wait or request a new time; you may also use the usual cancellation option.`,
+        req.user._id,
+        "booking.running_late",
+        {
+          sourceBookingId: String(currentBooking._id),
+          delayMinutes,
+          eta: affectedBooking.lateNotice.eta,
+        }
+      );
+    } catch (messageError) {
+      console.error("Running-late system message error:", messageError);
+    }
+    await notifyBooking({
+      userIds: [String(affectedBooking.clientId)],
+      title: "Your provider is running late",
+      body: `Updated estimated arrival: ${etaText}. Choose whether to wait or request a new time.`,
+      url: bookingUrl("client", affectedBooking._id),
+      data: {
+        event: "booking.running_late",
+        bookingId: String(affectedBooking._id),
+        sourceBookingId: String(currentBooking._id),
+      },
+    });
+    await affectedBooking.populate(populatePaths);
+    return res.json({ booking: serializeBooking(affectedBooking) });
+  } catch (error) {
+    console.error("Running-late report error:", error);
+    return res.status(500).json({ message: "Could not notify the next client about the delay." });
+  }
+}
+
+async function handleRespondToLateNotice(req, res) {
+  const bookingId = String(req.params.id || "");
+  const action = String(req.body.action || "");
+  if (!mongoose.isValidObjectId(bookingId)) return res.status(400).json({ message: "Choose a valid booking." });
+  if (req.user.role !== "client") return res.status(403).json({ message: "Only the client can respond to a delay notice." });
+  if (!["wait", "reschedule"].includes(action)) return res.status(400).json({ message: "Choose whether to wait or request a new time." });
+
+  try {
+    const booking = await Booking.findOne({ _id: bookingId, clientId: req.user._id });
+    if (!booking) return res.status(404).json({ message: "Booking not found." });
+    if (!booking.lateNotice?.eta || booking.lateNotice.status !== "pending") {
+      return res.status(409).json({ message: "This delay notice is no longer awaiting a response." });
+    }
+
+    booking.lateNotice.status = action === "wait" ? "waiting" : "reschedule_requested";
+    booking.lateNotice.respondedAt = new Date();
+    await booking.save();
+
+    const responseMessage = action === "wait"
+      ? "The client will wait for the updated estimated arrival."
+      : "The client requested a new appointment time after the delay notice.";
+    try {
+      await appendBookingSystemMessage(
+        booking,
+        responseMessage,
+        req.user._id,
+        "booking.late_response",
+        { action, sourceBookingId: String(booking.lateNotice.sourceBookingId || "") }
+      );
+    } catch (messageError) {
+      console.error("Running-late response message error:", messageError);
+    }
+    await notifyBooking({
+      userIds: [String(booking.providerId)],
+      title: action === "wait" ? "Client will wait" : "Client requested a new time",
+      body: action === "wait" ? "The client accepted the updated estimated arrival." : "Contact the client to agree on a new appointment time.",
+      url: bookingUrl("provider", booking._id),
+      data: { event: "booking.late_response", bookingId: String(booking._id), action },
+    });
+    await booking.populate(populatePaths);
+    return res.json({ booking: serializeBooking(booking) });
+  } catch (error) {
+    console.error("Running-late response error:", error);
+    return res.status(500).json({ message: "Could not save your response to the delay notice." });
   }
 }
 
@@ -521,28 +666,13 @@ async function handleCreateBooking(req, res) {
       : 0;
     const travelFee = Math.max(0, travelFeeBeforeDiscount - travelFeeDiscount);
 
-    const slotTimeMinutes = (() => {
-      const match = String(timeSlot).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-      if (!match) return Number.POSITIVE_INFINITY;
-      let hours = Number(match[1]);
-      const minutes = Number(match[2]);
-      const period = String(match[3]).toUpperCase();
-      if (period === "AM" && hours === 12) hours = 0;
-      if (period === "PM" && hours !== 12) hours += 12;
-      return hours * 60 + minutes;
-    })();
-
-    const today = new Date();
-    const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const serviceDateOnly = new Date(serviceDate);
-    serviceDateOnly.setUTCHours(0, 0, 0, 0);
-
-    if (serviceDateOnly.getTime() < todayOnly.getTime()) {
-      return res.status(400).json({ message: "The selected service date is in the past." });
-    }
-
-    if (serviceDateOnly.getTime() === todayOnly.getTime() && slotTimeMinutes < (today.getHours() * 60 + today.getMinutes())) {
+    const now = new Date();
+    const scheduledTime = getScheduledServiceTime(serviceDate, timeSlot);
+    if (!scheduledTime || scheduledTime.getTime() <= now.getTime()) {
       return res.status(400).json({ message: "That time slot has already passed." });
+    }
+    if (!canArriveForSameDayBooking(serviceDate, timeSlot, travelDistanceKm, now)) {
+      return res.status(409).json({ message: "That time is too soon for the provider to travel to your location. Choose a later time." });
     }
 
     const serviceDayStart = new Date(serviceDate);
@@ -555,8 +685,9 @@ async function handleCreateBooking(req, res) {
       serviceDate,
       timeSlot,
       estimatedDurationMinutes,
+      serviceGeoLocation,
     }, existingBookings)) {
-      return res.status(409).json({ message: "That time overlaps another provider booking. Please choose a different time or shorter duration." });
+      return res.status(409).json({ message: "That time does not leave enough room for the task duration, travel between pinned client locations, and the 30-minute safety buffer." });
     }
 
     const existingBooking = await Booking.findOne({
@@ -804,7 +935,7 @@ async function handleUpdateBookingStatus(req, res) {
         _id: bookingId,
         providerId: req.user._id,
         status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
-      }).select("serviceDate timeSlot travelDistanceKm requestExpiresAt estimatedDurationMinutes");
+      }).select("serviceDate timeSlot travelDistanceKm requestExpiresAt estimatedDurationMinutes serviceGeoLocation");
       if (!pendingBooking) return res.status(404).json({ message: "Booking not found or it has already been updated." });
       now = new Date();
       if (pendingBooking.requestExpiresAt && pendingBooking.requestExpiresAt <= now) {
@@ -832,7 +963,7 @@ async function handleUpdateBookingStatus(req, res) {
       }
       const scheduleBookings = await findProviderBookingsForSchedule(req.user._id, pendingBooking.serviceDate, pendingBooking._id);
       if (hasScheduleConflict(pendingBooking, scheduleBookings, pendingBooking._id)) {
-        return res.status(409).json({ message: "This request overlaps another provider booking and cannot be accepted at this duration." });
+        return res.status(409).json({ message: "This request does not leave enough room for task duration, travel between pinned client locations, and the 30-minute safety buffer." });
       }
       filter.$or = mongoose.trusted([
         { requestExpiresAt: mongoose.trusted({ $exists: false }) },
@@ -1317,12 +1448,13 @@ async function processCashSettlementFallbacks() {
   }
 }
 
-async function hasConflictingSlot(providerId, serviceDate, timeSlot, excludeBookingId, estimatedDurationMinutes = DEFAULT_ESTIMATED_DURATION_MINUTES) {
+async function hasConflictingSlot(providerId, serviceDate, timeSlot, excludeBookingId, estimatedDurationMinutes = DEFAULT_ESTIMATED_DURATION_MINUTES, serviceGeoLocation = null) {
   const bookings = await findProviderBookingsForSchedule(providerId, serviceDate, excludeBookingId);
   return hasScheduleConflict({
     serviceDate,
     timeSlot,
     estimatedDurationMinutes,
+    serviceGeoLocation,
   }, bookings, excludeBookingId);
 }
 
@@ -1338,7 +1470,7 @@ async function findProviderBookingsForSchedule(providerId, serviceDate, excludeB
     _id: mongoose.trusted({ $ne: excludeBookingId || null }),
     serviceDate: mongoose.trusted({ $gte: rangeStart, $lt: rangeEnd }),
     status: mongoose.trusted({ $in: ACTIVE_BOOKING_STATUSES }),
-  }).select("_id serviceDate timeSlot estimatedDurationMinutes").lean();
+  }).select("_id serviceDate timeSlot estimatedDurationMinutes serviceGeoLocation status").lean();
 }
 
 async function handleProviderUpdate(req, res) {
@@ -1368,7 +1500,8 @@ async function handleProviderUpdate(req, res) {
       proposedServiceDate,
       proposedTimeSlot,
       booking._id,
-      booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES
+      booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
+      booking.serviceGeoLocation
     )) {
       return res.status(409).json({ message: "That proposed time slot is no longer available." });
     }
@@ -1430,7 +1563,8 @@ async function handleProviderUpdateResponse(req, res) {
         update.proposedServiceDate,
         update.proposedTimeSlot,
         booking._id,
-        booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES
+        booking.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
+        booking.serviceGeoLocation
       )) {
         return res.status(409).json({ message: "That proposed time slot is no longer available." });
       }
@@ -1492,8 +1626,9 @@ async function handleCreateCounterOffer(req, res) {
       serviceDate: booking.serviceDate,
       timeSlot: booking.timeSlot,
       estimatedDurationMinutes: candidateDuration,
+      serviceGeoLocation: booking.serviceGeoLocation,
     }, scheduleBookings, booking._id)) {
-      return res.status(409).json({ message: "That task duration overlaps another provider booking. Shorten the duration or choose a different schedule." });
+      return res.status(409).json({ message: "That task duration leaves too little time for travel between pinned client locations and the 30-minute safety buffer. Shorten the duration or choose a different schedule." });
     }
 
     const counterOfferId = new mongoose.Types.ObjectId();
@@ -1579,8 +1714,9 @@ async function handleRespondToCounterOffer(req, res) {
         serviceDate: booking.serviceDate,
         timeSlot: booking.timeSlot,
         estimatedDurationMinutes: acceptedDuration,
+        serviceGeoLocation: booking.serviceGeoLocation,
       }, scheduleBookings, booking._id)) {
-        return res.status(409).json({ message: "That counter-offer duration now overlaps another provider booking. The offer cannot be accepted." });
+        return res.status(409).json({ message: "That counter-offer duration leaves too little time for travel between pinned client locations and the 30-minute safety buffer. The offer cannot be accepted." });
       }
       const acceptedBooking = await Booking.findOneAndUpdate(
         {
@@ -1687,4 +1823,4 @@ async function processExpiredBookingRequests() {
   return result.modifiedCount;
 }
 
-module.exports = { handleListBookings, handleProviderAvailability, handleServiceLocationSearch, handleServiceLocationReverseLookup, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks, processExpiredBookingRequests };
+module.exports = { handleListBookings, handleProviderAvailability, handleReportRunningLate, handleRespondToLateNotice, handleServiceLocationSearch, handleServiceLocationReverseLookup, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks, processExpiredBookingRequests };

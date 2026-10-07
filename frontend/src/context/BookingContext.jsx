@@ -286,6 +286,39 @@ export function BookingProvider({ children }) {
     return data.booking;
   }, [notifySync, token]);
 
+  const reportRunningLate = useCallback(async (id, delayMinutes) => {
+    const response = await fetch(`/api/bookings/${id}/running-late`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ delayMinutes }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Could not notify the next client about the delay.");
+    if (!data.booking?.id) throw new Error("The server returned an invalid delay notification.");
+    setBookings((current) => {
+      const exists = current.some((booking) => booking.id === data.booking.id);
+      return validBookings(exists
+        ? current.map((booking) => booking.id === data.booking.id ? data.booking : booking)
+        : [data.booking, ...current]);
+    });
+    notifySync({ type: "booking-running-late", bookingId: data.booking.id });
+    return data.booking;
+  }, [notifySync, token]);
+
+  const respondToLateNotice = useCallback(async (id, action) => {
+    const response = await fetch(`/api/bookings/${id}/late-notice`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Could not save your response to the delay notice.");
+    if (!data.booking?.id) throw new Error("The server returned an invalid delay response.");
+    setBookings((current) => validBookings(current.map((booking) => booking.id === id ? data.booking : booking)));
+    notifySync({ type: "booking-late-notice-responded", bookingId: id, action });
+    return data.booking;
+  }, [notifySync, token]);
+
   const respondToProviderUpdate = useCallback(async (id, updateId, action) => {
     const response = await fetch(`/api/bookings/${id}/provider-updates`, {
       method: "PATCH",
@@ -368,11 +401,13 @@ export function BookingProvider({ children }) {
     requestCancellation,
     submitReview,
     sendProviderUpdate,
+    reportRunningLate,
+    respondToLateNotice,
     respondToProviderUpdate,
     respondToRevision,
     confirmCashSettlement,
     refreshBookings: fetchBookings,
-  }), [bookings, isLoading, error, createBooking, updateBookingStatus, submitCompletionProof, requestRevision, requestCancellation, submitReview, sendProviderUpdate, respondToProviderUpdate, respondToRevision, confirmCashSettlement, fetchBookings]);
+  }), [bookings, isLoading, error, createBooking, updateBookingStatus, submitCompletionProof, requestRevision, requestCancellation, submitReview, sendProviderUpdate, reportRunningLate, respondToLateNotice, respondToProviderUpdate, respondToRevision, confirmCashSettlement, fetchBookings]);
 
   return <BookingContext.Provider value={value}>{children}</BookingContext.Provider>;
 }

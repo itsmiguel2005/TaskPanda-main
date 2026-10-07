@@ -98,7 +98,7 @@ export default function ProviderBookingsPage() {
   const { token } = useAuth();
   const requestHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
   const [searchQuery, setSearchQuery] = useState("");
-  const { bookings, isLoading, error, updateBookingStatus, submitCompletionProof, requestCancellation, sendProviderUpdate, confirmCashSettlement, refreshBookings } = useBookings();
+  const { bookings, isLoading, error, updateBookingStatus, submitCompletionProof, requestCancellation, sendProviderUpdate, reportRunningLate, confirmCashSettlement, refreshBookings } = useBookings();
   const [sortBy, setSortBy] = useState("createdAt");
   const [acceptingId, setAcceptingId] = useState(null);
   const [statusChange, setStatusChange] = useState(null);
@@ -114,6 +114,11 @@ export default function ProviderBookingsPage() {
   const [proposedTimeSlot, setProposedTimeSlot] = useState(TIME_SLOTS[0]);
   const [providerUpdateError, setProviderUpdateError] = useState("");
   const [providerUpdateSuccess, setProviderUpdateSuccess] = useState(false);
+  const [runningLateBookingId, setRunningLateBookingId] = useState("");
+  const [runningLateMinutes, setRunningLateMinutes] = useState("30");
+  const [runningLateError, setRunningLateError] = useState("");
+  const [runningLateSuccess, setRunningLateSuccess] = useState("");
+  const [isReportingLate, setIsReportingLate] = useState(false);
 
   const safeBookings = Array.isArray(bookings) ? bookings : [];
   const isInitialLoading = isLoading && safeBookings.length === 0;
@@ -232,6 +237,23 @@ export default function ProviderBookingsPage() {
       setProviderUpdateSuccess(true);
     } catch (requestError) {
       setProviderUpdateError(requestError.message);
+    }
+  }
+
+  async function handleReportRunningLate(event) {
+    event.preventDefault();
+    if (!runningLateBookingId) return;
+    setRunningLateError("");
+    setIsReportingLate(true);
+    try {
+      const affectedBooking = await reportRunningLate(runningLateBookingId, Number(runningLateMinutes));
+      const eta = new Date(affectedBooking.lateNotice?.eta);
+      setRunningLateSuccess(`Notified ${affectedBooking.client} about the delay. Updated estimated arrival: ${eta.toLocaleString("en-PH", { timeZone: "Asia/Manila", dateStyle: "medium", timeStyle: "short" })}.`);
+      setRunningLateBookingId("");
+    } catch (requestError) {
+      setRunningLateError(requestError.message || "Could not notify the next client.");
+    } finally {
+      setIsReportingLate(false);
     }
   }
 
@@ -499,6 +521,15 @@ export default function ProviderBookingsPage() {
                           {booking.cancellationOutcome === "rejected" && (
                             <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">The cancellation was declined. This booking remains active.</p>
                           )}
+                          {booking.lateNotice && (
+                            <p className={`mt-3 rounded-lg p-3 text-xs ${booking.lateNotice.status === "reschedule_requested" ? "bg-amber-100 text-amber-950" : "bg-sky-50 text-blue-950"}`}>
+                              {booking.lateNotice.status === "pending"
+                                ? `Delay notice sent. Awaiting ${booking.client}'s response.`
+                                : booking.lateNotice.status === "waiting"
+                                  ? `${booking.client} will wait for the updated arrival.`
+                                  : `${booking.client} requested a new appointment time. Contact them to agree on a schedule.`}
+                            </p>
+                          )}
                           {booking.providerUpdates?.map((update) => (
                             <div key={update.id} className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50 p-3 text-xs text-cyan-950">
                               <p className="font-semibold">Your update{update.type === "reschedule" ? " · Time change request" : ""} ({update.status})</p>
@@ -542,9 +573,6 @@ export default function ProviderBookingsPage() {
                             <span className="text-slate-300">|</span>
                             <span>{booking.time}</span>
                           </div>
-                          <span className={`inline-flex w-fit rounded-full px-2.5 py-1 text-[11px] font-semibold ${booking.urgency === "Emergency" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>
-                            {booking.urgency || "Flexible"} service
-                          </span>
                           </div>
                         </div>
                         <div className="mt-5 border-y border-sky-100 py-3">
@@ -569,6 +597,19 @@ export default function ProviderBookingsPage() {
                                 className="dashboard-primary-button dashboard-focus px-4 py-2.5 text-sm"
                               >
                                 {STATUS_ACTIONS[booking.status].buttonLabel}
+                              </button>
+                            )}
+                            {booking.status === "In Progress" && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRunningLateBookingId(booking.id);
+                                  setRunningLateMinutes("30");
+                                  setRunningLateError("");
+                                }}
+                                className="dashboard-focus rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-950 transition hover:bg-amber-100"
+                              >
+                                Running late
                               </button>
                             )}
                             {booking.status === "Confirmed" && (
@@ -732,6 +773,35 @@ export default function ProviderBookingsPage() {
         onSubmit={(note, photos) => submitCompletionProof(completionBookingId, note, photos)}
         onClose={() => setCompletionBookingId(null)}
       />}
+
+      {runningLateBookingId && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 p-4" onClick={() => setRunningLateBookingId("")}>
+          <form role="dialog" aria-modal="true" aria-labelledby="running-late-title" onSubmit={handleReportRunningLate} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <h2 id="running-late-title" className="text-lg font-bold text-slate-950">Notify your next client</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">We’ll find your next confirmed booking and update the client’s estimated arrival based on this delay. You can report delays only for a task currently in progress.</p>
+            <label htmlFor="running-late-minutes" className="mt-4 block text-sm font-semibold text-slate-800">Expected delay</label>
+            <div className="mt-1 flex items-center gap-2">
+              <input id="running-late-minutes" type="number" min="1" max="720" step="1" required value={runningLateMinutes} onChange={(event) => setRunningLateMinutes(event.target.value)} className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-amber-600 focus:ring-2 focus:ring-amber-600/20" />
+              <span className="text-sm text-slate-600">minutes</span>
+            </div>
+            {runningLateError && <p role="alert" className="mt-3 text-sm font-medium text-red-700">{runningLateError}</p>}
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setRunningLateBookingId("")} disabled={isReportingLate} className="dashboard-secondary-button dashboard-focus px-4 py-2.5 text-sm disabled:opacity-50">Keep working</button>
+              <button type="submit" disabled={isReportingLate || !Number.isInteger(Number(runningLateMinutes)) || Number(runningLateMinutes) < 1 || Number(runningLateMinutes) > 720} className="dashboard-focus rounded-lg bg-amber-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-950 disabled:cursor-not-allowed disabled:opacity-50">{isReportingLate ? "Sending…" : "Send delay notice"}</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {runningLateSuccess && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 p-4" onClick={() => setRunningLateSuccess("")}>
+          <section role="dialog" aria-modal="true" className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <h2 className="text-lg font-bold text-slate-950">Client notified</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{runningLateSuccess}</p>
+            <button type="button" onClick={() => setRunningLateSuccess("")} className="dashboard-primary-button dashboard-focus mt-5 w-full px-4 py-2.5 text-sm">Done</button>
+          </section>
+        </div>
+      )}
 
       {providerUpdateId && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={() => setProviderUpdateId(null)}>
