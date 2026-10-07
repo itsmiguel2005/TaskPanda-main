@@ -4,7 +4,7 @@ const { createRateLimiter } = require("../middleware/rateLimits");
 const { requireAuth } = require("../middleware/requireAuth");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
-const { selectAvailableGenerateContentModels } = require("../services/geminiModelSelection");
+const { listGeminiModels, selectAvailableGenerateContentModels } = require("../services/geminiModelSelection");
 const {
   buildBookingContext,
   buildProviderContext,
@@ -32,8 +32,7 @@ function getAiClient() {
 
 async function getAvailableModels() {
   availableModelsPromise ||= (async () => {
-    const listedModels = [];
-    for await (const model of getAiClient().models.list()) listedModels.push(model);
+    const listedModels = await listGeminiModels(process.env.GEMINI_API_KEY);
     const models = selectAvailableGenerateContentModels(listedModels);
     if (!models.length) {
       throw new Error("The configured Gemini API key has no supported generateContent model.");
