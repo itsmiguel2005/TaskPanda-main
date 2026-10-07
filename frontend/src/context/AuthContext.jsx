@@ -14,19 +14,31 @@ export function AuthProvider({ children }) {
   const isVerifiedRef = useRef(false);
 
   useEffect(() => {
-    const saved =
-      localStorage.getItem("taskpanda_auth") ||
-      sessionStorage.getItem("taskpanda_auth");
+    let saved = "";
+    try {
+      const rememberedAuth = localStorage.getItem("taskpanda_auth");
+      const tabAuth = sessionStorage.getItem("taskpanda_auth");
+      saved = rememberedAuth || tabAuth || "";
+      if (!rememberedAuth && tabAuth) {
+        localStorage.setItem("taskpanda_auth", tabAuth);
+        sessionStorage.removeItem("taskpanda_auth");
+      }
+    } catch (error) {
+      console.warn("Saved sign-in could not be restored from browser storage:", error.message);
+    }
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        if (typeof parsed.token !== "string" || !parsed.token) {
+          throw new Error("Saved sign-in does not contain a session token.");
+        }
         setIsLoggedIn(true);
         setRole(parsed.role || "client");
         const savedVerified = Boolean(parsed.isVerified ?? parsed.user?.isVerified);
         setIsVerified(savedVerified);
         isVerifiedRef.current = savedVerified;
         setUser(parsed.user || null);
-        setToken(parsed.token || null);
+        setToken(parsed.token);
       } catch {
         localStorage.removeItem("taskpanda_auth");
         sessionStorage.removeItem("taskpanda_auth");
@@ -57,7 +69,7 @@ export function AuthProvider({ children }) {
     };
   }, [isAuthLoading, isLoggedIn, role, user]);
 
-  const login = useCallback((userData, authToken, remember = false) => {
+  const login = useCallback((userData, authToken, remember = true) => {
     const { role } = userData;
     const newUser = { ...userData, role };
     const newRole = role || "client";
@@ -146,6 +158,10 @@ export function AuthProvider({ children }) {
         cache: "no-store",
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (response.status === 401) {
+        logout();
+        return false;
+      }
       if (!response.ok) return false;
       const data = await response.json();
       if (!data.user) return false;
@@ -154,7 +170,7 @@ export function AuthProvider({ children }) {
     } catch {
       return false;
     }
-  }, [token, updateUser]);
+  }, [token, updateUser, logout]);
 
   useEffect(() => {
     if (isAuthLoading || !isLoggedIn || !token || !["client", "provider"].includes(role)) return;

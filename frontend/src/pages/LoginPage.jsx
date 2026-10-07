@@ -15,7 +15,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { login, logout } = useAuth();
-  const [formData, setFormData] = useState({ email: "", password: "", remember: false });
+  const [formData, setFormData] = useState({ email: "", password: "", remember: true });
   const [adminChallengeToken, setAdminChallengeToken] = useState("");
   const [adminOtp, setAdminOtp] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);

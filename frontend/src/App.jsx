@@ -110,6 +110,29 @@ function ProtectedRoute({ children, roles }) {
   return children;
 }
 
+function LandingRoute() {
+  const { isLoggedIn, role, isAuthLoading } = useAuth();
+
+  if (isAuthLoading) {
+    return (
+      <div className="dashboard-page">
+        <div role="status" aria-label="Checking your session" aria-busy="true" className="dashboard-shell flex min-h-[60vh] flex-col items-center justify-center gap-4">
+          <span className="sr-only">Checking your session…</span>
+          <SkeletonBlock className="h-12 w-12 rounded-full" />
+          <SkeletonBlock className="h-4 w-44" />
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoggedIn) {
+    const home = role === "provider" ? "/provider-dashboard" : role === "admin" ? "/admin" : "/dashboard";
+    return <Navigate to={home} replace />;
+  }
+
+  return <LandingPage />;
+}
+
 export default function App() {
   const location = useLocation();
   console.log("[App] rendering at:", location.pathname);
@@ -132,7 +155,7 @@ export default function App() {
         <Route path="/client-register/name" element={<ClientRegisterName />} />
         <Route path="/client-register/location" element={<ClientRegisterLocation />} />
         <Route path="/client-register/phone" element={<ClientRegisterPhone />} />
-        <Route path="/" element={<LandingPage />} />
+        <Route path="/" element={<LandingRoute />} />
         <Route path="/dashboard" element={<ProtectedRoute roles={["client"]}><ClientDashboardPage /></ProtectedRoute>} />
         <Route path="/provider-dashboard" element={<ProtectedRoute roles={["provider"]}><ProviderDashboardPage /></ProtectedRoute>} />
         <Route path="/bookings" element={<ProtectedRoute roles={["client"]}><BookingsPage /></ProtectedRoute>} />
