@@ -79,7 +79,7 @@ function RecommendationCard({ provider, onBook }) {
 }
 
 export default function PandaBotWidget() {
-  const { isLoggedIn, isAuthLoading, user } = useAuth();
+  const { isLoggedIn, isAuthLoading, user, token } = useAuth();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState("");
@@ -133,7 +133,10 @@ export default function PandaBotWidget() {
     try {
       const response = await apiFetch("/api/ai/support", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ message, location: getProfileLocation(user) }),
       });
       const data = await response.json().catch(() => ({}));
