@@ -7,6 +7,15 @@ const hasValidSmtpCredentials =
   !/(yourgmail|example|app_password|replace)/i.test(config.smtpUser) &&
   !/(yourgmail|example|app_password|replace)/i.test(config.smtpPassword);
 
+const configuredMailFrom = config.mailFrom || config.smtpUser;
+const hasAlignedMailFrom = configuredMailFrom.toLowerCase() === config.smtpUser.toLowerCase();
+const mailFrom = hasAlignedMailFrom ? configuredMailFrom : config.smtpUser;
+if (config.mailFrom && !hasAlignedMailFrom) {
+  console.warn("MAIL_FROM does not match SMTP_USER. Using SMTP_USER as the sender to avoid sender spoofing.");
+}
+
+const taskPandaSender = { name: "TaskPanda", address: mailFrom };
+
 const mailTransport = nodemailer.createTransport({
   host: config.smtpHost,
   port: config.smtpPort,
@@ -26,7 +35,7 @@ if (process.env.VERCEL) {
     port: config.smtpPort,
     secure: config.smtpSecure,
     configured: hasValidSmtpCredentials,
-    from: config.mailFrom || "missing",
+    fromAligned: hasAlignedMailFrom,
   });
 }
 
@@ -35,7 +44,7 @@ async function sendPasswordResetEmail(email, code) {
   resetUrl.searchParams.set("email", String(email).trim().toLowerCase());
   resetUrl.searchParams.set("code", code);
   const result = await mailTransport.sendMail({
-    from: { name: "TaskPanda", address: config.mailFrom || config.smtpUser },
+    from: taskPandaSender,
     to: email,
     subject: "Reset your TaskPanda password",
     text: `Your TaskPanda password reset code is ${code}. It expires in 10 minutes.\n\nReset your password: ${resetUrl.toString()}`,
@@ -50,7 +59,7 @@ async function sendPasswordResetEmail(email, code) {
 
 async function sendEmailVerificationEmail(email, verificationUrl) {
   const result = await mailTransport.sendMail({
-    from: { name: "TaskPanda", address: config.mailFrom || config.smtpUser },
+    from: taskPandaSender,
     to: email,
     subject: "Verify your TaskPanda email",
     text: `Verify your email to continue your TaskPanda registration: ${verificationUrl}\nThis link expires in 24 hours.`,
@@ -65,7 +74,7 @@ async function sendEmailVerificationEmail(email, verificationUrl) {
 
 async function sendAdminLoginOtpEmail(email, code) {
   const result = await mailTransport.sendMail({
-    from: { name: "TaskPanda", address: config.mailFrom || config.smtpUser },
+    from: taskPandaSender,
     to: email,
     subject: "Your TaskPanda admin sign-in code",
     text: `Your TaskPanda admin sign-in code is ${code}. It expires in 5 minutes. If you did not request this code, secure your admin credentials immediately.`,

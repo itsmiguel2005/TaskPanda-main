@@ -92,7 +92,7 @@ For a same-origin Vercel deployment, leave `VITE_API_BASE_URL` empty and configu
 
 ### Email and Push Setup
 
-Email verification, password reset, and admin sign-in codes use SMTP. For Gmail, use an app password and configure `SMTP_USER`, `SMTP_PASSWORD`, and `MAIL_FROM`. Password reset codes are stored only as hashes with their 10-minute expiry on the user document, consumed atomically, and delivered with a link that pre-fills the existing OTP form.
+Email verification, password reset, and admin sign-in codes use SMTP. For Gmail, use an app password and configure `SMTP_USER`, `SMTP_PASSWORD`, and `MAIL_FROM` with the same email address. If `MAIL_FROM` differs from the authenticated `SMTP_USER`, the mailer logs a warning and uses `SMTP_USER` as the sender to avoid sender spoofing. Sender alignment alone cannot guarantee inbox placement: for a custom sending domain, configure the SMTP provider's SPF and DKIM DNS records and publish a DMARC policy, then verify the domain with your provider. Password reset codes are stored only as hashes with their 10-minute expiry on the user document, consumed atomically, and delivered with a link that pre-fills the existing OTP form.
 
 For push, create a OneSignal app and configure Web Push. Set `ONESIGNAL_APP_ID` and the server-only `ONESIGNAL_REST_API_KEY` in the root `.env`; set `VITE_ONESIGNAL_APP_ID` to the same App ID. Use the App API key from the OneSignal dashboard as `ONESIGNAL_REST_API_KEY`; the server sends it with `Authorization: Key ...`. Vite loads root `.env` but exposes only variables prefixed with `VITE_` to browser code. Configure the OneSignal site URL to match the public app origin. Web Push requires HTTPS except for `localhost`; users opt in from the app's Notifications menu.
 
