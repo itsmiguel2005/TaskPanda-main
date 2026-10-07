@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import Header from "./Header.jsx";
@@ -10,6 +11,7 @@ import { SkeletonProviderGrid } from "./Skeletons.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
 import { PROFESSIONS } from "../utils/professions.js";
+import UserOnlineStatus from "./UserOnlineStatus.jsx";
 
 const filterCategories = PROFESSIONS.map((name) => ({ name }));
 
@@ -71,6 +73,7 @@ export default function Explore() {
   const [maxKm, setMaxKm] = useState(MAX_DISCOVERY_DISTANCE_KM);
   const [providers, setProviders] = useState([]);
   const [totalProviders, setTotalProviders] = useState(0);
+  const [presenceRefresh, setPresenceRefresh] = useState(0);
   const [favoriteProviderIds, setFavoriteProviderIds] = useState(new Set());
   const [verifiedFavoriteProviderIds, setVerifiedFavoriteProviderIds] = useState(new Set());
   const [loading, setLoading] = useState(false);
@@ -126,7 +129,7 @@ export default function Explore() {
     let cancelled = false;
     const loadFavorites = async () => {
       try {
-        const response = await fetch("/api/client/favorites", {
+        const response = await apiFetch("/api/client/favorites", {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!response.ok) return;
@@ -179,7 +182,7 @@ export default function Explore() {
       if (tesdaOnly) params.set("credential", "tesda");
 
       try {
-        const response = await fetch(`/api/providers?${params}`, { signal: controller.signal });
+        const response = await apiFetch(`/api/providers?${params}`, { signal: controller.signal });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.message || "Could not search nearby providers.");
         setProviders(data.providers || []);
@@ -195,7 +198,13 @@ export default function Explore() {
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [searchCoordinates, appliedQuery, selectedCategories, tesdaOnly, minKm, maxKm]);
+  }, [searchCoordinates, appliedQuery, selectedCategories, tesdaOnly, minKm, maxKm, presenceRefresh]);
+
+  useEffect(() => {
+    if (!searchCoordinates?.coordinates) return undefined;
+    const intervalId = window.setInterval(() => setPresenceRefresh((current) => current + 1), 15_000);
+    return () => window.clearInterval(intervalId);
+  }, [searchCoordinates]);
 
   const visibleCats = showAllCats ? filterCategories : filterCategories.slice(0, 4);
   const registeredLocationLabel = [user?.barangay, user?.city, user?.province].filter(Boolean).join(", ");
@@ -253,11 +262,11 @@ export default function Explore() {
 
     try {
       const response = isSaved
-        ? await fetch(`/api/client/favorites/${normalizedId}`, {
+        ? await apiFetch(`/api/client/favorites/${normalizedId}`, {
             method: "DELETE",
             headers: { Authorization: `Bearer ${token}` },
           })
-        : await fetch("/api/client/favorites", {
+        : await apiFetch("/api/client/favorites", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -341,7 +350,7 @@ export default function Explore() {
     if (selectedCategories.size) params.set("categories", [...selectedCategories].join(","));
     if (tesdaOnly) params.set("credential", "tesda");
     try {
-      const response = await fetch(`/api/providers?${params}`);
+      const response = await apiFetch(`/api/providers?${params}`);
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "Could not refresh nearby professionals.");
       setProviders(data.providers || []);
@@ -599,7 +608,7 @@ export default function Explore() {
                     className="content-arrive relative flex h-full flex-col justify-between overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)]"
                   >
                     <ProviderStreak streak={provider.onTimeStreak} className="absolute right-3 top-3 z-10 max-w-[calc(100%-1.5rem)]" />
-                    <div className="h-40 overflow-hidden bg-sky-50">
+                    <div className="relative h-40 overflow-hidden bg-sky-50">
                       {provider.profileImage ? (
                         <img
                           src={provider.profileImage}
@@ -614,6 +623,7 @@ export default function Explore() {
                           </svg>
                         </div>
                       )}
+                      <UserOnlineStatus lastActive={provider.lastActive} isOnline={provider.isOnline} className="absolute bottom-2 right-2 h-4 w-4" />
                     </div>
                     <div className="flex flex-1 flex-col px-4 py-4 sm:px-5">
                       <div className="flex items-start justify-between gap-2">

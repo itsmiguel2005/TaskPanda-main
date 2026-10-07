@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useAuth } from "./AuthContext.jsx";
 import { DEFAULT_ESTIMATED_DURATION_MINUTES } from "../utils/bookingDuration.js";
@@ -32,7 +33,7 @@ export function BookingProvider({ children }) {
     }
     if (!silent) setIsLoading(true);
     try {
-      const response = await fetch("/api/bookings", {
+      const response = await apiFetch("/api/bookings", {
         cache: "no-store",
         headers: { Authorization: `Bearer ${token}` },
         signal,
@@ -127,7 +128,7 @@ export function BookingProvider({ children }) {
     (normalizedDetails.photos || []).forEach((photo) => formData.append("photos", photo));
 
     try {
-      const response = await fetch("/api/bookings", {
+      const response = await apiFetch("/api/bookings", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -153,7 +154,7 @@ export function BookingProvider({ children }) {
   }, [notifySync, token]);
 
   const updateBookingStatus = useCallback(async (id, status) => {
-    const response = await fetch(`/api/bookings/${id}/status`, {
+    const response = await apiFetch(`/api/bookings/${id}/status`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
@@ -173,7 +174,7 @@ export function BookingProvider({ children }) {
     const formData = new FormData();
     formData.append("completionNote", completionNote);
     (Array.isArray(photos) ? photos : []).forEach((photo) => formData.append("photos", photo));
-    const response = await fetch(`/api/bookings/${id}/completion`, {
+    const response = await apiFetch(`/api/bookings/${id}/completion`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
@@ -190,7 +191,7 @@ export function BookingProvider({ children }) {
     const formData = new FormData();
     formData.append("note", note);
     (Array.isArray(photos) ? photos : []).forEach((photo) => formData.append("photos", photo));
-    const response = await fetch(`/api/bookings/${id}/revisions`, {
+    const response = await apiFetch(`/api/bookings/${id}/revisions`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
@@ -204,7 +205,7 @@ export function BookingProvider({ children }) {
   }, [notifySync, token]);
 
   const requestCancellation = useCallback(async (id, action = "request", reason = "") => {
-    const response = await fetch(`/api/bookings/${id}/cancel`, {
+    const response = await apiFetch(`/api/bookings/${id}/cancel`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
@@ -251,7 +252,7 @@ export function BookingProvider({ children }) {
     formData.append("rating", String(normalizedRating));
     formData.append("review", normalizedReview);
     normalizedPhotos.forEach((photo) => formData.append("photos", photo));
-    const response = await fetch(`/api/bookings/${bookingId}/rate`, {
+    const response = await apiFetch(`/api/bookings/${bookingId}/rate`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
@@ -273,7 +274,7 @@ export function BookingProvider({ children }) {
   }, [token]);
 
   const sendProviderUpdate = useCallback(async (id, update) => {
-    const response = await fetch(`/api/bookings/${id}/provider-updates`, {
+    const response = await apiFetch(`/api/bookings/${id}/provider-updates`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify(update),
@@ -287,7 +288,7 @@ export function BookingProvider({ children }) {
   }, [notifySync, token]);
 
   const reportRunningLate = useCallback(async (id, delayMinutes) => {
-    const response = await fetch(`/api/bookings/${id}/running-late`, {
+    const response = await apiFetch(`/api/bookings/${id}/running-late`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ delayMinutes }),
@@ -306,7 +307,7 @@ export function BookingProvider({ children }) {
   }, [notifySync, token]);
 
   const respondToLateNotice = useCallback(async (id, action) => {
-    const response = await fetch(`/api/bookings/${id}/late-notice`, {
+    const response = await apiFetch(`/api/bookings/${id}/late-notice`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ action }),
@@ -320,7 +321,7 @@ export function BookingProvider({ children }) {
   }, [notifySync, token]);
 
   const respondToProviderUpdate = useCallback(async (id, updateId, action) => {
-    const response = await fetch(`/api/bookings/${id}/provider-updates`, {
+    const response = await apiFetch(`/api/bookings/${id}/provider-updates`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ updateId, action }),
@@ -334,7 +335,7 @@ export function BookingProvider({ children }) {
   }, [notifySync, token]);
 
   const respondToRevision = useCallback(async (id, revisionId, action, responseNote = "") => {
-    const response = await fetch(`/api/bookings/${id}/revisions/${revisionId}`, {
+    const response = await apiFetch(`/api/bookings/${id}/revisions/${revisionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ action, responseNote }),
@@ -353,7 +354,7 @@ export function BookingProvider({ children }) {
       throw new Error("Choose a valid cash confirmation before continuing.");
     }
 
-    const listResponse = await fetch("/api/conversations?includeArchived=false", {
+    const listResponse = await apiFetch("/api/conversations?includeArchived=false", {
       headers: { Authorization: `Bearer ${token}` },
     });
     const listData = await listResponse.json().catch(() => ({}));
@@ -367,7 +368,7 @@ export function BookingProvider({ children }) {
 
     let conversationId = matchingConversation?.id || matchingConversation?._id;
     if (!conversationId) {
-      const createResponse = await fetch("/api/conversations", {
+      const createResponse = await apiFetch("/api/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ bookingId }),
@@ -378,7 +379,7 @@ export function BookingProvider({ children }) {
     }
     if (!conversationId) throw new Error("This booking does not have an active conversation yet.");
 
-    const response = await fetch(`/api/conversations/${conversationId}/payment`, {
+    const response = await apiFetch(`/api/conversations/${conversationId}/payment`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ confirmation: normalizedConfirmation }),

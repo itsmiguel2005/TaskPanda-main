@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -339,7 +340,7 @@ export default function AdminUsersManagement() {
     const params = new URLSearchParams({ filter, page: String(page) });
     if (debouncedSearch) params.set("q", debouncedSearch);
     try {
-      const response = await fetch(`/api/admin/users?${params}`, {
+      const response = await apiFetch(`/api/admin/users?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
         signal,
       });
@@ -377,7 +378,7 @@ export default function AdminUsersManagement() {
     const controller = new AbortController();
     setDetailsLoading(true);
     setDetails(null);
-    fetch(`/api/admin/users/${selectedUserId}`, {
+    apiFetch(`/api/admin/users/${selectedUserId}`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal,
     })
@@ -441,7 +442,7 @@ export default function AdminUsersManagement() {
     };
     const endpoint = endpoints[type];
     try {
-      const response = await fetch(endpoint.path, {
+      const response = await apiFetch(endpoint.path, {
         method: endpoint.method,
         headers: {
           Authorization: `Bearer ${token}`,

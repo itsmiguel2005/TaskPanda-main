@@ -1,5 +1,6 @@
 const path = require("path");
 const express = require("express");
+const cors = require("cors");
 const connectDB = require("./db");
 const authRoutes = require("./routes/authRoutes");
 const healthRoutes = require("./routes/healthRoutes");
@@ -12,8 +13,26 @@ const messageRoutes = require("./routes/messageRoutes");
 const clientRoutes = require("./routes/clientRoutes");
 const rewardsRoutes = require("./routes/rewardsRoutes");
 const broadcastRoutes = require("./routes/broadcastRoutes");
+const { corsOrigins } = require("./config/env");
+const { trackAuthenticatedRequest } = require("./middleware/requireAuth");
 
 const app = express();
+
+app.use(cors({
+  origin(origin, callback) {
+    callback(null, Boolean(origin && corsOrigins.includes(origin)));
+  },
+  allowedHeaders: ["Authorization", "Content-Type"],
+  methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+}));
+app.use((req, res, next) => {
+  const origin = req.get("origin");
+  const isApiRequest = req.path === "/api" || req.path.startsWith("/api/");
+  if (isApiRequest && req.method === "OPTIONS" && origin && !corsOrigins.includes(origin)) {
+    return res.status(403).json({ message: "This origin is not allowed." });
+  }
+  return next();
+});
 
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 app.use(express.json({ limit: "100kb" }));
@@ -26,6 +45,7 @@ app.use("/api", async (req, res, next) => {
     return res.status(503).json({ message: "Database is unavailable.", error: error.message });
   }
 });
+app.use("/api", trackAuthenticatedRequest);
 
 app.use(express.static(path.join(__dirname, "../dist")));
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));

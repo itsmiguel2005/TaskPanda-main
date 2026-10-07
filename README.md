@@ -53,6 +53,10 @@ Create a `.env` file in the project root when you need to change the database, p
 MONGO_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/taskpanda?retryWrites=true&w=majority
 MONGO_DB_NAME=taskpanda
 PORT=3000
+# Optional API origin for a separately hosted HTTPS backend; unset to use the same-origin Vercel API
+VITE_API_BASE_URL=
+# Optional Vite development proxy target; defaults to the local Express server
+VITE_API_PROXY_TARGET=http://localhost:3000
 
 # Optional admin login
 ADMIN_EMAIL=admin@example.com
@@ -76,13 +80,15 @@ ONESIGNAL_REST_API_KEY=your-onesignal-rest-api-key
 VITE_ONESIGNAL_APP_ID=your-onesignal-app-id
 # Optional public site URL for email links (recommended for custom domains)
 APP_URL=https://your-taskpanda-domain.example
-# Optional comma-separated trusted browser origins for cross-origin deployments
+# Set on the backend when using a separately hosted frontend; allow only trusted browser origins
 CORS_ORIGINS=http://localhost:5173,https://your-taskpanda-domain.example
 # Optional trusted reverse-proxy hop count for non-Vercel deployments
 TRUST_PROXY=1
 ```
 
 Do not commit `.env` or real passwords to source control. For Gmail, use an app password rather than your normal account password.
+
+For a same-origin Vercel deployment, leave `VITE_API_BASE_URL` empty and configure `MONGO_URI` and other server-only settings in the Vercel project's Production environment. If the API is hosted separately, set `VITE_API_BASE_URL` to its HTTPS origin (without a trailing slash) and configure the backend's `CORS_ORIGINS` to include the frontend's exact origin. The default Vercel CSP permits HTTPS API connections; narrow `connect-src` to the API origin when your deployment requires a strict origin allowlist.
 
 ### Email and Push Setup
 

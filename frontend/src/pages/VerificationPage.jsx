@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
@@ -436,7 +437,7 @@ export default function VerificationPage() {
       if (idFrontFile.size + idBackFile.size > 3_400_000) {
         throw new Error("The two ID photos are still too large to submit. Please retake them closer to the ID or choose smaller photos.");
       }
-      const res = await fetch("/api/v1/users/verify", {
+      const res = await apiFetch("/api/v1/users/verify", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,

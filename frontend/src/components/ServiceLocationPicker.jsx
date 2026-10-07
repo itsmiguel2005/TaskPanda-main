@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -97,7 +98,7 @@ export default function ServiceLocationPicker({
       setError("");
       try {
         const parameters = new URLSearchParams({ latitude: String(latitude), longitude: String(longitude) });
-        const response = await fetch(`${endpointBase}/reverse?${parameters}`, {
+        const response = await apiFetch(`${endpointBase}/reverse?${parameters}`, {
           headers: { Authorization: `Bearer ${token}` },
           signal: controller.signal,
         });
@@ -189,7 +190,7 @@ export default function ServiceLocationPicker({
     setSearchResults([]);
     try {
       const parameters = new URLSearchParams({ q: query });
-      const response = await fetch(`${endpointBase}/search?${parameters}`, {
+      const response = await apiFetch(`${endpointBase}/search?${parameters}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json().catch(() => ({}));

@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
@@ -219,7 +220,7 @@ export default function EditProfilePage() {
     setIsSaving(true);
     setServerError("");
     try {
-      const response = await fetch("/api/profile", {
+      const response = await apiFetch("/api/profile", {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -254,7 +255,7 @@ export default function EditProfilePage() {
         try {
           const photoFormData = new FormData();
           photoFormData.append("photo", selectedPhoto);
-          const photoResponse = await fetch("/api/profile/photo", {
+          const photoResponse = await apiFetch("/api/profile/photo", {
             method: "POST",
             headers: { Authorization: `Bearer ${token}` },
             body: photoFormData,

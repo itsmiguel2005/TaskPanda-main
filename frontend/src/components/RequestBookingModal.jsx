@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -291,7 +292,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
     let active = true;
     setRewardsStatus("loading");
     setRewardsError("");
-    fetch("/api/rewards", {
+    apiFetch("/api/rewards", {
       headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal,
     })
@@ -350,7 +351,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
           query.set("latitude", latitude);
         }
         const queryString = query.size ? `?${query}` : "";
-        const response = await fetch(`/api/bookings/availability/${provider._id}${queryString}`, {
+        const response = await apiFetch(`/api/bookings/availability/${provider._id}${queryString}`, {
           headers: { Authorization: `Bearer ${token}` },
           signal: controller.signal,
         });

@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
@@ -128,7 +129,7 @@ export default function ProfilePage() {
     setLoadingReferralCode(true);
     setReferralCodeError("");
     try {
-      const response = await fetch("/api/rewards", {
+      const response = await apiFetch("/api/rewards", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();

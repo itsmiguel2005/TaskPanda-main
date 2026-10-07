@@ -9,6 +9,7 @@ const {
   handleResendVerification,
   handleCompleteRegistration,
   handleLogin,
+  handleLogout,
   handleVerifyAdminLogin,
   handleForgotPassword,
   handleResetPassword,
@@ -17,6 +18,7 @@ const { body, query } = require("express-validator");
 const { limitAuthAttempts, limitRegistrationChecks, limitLocationLookups } = require("../middleware/rateLimits");
 const { validateRequest } = require("../middleware/validateRequest");
 const { handleLocationSearch, handleLocationReverseLookup } = require("../controllers/locationController");
+const { requireAuth, requireRole } = require("../middleware/requireAuth");
 
 const router = express.Router();
 const emailField = () => body("email").isString().trim().isEmail().isLength({ max: 254 });
@@ -82,6 +84,7 @@ router.post("/verify-email", limitAuthAttempts, body("token").isString().matches
 router.post("/resend-verification", limitAuthAttempts, emailField(), validateRequest, handleResendVerification);
 router.post("/complete-registration", limitAuthAttempts, completionValidation, validateRequest, handleCompleteRegistration);
 router.post("/login", limitAuthAttempts, loginValidation, validateRequest, handleLogin);
+router.post("/logout", requireAuth, requireRole("client", "provider"), handleLogout);
 router.post("/admin-login/verify", limitAuthAttempts, [
   body("challengeToken").isString().matches(/^[a-f\d]{64}$/i),
   body("code").isString().matches(/^\d{6}$/),

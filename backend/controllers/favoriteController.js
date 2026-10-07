@@ -9,7 +9,7 @@ async function handleGetClientFavorites(req, res) {
       .sort({ createdAt: -1 })
       .populate({
         path: "providerId",
-        select: "_id fullName username professions bio city province barangay isVerified verificationStatus averageRating totalReviews profileImage tesdaCertificates",
+        select: "_id fullName username professions bio city province barangay isVerified verificationStatus averageRating totalReviews profileImage tesdaCertificates +lastActive +isOnline",
       });
 
     const availableFavorites = favorites.filter((favorite) => favorite.providerId);
@@ -31,6 +31,8 @@ async function handleGetClientFavorites(req, res) {
         averageRating: favorite.providerId.averageRating || 0,
         totalReviews: favorite.providerId.totalReviews || 0,
         profileImage: favorite.providerId.profileImage || "",
+        lastActive: favorite.providerId.lastActive || null,
+        isOnline: favorite.providerId.isOnline === true,
         tesdaCertificates: (favorite.providerId.tesdaCertificates || [])
           .filter((certificate) => certificate.status === "approved")
           .map((certificate) => ({

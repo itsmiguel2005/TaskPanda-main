@@ -260,6 +260,21 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    lastActive: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+    lastOfflineAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+    isOnline: {
+      type: Boolean,
+      default: false,
+      select: false,
+    },
     averageRating: {
       type: Number,
       min: 0,

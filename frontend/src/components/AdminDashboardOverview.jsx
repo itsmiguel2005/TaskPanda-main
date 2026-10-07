@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -121,7 +122,7 @@ export default function AdminDashboardOverview() {
     const controller = new AbortController();
     setIsLoading(true);
     setError("");
-    fetch("/api/admin/analytics", {
+    apiFetch("/api/admin/analytics", {
       headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal,
       cache: "no-store",

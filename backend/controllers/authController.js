@@ -158,14 +158,16 @@ async function issueOnboardingToken(userId) {
 
 async function issueAccountToken(userId) {
   const token = randomBytes(32).toString("hex");
+  const lastActive = new Date();
   await User.updateOne(
     { _id: userId },
     {
+      $set: { lastActive, lastOfflineAt: null, isOnline: true },
       $push: {
         accountTokens: {
           $each: [{
             tokenHash: hashToken(token),
-            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            expiresAt: new Date(lastActive.getTime() + 30 * 24 * 60 * 60 * 1000),
           }],
           $slice: -5,
         },
@@ -173,6 +175,28 @@ async function issueAccountToken(userId) {
     }
   );
   return token;
+}
+
+async function handleLogout(req, res) {
+  const token = String(req.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  if (!/^[a-f\d]{64}$/i.test(token)) {
+    return res.status(401).json({ message: "Authentication is required." });
+  }
+
+  try {
+    const loggedOutAt = new Date();
+    await User.updateOne(
+      { _id: req.user._id },
+      {
+        $pull: { accountTokens: { tokenHash: hashToken(token) } },
+        $set: { lastActive: loggedOutAt, lastOfflineAt: loggedOutAt, isOnline: false },
+      },
+    );
+    return res.json({ message: "Logged out successfully." });
+  } catch (error) {
+    console.error("Logout error:", error);
+    return res.status(500).json({ message: "Could not end this session cleanly." });
+  }
 }
 
 async function issueEmailVerification(user, { replaceExisting = false, appUrl = config.appUrl } = {}) {
@@ -1159,6 +1183,7 @@ module.exports = {
   handleResendVerification,
   handleCompleteRegistration,
   handleLogin,
+  handleLogout,
   handleVerifyAdminLogin,
   handleForgotPassword,
   handleResetPassword,

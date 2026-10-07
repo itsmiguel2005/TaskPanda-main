@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
@@ -48,7 +49,7 @@ export default function ClientRegisterPhone() {
         mobileNumber: normalizedMobileNumber,
         role: "client",
       };
-      const response = await fetch("/api/auth/complete-registration", {
+      const response = await apiFetch("/api/auth/complete-registration", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

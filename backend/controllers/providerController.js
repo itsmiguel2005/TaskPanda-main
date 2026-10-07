@@ -84,6 +84,8 @@ async function handleDiscoverProviders(req, res) {
                 _id: 1,
                 fullName: 1,
                 username: 1,
+                lastActive: 1,
+                isOnline: 1,
                 isVerified: 1,
                 verificationStatus: 1,
                 profileImage: 1,
@@ -142,7 +144,7 @@ async function handleGetProviderProfile(req, res) {
       isSuspended: mongoose.trusted({ $ne: true }),
       archivedAt: null,
     })
-      .select("fullName username profileImage professions bio isVerified verificationStatus averageRating totalReviews province city barangay tesdaCertificates")
+      .select("fullName username profileImage professions bio isVerified verificationStatus averageRating totalReviews province city barangay tesdaCertificates +lastActive +isOnline")
       .lean();
 
     if (!provider) return res.status(404).json({ message: "This provider could not be found." });
@@ -204,6 +206,8 @@ async function handleGetProviderProfile(req, res) {
         name: provider.fullName || provider.username || "Local provider",
         username: provider.username || "",
         profileImage: provider.profileImage || "",
+        lastActive: provider.lastActive || null,
+        isOnline: provider.isOnline === true,
         professions: provider.professions || [],
         bio: provider.bio || "",
         verified: provider.isVerified === true || provider.verificationStatus === "verified",

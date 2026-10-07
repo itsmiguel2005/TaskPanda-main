@@ -16,8 +16,8 @@ const {
 const MESSAGE_PAGE_SIZE = 50;
 
 const conversationPopulate = [
-  { path: "clientId", select: "fullName username email profileImage" },
-  { path: "providerId", select: "fullName username email professions profileImage" },
+  { path: "clientId", select: "fullName username email profileImage +lastActive +lastOfflineAt +isOnline" },
+  { path: "providerId", select: "fullName username email professions profileImage +lastActive +lastOfflineAt +isOnline" },
   { path: "bookingId", select: "repairDescription status serviceDate timeSlot estimatedDurationMinutes offeredPrice travelDistanceKm travelFee travelFeeBeforeDiscount travelFeeDiscount tipAmount paymentMethod cashPaidConfirmedAt cashReceivedConfirmedAt clientConfirmedCash providerConfirmedCash workCompletedAt settledAt cashReceipt completionNote completionPhotos completionSubmittedAt revisionRequests createdAt counterOffers clientRating clientReview clientReviewPhotos reviewedAt" },
 ];
 
@@ -33,6 +33,9 @@ function serializeConversation(conversation, role) {
     providerId: String(provider?._id || conversation.providerId),
     name: other?.fullName || other?.username || other?.email || (role === "client" ? "Provider" : "Client"),
     profileImage: other?.profileImage || "",
+    lastActive: other?.lastActive || null,
+    lastOfflineAt: other?.lastOfflineAt || null,
+    isOnline: other?.isOnline === true,
     cred: provider?.professions?.join(" · ") || "Service provider",
     task: booking?.repairDescription || "Service booking",
     bookingStatus: booking?.status || "",

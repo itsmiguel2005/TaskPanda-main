@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useEffect, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
@@ -110,7 +111,7 @@ export default function LoginPage() {
     if (errors.email || errors.password) return;
     setIsSubmitting(true);
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await apiFetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -179,7 +180,7 @@ export default function LoginPage() {
 
     setIsSubmitting(true);
     try {
-      const response = await fetch("/api/auth/admin-login/verify", {
+      const response = await apiFetch("/api/auth/admin-login/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ challengeToken: adminChallengeToken, code: adminOtp }),

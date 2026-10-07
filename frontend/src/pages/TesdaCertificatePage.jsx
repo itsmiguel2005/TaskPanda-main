@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
@@ -109,7 +110,7 @@ export default function TesdaCertificatePage() {
     formData.append("certificate", certificateFile);
 
     try {
-      const response = await fetch("/api/tesda-certificates", {
+      const response = await apiFetch("/api/tesda-certificates", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,

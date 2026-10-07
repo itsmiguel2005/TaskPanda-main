@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -13,6 +14,7 @@ import StatusChangeConfirmation from "./StatusChangeConfirmation.jsx";
 import { BookingCardSkeletonList, SkeletonBlock } from "./Skeletons.jsx";
 import ProviderProfileModal from "./ProviderProfileModal.jsx";
 import RequestBookingModal from "./RequestBookingModal.jsx";
+import UserOnlineStatus from "./UserOnlineStatus.jsx";
 import { PROFESSIONS } from "../utils/professions.js";
 
 export const categories = [
@@ -142,6 +144,8 @@ function DashboardProviderCard({
   name,
   profession,
   profileImage,
+  lastActive,
+  isOnline,
   rating,
   reviews,
   category,
@@ -162,8 +166,11 @@ function DashboardProviderCard({
       </div>
 
       <div className="flex h-11 shrink-0 items-center gap-2">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-900 text-sm font-bold text-white">
-          {profileImage ? <img src={profileImage} alt={`${name} profile`} className="h-full w-full object-cover" /> : name.charAt(0)}
+        <div className="relative h-11 w-11 shrink-0">
+          <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-slate-900 text-sm font-bold text-white">
+            {profileImage ? <img src={profileImage} alt={`${name} profile`} className="h-full w-full object-cover" /> : name.charAt(0)}
+          </div>
+          <UserOnlineStatus lastActive={lastActive} isOnline={isOnline} className="absolute -bottom-0.5 -right-0.5" />
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-bold text-slate-900">{name}</p>
@@ -379,7 +386,7 @@ export default function Dashboard() {
       if (!token) return;
       const requestId = ++latestRequest;
       try {
-        const response = await fetch("/api/client/favorites", {
+        const response = await apiFetch("/api/client/favorites", {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!response.ok) return;
@@ -401,8 +408,12 @@ export default function Dashboard() {
     };
 
     window.addEventListener(FAVORITES_SYNC_EVENT, handleFavoritesSync);
+    const presenceRefreshInterval = window.setInterval(() => {
+      void refreshFavoriteProviders();
+    }, 15_000);
     return () => {
       active = false;
+      window.clearInterval(presenceRefreshInterval);
       window.removeEventListener(FAVORITES_SYNC_EVENT, handleFavoritesSync);
     };
   }, [token]);
@@ -418,7 +429,7 @@ export default function Dashboard() {
 
     const loadFavorites = async () => {
       try {
-        const response = await fetch("/api/client/favorites", {
+        const response = await apiFetch("/api/client/favorites", {
           headers: { Authorization: `Bearer ${token}` },
         });
 
@@ -464,11 +475,11 @@ export default function Dashboard() {
 
     try {
       const response = isSaved
-        ? await fetch(`/api/client/favorites/${normalizedProviderId}`, {
+        ? await apiFetch(`/api/client/favorites/${normalizedProviderId}`, {
             method: "DELETE",
             headers: { Authorization: `Bearer ${token}` },
           })
-        : await fetch("/api/client/favorites", {
+        : await apiFetch("/api/client/favorites", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -535,7 +546,7 @@ export default function Dashboard() {
     });
 
     try {
-      const response = await fetch(`/api/providers?${params.toString()}`, { signal: controller.signal });
+      const response = await apiFetch(`/api/providers?${params.toString()}`, { signal: controller.signal });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "Could not load nearby providers.");
 
@@ -616,9 +627,13 @@ export default function Dashboard() {
     };
 
     window.addEventListener("taskpanda:data-sync", handleDataSync);
+    const presenceRefreshInterval = window.setInterval(() => {
+      void loadTopRatedProviders();
+    }, 15_000);
 
     return () => {
       window.clearTimeout(timeoutId);
+      window.clearInterval(presenceRefreshInterval);
       if (requestRef.current) {
         requestRef.current.abort();
         requestRef.current = null;
@@ -823,6 +838,8 @@ export default function Dashboard() {
                       name={pro.name}
                       profession={pro.cred}
                       profileImage={pro.profileImage}
+                      lastActive={pro.lastActive}
+                      isOnline={pro.isOnline}
                       rating={pro.rating}
                       reviews={pro.reviews}
                       category={pro.category}
@@ -914,6 +931,8 @@ export default function Dashboard() {
                       name={providerName}
                       profession={professions.join(" · ") || "Service provider"}
                       profileImage={provider.profileImage}
+                      lastActive={provider.lastActive}
+                      isOnline={provider.isOnline}
                       rating={rating}
                       reviews={reviews}
                       category={category}

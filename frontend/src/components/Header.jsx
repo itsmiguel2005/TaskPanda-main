@@ -1,7 +1,9 @@
+import { apiFetch } from "../services/api.js";
 import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { promptForPushPermission } from "../services/oneSignal.js";
+import UserOnlineStatus from "./UserOnlineStatus.jsx";
 
 const CONVERSATION_READ_EVENT = "taskpanda:conversation-read";
 
@@ -51,7 +53,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
 
   const markVerificationNotificationRead = async (notification) => {
     try {
-      const response = await fetch(`/api/v1/users/verification-notifications/${notification.notificationId}/read`, {
+      const response = await apiFetch(`/api/v1/users/verification-notifications/${notification.notificationId}/read`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -111,8 +113,8 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
       try {
         const headers = { Authorization: `Bearer ${token}` };
         const [activeResponse, archivedResponse] = await Promise.all([
-          fetch("/api/conversations", { headers }),
-          fetch("/api/conversations?includeArchived=true", { headers }),
+          apiFetch("/api/conversations", { headers }),
+          apiFetch("/api/conversations?includeArchived=true", { headers }),
         ]);
         if (!activeResponse.ok || !archivedResponse.ok) return;
         const [activeData, archivedData] = await Promise.all([
@@ -191,7 +193,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     };
     const loadVerificationNotifications = async () => {
       try {
-        const response = await fetch("/api/v1/users/verification-notifications", {
+        const response = await apiFetch("/api/v1/users/verification-notifications", {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         });
@@ -259,7 +261,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     let active = true;
     const loadBroadcasts = async () => {
       try {
-        const response = await fetch("/api/broadcasts", {
+        const response = await apiFetch("/api/broadcasts", {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         });
@@ -307,8 +309,8 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
       try {
         const headers = { Authorization: `Bearer ${token}` };
         const [rewardsResponse, notificationResponse] = await Promise.all([
-          fetch("/api/rewards", { headers }),
-          fetch("/api/rewards/notifications", { headers }),
+          apiFetch("/api/rewards", { headers }),
+          apiFetch("/api/rewards/notifications", { headers }),
         ]);
         if (!rewardsResponse.ok || !notificationResponse.ok) {
           throw new Error("Could not refresh rewards.");
@@ -351,7 +353,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
         if (!notification) return;
         shownIds.add(notification.id);
         setRewardToast(notification);
-        const readResponse = await fetch(`/api/rewards/notifications/${notification.id}/read`, {
+        const readResponse = await apiFetch(`/api/rewards/notifications/${notification.id}/read`, {
           method: "POST",
           headers,
         });
@@ -656,9 +658,12 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                 aria-expanded={dropdownOpen}
               >
                 <span className="hidden whitespace-nowrap text-gray-600 2xl:inline">Good morning, {firstNameOnly}!</span>
-                <div className={`avatar-shell h-8 w-8 border border-slate-200 bg-slate-100 text-sm font-bold ${user?.profileImage ? "bg-transparent" : "bg-primary-100 text-primary-700"}`}>
-                  {user?.profileImage ? <img src={user.profileImage} alt={`${displayName} profile`} className="avatar-image" /> : displayName.charAt(0).toUpperCase()}
-                </div>
+                <span className="relative inline-flex h-8 w-8 shrink-0">
+                  <span className={`avatar-shell h-8 w-8 border border-slate-200 bg-slate-100 text-sm font-bold ${user?.profileImage ? "bg-transparent" : "bg-primary-100 text-primary-700"}`}>
+                    {user?.profileImage ? <img src={user.profileImage} alt={`${displayName} profile`} className="avatar-image" /> : displayName.charAt(0).toUpperCase()}
+                  </span>
+                  {isLoggedIn && <UserOnlineStatus lastActive={user?.lastActive} isOnline className="absolute -bottom-0.5 -right-0.5 z-10" />}
+                </span>
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   viewBox="0 0 24 24"

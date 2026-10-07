@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 import { clearOneSignalIdentity, identifyOneSignalUser, initializeOneSignal } from "../services/oneSignal.js";
 
@@ -80,6 +81,15 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
+    if (token && ["client", "provider"].includes(role)) {
+      void apiFetch("/api/auth/logout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        keepalive: true,
+      }).catch((error) => {
+        console.warn("Server logout could not be confirmed:", error.message);
+      });
+    }
     setIsLoggedIn(false);
     setRole(null);
     setUser(null);
@@ -88,7 +98,7 @@ export function AuthProvider({ children }) {
     isVerifiedRef.current = false;
     localStorage.removeItem("taskpanda_auth");
     sessionStorage.removeItem("taskpanda_auth");
-  }, []);
+  }, [role, token]);
 
   const verify = useCallback((verifiedData) => {
     const newVerified = verifiedData?.isVerified === true;
@@ -132,7 +142,7 @@ export function AuthProvider({ children }) {
   const refreshProfile = useCallback(async () => {
     if (!token) return false;
     try {
-      const response = await fetch("/api/profile", {
+      const response = await apiFetch("/api/profile", {
         cache: "no-store",
         headers: { Authorization: `Bearer ${token}` },
       });

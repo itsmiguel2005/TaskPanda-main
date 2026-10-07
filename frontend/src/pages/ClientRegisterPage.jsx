@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
@@ -78,7 +79,7 @@ export default function ClientRegisterPage() {
     const timer = setTimeout(async () => {
       setAvailability({ field: "", message: "", checking: true });
       try {
-        const response = await fetch("/api/auth/check-registration", {
+        const response = await apiFetch("/api/auth/check-registration", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(lookup),
@@ -117,7 +118,7 @@ export default function ClientRegisterPage() {
 
     setIsChecking(true);
     try {
-      const response = await fetch("/api/auth/check-registration", {
+      const response = await apiFetch("/api/auth/check-registration", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -140,7 +141,7 @@ export default function ClientRegisterPage() {
 
     setIsChecking(true);
     try {
-      const response = await fetch("/api/auth/register", {
+      const response = await apiFetch("/api/auth/register", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },

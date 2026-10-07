@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { SkeletonBlock } from "./Skeletons.jsx";
@@ -24,7 +25,7 @@ export default function MessagePhoto({
     let objectUrl = "";
     setSource("");
     setLoadError(false);
-    fetch(photo, { headers: requestHeaders, signal: controller.signal })
+    apiFetch(photo, { headers: requestHeaders, signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) {
           const data = await response.json().catch(() => ({}));

@@ -1,6 +1,8 @@
+import { apiFetch } from "../services/api.js";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ProviderStreak from "./ProviderStreak.jsx";
+import UserOnlineStatus from "./UserOnlineStatus.jsx";
 
 function StarRating({ rating }) {
   return (
@@ -82,21 +84,35 @@ export default function ProviderProfileModal({
   useEffect(() => {
     if (!providerId) return undefined;
     const controller = new AbortController();
+    let active = true;
     setProfile(null);
     setError("");
-    fetch(`/api/providers/${encodeURIComponent(providerId)}/profile`, { signal: controller.signal })
-      .then(async (response) => {
+
+    const loadProfile = async () => {
+      try {
+        const response = await apiFetch(`/api/providers/${encodeURIComponent(providerId)}/profile`, { signal: controller.signal });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.message || "Could not load this provider's profile.");
         if (!data.provider || !Array.isArray(data.provider.reviews)) {
           throw new Error("The server returned an incomplete provider profile. Refresh and try again.");
         }
+        if (!active) return;
         setProfile(data.provider);
-      })
-      .catch((requestError) => {
-        if (requestError.name !== "AbortError") setError(requestError.message || "Could not load this provider's profile.");
-      });
-    return () => controller.abort();
+        setError("");
+      } catch (requestError) {
+        if (requestError.name !== "AbortError" && active) {
+          setError(requestError.message || "Could not load this provider's profile.");
+        }
+      }
+    };
+
+    void loadProfile();
+    const presenceRefreshInterval = window.setInterval(() => void loadProfile(), 15_000);
+    return () => {
+      active = false;
+      window.clearInterval(presenceRefreshInterval);
+      controller.abort();
+    };
   }, [providerId, retry]);
 
   useEffect(() => {
@@ -146,8 +162,11 @@ export default function ProviderProfileModal({
         className="dashboard-panel flex max-h-[min(90dvh,820px)] w-full max-w-2xl flex-col overflow-hidden shadow-[0_24px_80px_rgba(15,23,42,0.28)]"
       >
         <header className="flex shrink-0 items-start gap-4 border-b border-sky-100 px-5 py-5 sm:px-7">
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-sky-100 bg-sky-50 text-lg font-bold text-blue-950 sm:h-[4.5rem] sm:w-[4.5rem]">
-            {image ? <img src={image} alt={`${name} profile`} className="h-full w-full object-cover" /> : name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}
+          <div className="relative h-16 w-16 shrink-0 sm:h-[4.5rem] sm:w-[4.5rem]">
+            <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full border border-sky-100 bg-sky-50 text-lg font-bold text-blue-950">
+              {image ? <img src={image} alt={`${name} profile`} className="h-full w-full object-cover" /> : name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}
+            </div>
+            <UserOnlineStatus lastActive={profile?.lastActive || provider?.lastActive} isOnline={profile?.isOnline ?? provider?.isOnline} className="absolute bottom-0 right-0 h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1 pt-1">
             <h2 id="provider-profile-title" className="truncate text-xl font-bold tracking-tight text-slate-950 sm:text-2xl">{name}</h2>

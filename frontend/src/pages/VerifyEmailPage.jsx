@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
@@ -45,7 +46,7 @@ export default function VerifyEmailPage() {
 
   const continueRegistrationOnThisBrowser = useCallback(async () => {
     try {
-      const response = await fetch("/api/auth/registration-status", {
+      const response = await apiFetch("/api/auth/registration-status", {
         credentials: "same-origin",
         cache: "no-store",
       });
@@ -76,7 +77,7 @@ export default function VerifyEmailPage() {
   useEffect(() => {
     if (!token || verificationStarted.current) return;
     verificationStarted.current = true;
-    fetch("/api/auth/verify-email", {
+    apiFetch("/api/auth/verify-email", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token }),
@@ -106,7 +107,7 @@ export default function VerifyEmailPage() {
       if (checking) return;
       checking = true;
       try {
-        const response = await fetch("/api/auth/registration-status", {
+        const response = await apiFetch("/api/auth/registration-status", {
           credentials: "same-origin",
           cache: "no-store",
         });
@@ -141,7 +142,7 @@ export default function VerifyEmailPage() {
     setResumeCodeError("");
     setIsResuming(true);
     try {
-      const response = await fetch("/api/auth/registration-resume", {
+      const response = await apiFetch("/api/auth/registration-resume", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
@@ -168,7 +169,7 @@ export default function VerifyEmailPage() {
     setMessage("");
     setIsResending(true);
     try {
-      const response = await fetch("/api/auth/resend-verification", {
+      const response = await apiFetch("/api/auth/resend-verification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),

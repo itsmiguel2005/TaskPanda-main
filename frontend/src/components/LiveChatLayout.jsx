@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -10,6 +11,7 @@ import MessagePhoto from "./MessagePhoto.jsx";
 import { ConversationSkeletonList, MessageSkeletonList } from "./Skeletons.jsx";
 import { canRequestCancellation, getCancellationLockMessage } from "../utils/bookingCancellation.js";
 import { DEFAULT_ESTIMATED_DURATION_MINUTES } from "../utils/bookingDuration.js";
+import UserOnlineStatus, { UserLastActive } from "./UserOnlineStatus.jsx";
 
 const MAX_MESSAGE_INPUT_HEIGHT = 144;
 const CONVERSATION_READ_EVENT = "taskpanda:conversation-read";
@@ -116,12 +118,15 @@ function getInitial(name) {
   return String(name || "?").trim().charAt(0).toUpperCase() || "?";
 }
 
-function ConversationAvatar({ conversation, size }) {
+function ConversationAvatar({ conversation, size, showPresence = false }) {
   return (
-    <span className={`flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full ${conversation.profileImage ? "bg-white" : "bg-primary-100 text-primary-700"} text-sm font-bold`}>
-      {conversation.profileImage ? (
-        <img src={conversation.profileImage} alt={`${conversation.name} profile`} className="h-full w-full object-cover" />
-      ) : getInitial(conversation.name)}
+    <span className={`relative flex ${size} shrink-0 items-center justify-center`}>
+      <span className={`flex h-full w-full items-center justify-center overflow-hidden rounded-full ${conversation.profileImage ? "bg-white" : "bg-primary-100 text-primary-700"} text-sm font-bold`}>
+        {conversation.profileImage ? (
+          <img src={conversation.profileImage} alt={`${conversation.name} profile`} className="h-full w-full object-cover" />
+        ) : getInitial(conversation.name)}
+      </span>
+      {showPresence && <UserOnlineStatus lastActive={conversation.lastActive} isOnline={conversation.isOnline} className="absolute -bottom-0.5 -right-0.5" />}
     </span>
   );
 }
@@ -191,7 +196,7 @@ async function uploadChatPhoto(file, conversationId, requestHeaders) {
   const formData = new FormData();
   formData.append("conversationId", conversationId);
   formData.append("photo", file);
-  const response = await fetch("/api/messages/photos", {
+  const response = await apiFetch("/api/messages/photos", {
     method: "POST",
     headers: requestHeaders,
     body: formData,
@@ -273,7 +278,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const sendCounterTypingUpdate = useCallback(async (typing, conversationId = selectedIdRef.current, keepalive = false) => {
     if (!conversationId || !token) return;
     try {
-      const response = await fetch(`/api/conversations/${conversationId}/typing`, {
+      const response = await apiFetch(`/api/conversations/${conversationId}/typing`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...requestHeaders },
         body: JSON.stringify({ typing }),
@@ -338,7 +343,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     if (!token || authenticatedRole !== role) return;
     try {
       const params = new URLSearchParams({ includeArchived: String(showArchived) });
-      const response = await fetch(`/api/conversations?${params.toString()}`, { headers: requestHeaders });
+      const response = await apiFetch(`/api/conversations?${params.toString()}`, { headers: requestHeaders });
       const data = await response.json().catch(() => ({}));
       console.log("Fetched conversations:", data);
       if (!response.ok) throw new Error(data.message || "Could not load conversations.");
@@ -366,7 +371,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     if (!bookingId || !token || authenticatedRole !== role || openingBookingRef.current === bookingId) return;
     openingBookingRef.current = bookingId;
     setOpeningBooking(true);
-    fetch("/api/conversations", {
+    apiFetch("/api/conversations", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...requestHeaders },
       body: JSON.stringify({ bookingId }),
@@ -420,7 +425,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     const controller = new AbortController();
     const loadMessages = async (signal) => {
       try {
-        const response = await fetch(`/api/messages/${selectedId}`, { headers: requestHeaders, signal });
+        const response = await apiFetch(`/api/messages/${selectedId}`, { headers: requestHeaders, signal });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.message || "Could not load messages.");
         if (active) {
@@ -637,7 +642,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     setIsLoadingOlderMessages(true);
     try {
       const params = new URLSearchParams({ before: oldestMessage.createdAt, beforeId: oldestMessage.id });
-      const response = await fetch(`/api/messages/${requestedConversationId}?${params}`, { headers: requestHeaders });
+      const response = await apiFetch(`/api/messages/${requestedConversationId}?${params}`, { headers: requestHeaders });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "Could not load older messages.");
       if (selectedIdRef.current !== requestedConversationId) return;
@@ -670,7 +675,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
         const uploadedPhoto = await uploadChatPhoto(photo, selectedId, requestHeaders);
         uploadedPublicIds.push(uploadedPhoto.publicId);
       }
-      const response = await fetch("/api/messages", {
+      const response = await apiFetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...requestHeaders },
         body: JSON.stringify({ conversationId: selectedId, text, photos: uploadedPublicIds.map((publicId) => ({ publicId })) }),
@@ -684,7 +689,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
       await loadConversations();
     } catch (requestError) {
       if (uploadedPublicIds.length) {
-        fetch("/api/messages/photos/cleanup", {
+        apiFetch("/api/messages/photos/cleanup", {
           method: "POST",
           headers: { "Content-Type": "application/json", ...requestHeaders },
           body: JSON.stringify({ conversationId: selectedId, publicIds: uploadedPublicIds }),
@@ -702,7 +707,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     setError("");
     try {
       const confirmation = role === "client" ? "cash_paid" : "cash_received";
-      const response = await fetch(`/api/conversations/${selectedConversation.id}/payment`, {
+      const response = await apiFetch(`/api/conversations/${selectedConversation.id}/payment`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...requestHeaders },
         body: JSON.stringify({ confirmation }),
@@ -713,7 +718,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
       setConversations((current) => current
         .filter((conversation) => conversation && typeof conversation.id === "string")
         .map((conversation) => conversation.id === data.conversation.id ? data.conversation : conversation));
-      const messagesResponse = await fetch(`/api/messages/${selectedConversation.id}`, { headers: requestHeaders });
+      const messagesResponse = await apiFetch(`/api/messages/${selectedConversation.id}`, { headers: requestHeaders });
       const messagesData = await messagesResponse.json().catch(() => ({}));
       if (messagesResponse.ok) setMessages((current) => mergeMessages(current, messagesData.messages || []));
     } catch (requestError) {
@@ -727,7 +732,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     setIsActionSubmitting(true);
     setActionError("");
     try {
-      const response = await fetch(url, {
+      const response = await apiFetch(url, {
         method,
         headers: { "Content-Type": "application/json", ...requestHeaders },
         body: JSON.stringify(body),
@@ -747,7 +752,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const handleBookingStatusAction = async (status, action) => {
     if (!selectedConversation) throw new Error("Choose a booking first.");
     try {
-      const response = await fetch(`/api/bookings/${selectedConversation.bookingId}/status`, {
+      const response = await apiFetch(`/api/bookings/${selectedConversation.bookingId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...requestHeaders },
         body: JSON.stringify({ status, ...(action ? { action } : {}) }),
@@ -768,7 +773,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
       throw new Error(getCancellationLockMessage(selectedConversation) || "Cancellation is only available while the booking is pending or confirmed.");
     }
     if (clientCancellationNeedsReason && !cancelReason.trim()) throw new Error("Add a brief cancellation reason to continue.");
-    const response = await fetch(`/api/bookings/${selectedConversation.bookingId}/cancel`, {
+    const response = await apiFetch(`/api/bookings/${selectedConversation.bookingId}/cancel`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...requestHeaders },
       body: JSON.stringify({ action: "request", reason: cancelReason.trim() }),
@@ -790,7 +795,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
       formData.append("rating", String(chatReviewRating));
       formData.append("review", chatReviewText.trim());
       chatReviewPhotos.forEach((photo) => formData.append("photos", photo));
-      const response = await fetch(`/api/bookings/${selectedConversation.bookingId}/rate`, {
+      const response = await apiFetch(`/api/bookings/${selectedConversation.bookingId}/rate`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -849,7 +854,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     setActionMessage(null);
     if (action === "reject") {
       try {
-        const response = await fetch(`/api/messages/${selectedConversation.id}`, { headers: requestHeaders });
+        const response = await apiFetch(`/api/messages/${selectedConversation.id}`, { headers: requestHeaders });
         const messagesData = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(messagesData.message || "Could not refresh the conversation.");
         wasAtBottomRef.current = true;
@@ -879,7 +884,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     setIsActionSubmitting(true);
     setError("");
     try {
-      const response = await fetch(`/api/bookings/${bookingId}/cancel`, {
+      const response = await apiFetch(`/api/bookings/${bookingId}/cancel`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...requestHeaders },
         body: JSON.stringify({ action }),
@@ -887,7 +892,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "Could not respond to the cancellation request.");
       await loadConversations();
-      const messagesResponse = await fetch(`/api/messages/${selectedConversation.id}`, { headers: requestHeaders });
+      const messagesResponse = await apiFetch(`/api/messages/${selectedConversation.id}`, { headers: requestHeaders });
       const messagesData = await messagesResponse.json().catch(() => ({}));
       if (!messagesResponse.ok) throw new Error(messagesData.message || "Cancellation updated, but the chat could not be refreshed.");
       setMessages((current) => mergeMessages(current, messagesData.messages || []));
@@ -918,7 +923,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     setIsActionSubmitting(true);
     setActionError("");
     try {
-      const response = await fetch(`/api/bookings/${selectedConversation.bookingId}/revisions`, {
+      const response = await apiFetch(`/api/bookings/${selectedConversation.bookingId}/revisions`, {
         method: "POST",
         headers: requestHeaders,
         body: formData,
@@ -944,7 +949,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     setIsActionSubmitting(true);
     setActionError("");
     try {
-      const response = await fetch(`/api/bookings/${selectedConversation.bookingId}/revisions/${latestRevision.id}`, {
+      const response = await apiFetch(`/api/bookings/${selectedConversation.bookingId}/revisions/${latestRevision.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...requestHeaders },
         body: JSON.stringify({ action }),
@@ -967,7 +972,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     const formData = new FormData();
     formData.append("completionNote", completionNote);
     (photos || []).forEach((photo) => formData.append("photos", photo));
-    const response = await fetch(`/api/bookings/${selectedConversation.bookingId}/completion`, {
+    const response = await apiFetch(`/api/bookings/${selectedConversation.bookingId}/completion`, {
       method: "POST",
       headers: requestHeaders,
       body: formData,
@@ -986,7 +991,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     const formData = new FormData();
     formData.append("completionNote", completionNote);
     (photos || []).forEach((photo) => formData.append("photos", photo));
-    const response = await fetch(`/api/bookings/${selectedConversation.bookingId}/completion`, {
+    const response = await apiFetch(`/api/bookings/${selectedConversation.bookingId}/completion`, {
       method: "POST",
       headers: requestHeaders,
       body: formData,
@@ -1008,7 +1013,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     archivingConversationIdsRef.current.add(conversation.id);
     setArchivingConversationIds((current) => new Set(current).add(conversation.id));
     try {
-      const response = await fetch(`/api/conversations/${conversation.id}/archive`, {
+      const response = await apiFetch(`/api/conversations/${conversation.id}/archive`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...requestHeaders },
         body: JSON.stringify({ action: "toggle", archived: requestedArchiveState }),
@@ -1121,7 +1126,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
               return (
               <div key={conversation.id} className={`content-arrive mb-1 flex items-center rounded-xl border pr-2 transition-colors ${selectedId === conversation.id ? "border-sky-200 bg-white shadow-[0_6px_18px_rgba(15,23,42,0.06)]" : "border-transparent hover:border-sky-100 hover:bg-white"}`}>
                 <button onClick={() => selectConversation(conversation.id)} aria-current={selectedId === conversation.id ? "true" : undefined} className="dashboard-focus flex min-w-0 flex-1 items-center gap-3 rounded-xl px-3 py-3.5 text-left">
-                  <ConversationAvatar conversation={conversation} size="h-11 w-11" />
+                  <ConversationAvatar conversation={conversation} size="h-11 w-11" showPresence />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center justify-between gap-2">
                       <span className="truncate text-sm font-bold text-slate-900">{conversation.name}</span>
@@ -1157,10 +1162,11 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                 <button onClick={() => { setSelectedId(null); setSearchParams({}, { replace: true }); }} className="dashboard-focus mr-0.5 rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 md:hidden" aria-label="Back to conversations">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5"><path strokeLinecap="round" strokeLinejoin="round" d="m15 18-6-6 6-6" /></svg>
                 </button>
-                <ConversationAvatar conversation={selectedConversation} size="h-10 w-10 ring-2 ring-sky-100" />
+                <ConversationAvatar conversation={selectedConversation} size="h-10 w-10 ring-2 ring-sky-100" showPresence />
                 <span className="min-w-0 flex-1">
                   <span className="block max-w-50 truncate text-sm font-bold text-slate-900">{selectedConversation.name}</span>
                   <span className="block max-w-50 truncate text-xs text-slate-600">{role === "client" ? selectedConversation.cred : otherRoleLabel}</span>
+                  <UserLastActive lastActive={selectedConversation.lastActive} lastOfflineAt={selectedConversation.lastOfflineAt} isOnline={selectedConversation.isOnline} />
                 </span>
                 <span className="hidden max-w-45 truncate text-right text-xs text-slate-600 lg:block">{selectedConversation.task}</span>
                 <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold ${getStatusBadgeClass(selectedConversation.bookingStatus)}`}>

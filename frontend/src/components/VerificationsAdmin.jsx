@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -111,7 +112,7 @@ export default function VerificationsAdmin() {
           ? [["certificate", viewing.certificateUrl]]
           : [["front", viewing.idFrontUrl], ["back", viewing.idBackUrl]];
         const sides = await Promise.all(documentFields.map(async ([side, url]) => {
-          const response = await fetch(url, {
+          const response = await apiFetch(url, {
             headers: { Authorization: `Bearer ${token}` },
             cache: "no-store",
             signal: controller.signal,

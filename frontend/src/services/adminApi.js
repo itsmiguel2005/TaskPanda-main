@@ -1,5 +1,6 @@
+import { apiFetch } from "./api.js";
 export async function adminRequest(path, token, options = {}) {
-  const response = await fetch(path, {
+  const response = await apiFetch(path, {
     ...options,
     headers: {
       ...(options.body ? { "Content-Type": "application/json" } : {}),

@@ -1,3 +1,4 @@
+import { apiFetch } from "../services/api.js";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
@@ -27,7 +28,7 @@ export default function WorkerRegisterPhone() {
       const [step1, name, location, dob] = stored.map((value) => JSON.parse(value));
       setIsSubmitting(true);
       const { password, ...accountData } = step1;
-      const response = await fetch("/api/auth/complete-registration", {
+      const response = await apiFetch("/api/auth/complete-registration", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
