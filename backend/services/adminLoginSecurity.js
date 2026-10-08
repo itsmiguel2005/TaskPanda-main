@@ -32,14 +32,14 @@ async function consumeAdminRateLimit(scope, identity, limit, windowMs) {
     record = await AdminAuthRateLimit.findOneAndUpdate(
       { key },
       { $inc: { count: 1 }, $setOnInsert: { key, expiresAt } },
-      { new: true, upsert: true }
+      { returnDocument: "after", upsert: true }
     );
   } catch (error) {
     if (error.code !== 11000) throw error;
     record = await AdminAuthRateLimit.findOneAndUpdate(
       { key },
       { $inc: { count: 1 } },
-      { new: true }
+      { returnDocument: "after" }
     );
     if (!record) throw error;
   }

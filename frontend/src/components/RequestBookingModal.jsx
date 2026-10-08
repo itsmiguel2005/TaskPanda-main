@@ -202,10 +202,12 @@ function CalendarPicker({ selectedDate, onSelect, onClose }) {
 export default function RequestBookingModal({ provider, onClose, onSubmit, initialValues = {} }) {
   const navigate = useNavigate();
   const { token, user } = useAuth();
+  const initialDate = initialValues.date || "";
+  const initialTime = initialValues.time || "";
   const [taskDescription, setTaskDescription] = useState(initialValues.task || "");
   const [step, setStep] = useState(1);
-  const [selectedDate, setSelectedDate] = useState("");
-  const [selectedTime, setSelectedTime] = useState("");
+  const [selectedDate, setSelectedDate] = useState(initialDate);
+  const [selectedTime, setSelectedTime] = useState(initialTime);
   const [bookedSlots, setBookedSlots] = useState([]);
   const [availabilityStatus, setAvailabilityStatus] = useState("loading");
   const [availabilityRetry, setAvailabilityRetry] = useState(0);
@@ -237,6 +239,10 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [photoPreviews, setPhotoPreviews] = useState([]);
   const fileInputRef = useRef(null);
+  useEffect(() => {
+    setSelectedDate(initialDate);
+    setSelectedTime(initialTime);
+  }, [provider?._id, initialDate, initialTime]);
   const estimatedDurationMinutes = Number(duration);
   const durationIsValid = Number.isInteger(estimatedDurationMinutes)
     && estimatedDurationMinutes >= MIN_ESTIMATED_DURATION_MINUTES

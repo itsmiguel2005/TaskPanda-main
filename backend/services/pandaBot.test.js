@@ -8,12 +8,28 @@ const {
   buildTopRatedRecommendations,
   buildTopRatedEmptyResponse,
   buildNearbyProviderPipeline,
+  addTravelFeeEstimates,
+  findFavoriteNameMatches,
+  findProviderChoiceMatches,
+  isFavoriteProviderListRequest,
+  buildFavoriteRecommendations,
+  findProviderNameMatches,
+  getRecentContextProviderIds,
+  getRecentContextRequestedDate,
+  getProviderNameSearchTerms,
+  isFavoriteReference,
+  isProviderAvailabilityRequest,
+  isAvailabilityDateFollowUp,
+  isProviderChoiceFollowUp,
+  getAvailableTimeSlots,
+  getPhilippineDateOffset,
   findRequestedProfession,
   isProviderRecommendationRequest,
   isTopRatedRequest,
   normalizeCoordinates,
   normalizeUserLocation,
   parsePandaBotResponse,
+  parseRequestedServiceDate,
   selectProvidersForRequest,
 } = require("./pandaBot");
 
@@ -65,6 +81,170 @@ test("nearby provider pipelines use a five-kilometer radius without city filters
   assert.equal(newGeoNear.query.averageRating.$in.includes(0), true);
   assert.equal(newGeoNear.query.totalReviews.$in.includes(0), true);
   assert.equal(newPipeline[2].$limit, 2);
+  assert.equal(reviewedPipeline[3].$project.distanceKm.$round[1], 2);
+});
+
+test("calculates provider travel estimates using the configured booking fare rules", () => {
+  const enriched = addTravelFeeEstimates([
+    { _id: "provider", distanceKm: 3.5 },
+  ], { travelBaseFee: 20, travelFeePerKm: 10 });
+  assert.equal(enriched[0].estimatedTravelFee, 35);
+});
+
+test("parses booking dates using Philippine local time", () => {
+  const now = new Date("2026-10-08T16:00:00.000Z");
+  assert.equal(getPhilippineDateOffset(0, now), "2026-10-09");
+  assert.equal(getPhilippineDateOffset(1, now), "2026-10-10");
+  assert.equal(parseRequestedServiceDate("Can Mariel come tomorrow?", now), "2026-10-10");
+  assert.equal(parseRequestedServiceDate("Check his availability tommrow", now), "2026-10-10");
+  assert.equal(parseRequestedServiceDate("Check availability tommorow", now), "2026-10-10");
+  assert.equal(parseRequestedServiceDate("how about for october 10?", now), "2026-10-10");
+  assert.equal(parseRequestedServiceDate("check for Oct. 10th", now), "2026-10-10");
+  assert.equal(parseRequestedServiceDate("October 10, 2026", now), "2026-10-10");
+  assert.equal(parseRequestedServiceDate("October 40", now), "");
+  assert.equal(parseRequestedServiceDate("October 7", now), "2027-10-07");
+  assert.equal(parseRequestedServiceDate("Can Mariel come on 2026-10-12?", now), "2026-10-12");
+  assert.equal(parseRequestedServiceDate("When can she come?", now), "");
+});
+
+test("resolves provider names from the caller's favorites by the saved provider record", () => {
+  const savedFavorites = [
+    { _id: "favorite-account", fullName: "Mariel Estrada Estrada Calilim" },
+  ];
+  const sameNameNotFavorited = { _id: "other-account", fullName: "Mariel Estrada Calilim" };
+  assert.deepEqual(
+    findFavoriteNameMatches(savedFavorites, "Can you check Mariel in my favourites tomorrow?").map(({ _id }) => _id),
+    ["favorite-account"],
+  );
+  assert.deepEqual(
+    findFavoriteNameMatches([...savedFavorites, sameNameNotFavorited], "Can you check Mariel Estrada Calilim in my favorites?").map(({ _id }) => _id),
+    ["other-account"],
+  );
+});
+
+test("matches an abbreviated provider name in an availability request without requiring a full name", () => {
+  const providers = [
+    { _id: "mariel", fullName: "Mariel Estrada Estrada Calilim" },
+    { _id: "mariel-short", fullName: "Mariel Estrada Calilim" },
+    { _id: "maria", fullName: "Maria Estrada Santos" },
+  ];
+  const message = "check tomorrow October 9 availability provider named Mariel Estrada";
+
+  assert.deepEqual(getProviderNameSearchTerms(message), ["mariel", "estrada"]);
+  assert.deepEqual(findProviderNameMatches(providers, message).map(({ _id }) => _id), ["mariel", "mariel-short"]);
+  assert.deepEqual(
+    findProviderNameMatches(providers, "check mariel estrada estrada calilim availability tomorrow").map(({ _id }) => _id),
+    ["mariel"],
+  );
+  assert.deepEqual(findProviderNameMatches(providers, "What time can I book Mariel tomorrow?").map(({ _id }) => _id), ["mariel", "mariel-short"]);
+  assert.deepEqual(getProviderNameSearchTerms("can you check its availability tommrow"), []);
+  assert.deepEqual(getProviderNameSearchTerms("how about for october 10?"), []);
+});
+
+test("uses the most recent provider card as context for pronoun availability follow-ups", () => {
+  const history = [
+    { role: "user", providerIds: [] },
+    { role: "assistant", providerIds: ["provider-from-favorite-card"] },
+    { role: "user", providerIds: [] },
+    { role: "assistant", providerIds: [] },
+  ];
+  assert.deepEqual(getRecentContextProviderIds(history), ["provider-from-favorite-card"]);
+  assert.deepEqual(
+    getRecentContextProviderIds([{ role: "assistant", contextProviderIds: ["choice-1", "choice-2"] }]),
+    ["choice-1", "choice-2"],
+  );
+  assert.equal(getRecentContextRequestedDate([
+    { role: "assistant", contextRequestedDate: "2026-10-10" },
+    { role: "assistant", contextRequestedDate: "" },
+  ]), "2026-10-10");
+  assert.equal(getRecentContextRequestedDate([{ role: "assistant", contextRequestedDate: "tomorrow" }]), "");
+  assert.equal(getRecentContextRequestedDate([{ role: "assistant", contextRequestedDate: "2026-99-99" }]), "");
+  assert.deepEqual(getRecentContextProviderIds([{ role: "assistant", providerIds: [] }]), []);
+  assert.equal(isAvailabilityDateFollowUp("how about for October 10?", true, new Date("2026-10-08T16:00:00.000Z")), true);
+  assert.equal(isAvailabilityDateFollowUp("how about for October 10?", false, new Date("2026-10-08T16:00:00.000Z")), false);
+  assert.equal(isAvailabilityDateFollowUp("tell me about October 10", true, new Date("2026-10-08T16:00:00.000Z")), false);
+  assert.equal(isProviderChoiceFollowUp("the aerospace engineer", true), true);
+  assert.equal(isProviderChoiceFollowUp("how do bamboo stamps work", true), false);
+  assert.equal(isProviderChoiceFollowUp("the aerospace engineer", false), false);
+});
+
+test("disambiguates provider choices by profession or location", () => {
+  const providers = [
+    { _id: "painter", fullName: "Mariel Estrada Calilim", professions: ["Painter"], city: "Dagupan" },
+    { _id: "engineer", fullName: "Mariel Estrada Estrada Calilim", professions: ["Aerospace Engineer"], city: "Calasiao" },
+  ];
+  assert.deepEqual(findProviderChoiceMatches(providers, "the aerospace engineer").map(({ _id }) => _id), ["engineer"]);
+  assert.deepEqual(findProviderChoiceMatches(providers, "the Dagupan provider").map(({ _id }) => _id), ["painter"]);
+});
+
+test("recognizes favorite-list questions and builds cards from the caller's saved providers", () => {
+  const savedProviders = [{
+    _id: "saved-mariel",
+    fullName: "Mariel Estrada Estrada Calilim",
+    professions: ["Aerospace Engineer"],
+    averageRating: 4.9,
+    totalReviews: 8,
+    city: "Calasiao",
+    province: "Pangasinan",
+    isFavorite: true,
+  }];
+
+  assert.equal(isFavoriteProviderListRequest("who is the providers in my favourites"), true);
+  assert.equal(isFavoriteProviderListRequest("show my favorite providers"), true);
+  assert.equal(isFavoriteProviderListRequest("who is my saved providers?"), true);
+  assert.equal(isFavoriteProviderListRequest("what providers did I save?"), true);
+  assert.equal(isFavoriteProviderListRequest("show my bookmarked pros"), true);
+  assert.equal(isFavoriteProviderListRequest("list the providers I liked"), true);
+  assert.equal(isFavoriteReference("my saved provider"), true);
+  assert.equal(isFavoriteProviderListRequest("how do bamboo stamps work"), false);
+  assert.deepEqual(buildFavoriteRecommendations(savedProviders), {
+    type: "recommendation_cards",
+    intro: "🐼 Here is the provider in your favourites:",
+    providers: [{
+      providerId: "saved-mariel",
+      name: "Mariel Estrada Estrada Calilim",
+      category: "Aerospace Engineer",
+      rating: 4.9,
+      reviewCount: 8,
+      isNew: false,
+      isFavorite: true,
+      location: "Calasiao, Pangasinan",
+    }],
+  });
+  assert.match(buildFavoriteRecommendations([]).response, /don’t have any active providers saved/i);
+});
+
+test("recognizes common availability synonyms and follow-up phrasing", () => {
+  for (const message of [
+    "Is Mariel free tomorrow?",
+    "When is Mariel open?",
+    "What is her schedule tomorrow?",
+    "Can I book Mariel tomorrow?",
+    "Is she working tomorrow?",
+    "Check his availability tomorrow",
+    "Can you check its availability tomorrow?",
+  ]) {
+    assert.equal(isProviderAvailabilityRequest(message), true, message);
+    assert.equal(isProviderRecommendationRequest(message), true, message);
+  }
+});
+
+test("availability uses the same 60-minute schedule-conflict rules as booking", () => {
+  const available = getAvailableTimeSlots({
+    serviceDate: "2026-10-10",
+    serviceGeoLocation: { type: "Point", coordinates: [120.596, 16.043] },
+    travelDistanceKm: 2,
+    bookings: [{
+      _id: "busy",
+      serviceDate: "2026-10-10T00:00:00.000Z",
+      timeSlot: "9:00 AM",
+      estimatedDurationMinutes: 60,
+      serviceGeoLocation: { type: "Point", coordinates: [120.596, 16.043] },
+    }],
+    now: new Date("2026-10-09T02:00:00.000Z"),
+  });
+  assert.equal(available.includes("9:00 AM"), false);
+  assert.equal(available.includes("7:30 AM"), true);
 });
 
 test("maps Gemini-selected IDs to trusted provider data and drops invented IDs", () => {
@@ -89,6 +269,12 @@ test("maps Gemini-selected IDs to trusted provider data and drops invented IDs",
     rating: 4.7,
     reviewCount: 23,
     location: "Dagupan, Pangasinan",
+    distanceKm: null,
+    estimatedTravelFee: null,
+    isFavorite: false,
+    availabilityDate: null,
+    availableSlots: [],
+    availabilityDurationMinutes: null,
   }]);
   assert.deepEqual(parsed.recommendations, [{
     id: "provider-1",
@@ -123,7 +309,27 @@ test("recognizes top-rated requests for a named service and ordinary provider se
   assert.equal(isProviderRecommendationRequest("Who are the top plumbers?", providers), true);
   assert.equal(isProviderRecommendationRequest("Find an aircon tech near me", providers), true);
   assert.equal(isProviderRecommendationRequest("Find electricians near me"), true);
+  assert.equal(isProviderRecommendationRequest("Can you check Mariel in my favourites available time for tomorrow?"), true);
+  assert.equal(isProviderRecommendationRequest("What times can I book Mariel tomorrow?"), true);
   assert.equal(isProviderRecommendationRequest("How do bamboo stamps work?", providers), false);
+});
+
+test("maps issue descriptions to trade categories for provider matching", () => {
+  assert.equal(findRequestedProfession([], "My aircon is leaking badly and making a weird noise"), "Aircon Tech");
+  assert.equal(isProviderRecommendationRequest("My aircon is leaking badly and making a weird noise"), true);
+  assert.equal(isProviderRecommendationRequest("My pipe leaks"), true);
+  assert.equal(isProviderRecommendationRequest("The aircon is not cooling"), true);
+  assert.equal(findRequestedProfession([], "The kitchen drain is clogged"), "Plumber");
+  assert.equal(findRequestedProfession([], "My car engine is making a strange sound"), "Mechanic");
+  assert.equal(findRequestedProfession([], "Several outlets are sparking"), "Electrician");
+});
+
+test("PandaBot rules ground diagnostics, fare estimates, payment, and safety in supplied facts", () => {
+  const { systemInstruction } = require("./pandaBot");
+  assert.match(systemInstruction, /non-definitive service triage/);
+  assert.match(systemInstruction, /final amount is confirmed in booking/);
+  assert.match(systemInstruction, /After both confirmations/);
+  assert.match(systemInstruction, /submits an open report for administrator review/);
 });
 
 test("builds structured top-three cards from the highest-rated nearby providers", () => {
@@ -145,9 +351,9 @@ test("builds structured top-three cards from the highest-rated nearby providers"
     type: "recommendation_cards",
     intro: "🐼 Here are the top 3 Plumbers within 5 km of you in Dagupan, Pangasinan.",
     providers: [
-      { providerId: "rated-1", name: "First Plumber", category: "Plumber", rating: 4.9, reviewCount: 8, isNew: false, distanceKm: null },
-      { providerId: "rated-2", name: "Second Plumber", category: "Plumber", rating: 4.8, reviewCount: 12, isNew: false, distanceKm: null },
-      { providerId: "rated-3", name: "Third Plumber", category: "Plumber", rating: 4.7, reviewCount: 16, isNew: false, distanceKm: null },
+      { providerId: "rated-1", name: "First Plumber", category: "Plumber", rating: 4.9, reviewCount: 8, isNew: false, distanceKm: null, estimatedTravelFee: null, isFavorite: false },
+      { providerId: "rated-2", name: "Second Plumber", category: "Plumber", rating: 4.8, reviewCount: 12, isNew: false, distanceKm: null, estimatedTravelFee: null, isFavorite: false },
+      { providerId: "rated-3", name: "Third Plumber", category: "Plumber", rating: 4.7, reviewCount: 16, isNew: false, distanceKm: null, estimatedTravelFee: null, isFavorite: false },
     ],
   });
 });
@@ -172,6 +378,37 @@ test("fills missing top-rated recommendations with nearby unrated new providers"
   assert.equal(result.providers[1].isNew, true);
   assert.equal(result.providers[1].distanceKm, 1.1);
   assert.equal(result.providers[0].location, "Dagupan, Pangasinan");
+});
+
+test("returns an exact favorite provider with date-specific available booking slots", () => {
+  const result = buildTopRatedRecommendations(
+    { city: "Dagupan", province: "Pangasinan" },
+    [{
+      _id: "favorite-mariel",
+      fullName: "Mariel Estrada Calilim",
+      professions: ["Painter"],
+      averageRating: 0,
+      totalReviews: 0,
+      city: "Dagupan",
+      province: "Pangasinan",
+      isFavorite: true,
+      searchRadiusKm: 50,
+      availabilityDate: "2026-10-10",
+      availableSlots: ["7:30 AM", "1:30 PM"],
+      availabilityDurationMinutes: 60,
+      distanceKm: 3.2,
+      estimatedTravelFee: 32,
+    }],
+    "Can you check Mariel in my favourites available time for tomorrow?",
+  );
+
+  assert.match(result.intro, /within 50 km/);
+  assert.equal(result.providers[0].providerId, "favorite-mariel");
+  assert.equal(result.providers[0].isFavorite, true);
+  assert.equal(result.providers[0].availabilityDate, "2026-10-10");
+  assert.equal(result.providers[0].availabilityDateLabel, "Saturday, October 10");
+  assert.deepEqual(result.providers[0].availableSlots, ["7:30 AM", "1:30 PM"]);
+  assert.equal(result.providers[0].estimatedTravelFee, 32);
 });
 
 test("returns new provider cards when no reviewed providers are within five kilometers", () => {

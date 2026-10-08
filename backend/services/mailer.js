@@ -20,6 +20,7 @@ const mailTransport = nodemailer.createTransport({
   host: config.smtpHost,
   port: config.smtpPort,
   secure: config.smtpSecure,
+  pool: !process.env.VERCEL,
   requireTLS: true,
   connectionTimeout: 10000,
   greetingTimeout: 10000,

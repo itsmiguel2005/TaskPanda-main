@@ -51,6 +51,7 @@ function RecommendationCard({ provider, onBook }) {
   const rating = Number(provider.rating);
   const reviewCount = Number(provider.reviewCount);
   const isNew = provider.isNew || reviewCount <= 0;
+  const availableSlots = Array.isArray(provider.availableSlots) ? provider.availableSlots : [];
 
   return (
     <article className="w-full rounded-xl border border-emerald-100 bg-white p-3 shadow-sm">
@@ -59,6 +60,7 @@ function RecommendationCard({ provider, onBook }) {
           <h3 className="truncate text-sm font-bold text-slate-900">{provider.name}</h3>
           <p className="mt-0.5 text-xs font-medium text-emerald-800">{provider.category}</p>
           {provider.location && <p className="mt-1 truncate text-xs text-slate-500">{provider.location}</p>}
+          {provider.isFavorite && <p className="mt-1 text-xs font-semibold text-rose-700">Saved in your favourites</p>}
         </div>
         <p className={`shrink-0 text-xs font-semibold ${isNew ? "text-slate-600" : "text-amber-700"}`} aria-label={isNew ? "New provider with no ratings yet" : `${rating.toFixed(1)} out of 5 stars`}>
           {isNew ? "New · No ratings yet" : <><span aria-hidden="true">★</span> {rating.toFixed(1)} <span className="font-normal text-slate-500">({reviewCount})</span></>}
@@ -67,12 +69,43 @@ function RecommendationCard({ provider, onBook }) {
       {provider.distanceKm != null && Number.isFinite(Number(provider.distanceKm)) && (
         <p className="mt-1 text-xs text-slate-600">{Number(provider.distanceKm).toFixed(1)} km away</p>
       )}
+      {provider.estimatedTravelFee != null && Number.isFinite(Number(provider.estimatedTravelFee)) && (
+        <p className="mt-1 text-xs text-slate-600">
+          Est. travel fee {Number(provider.estimatedTravelFee).toLocaleString("en-PH", { style: "currency", currency: "PHP" })}
+        </p>
+      )}
+      {provider.availabilityDateLabel && (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <p className="text-xs font-semibold text-slate-800">
+            {provider.availabilityDateLabel}
+            {provider.availabilityDurationMinutes ? ` · ${provider.availabilityDurationMinutes}-minute task estimate` : ""}
+          </p>
+          {availableSlots.length ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {availableSlots.map((time) => (
+                <button
+                  key={time}
+                  type="button"
+                  onClick={() => onBook(time)}
+                  className="dashboard-focus min-h-8 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-950 transition hover:border-emerald-500 hover:bg-emerald-100"
+                  aria-label={`Start booking with ${provider.name} for ${provider.availabilityDateLabel} at ${time}`}
+                >
+                  {time}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 text-xs text-slate-600">No open slots were found for this date.</p>
+          )}
+          <p className="mt-2 text-[11px] leading-4 text-slate-500">Slots can change; booking checks again before you confirm.</p>
+        </div>
+      )}
       <button
         type="button"
-        onClick={onBook}
+        onClick={() => onBook("")}
         className="dashboard-focus mt-3 flex min-h-9 w-full items-center justify-center gap-2 rounded-lg bg-emerald-800 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-900"
       >
-        Book Now
+        {availableSlots.length ? "Choose another time" : "Book Now"}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true">
           <path d="M5 12h14m-6-6 6 6-6 6" />
         </svg>
@@ -140,7 +173,28 @@ export default function PandaBotWidget() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ message, location: getProfileLocation(user) }),
+        body: JSON.stringify({
+          message,
+          location: getProfileLocation(user),
+          conversationHistory: messages
+            .filter((item) => (
+              item.role === "assistant" &&
+              (Array.isArray(item.recommendations) || Array.isArray(item.providerContextIds))
+            ))
+            .slice(-12)
+            .map((item) => ({
+              role: "assistant",
+              providerIds: Array.isArray(item.recommendations)
+                ? item.recommendations
+                  .map((provider) => provider.providerId || provider.id)
+                  .filter((providerId) => typeof providerId === "string")
+                : [],
+              contextProviderIds: Array.isArray(item.providerContextIds)
+                ? item.providerContextIds.filter((providerId) => typeof providerId === "string")
+                : [],
+              contextRequestedDate: item.contextRequestedDate || "",
+            })),
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "PandaBot couldn’t reply right now. Please try again.");
@@ -161,6 +215,8 @@ export default function PandaBotWidget() {
         role: "assistant",
         text: responseText.trim(),
         recommendations,
+        providerContextIds: Array.isArray(data.contextProviderIds) ? data.contextProviderIds : [],
+        contextRequestedDate: typeof data.contextRequestedDate === "string" ? data.contextRequestedDate : "",
       }]);
     } catch (error) {
       setMessages((current) => [...current, {
@@ -178,9 +234,12 @@ export default function PandaBotWidget() {
     void sendMessage(input);
   }
 
-  function handleBookRecommendation(provider) {
+  function handleBookRecommendation(provider, time = "") {
     setIsOpen(false);
-    navigate(`/explore?bookProvider=${encodeURIComponent(provider.id)}`);
+    const params = new URLSearchParams({ bookProvider: provider.id });
+    if (provider.availabilityDate) params.set("bookDate", provider.availabilityDate);
+    if (time) params.set("bookTime", time);
+    navigate(`/explore?${params}`);
   }
 
   function scrollQuickActions(direction) {
@@ -239,7 +298,7 @@ export default function PandaBotWidget() {
                         <RecommendationCard
                           key={provider.id}
                           provider={provider}
-                          onBook={() => handleBookRecommendation(provider)}
+                          onBook={(time) => handleBookRecommendation(provider, time)}
                         />
                       ))}
                     </div>

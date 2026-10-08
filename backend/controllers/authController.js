@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
 const { createHash, randomBytes, randomInt } = require("crypto");
 const mongoose = require("mongoose");
+const { waitUntil } = require("@vercel/functions");
 const User = require("../models/User");
 const AdminSession = require("../models/AdminSession");
 const AdminLoginChallenge = require("../models/AdminLoginChallenge");
@@ -56,6 +57,20 @@ function hasGoodRegistrationPassword(password) {
 function rejectAdminRateLimit(res, retryAfterSeconds) {
   res.setHeader("Retry-After", String(retryAfterSeconds));
   return res.status(429).json({ message: "Too many admin sign-in attempts. Please try again later." });
+}
+
+function sendAdminPushAlertInBackground(options, warningMessage) {
+  const sendAlert = () => sendPushNotification(options).catch((error) => {
+    console.warn(warningMessage, error.message);
+  });
+
+  if (process.env.VERCEL) {
+    waitUntil(Promise.resolve().then(sendAlert));
+  } else {
+    setImmediate(() => {
+      void sendAlert();
+    });
+  }
 }
 
 function formatAddress(street, barangay, city, province) {
@@ -885,7 +900,7 @@ async function handleLogin(req, res) {
           },
           $setOnInsert: { adminEmail },
         },
-        { new: true, upsert: true }
+        { returnDocument: "after", upsert: true }
       );
       try {
         await sendAdminLoginOtpEmail(config.adminOtpEmail, code);
@@ -894,17 +909,13 @@ async function handleLogin(req, res) {
         console.error("Admin sign-in email could not be sent:", mailError.message);
         return res.status(502).json({ message: "Could not send the admin verification code. Please try again." });
       }
-      try {
-        await sendPushNotification({
-          roles: ["admin"],
-          title: "Admin sign-in requested",
-          body: "A new administrator verification code was requested. The code is not included in this alert.",
-          url: "/admin?section=dashboard",
-          data: { event: "admin.otp_requested" },
-        });
-      } catch (pushError) {
-        console.warn("OneSignal admin OTP alert failed:", pushError.message);
-      }
+      sendAdminPushAlertInBackground({
+        roles: ["admin"],
+        title: "Admin sign-in requested",
+        body: "A new administrator verification code was requested. The code is not included in this alert.",
+        url: "/admin?section=dashboard",
+        data: { event: "admin.otp_requested" },
+      }, "OneSignal admin OTP alert failed:");
 
       clearLoginAttempts(normalizedIdentifier);
       return res.json({
@@ -1047,7 +1058,7 @@ async function handleVerifyAdminLogin(req, res) {
           attempts: mongoose.trusted({ $lt: 5 }),
         },
         { $inc: { attempts: 1 } },
-        { new: true }
+        { returnDocument: "after" }
       );
       if (!updatedChallenge || updatedChallenge.attempts >= 5) {
         return res.status(429).json({ message: "Too many incorrect codes. Sign in again to request a new one." });
@@ -1066,7 +1077,7 @@ async function handleVerifyAdminLogin(req, res) {
         attempts: mongoose.trusted({ $lt: 5 }),
       },
       { $set: { consumedAt: now } },
-      { new: true }
+      { returnDocument: "after" }
     );
     if (!consumedChallenge) {
       return res.status(400).json({ message: "The verification code is invalid or expired. Sign in again to request a new one." });
@@ -1078,17 +1089,13 @@ async function handleVerifyAdminLogin(req, res) {
       tokenHash: hashToken(adminToken),
       expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000),
     });
-    try {
-      await sendPushNotification({
-        roles: ["admin"],
-        title: "Admin sign-in completed",
-        body: "A new administrator session was started.",
-        url: "/admin?section=dashboard",
-        data: { event: "admin.sign_in" },
-      });
-    } catch (pushError) {
-      console.warn("OneSignal admin security alert failed:", pushError.message);
-    }
+    sendAdminPushAlertInBackground({
+      roles: ["admin"],
+      title: "Admin sign-in completed",
+      body: "A new administrator session was started.",
+      url: "/admin?section=dashboard",
+      data: { event: "admin.sign_in" },
+    }, "OneSignal admin security alert failed:");
     return res.json({
       message: "Login successful.",
       token: adminToken,

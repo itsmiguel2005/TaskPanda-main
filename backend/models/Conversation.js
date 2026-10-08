@@ -22,6 +22,8 @@ const conversationSchema = new mongoose.Schema(
       details: { type: String, required: true, trim: true, maxlength: 1000 },
       createdAt: { type: Date, default: Date.now },
       status: { type: String, enum: ["open", "resolved"], default: "open" },
+      resolvedAt: { type: Date },
+      resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     }],
   },
   { timestamps: true }
@@ -29,5 +31,6 @@ const conversationSchema = new mongoose.Schema(
 
 conversationSchema.index({ clientId: 1, updatedAt: -1 });
 conversationSchema.index({ providerId: 1, updatedAt: -1 });
+conversationSchema.index({ "supportReports.status": 1, "supportReports.createdAt": -1 });
 
 module.exports = mongoose.model("Conversation", conversationSchema);

@@ -489,6 +489,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     { label: "Dashboard", icon: "📊", path: "/admin?section=dashboard" },
     { label: "Users", icon: "👥", path: "/admin?section=users" },
     { label: "Verifications", icon: "⏳", path: "/admin?section=verifications" },
+    { label: "Reports", icon: "", path: "/admin?section=reports" },
     { label: "Bookings", icon: "📋", path: "/admin?section=bookings" },
     { label: "Transactions", icon: "₱", path: "/admin?section=transactions" },
     { label: "Rewards", icon: "🎟️", path: "/admin?section=rewards" },

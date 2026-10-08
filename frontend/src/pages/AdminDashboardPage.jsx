@@ -10,6 +10,7 @@ const AdminRewardsAnalytics = lazy(() => import("../components/AdminRewardsAnaly
 const AdminSystemSettings = lazy(() => import("../components/AdminSystemSettings.jsx"));
 const AdminBookingsManagement = lazy(() => import("../components/AdminBookingsManagement.jsx"));
 const VerificationsAdmin = lazy(() => import("../components/VerificationsAdmin.jsx"));
+const AdminSupportReports = lazy(() => import("../components/AdminSupportReports.jsx"));
 
 const sections = {
   dashboard: {
@@ -39,6 +40,10 @@ const sections = {
   verifications: {
     component: VerificationsAdmin,
     label: "Loading verification queue…",
+  },
+  reports: {
+    component: AdminSupportReports,
+    label: "Loading support reports…",
   },
 };
 

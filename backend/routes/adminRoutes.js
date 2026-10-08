@@ -18,6 +18,10 @@ const {
 } = require("../controllers/adminOperationsController");
 const { handleGetAdminBookings, handleOverrideAdminBooking } = require("../controllers/adminBookingController");
 const {
+  handleGetAdminSupportReports,
+  handleUpdateAdminSupportReport,
+} = require("../controllers/adminSupportReportsController");
+const {
   handleGetAdminVerifications,
   handleGetVerificationDocument,
   handleGetTesdaCertificateDocument,
@@ -70,6 +74,24 @@ router.patch(
   handleReviewTesdaCertificate
 );
 router.get("/analytics", requireAdmin, handleGetAdminAnalytics);
+router.get(
+  "/support-reports",
+  requireAdmin,
+  [query("status").optional().isIn(["open", "resolved", "all"]), query("page").optional().isInt({ min: 1, max: 10000 })],
+  validateRequest,
+  handleGetAdminSupportReports
+);
+router.patch(
+  "/support-reports/:conversationId/:reportId",
+  requireAdmin,
+  [
+    param("conversationId").isMongoId(),
+    param("reportId").isMongoId(),
+    body("action").isIn(["resolve", "reopen"]),
+  ],
+  validateRequest,
+  handleUpdateAdminSupportReport
+);
 router.get(
   "/bookings",
   requireAdmin,

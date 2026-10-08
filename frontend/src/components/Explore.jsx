@@ -83,6 +83,7 @@ export default function Explore() {
   const { createBooking } = useBookings();
   const [viewingProvider, setViewingProvider] = useState(null);
   const [bookingProvider, setBookingProvider] = useState(null);
+  const [bookingInitialValues, setBookingInitialValues] = useState({});
   const [searchQuery, setSearchQuery] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
   const [searchCoordinates, setSearchCoordinates] = useState(null);
@@ -135,6 +136,8 @@ export default function Explore() {
   useEffect(() => {
     const providerId = searchParams.get("bookProvider");
     if (!providerId) return undefined;
+    const bookingDate = searchParams.get("bookDate") || "";
+    const bookingTime = searchParams.get("bookTime") || "";
 
     const controller = new AbortController();
     const openRecommendedProvider = async () => {
@@ -157,8 +160,11 @@ export default function Explore() {
           averageRating: Number(provider.averageRating || 0),
           totalReviews: Number(provider.totalReviews || 0),
         });
+        setBookingInitialValues({ date: bookingDate, time: bookingTime });
         const nextParams = new URLSearchParams(searchParams);
         nextParams.delete("bookProvider");
+        nextParams.delete("bookDate");
+        nextParams.delete("bookTime");
         setSearchParams(nextParams, { replace: true });
       } catch (error) {
         if (error.name !== "AbortError") setSearchError(error.message || "Could not open this professional.");
@@ -817,6 +823,7 @@ export default function Explore() {
           isFavorite={viewingProvider ? favoriteProviderIds.has(String(viewingProvider._id)) : false}
           onToggleFavorite={() => viewingProvider && toggleFavorite(viewingProvider._id)}
           onBook={() => {
+            setBookingInitialValues({});
             setBookingProvider(viewingProvider);
             setViewingProvider(null);
           }}
@@ -825,6 +832,7 @@ export default function Explore() {
           provider={bookingProvider}
           onClose={() => setBookingProvider(null)}
           onSubmit={createBooking}
+          initialValues={bookingInitialValues}
         />
         {showSearchLocationPicker && (
           <div
