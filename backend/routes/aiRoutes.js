@@ -4,7 +4,11 @@ const { createRateLimiter } = require("../middleware/rateLimits");
 const { requireAuth } = require("../middleware/requireAuth");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
-const { listGeminiModels, selectAvailableGenerateContentModels } = require("../services/geminiModelSelection");
+const {
+  generateContentWithFallback,
+  listGeminiModels,
+  selectAvailableGenerateContentModels,
+} = require("../services/geminiModelSelection");
 const {
   buildBookingContext,
   buildProviderContext,
@@ -134,30 +138,22 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
 
     failedOperation = "Gemini model discovery";
     const models = await getAvailableModels();
-    let result;
-    let generationError;
-    for (const model of models) {
+    const generated = await generateContentWithFallback(models, async (model) => {
       failedModel = model;
       failedOperation = `Gemini request (${model})`;
-      try {
-        result = await getAiClient().models.generateContent({
-          model,
-          contents,
-          config: {
-            systemInstruction,
-            responseMimeType: "application/json",
-            responseSchema,
-            maxOutputTokens: 600,
-            temperature: 0.25,
-          },
-        });
-        break;
-      } catch (error) {
-        generationError = error;
-        if (![400, 404].includes(getErrorStatus(error))) throw error;
-      }
-    }
-    if (!result) throw generationError || new Error("Gemini did not return a response.");
+      return getAiClient().models.generateContent({
+        model,
+        contents,
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+          responseSchema,
+          maxOutputTokens: 600,
+          temperature: 0.25,
+        },
+      });
+    });
+    const { result } = generated;
     const resultText = result.text?.trim();
 
     if (!resultText) {

@@ -1,13 +1,16 @@
 const preferredModels = [
+  "gemini-3.5-flash-lite",
   "gemini-3.8-flash",
+  "gemini-3.5-flash",
   "gemini-3.7-flash",
   "gemini-3.6-flash",
-  "gemini-3.5-flash",
-  "gemini-3.5-flash-lite",
   "gemini-3.1-flash-lite",
   "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
 ];
+const RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
+const MODEL_UNAVAILABLE_STATUS_CODES = new Set([400, 404]);
+const RETRY_DELAY_MS = 250;
 
 function selectAvailableGenerateContentModels(models) {
   const available = new Set(
@@ -46,4 +49,33 @@ async function listGeminiModels(apiKey, fetchImpl = fetch) {
   return models;
 }
 
-module.exports = { listGeminiModels, selectAvailableGenerateContentModels };
+async function generateContentWithFallback(models, generate, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))) {
+  let lastError;
+
+  for (const model of models) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return { model, result: await generate(model) };
+      } catch (error) {
+        const status = Number(error?.status || error?.code);
+        lastError = error;
+
+        if (attempt === 0 && RETRYABLE_STATUS_CODES.has(status)) {
+          await wait(RETRY_DELAY_MS);
+          continue;
+        }
+        if (RETRYABLE_STATUS_CODES.has(status) || MODEL_UNAVAILABLE_STATUS_CODES.has(status)) break;
+        throw error;
+      }
+    }
+  }
+
+  if (lastError) throw lastError;
+  throw new Error("No supported Gemini text-generation models are available.");
+}
+
+module.exports = {
+  generateContentWithFallback,
+  listGeminiModels,
+  selectAvailableGenerateContentModels,
+};
