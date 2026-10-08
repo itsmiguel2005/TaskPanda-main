@@ -17,6 +17,7 @@ export function BookingProvider({ children }) {
   const [bookings, setBookings] = useState([]);
   const [dismissedBookingIds, setDismissedBookingIds] = useState([]);
   const [bookingReviewStats, setBookingReviewStats] = useState(null);
+  const [providerBookingStats, setProviderBookingStats] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -36,6 +37,7 @@ export function BookingProvider({ children }) {
       setBookings([]);
       setDismissedBookingIds([]);
       setBookingReviewStats(null);
+      setProviderBookingStats(null);
       return false;
     }
     if (!silent) setIsLoading(true);
@@ -81,9 +83,13 @@ export function BookingProvider({ children }) {
       if (!response.ok) throw new Error(data.message || "Could not load bookings.");
       if (!Array.isArray(data.bookings)) throw new Error("The booking API is outdated. Restart the backend and try again.");
       if (dashboardScope && !Array.isArray(data.dismissedBookingIds)) throw new Error("The backend is outdated. Restart it to sync dashboard dismissals.");
+      if (dashboardScope && role === "provider" && (!data.bookingStats || !Number.isFinite(Number(data.bookingStats.completedJobs)) || !Number.isFinite(Number(data.bookingStats.earnings)))) {
+        throw new Error("The backend is outdated. Restart it to load your earnings summary.");
+      }
       const nextBookings = validBookings(data.bookings);
       setDismissedBookingIds(dashboardScope && Array.isArray(data.dismissedBookingIds) ? data.dismissedBookingIds : []);
       setBookingReviewStats(dashboardScope && data.reviewStats ? data.reviewStats : null);
+      setProviderBookingStats(dashboardScope && role === "provider" ? data.bookingStats : null);
       let didChange = false;
       setBookings((currentBookings) => {
         const currentSnapshot = JSON.stringify(currentBookings);
@@ -491,6 +497,7 @@ export function BookingProvider({ children }) {
     bookings,
     dismissedBookingIds,
     bookingReviewStats,
+    providerBookingStats,
     isLoading,
     error,
     createBooking,
@@ -508,7 +515,7 @@ export function BookingProvider({ children }) {
     dismissDashboardBooking,
     restoreDashboardBookings,
     refreshBookings: fetchBookings,
-  }), [bookings, dismissedBookingIds, bookingReviewStats, isLoading, error, createBooking, updateBookingStatus, submitCompletionProof, requestRevision, requestCancellation, submitReview, sendProviderUpdate, reportRunningLate, respondToLateNotice, respondToProviderUpdate, respondToRevision, confirmCashSettlement, dismissDashboardBooking, restoreDashboardBookings, fetchBookings]);
+  }), [bookings, dismissedBookingIds, bookingReviewStats, providerBookingStats, isLoading, error, createBooking, updateBookingStatus, submitCompletionProof, requestRevision, requestCancellation, submitReview, sendProviderUpdate, reportRunningLate, respondToLateNotice, respondToProviderUpdate, respondToRevision, confirmCashSettlement, dismissDashboardBooking, restoreDashboardBookings, fetchBookings]);
 
   return <BookingContext.Provider value={value}>{children}</BookingContext.Provider>;
 }

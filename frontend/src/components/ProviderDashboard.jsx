@@ -482,7 +482,7 @@ function JobCard({
 export default function ProviderDashboard() {
   const navigate = useNavigate();
   const { user, token, refreshProfile } = useAuth();
-  const { bookings, dismissedBookingIds, bookingReviewStats, isLoading, error, dismissDashboardBooking, restoreDashboardBookings, updateBookingStatus, requestCancellation, submitCompletionProof } = useBookings();
+  const { bookings, dismissedBookingIds, bookingReviewStats, providerBookingStats, isLoading, error, dismissDashboardBooking, restoreDashboardBookings, updateBookingStatus, requestCancellation, submitCompletionProof } = useBookings();
 
   const [activeFilter, setActiveFilter] = useState("All");
   const [search, setSearch] = useState("");
@@ -583,15 +583,17 @@ export default function ProviderDashboard() {
 
   const stats = useMemo(() => {
     const activeJobs = jobs.filter((j) => !["Completed", "Settled", "Cancelled", "Declined by Provider", "Expired"].includes(j.status)).length;
-    const completedJobs = jobs.filter((j) => ["Completed", "Settled"].includes(j.status)).length;
-    const earnings = jobs
-      .filter((j) => ["Completed", "Settled"].includes(j.status))
-      .reduce((sum, j) => {
-        const total = Number(j.totalPrice);
-        return sum + (Number.isFinite(total) ? total : parsePrice(j.price));
-      }, 0);
+    const completedJobs = providerBookingStats?.completedJobs
+      ?? jobs.filter((j) => ["Completed", "Settled"].includes(j.status)).length;
+    const earnings = providerBookingStats?.earnings
+      ?? jobs
+        .filter((j) => ["Completed", "Settled"].includes(j.status))
+        .reduce((sum, j) => {
+          const total = Number(j.totalPrice);
+          return sum + (Number.isFinite(total) ? total : parsePrice(j.price));
+        }, 0);
     return { rating: ratingData.rating, reviews: ratingData.reviews, activeJobs, completedJobs, earnings };
-  }, [jobs, ratingData]);
+  }, [jobs, providerBookingStats, ratingData]);
 
   // ── filter counts ────────────────────────────────────────────────────────────
   const filterCounts = useMemo(() => {

@@ -358,17 +358,47 @@ async function handleListBookings(req, res) {
 
     const bookings = await Booking.find(filter).sort({ createdAt: -1, _id: -1 }).populate(populatePaths);
     let reviewStats = null;
+    let bookingStats = null;
     if (dashboardMode && req.user.role === "provider") {
-      const [aggregate] = await Booking.aggregate([
-        { $match: { providerId: req.user._id, clientRating: { $type: "number" } } },
-        { $group: { _id: null, averageRating: { $avg: "$clientRating" }, totalReviews: { $sum: 1 } } },
+      const [reviewAggregate, completedAggregate] = await Promise.all([
+        Booking.aggregate([
+          { $match: { providerId: req.user._id, clientRating: { $type: "number" } } },
+          { $group: { _id: null, averageRating: { $avg: "$clientRating" }, totalReviews: { $sum: 1 } } },
+        ]),
+        Booking.aggregate([
+          {
+            $match: {
+              providerId: req.user._id,
+              status: { $in: ["complete", "closed", "settled", "Completed", "Settled"] },
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              completedJobs: { $sum: 1 },
+              earnings: {
+                $sum: {
+                  $add: [
+                    { $ifNull: ["$offeredPrice", 0] },
+                    { $ifNull: ["$travelFee", 0] },
+                    { $ifNull: ["$tipAmount", 0] },
+                  ],
+                },
+              },
+            },
+          },
+        ]),
       ]);
       reviewStats = {
-        averageRating: Number(aggregate?.averageRating || 0),
-        totalReviews: Number(aggregate?.totalReviews || 0),
+        averageRating: Number(reviewAggregate[0]?.averageRating || 0),
+        totalReviews: Number(reviewAggregate[0]?.totalReviews || 0),
+      };
+      bookingStats = {
+        completedJobs: Number(completedAggregate[0]?.completedJobs || 0),
+        earnings: Number(completedAggregate[0]?.earnings || 0),
       };
     }
-    return res.json({ bookings: bookings.map(serializeBooking), dismissedBookingIds, reviewStats });
+    return res.json({ bookings: bookings.map(serializeBooking), dismissedBookingIds, reviewStats, bookingStats });
   } catch (error) {
     console.error("List bookings error:", error);
     return res.status(500).json({
