@@ -5,6 +5,7 @@ const { getProviderStreaks } = require("../services/providerStreak");
 
 const MAX_DISTANCE_KM = 10;
 const DEFAULT_LIMIT = 24;
+const MAP_MARKER_LIMIT = 100;
 
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -135,6 +136,73 @@ async function handleDiscoverProviders(req, res) {
   }
 }
 
+async function handleDiscoverProviderMapMarkers(req, res) {
+  const latitude = Number(req.query.latitude);
+  const longitude = Number(req.query.longitude);
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+    return res.status(400).json({ message: "Move the map to a valid location to find nearby providers.", field: "location" });
+  }
+
+  try {
+    const providers = await User.aggregate([
+      {
+        $geoNear: {
+          near: { type: "Point", coordinates: [longitude, latitude] },
+          key: "geoLocation",
+          distanceField: "distanceMeters",
+          maxDistance: MAX_DISTANCE_KM * 1000,
+          spherical: true,
+          query: {
+            role: "provider",
+            registrationComplete: true,
+            isSuspended: { $ne: true },
+            archivedAt: { $exists: false },
+            "geoLocation.type": "Point",
+          },
+        },
+      },
+      { $sort: { distanceMeters: 1 } },
+      { $limit: MAP_MARKER_LIMIT },
+      {
+        $project: {
+          _id: 1,
+          fullName: 1,
+          username: 1,
+          profileImage: 1,
+          professions: 1,
+          isVerified: 1,
+          verificationStatus: 1,
+          averageRating: 1,
+          totalReviews: 1,
+          "mapLocation.type": { $literal: "Point" },
+          "mapLocation.coordinates": [
+            { $round: [{ $arrayElemAt: ["$geoLocation.coordinates", 0] }, 2] },
+            { $round: [{ $arrayElemAt: ["$geoLocation.coordinates", 1] }, 2] },
+          ],
+        },
+      },
+    ]);
+
+    return res.json({
+      providers: providers.map((provider) => ({
+        id: String(provider._id),
+        name: provider.fullName || provider.username || "Local provider",
+        username: provider.username || "",
+        profileImage: provider.profileImage || "",
+        professions: provider.professions || [],
+        isVerified: provider.isVerified === true || provider.verificationStatus === "verified",
+        rating: Number(provider.averageRating || 0),
+        reviews: Number(provider.totalReviews || 0),
+        mapLocation: provider.mapLocation,
+      })),
+      approximateLocationPrecision: "about 1 km",
+    });
+  } catch (error) {
+    console.error("Provider map discovery error:", error);
+    return res.status(500).json({ message: "Could not load provider map markers." });
+  }
+}
+
 async function handleGetProviderProfile(req, res) {
   try {
     const provider = await User.findOne({
@@ -237,4 +305,4 @@ async function handleGetProviderProfile(req, res) {
   }
 }
 
-module.exports = { handleDiscoverProviders, handleGetProviderProfile, MAX_DISTANCE_KM };
+module.exports = { handleDiscoverProviders, handleDiscoverProviderMapMarkers, handleGetProviderProfile, MAX_DISTANCE_KM };

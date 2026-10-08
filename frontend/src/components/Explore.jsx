@@ -922,11 +922,15 @@ export default function Explore() {
                 onChange={setDraftSearchLocation}
                 token={token}
                 heading="Pin the center of your provider search"
-                description="Search your street or landmark, use your current location, or move the pin. Providers will be searched within your selected 0–10 km radius."
+                description="Search an address, use your current location, or explore the map to preview nearby providers before applying a search area. Provider pins are approximate, not exact addresses."
                 searchPlaceholder="Street, barangay, city, or landmark"
                 addressLabel="Search area"
                 addressPlaceholder="Address or nearby landmark"
                 mapLabel="OpenStreetMap nearby provider search location"
+                showNearbyProviders
+                onProviderSelect={(provider) => {
+                  setViewingProvider(provider);
+                }}
               />
               {locationError && <p className="mt-3 text-sm text-red-700" role="alert">{locationError}</p>}
               <div className="mt-4 flex gap-3 border-t border-slate-100 pt-4">

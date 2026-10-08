@@ -26,6 +26,89 @@ function getCoordinates(geoLocation) {
   return [latitude, longitude];
 }
 
+function getProviderMapCoordinates(provider) {
+  return getCoordinates(provider?.mapLocation);
+}
+
+function getMapCenterDistanceKm(first, second) {
+  const latitudeDistance = (first.lat - second.lat) * 111;
+  const longitudeDistance = (first.lng - second.lng) * 111 * Math.cos((first.lat * Math.PI) / 180);
+  return Math.hypot(latitudeDistance, longitudeDistance);
+}
+
+function getProviderGroups(providers) {
+  const groups = new Map();
+  providers.forEach((provider) => {
+    const coordinates = getProviderMapCoordinates(provider);
+    if (!coordinates) return;
+    const key = `${coordinates[0]}:${coordinates[1]}`;
+    const group = groups.get(key) || { coordinates, providers: [] };
+    group.providers.push(provider);
+    groups.set(key, group);
+  });
+  return [...groups.values()];
+}
+
+function createProviderMarkerIcon(providers) {
+  const marker = document.createElement("span");
+  marker.className = "relative flex h-10 w-10 items-center justify-center overflow-visible rounded-full border-2 border-white bg-emerald-600 text-xs font-bold text-white shadow-md ring-2 ring-emerald-700/70";
+
+  if (providers.length > 1) {
+    marker.textContent = String(providers.length);
+  } else {
+    const provider = providers[0];
+    const imageUrl = String(provider.profileImage || "");
+    if (/^https?:\/\//i.test(imageUrl)) {
+      const image = document.createElement("img");
+      image.src = imageUrl;
+      image.alt = "";
+      image.className = "h-full w-full rounded-full object-cover";
+      marker.append(image);
+    } else {
+      marker.textContent = String(provider.name || "P").trim().charAt(0).toUpperCase();
+    }
+  }
+
+  return L.divIcon({
+    html: marker,
+    className: "",
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+  });
+}
+
+function createProviderPopup(providers, onSelect) {
+  const popup = document.createElement("div");
+  popup.className = "max-h-56 min-w-48 max-w-64 space-y-2 overflow-y-auto";
+
+  providers.forEach((provider) => {
+    const entry = document.createElement("div");
+    entry.className = "flex items-center gap-2 border-b border-slate-100 pb-2 last:border-b-0 last:pb-0";
+
+    const details = document.createElement("div");
+    details.className = "min-w-0 flex-1";
+    const name = document.createElement("p");
+    name.className = "truncate text-xs font-semibold text-slate-900";
+    name.textContent = provider.name || provider.username || "Local provider";
+    const profession = document.createElement("p");
+    profession.className = "truncate text-[10px] text-slate-600";
+    profession.textContent = Array.isArray(provider.professions) && provider.professions.length
+      ? provider.professions.join(" · ")
+      : "Service provider";
+    details.append(name, profession);
+
+    const viewButton = document.createElement("button");
+    viewButton.type = "button";
+    viewButton.className = "shrink-0 rounded-md bg-slate-900 px-2 py-1.5 text-[10px] font-semibold text-white hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700";
+    viewButton.textContent = "View";
+    viewButton.addEventListener("click", () => onSelect(provider));
+    entry.append(details, viewButton);
+    popup.append(entry);
+  });
+
+  return popup;
+}
+
 export default function ServiceLocationPicker({
   value,
   onChange,
@@ -37,22 +120,33 @@ export default function ServiceLocationPicker({
   addressPlaceholder = "Choose a result or enter the address for the pin",
   mapLabel = "OpenStreetMap service location picker",
   endpointBase = "/api/bookings/service-location",
+  showNearbyProviders = false,
+  onProviderSelect = () => {},
 }) {
   const mapElementRef = useRef(null);
   const mapRef = useRef(null);
   const markerRef = useRef(null);
+  const providerMarkersLayerRef = useRef(null);
   const choosePinRef = useRef(null);
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
+  const onProviderSelectRef = useRef(onProviderSelect);
   const lookupControllerRef = useRef(null);
+  const providerRequestControllerRef = useRef(null);
+  const providerRequestTimeoutRef = useRef(null);
+  const lastProviderSearchCenterRef = useRef(null);
   const [searchQuery, setSearchQuery] = useState(value.address || "");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isLookingUp, setIsLookingUp] = useState(false);
+  const [nearbyProviders, setNearbyProviders] = useState([]);
+  const [nearbyProvidersLoading, setNearbyProvidersLoading] = useState(false);
+  const [nearbyProvidersError, setNearbyProvidersError] = useState("");
   const [error, setError] = useState("");
 
   valueRef.current = value;
   onChangeRef.current = onChange;
+  onProviderSelectRef.current = onProviderSelect;
 
   useEffect(() => {
     if (!mapElementRef.current || mapRef.current) return undefined;
@@ -64,6 +158,50 @@ export default function ServiceLocationPicker({
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>',
     }).addTo(map);
     mapRef.current = map;
+    const providerMarkersLayer = L.layerGroup().addTo(map);
+    providerMarkersLayerRef.current = providerMarkersLayer;
+
+    const loadNearbyProviders = () => {
+      if (!showNearbyProviders) return;
+      if (providerRequestTimeoutRef.current) {
+        window.clearTimeout(providerRequestTimeoutRef.current);
+      }
+
+      providerRequestTimeoutRef.current = window.setTimeout(async () => {
+        const center = map.getCenter();
+        const previousCenter = lastProviderSearchCenterRef.current;
+        if (previousCenter && getMapCenterDistanceKm(center, previousCenter) < 0.7) return;
+
+        lastProviderSearchCenterRef.current = center;
+        providerRequestControllerRef.current?.abort();
+        const controller = new AbortController();
+        providerRequestControllerRef.current = controller;
+        setNearbyProvidersLoading(true);
+        setNearbyProvidersError("");
+
+        try {
+          const parameters = new URLSearchParams({
+            latitude: String(center.lat),
+            longitude: String(center.lng),
+          });
+          const response = await apiFetch(`/api/providers/map?${parameters}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data.message || "Could not load providers near this part of the map.");
+          if (!controller.signal.aborted) {
+            setNearbyProviders(Array.isArray(data.providers) ? data.providers : []);
+          }
+        } catch (providerError) {
+          if (providerError.name !== "AbortError") {
+            setNearbyProvidersError(providerError.message || "Could not load providers near this part of the map.");
+          }
+        } finally {
+          if (!controller.signal.aborted) setNearbyProvidersLoading(false);
+        }
+      }, 650);
+    };
 
     const setPin = (latitude, longitude) => {
       const geoLocation = {
@@ -143,17 +281,45 @@ export default function ServiceLocationPicker({
       });
     }
     map.on("click", (event) => choosePin(event.latlng.lat, event.latlng.lng));
+    map.on("moveend", loadNearbyProviders);
+    loadNearbyProviders();
     const invalidateTimer = window.setTimeout(() => map.invalidateSize(), 0);
 
     return () => {
       window.clearTimeout(invalidateTimer);
+      if (providerRequestTimeoutRef.current) {
+        window.clearTimeout(providerRequestTimeoutRef.current);
+        providerRequestTimeoutRef.current = null;
+      }
       lookupControllerRef.current?.abort();
+      providerRequestControllerRef.current?.abort();
+      providerMarkersLayer.remove();
       map.remove();
       mapRef.current = null;
       markerRef.current = null;
+      providerMarkersLayerRef.current = null;
       choosePinRef.current = null;
     };
   }, [endpointBase, token]);
+
+  useEffect(() => {
+    const layer = providerMarkersLayerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+
+    getProviderGroups(nearbyProviders).forEach(({ coordinates, providers }) => {
+      const marker = L.marker(coordinates, {
+        icon: createProviderMarkerIcon(providers),
+        title: providers.length === 1
+          ? `Approximate location of ${providers[0].name || "a provider"}`
+          : `${providers.length} providers in this approximate area`,
+      });
+      marker.bindPopup(createProviderPopup(providers, (provider) => {
+        onProviderSelectRef.current({ ...provider, _id: provider.id });
+      }));
+      marker.addTo(layer);
+    });
+  }, [nearbyProviders]);
 
   useEffect(() => {
     const coordinates = getCoordinates(value.geoLocation);
@@ -293,6 +459,17 @@ export default function ServiceLocationPicker({
       )}
 
       <div ref={mapElementRef} className="h-56 w-full overflow-hidden rounded-lg border border-gray-200 bg-gray-100 sm:h-64" role="application" aria-label={mapLabel} />
+      {showNearbyProviders && (
+        <p className="text-xs leading-5 text-slate-600" aria-live="polite">
+          {nearbyProvidersError
+            ? nearbyProvidersError
+            : nearbyProvidersLoading
+              ? "Finding providers near this map area…"
+              : nearbyProviders.length
+                ? `${nearbyProviders.length} provider${nearbyProviders.length === 1 ? "" : "s"} nearby. Pins show an approximate area, not an exact address.`
+                : "No providers found near this map area. Move the map to explore."}
+        </p>
+      )}
 
       <div>
         <label htmlFor="service-location-address" className="block text-xs font-medium text-gray-700">{addressLabel}</label>
