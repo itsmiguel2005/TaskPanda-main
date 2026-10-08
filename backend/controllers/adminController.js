@@ -5,6 +5,7 @@ const Booking = require("../models/Booking");
 const User = require("../models/User");
 const config = require("../config/env");
 const { hasValidSmtpCredentials, sendPasswordResetEmail } = require("../services/mailer");
+const { getPandaBotHealth } = require("../services/pandaBotUsage");
 
 const ACTIVE_STATUSES = ["approved", "en_route", "in_progress", "Confirmed", "On the Way", "In Progress"];
 const IN_PROGRESS_STATUSES = ["en_route", "in_progress", "On the Way", "In Progress"];
@@ -157,6 +158,16 @@ async function handleGetAdminAnalytics(_req, res) {
   } catch (error) {
     console.error("Admin analytics error:", error);
     return res.status(500).json({ message: "Could not load dashboard analytics." });
+  }
+}
+
+async function handleGetAdminPandaBotHealth(_req, res) {
+  try {
+    const health = await getPandaBotHealth(Boolean(process.env.GEMINI_API_KEY));
+    return res.json(health);
+  } catch (error) {
+    console.error("Admin PandaBot health analytics error:", error);
+    return res.status(500).json({ message: "Could not load PandaBot health analytics." });
   }
 }
 
@@ -515,6 +526,7 @@ async function handleRequestAdminPasswordReset(req, res) {
 
 module.exports = {
   handleGetAdminAnalytics,
+  handleGetAdminPandaBotHealth,
   handleGetAdminUsers,
   handleGetAdminUserDetails,
   handleSetAdminUserSuspension,

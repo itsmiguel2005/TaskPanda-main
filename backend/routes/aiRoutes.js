@@ -8,6 +8,7 @@ const Favorite = require("../models/Favorite");
 const User = require("../models/User");
 const { calculateDistanceKm } = require("../services/bookingPricing");
 const { getGlobalSettings } = require("../services/systemSettings");
+const { schedulePandaBotUsageRecord } = require("../services/pandaBotUsage");
 const {
   generateContentWithFallback,
   listGeminiModels,
@@ -103,6 +104,18 @@ function buildRecommendationFallback(location, providers, message, searchUnavail
 }
 
 router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
+  const aiRequestStartedAt = Date.now();
+  let usageRecorded = false;
+  const recordUsage = (success, model, usageMetadata) => {
+    if (usageRecorded) return;
+    usageRecorded = true;
+    schedulePandaBotUsageRecord({
+      success,
+      model,
+      usageMetadata,
+      latencyMs: Date.now() - aiRequestStartedAt,
+    });
+  };
   const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
   const favoriteReference = isFavoriteReference(message);
   const favoriteListRequest = isFavoriteProviderListRequest(message);
@@ -465,6 +478,7 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
 
     if (!process.env.GEMINI_API_KEY) {
       console.error("PandaBot is unavailable because GEMINI_API_KEY is not configured.");
+      recordUsage(false, "unavailable");
       if (recommendationRequest) {
         return res.json(buildRecommendationFallback(
           location,
@@ -493,6 +507,7 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
         },
       });
     });
+    recordUsage(true, generated.model, generated.result.usageMetadata);
     const { result } = generated;
     const resultText = result.text?.trim();
 
@@ -523,6 +538,9 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
     }
     return res.json({ response, recommendations });
   } catch (error) {
+    if (!usageRecorded && failedOperation.startsWith("Gemini")) {
+      recordUsage(false, failedModel || "unavailable");
+    }
     console.error("PandaBot support request failed:", {
       operation: failedOperation,
       model: failedModel || undefined,

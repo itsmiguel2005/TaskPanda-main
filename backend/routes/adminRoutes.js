@@ -2,6 +2,7 @@ const express = require("express");
 const { body, param, query } = require("express-validator");
 const {
   handleGetAdminAnalytics,
+  handleGetAdminPandaBotHealth,
   handleGetAdminUsers,
   handleGetAdminUserDetails,
   handleSetAdminUserSuspension,
@@ -74,6 +75,7 @@ router.patch(
   handleReviewTesdaCertificate
 );
 router.get("/analytics", requireAdmin, handleGetAdminAnalytics);
+router.get("/analytics/pandabot", requireAdmin, handleGetAdminPandaBotHealth);
 router.get(
   "/support-reports",
   requireAdmin,

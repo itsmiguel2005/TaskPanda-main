@@ -106,6 +106,9 @@ export default function AdminDashboardOverview() {
   const { token, logout } = useAuth();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
+  const [pandaBotHealth, setPandaBotHealth] = useState(null);
+  const [pandaBotHealthError, setPandaBotHealthError] = useState("");
+  const [pandaBotHealthLoading, setPandaBotHealthLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshVersion, setRefreshVersion] = useState(0);
@@ -143,6 +146,41 @@ export default function AdminDashboardOverview() {
       })
       .finally(() => {
         if (!controller.signal.aborted) setIsLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [token, refreshVersion, logout, navigate]);
+
+  useEffect(() => {
+    if (!token) {
+      setPandaBotHealth(null);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setPandaBotHealthLoading(true);
+    setPandaBotHealthError("");
+    apiFetch("/api/admin/analytics/pandabot", {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const result = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          setPandaBotHealth(null);
+          logout();
+          navigate("/login", { replace: true });
+          return;
+        }
+        if (!response.ok) throw new Error(result.message || "Could not load PandaBot health.");
+        setPandaBotHealth(result);
+      })
+      .catch((requestError) => {
+        if (!controller.signal.aborted) setPandaBotHealthError(requestError.message || "Could not load PandaBot health.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPandaBotHealthLoading(false);
       });
 
     return () => controller.abort();
@@ -204,6 +242,13 @@ export default function AdminDashboardOverview() {
   const databaseConnected = data?.system?.database === "connected";
   const apiOperational = Boolean(data) && !error;
   const refreshDashboard = () => setRefreshVersion((value) => value + 1);
+  const pandaBotStatus = {
+    operational: { label: "Operational", tone: "bg-emerald-50 text-emerald-800", dot: "bg-emerald-500" },
+    degraded: { label: "Degraded", tone: "bg-rose-50 text-rose-800", dot: "bg-rose-500" },
+    not_configured: { label: "Not configured", tone: "bg-amber-50 text-amber-900", dot: "bg-amber-500" },
+    not_tested: { label: "Not tested", tone: "bg-slate-100 text-slate-700", dot: "bg-slate-500" },
+  }[pandaBotHealth?.status] || { label: pandaBotHealthLoading ? "Checking" : "Unavailable", tone: "bg-slate-100 text-slate-700", dot: "bg-slate-500" };
+  const compactNumber = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
 
   return (
     <section aria-labelledby="admin-overview-title" className="space-y-6 sm:space-y-7">
@@ -403,6 +448,52 @@ export default function AdminDashboardOverview() {
               {isLoading ? "Checking" : "Refresh checks"}
             </button>
           </div>
+        </section>
+        <section aria-labelledby="pandabot-health-title" className="min-w-0 rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h2 id="pandabot-health-title" className="text-sm font-bold text-slate-950">PandaBot AI</h2>
+              <p className="mt-0.5 truncate text-xs text-slate-500">
+                {pandaBotHealth?.model ? `${pandaBotHealth.model} · last 30 days` : "Usage and service health · last 30 days"}
+              </p>
+            </div>
+            <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-bold ${pandaBotStatus.tone}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${pandaBotStatus.dot}`} />
+              {pandaBotStatus.label}
+            </span>
+          </div>
+          {pandaBotHealthError ? (
+            <p role="status" className="mt-3 text-xs text-rose-700">{pandaBotHealthError}</p>
+          ) : (
+            <>
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
+                <div>
+                  <dt className="text-[11px] text-slate-500">Requests</dt>
+                  <dd className="mt-0.5 text-sm font-bold tabular-nums text-slate-900">{pandaBotHealth ? compactNumber.format(pandaBotHealth.requests) : "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-[11px] text-slate-500">Reported tokens</dt>
+                  <dd className="mt-0.5 text-sm font-bold tabular-nums text-slate-900">{pandaBotHealth?.tokenUsageRequests ? compactNumber.format(pandaBotHealth.totalTokens) : "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-[11px] text-slate-500">Avg. response</dt>
+                  <dd className="mt-0.5 text-sm font-bold tabular-nums text-slate-900">{pandaBotHealth?.averageLatencyMs != null ? `${compactNumber.format(pandaBotHealth.averageLatencyMs)} ms` : "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-[11px] text-slate-500">Errors</dt>
+                  <dd className={`mt-0.5 text-sm font-bold tabular-nums ${pandaBotHealth?.errors ? "text-rose-700" : "text-slate-900"}`}>
+                    {pandaBotHealth ? `${compactNumber.format(pandaBotHealth.errors)} · ${pandaBotHealth.errorRate}%` : "—"}
+                  </dd>
+                </div>
+              </dl>
+              <p className="mt-3 border-t border-slate-100 pt-2 text-[10px] leading-4 text-slate-500">
+                {pandaBotHealth?.tokenUsageRequests
+                  ? `${compactNumber.format(pandaBotHealth.inputTokens)} input · ${compactNumber.format(pandaBotHealth.outputTokens)} output tokens. Remaining provider quota isn’t exposed here.`
+                  : "Token counts appear when Gemini reports usage metadata; remaining provider quota isn’t exposed here."}
+              </p>
+              {pandaBotHealthLoading && <span className="sr-only">Refreshing PandaBot analytics</span>}
+            </>
+          )}
         </section>
       </div>
     </section>
