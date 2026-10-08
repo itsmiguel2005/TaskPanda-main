@@ -14,8 +14,11 @@ const {
   buildProviderContext,
   buildProviderFilter,
   buildRewardContext,
-  buildTopRatedEmptyResponse,
-  isTopRatedRequest,
+  buildTopRatedRecommendations,
+  buildNearbyProviderPipeline,
+  findRequestedProfession,
+  isProviderRecommendationRequest,
+  normalizeCoordinates,
   normalizeUserLocation,
   parsePandaBotResponse,
   responseSchema,
@@ -56,54 +59,73 @@ function getErrorStatus(error) {
 
 router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
   const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
-  const location = normalizeUserLocation(req.body?.location);
+  const recommendationRequest = isProviderRecommendationRequest(message);
+  const location = normalizeUserLocation(req.body?.location) || (
+    recommendationRequest ? { city: "", province: "", label: "" } : null
+  );
 
   if (!message || message.length > MAX_MESSAGE_LENGTH) {
     return res.status(400).json({ message: `Provide a message of 1 to ${MAX_MESSAGE_LENGTH} characters.` });
   }
-  if (!location) {
+  if (!location && !recommendationRequest) {
     return res.status(400).json({ message: "Provide a valid user location (city, region, or both)." });
-  }
-
-  if (!process.env.GEMINI_API_KEY) {
-    console.error("PandaBot is unavailable because GEMINI_API_KEY is not configured.");
-    return res.status(503).json({ message: "AI support is temporarily unavailable." });
   }
 
   let failedOperation = "provider search";
   let failedModel = "";
   try {
+    if (recommendationRequest) {
+      const coordinates = normalizeCoordinates(req.user.geoLocation?.coordinates);
+      if (!coordinates) {
+        return res.json({
+          type: "text",
+          response: "🐼 I need your saved map pin to find providers within 5 km. Update your profile location, then try again.",
+        });
+      }
+
+      const profession = findRequestedProfession([], message);
+      const reviewedProviders = await User.aggregate(
+        buildNearbyProviderPipeline(coordinates, profession, true, 3),
+      );
+      const newProviders = reviewedProviders.length < 3
+        ? await User.aggregate(
+          buildNearbyProviderPipeline(coordinates, profession, false, 3 - reviewedProviders.length),
+        )
+        : [];
+      return res.json(buildTopRatedRecommendations(
+        location,
+        [...reviewedProviders, ...newProviders],
+        message,
+      ));
+    }
+
+    const requestedProfession = findRequestedProfession([], message);
+    const providerProjection = "fullName username professions averageRating totalReviews barangay city province";
+    const providerSort = { averageRating: -1, totalReviews: -1 };
     const providerFilter = buildProviderFilter(location);
     let providers = await User.find(providerFilter)
-      .select("fullName username professions averageRating totalReviews barangay city province")
-      .sort({ averageRating: -1, totalReviews: -1 })
+      .select(providerProjection)
+      .sort(providerSort)
       .limit(12)
       .lean();
 
     if (!providers.length && location.city && location.province) {
       providers = await User.find(buildProviderFilter({ ...location, province: "" }))
-        .select("fullName username professions averageRating totalReviews barangay city province")
-        .sort({ averageRating: -1, totalReviews: -1 })
+        .select(providerProjection)
+        .sort(providerSort)
         .limit(12)
         .lean();
     }
 
     if (!providers.length && location.province) {
       providers = await User.find(buildProviderFilter({ ...location, city: "" }))
-        .select("fullName username professions averageRating totalReviews barangay city province")
-        .sort({ averageRating: -1, totalReviews: -1 })
+        .select(providerProjection)
+        .sort(providerSort)
         .limit(12)
         .lean();
     }
 
     const recommendationCandidates = selectProvidersForRequest(providers, message);
-    if (isTopRatedRequest(message) && recommendationCandidates.length === 0) {
-      return res.json({
-        response: buildTopRatedEmptyResponse(location, providers),
-        recommendations: [],
-      });
-    }
-
     const providerContext = buildProviderContext(recommendationCandidates);
     const needsBookingContext = /\b(?:bookings?|track|status|receipt|cash|payment|settle(?:d|ment)?|dispute)\b/i.test(message);
     const needsRewardContext = /\b(?:stamp|bamboo|reward|voucher)\b/i.test(message);
@@ -135,6 +157,11 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
       `User's message: ${message}`,
       "Select zero to three providers only when relevant to the request. Return their IDs in providerIds.",
     ].join("\n\n");
+
+    if (!process.env.GEMINI_API_KEY) {
+      console.error("PandaBot is unavailable because GEMINI_API_KEY is not configured.");
+      return res.status(503).json({ message: "AI support is temporarily unavailable." });
+    }
 
     failedOperation = "Gemini model discovery";
     const models = await getAvailableModels();

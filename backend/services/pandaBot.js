@@ -1,7 +1,8 @@
 const mongoose = require("mongoose");
 const { Type } = require("@google/genai");
+const knownProfessions = require("../../shared/professions.json");
 
-const systemInstruction = `You are PandaBot, the official AI customer support and matching assistant for TaskPanda, an on-demand service marketplace. Be friendly, concise, actionable, and use a warm panda-mascot tone. Use supplied account context to answer questions about the caller's own recent bookings, their exact status, cash confirmations, settlement, and receipt number; never claim access to records not included in that context. If no matching booking is supplied, say you could not find it in the recent records and direct the user to Bookings. Explain the Pending, Confirmed, On the Way, In Progress, Completed, and Settled booking flow. Use supplied reward context for the caller's current bamboo stamp progress and active stamp vouchers; one settled booking earns one stamp, and five stamps earn a PHP 50 travel-fee voucher. Give general account-security guidance and explain that disputes should be reported through the relevant booking in the app. For local matching, use only the provider records supplied with the request. Match at the city and region level across the whole city; do not restrict recommendations to the user's barangay or imply that the user is searching only within one barangay. Recommend only providers whose IDs are in that data, match their category and location to the user's request, and use their provided ratings and review counts exactly. Never invent a provider, rating, review count, service area, availability, booking, receipt, or reward state. If no supplied provider is a reasonable local match, say so and direct the user to Explore. Recommendations are location-aware across regions and cities, never limited to a single city. Return only JSON with a concise message string and a providerIds array containing zero to three IDs copied from the supplied providers.`;
+const systemInstruction = `You are PandaBot, the official AI customer support and matching assistant for TaskPanda, an on-demand service marketplace. Be friendly, concise, actionable, and use a warm panda-mascot tone; a panda emoji may be used sparingly. Use supplied account context to answer questions about the caller's own recent bookings, their exact status, cash confirmations, settlement, and receipt number; never claim access to records not included in that context. If no matching booking is supplied, say you could not find it in the recent records and direct the user to Bookings. Explain the Pending, Confirmed, On the Way, In Progress, Completed, and Settled booking flow. Use supplied reward context for the caller's current bamboo stamp progress and active stamp vouchers; one settled booking earns one stamp, and five stamps earn a PHP 50 travel-fee voucher. Give general account-security guidance and explain that disputes should be reported through the relevant booking in the app. For local matching, use only the provider records supplied with the request. Match at the city and region level across the whole city; do not restrict recommendations to the user's barangay or imply that the user is searching only within one barangay. Recommend only providers whose IDs are in that data, match their category and location to the user's request, and use their provided ratings and review counts exactly. Never invent a provider, rating, review count, service area, availability, booking, receipt, or reward state. If no supplied provider is a reasonable local match, say so and direct the user to Explore. Recommendations are location-aware across regions and cities, never limited to a single city. Return only JSON with a concise message string and a providerIds array containing zero to three IDs copied from the supplied providers.`;
 
 const responseSchema = {
   type: Type.OBJECT,
@@ -63,6 +64,75 @@ function buildProviderFilter(location) {
   return filter;
 }
 
+function normalizeCoordinates(value) {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 2 ||
+    !value.every((coordinate) => typeof coordinate === "number")
+  ) return null;
+  const [longitude, latitude] = value;
+  if (
+    !Number.isFinite(longitude) || longitude < -180 || longitude > 180 ||
+    !Number.isFinite(latitude) || latitude < -90 || latitude > 90
+  ) return null;
+  return [longitude, latitude];
+}
+
+function buildNearbyProviderPipeline(coordinates, profession, includeReviewed, limit = 3) {
+  const query = {
+    role: "provider",
+    registrationComplete: true,
+    isSuspended: { $ne: true },
+    archivedAt: null,
+    "geoLocation.type": "Point",
+  };
+
+  if (profession) {
+    query.professions = {
+      $in: [new RegExp(`^${escapeRegex(profession)}$`, "i")],
+    };
+  }
+  if (includeReviewed) {
+    query.averageRating = { $gt: 0 };
+    query.totalReviews = { $gt: 0 };
+  } else {
+    query.averageRating = { $in: [0, null] };
+    query.totalReviews = { $in: [0, null] };
+  }
+
+  return [
+    {
+      $geoNear: {
+        near: { type: "Point", coordinates },
+        key: "geoLocation",
+        distanceField: "distanceMeters",
+        maxDistance: 5000,
+        spherical: true,
+        query,
+      },
+    },
+    {
+      $sort: includeReviewed
+        ? { averageRating: -1, totalReviews: -1, distanceMeters: 1 }
+        : { distanceMeters: 1, createdAt: -1 },
+    },
+    { $limit: Math.max(0, Math.min(3, Math.floor(Number(limit) || 0))) },
+    {
+      $project: {
+        _id: 1,
+        fullName: 1,
+        username: 1,
+        professions: 1,
+        averageRating: 1,
+        totalReviews: 1,
+        city: 1,
+        province: 1,
+        distanceKm: { $round: [{ $divide: ["$distanceMeters", 1000] }, 1] },
+      },
+    },
+  ];
+}
+
 function buildProviderContext(providers) {
   return providers.map((provider) => ({
     id: String(provider._id),
@@ -74,32 +144,140 @@ function buildProviderContext(providers) {
   }));
 }
 
+function findRequestedProfession(providers, message) {
+  const providerProfessions = providers.flatMap((provider) => (
+    Array.isArray(provider.professions) ? provider.professions : []
+  ));
+  const professions = [...new Set([...knownProfessions, ...providerProfessions]
+    .filter((profession) => typeof profession === "string" && profession.trim()))]
+    .sort((left, right) => right.length - left.length);
+  const normalizedMessage = String(message || "");
+
+  return professions.find((profession) => {
+    const escapedProfession = escapeRegex(profession.trim());
+    return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escapedProfession}(?:s|es)?(?=$|[^\\p{L}\\p{N}])`, "iu")
+      .test(normalizedMessage);
+  }) || "";
+}
+
+function isTopRatedRequest(message, providers = []) {
+  if (/\b(?:top\s+pros?|top[-\s]?rated|highest[-\s]?rated|best[-\s]?rated)\b/i.test(message)) {
+    return true;
+  }
+  return Boolean(
+    findRequestedProfession(providers, message) &&
+    /\b(?:top|best|highest[-\s]?rated)\b/i.test(message)
+  );
+}
+
+function isProviderRecommendationRequest(message, providers = []) {
+  if (isTopRatedRequest(message, providers)) return true;
+  return Boolean(
+    findRequestedProfession(providers, message) &&
+    /\b(?:find|show|recommend|suggest|who|looking\s+for|need|hire|book)\b/i.test(message)
+  );
+}
+
 function selectProvidersForRequest(providers, message) {
-  const asksForTopRated = isTopRatedRequest(message);
+  const asksForTopRated = isTopRatedRequest(message, providers);
   if (!asksForTopRated) return providers;
 
+  const profession = findRequestedProfession(providers, message);
   return providers.filter((provider) => {
     const rating = Number(provider.averageRating);
     const reviewCount = Number(provider.totalReviews);
-    return Number.isFinite(rating) && rating > 0 && Number.isFinite(reviewCount) && reviewCount > 0;
-  });
+    const hasReviews = Number.isFinite(rating) && rating > 0 && Number.isFinite(reviewCount) && reviewCount > 0;
+    const matchesProfession = !profession || (Array.isArray(provider.professions) && provider.professions.includes(profession));
+    return hasReviews && matchesProfession;
+  }).sort((left, right) => (
+    Number(right.averageRating) - Number(left.averageRating) ||
+    Number(right.totalReviews) - Number(left.totalReviews)
+  ));
 }
 
-function isTopRatedRequest(message) {
-  return /\b(?:top\s+pros?|top[-\s]?rated|highest[-\s]?rated|best[-\s]?rated)\b/i.test(message);
+function buildTopRatedEmptyResponse(location, providers, profession = "") {
+  const area = [location.city, location.province].filter(Boolean).join(", ") || "your area";
+  const fallbackProfession = providers
+    .flatMap((provider) => Array.isArray(provider.professions) ? provider.professions : [])
+    .find((item) => typeof item === "string" && item.trim());
+  const service = profession || fallbackProfession ? ` ${profession || fallbackProfession}` : "";
+  return `I couldn't find${service} providers within 5 km of you in ${area}. Try Explore to browse more providers.`;
 }
 
-function buildTopRatedEmptyResponse(location, providers) {
-  const area = [location.city, location.province].filter(Boolean).join(", ") || "your city";
-  if (providers.length === 0) {
-    return `I checked across ${area}, not just one barangay, but there are no active, location-listed professionals available to rank right now. Try Explore to search nearby areas.`;
+function buildTopRatedRecommendations(location, providers, message) {
+  const profession = findRequestedProfession(providers, message);
+  const matchingProfession = (provider) => !profession || (
+    Array.isArray(provider.professions) &&
+    provider.professions.some((item) => String(item).toLowerCase() === profession.toLowerCase())
+  );
+  const reviewedProviders = providers
+    .filter((provider) => (
+      Number(provider.averageRating) > 0 &&
+      Number(provider.totalReviews) > 0 &&
+      matchingProfession(provider)
+    ))
+    .sort((left, right) => (
+      Number(right.averageRating) - Number(left.averageRating) ||
+      Number(right.totalReviews) - Number(left.totalReviews) ||
+      Number(left.distanceKm ?? Infinity) - Number(right.distanceKm ?? Infinity)
+    ))
+    .slice(0, 3);
+  const selectedIds = new Set(reviewedProviders.map((provider) => String(provider._id)));
+  const newProviders = providers
+    .filter((provider) => (
+      !selectedIds.has(String(provider._id)) &&
+      Number(provider.averageRating || 0) <= 0 &&
+      Number(provider.totalReviews || 0) <= 0 &&
+      matchingProfession(provider)
+    ))
+    .sort((left, right) => (
+      Number(left.distanceKm ?? Infinity) - Number(right.distanceKm ?? Infinity) ||
+      new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()
+    ))
+    .slice(0, Math.max(0, 3 - reviewedProviders.length));
+  const recommendedProviders = [...reviewedProviders, ...newProviders];
+  const area = [location.city, location.province].filter(Boolean).join(", ") || "your area";
+
+  if (!recommendedProviders.length) {
+    return {
+      type: "text",
+      response: buildTopRatedEmptyResponse(location, providers, profession),
+    };
   }
 
-  const categories = [...new Set(providers.flatMap((provider) => Array.isArray(provider.professions) ? provider.professions : []))]
-    .filter(Boolean)
-    .slice(0, 3);
-  const categoryText = categories.length ? ` I found local ${categories.join(", ")} profile${categories.length > 1 ? "s" : ""}` : " I found local provider profiles";
-  return `I checked across ${area}, not just one barangay.${categoryText}, but they do not have customer reviews yet, so I can't fairly rank them as top pros. Open Explore to browse all citywide options.`;
+  const label = profession ? `${profession}s` : "local pros";
+  const ratedCount = reviewedProviders.length;
+  const newCount = newProviders.length;
+  const ratedIntro = ratedCount === 0
+    ? `I couldn't find rated ${label}`
+    : ratedCount === 1
+    ? `Here is the highest-rated ${profession || "local pro"}`
+    : `Here are the top ${ratedCount} ${label}`;
+  const intro = `🐼 ${ratedIntro} within 5 km of you in ${area}${newCount
+    ? `. I’ve added ${newCount === 1 ? "a nearby new provider" : `${newCount} nearby new providers`} with no ratings yet`
+    : ""}.`;
+  return {
+    type: "recommendation_cards",
+    intro,
+    providers: recommendedProviders.map((provider) => {
+      const professions = Array.isArray(provider.professions) ? provider.professions : [];
+      const rating = Number(provider.averageRating);
+      const reviewCount = Number(provider.totalReviews);
+      const providerLocation = [provider.city, provider.province].filter(Boolean).join(", ");
+      return {
+        providerId: String(provider._id),
+        name: provider.fullName || provider.username || "Local provider",
+        category: profession || professions[0] || "TaskPanda professional",
+        rating: Math.min(5, Math.max(0, rating)),
+        reviewCount: Math.max(0, Math.floor(reviewCount)),
+        isNew: reviewCount <= 0,
+        distanceKm: provider.distanceKm != null && Number.isFinite(Number(provider.distanceKm))
+          ? Number(provider.distanceKm)
+          : null,
+        ...(providerLocation ? { location: providerLocation } : {}),
+      };
+    }),
+  };
 }
 
 function buildBookingContext(bookings) {
@@ -195,8 +373,13 @@ function parsePandaBotResponse(text, providers) {
 module.exports = {
   buildProviderContext,
   buildProviderFilter,
+  normalizeCoordinates,
+  buildNearbyProviderPipeline,
   selectProvidersForRequest,
   isTopRatedRequest,
+  isProviderRecommendationRequest,
+  findRequestedProfession,
+  buildTopRatedRecommendations,
   buildTopRatedEmptyResponse,
   buildBookingContext,
   buildRewardContext,

@@ -1,18 +1,3 @@
-export const PROFESSIONS = [
-  "Electrician",
-  "Plumber",
-  "Aircon Tech",
-  "Carpenter",
-  "Painter",
-  "Welder",
-  "Construction Worker",
-  "Appliance Tech",
-  "Housekeeper",
-  "Home Chef",
-  "Gardener",
-  "Disinfection",
-  "Delivery Rider",
-  "Transport Helper",
-  "IT Tech",
-  "IT Repair",
-];
+import professions from "../../../shared/professions.json";
+
+export const PROFESSIONS = professions;

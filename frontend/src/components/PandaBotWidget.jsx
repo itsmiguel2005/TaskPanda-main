@@ -50,6 +50,7 @@ function ScrollIcon({ direction }) {
 function RecommendationCard({ provider, onBook }) {
   const rating = Number(provider.rating);
   const reviewCount = Number(provider.reviewCount);
+  const isNew = provider.isNew || reviewCount <= 0;
 
   return (
     <article className="w-full rounded-xl border border-emerald-100 bg-white p-3 shadow-sm">
@@ -59,11 +60,13 @@ function RecommendationCard({ provider, onBook }) {
           <p className="mt-0.5 text-xs font-medium text-emerald-800">{provider.category}</p>
           {provider.location && <p className="mt-1 truncate text-xs text-slate-500">{provider.location}</p>}
         </div>
-        <p className="shrink-0 text-xs font-semibold text-amber-700" aria-label={rating > 0 ? `${rating.toFixed(1)} out of 5 stars` : "No rating yet"}>
-          <span aria-hidden="true">★</span> {rating > 0 ? rating.toFixed(1) : "New"}
-          {rating > 0 && <span className="font-normal text-slate-500"> ({reviewCount})</span>}
+        <p className={`shrink-0 text-xs font-semibold ${isNew ? "text-slate-600" : "text-amber-700"}`} aria-label={isNew ? "New provider with no ratings yet" : `${rating.toFixed(1)} out of 5 stars`}>
+          {isNew ? "New · No ratings yet" : <><span aria-hidden="true">★</span> {rating.toFixed(1)} <span className="font-normal text-slate-500">({reviewCount})</span></>}
         </p>
       </div>
+      {provider.distanceKm != null && Number.isFinite(Number(provider.distanceKm)) && (
+        <p className="mt-1 text-xs text-slate-600">{Number(provider.distanceKm).toFixed(1)} km away</p>
+      )}
       <button
         type="button"
         onClick={onBook}
@@ -141,16 +144,22 @@ export default function PandaBotWidget() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "PandaBot couldn’t reply right now. Please try again.");
-      if (typeof data.response !== "string" || !data.response.trim()) {
+      const isRecommendationCards = data.type === "recommendation_cards" && typeof data.intro === "string";
+      const responseText = isRecommendationCards ? data.intro : data.response;
+      if (typeof responseText !== "string" || !responseText.trim()) {
         throw new Error("PandaBot returned an empty reply. Please try again.");
       }
-      const recommendations = Array.isArray(data.recommendations)
+      const recommendations = isRecommendationCards && Array.isArray(data.providers)
+        ? data.providers
+          .filter((provider) => provider && typeof provider.providerId === "string" && provider.name)
+          .map((provider) => ({ ...provider, id: provider.providerId }))
+        : Array.isArray(data.recommendations)
         ? data.recommendations.filter((provider) => provider && typeof provider.id === "string" && provider.name)
         : [];
       setMessages((current) => [...current, {
         id: `${Date.now()}-assistant`,
         role: "assistant",
-        text: data.response.trim(),
+        text: responseText.trim(),
         recommendations,
       }]);
     } catch (error) {
