@@ -7,6 +7,7 @@ const AdminSession = require("../models/AdminSession");
 const AdminLoginChallenge = require("../models/AdminLoginChallenge");
 const config = require("../config/env");
 const { geocodeAddress } = require("../services/geocoder");
+const { getAgeFromDateOfBirth } = require("../utils/providerAge");
 const { createReferralCode, creditReferralRewards } = require("../services/rewards");
 const {
   hasValidSmtpCredentials,
@@ -728,17 +729,11 @@ async function handleCompleteRegistration(req, res) {
     if (!geoLocation || !Array.isArray(geoLocation.coordinates) || geoLocation.coordinates.length !== 2) {
       return res.status(400).json({ message: "Use your current location so nearby clients can find your profile." });
     }
-    parsedDateOfBirth = new Date(`${dateOfBirth}T00:00:00.000Z`);
-    const today = new Date();
-    const age = today.getUTCFullYear() - parsedDateOfBirth.getUTCFullYear() - (
-      today.getUTCMonth() < parsedDateOfBirth.getUTCMonth() ||
-      (today.getUTCMonth() === parsedDateOfBirth.getUTCMonth() && today.getUTCDate() < parsedDateOfBirth.getUTCDate())
-        ? 1
-        : 0
-    );
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth) || Number.isNaN(parsedDateOfBirth.getTime()) || age < 18) {
-      return res.status(400).json({ message: "Providers must be at least 18 years old." });
+    const age = getAgeFromDateOfBirth(dateOfBirth, now);
+    if (age === null || age < 18 || age > 120) {
+      return res.status(400).json({ message: "Providers must be between 18 and 120 years old and enter a valid date of birth." });
     }
+    parsedDateOfBirth = new Date(`${dateOfBirth}T00:00:00.000Z`);
     if (!user.professions.length) {
       return res.status(400).json({ message: "Select at least one profession to continue." });
     }

@@ -2,14 +2,15 @@ import { apiFetch } from "../services/api.js";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
+import PhilippineMobileInput from "../components/PhilippineMobileInput.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { clearRegistrationDraft, readRegistrationDraft, saveRegistrationDraft } from "../utils/registrationDraft.js";
-import { normalizePhilippineMobile } from "../utils/registrationValidation.js";
+import { getPhilippineMobileInputValue, normalizePhilippineMobile } from "../utils/registrationValidation.js";
 
 export default function ClientRegisterPhone() {
   const navigate = useNavigate();
   const { login } = useAuth();
-  const [mobileNumber, setMobileNumber] = useState(() => readRegistrationDraft("clientPhoneStep", { mobileNumber: "" }).mobileNumber);
+  const [mobileNumber, setMobileNumber] = useState(() => getPhilippineMobileInputValue(readRegistrationDraft("clientPhoneStep", { mobileNumber: "" }).mobileNumber));
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -19,7 +20,7 @@ export default function ClientRegisterPhone() {
 
     const normalizedMobileNumber = normalizePhilippineMobile(mobileNumber);
     if (!normalizedMobileNumber) {
-      setError("Enter a valid Philippine mobile number, such as +63 9XX XXX XXXX.");
+      setError("Enter 10 digits starting with 9 for a Philippine mobile number.");
       return;
     }
     const onboardingToken = sessionStorage.getItem("taskpanda_onboarding_token");
@@ -101,10 +102,14 @@ export default function ClientRegisterPhone() {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <label htmlFor="mobileNumber" className="block text-sm font-medium text-gray-700">Mobile Number</label>
-                  <input id="mobileNumber" name="mobileNumber" type="tel" inputMode="tel" autoComplete="tel" maxLength={20} placeholder="+63 9XX XXX XXXX" value={mobileNumber} onChange={(event) => { const value = event.target.value.replace(/[^\d+\s()-]/g, "").slice(0, 20); setMobileNumber(value); saveRegistrationDraft("clientPhoneStep", { mobileNumber: value }); }} className="block w-full rounded-lg border border-primary-200 bg-primary-50/50 px-4 py-2.5 text-sm text-gray-800 placeholder-gray-400/70 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30" />
-                </div>
+                <PhilippineMobileInput
+                  id="mobileNumber"
+                  value={mobileNumber}
+                  onChange={(value) => {
+                    setMobileNumber(value);
+                    saveRegistrationDraft("clientPhoneStep", { mobileNumber: value });
+                  }}
+                />
                 {error && <p className="text-sm text-red-600" role="alert">{error} {error.toLowerCase().includes("sign in again") && <Link to="/login" className="font-semibold underline">Sign in again</Link>}</p>}
                 <button type="submit" disabled={isSubmitting} className={`w-full rounded-lg bg-linear-to-r ${a.button} px-4 py-2.5 font-semibold text-white transition-opacity hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50`}>{isSubmitting ? "Finishing registration..." : "Complete Sign up"}</button>
               </form>

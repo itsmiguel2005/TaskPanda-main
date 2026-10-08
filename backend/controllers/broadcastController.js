@@ -7,9 +7,12 @@ async function handleGetBroadcasts(req, res) {
     const dismissals = await UserDashboardDismissal.find({ userId: req.user._id, kind: "broadcast" })
       .select("targetId")
       .lean();
-    const filter = dismissals.length
-      ? { _id: mongoose.trusted({ $nin: dismissals.map((dismissal) => dismissal.targetId) }) }
-      : {};
+    const filter = {
+      createdAt: mongoose.trusted({ $gte: req.user.createdAt }),
+      ...(dismissals.length
+        ? { _id: mongoose.trusted({ $nin: dismissals.map((dismissal) => dismissal.targetId) }) }
+        : {}),
+    };
     const broadcasts = await Broadcast.find(filter)
       .sort({ createdAt: -1, _id: -1 })
       .limit(50)

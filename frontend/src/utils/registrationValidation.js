@@ -33,8 +33,19 @@ export function getPasswordStrength(password) {
 }
 
 export function normalizePhilippineMobile(value) {
-  const digits = value.replace(/\D/g, "");
+  const digits = String(value || "").replace(/\D/g, "");
+  if (/^9\d{9}$/.test(digits)) return `0${digits}`;
   if (/^09\d{9}$/.test(digits)) return digits;
   if (/^639\d{9}$/.test(digits)) return `0${digits.slice(2)}`;
   return "";
+}
+
+export function getPhilippineMobileInputValue(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  const nationalDigits = digits.startsWith("63")
+    ? digits.slice(2)
+    : digits.startsWith("0")
+      ? digits.slice(1)
+      : digits;
+  return nationalDigits.slice(0, 10);
 }
