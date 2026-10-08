@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-const ONLINE_WINDOW_MS = 5 * 60 * 1000;
+const ONLINE_WINDOW_MS = 90 * 1000;
 const STATUS_REFRESH_INTERVAL_MS = 15 * 1000;
 const MIN_ACTIVITY_TIMESTAMP = new Date("2000-01-01T00:00:00Z").getTime();
 
@@ -12,8 +12,8 @@ function parseActivityDate(value) {
 }
 
 export function isUserOnline(lastActive, now = Date.now(), isOnline) {
-  if (typeof isOnline === "boolean") return isOnline;
-  if (!lastActive) return false;
+  if (isOnline === false) return false;
+  if (!lastActive) return isOnline === true;
   const lastActiveTime = new Date(lastActive).getTime();
   return Number.isFinite(lastActiveTime)
     && lastActiveTime <= now + 60 * 1000
@@ -21,9 +21,9 @@ export function isUserOnline(lastActive, now = Date.now(), isOnline) {
 }
 
 export function formatLastActive(lastActive, now = Date.now(), isOnline) {
-  if (!lastActive) return isOnline === true ? "Active now" : "Activity unavailable";
+  if (!lastActive) return "Activity unavailable";
   const date = parseActivityDate(lastActive);
-  if (!date) return isOnline === true ? "Active now" : "Activity unavailable";
+  if (!date) return "Activity unavailable";
   const lastActiveTime = date.getTime();
 
   const elapsedMinutes = Math.max(0, Math.floor((now - lastActiveTime) / 60_000));

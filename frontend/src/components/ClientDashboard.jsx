@@ -609,6 +609,8 @@ export default function Dashboard() {
         const sameSnapshot = current.length === nextProviders.length && current.every((provider, index) => (
           provider.name === nextProviders[index].name &&
           provider.category === nextProviders[index].category &&
+          provider.isOnline === nextProviders[index].isOnline &&
+          provider.lastActive === nextProviders[index].lastActive &&
           provider.professions?.join("|") === nextProviders[index].professions?.join("|") &&
           provider.rating === nextProviders[index].rating &&
           provider.reviews === nextProviders[index].reviews &&

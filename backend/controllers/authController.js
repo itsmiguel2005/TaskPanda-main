@@ -201,11 +201,18 @@ async function handleLogout(req, res) {
 
   try {
     const loggedOutAt = new Date();
+    const tokenHash = hashToken(token);
+    const hasAnotherActiveSession = (req.user.accountTokens || []).some((session) =>
+      session.tokenHash !== tokenHash && new Date(session.expiresAt).getTime() > loggedOutAt.getTime()
+    );
     await User.updateOne(
       { _id: req.user._id },
       {
-        $pull: { accountTokens: { tokenHash: hashToken(token) } },
-        $set: { lastActive: loggedOutAt, lastOfflineAt: loggedOutAt, isOnline: false },
+        $pull: { accountTokens: { tokenHash } },
+        $set: {
+          isOnline: hasAnotherActiveSession,
+          lastOfflineAt: hasAnotherActiveSession ? null : loggedOutAt,
+        },
       },
     );
     return res.json({ message: "Logged out successfully." });

@@ -60,6 +60,26 @@ function getSearchAreaCity(location, user) {
   return normalizeLocalityName(user?.city) || "Pangasinan";
 }
 
+function isValidSearchLocation(location) {
+  const coordinates = location?.geoLocation?.coordinates;
+  if (
+    !location
+    || location.geoLocation?.type !== "Point"
+    || typeof location.address !== "string"
+    || location.address.length > 300
+    || !Array.isArray(coordinates)
+    || coordinates.length !== 2
+  ) return false;
+
+  const [longitude, latitude] = coordinates.map(Number);
+  return Number.isFinite(longitude)
+    && longitude >= -180
+    && longitude <= 180
+    && Number.isFinite(latitude)
+    && latitude >= -90
+    && latitude <= 90;
+}
+
 function CheckBox({ label, count, checked, onChange }) {
   return (
     <label className="flex cursor-pointer items-center gap-2.5">
@@ -91,6 +111,7 @@ export default function Explore() {
   const [draftSearchLocation, setDraftSearchLocation] = useState({ address: "", geoLocation: null });
   const [showSearchLocationPicker, setShowSearchLocationPicker] = useState(false);
   const [locationError, setLocationError] = useState("");
+  const [locationSaveWarning, setLocationSaveWarning] = useState("");
   const [showAllCats, setShowAllCats] = useState(false);
   const [sortBy, setSortBy] = useState("distance");
   const [selectedCategories, setSelectedCategories] = useState(new Set());
@@ -105,15 +126,38 @@ export default function Explore() {
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
   const { token } = useAuth();
+  const searchLocationStorageKey = user?.id
+    ? `taskpanda:explore-search-location:${user.id}`
+    : "";
 
   useEffect(() => {
-    const coordinates = user?.geoLocation?.coordinates;
-    if (coordinates?.length === 2) {
-      const geoLocation = { type: "Point", coordinates };
-      setSearchCoordinates(geoLocation);
-      setSearchLocation({ address: user.address || "", geoLocation });
+    let nextLocation = {
+      address: typeof user?.address === "string" ? user.address : "",
+      geoLocation: isValidSearchLocation({
+        address: typeof user?.address === "string" ? user.address : "",
+        geoLocation: user?.geoLocation,
+      }) ? user.geoLocation : null,
+    };
+
+    if (searchLocationStorageKey) {
+      try {
+        const savedLocation = localStorage.getItem(searchLocationStorageKey);
+        if (savedLocation) {
+          const parsedLocation = JSON.parse(savedLocation);
+          if (isValidSearchLocation(parsedLocation)) {
+            nextLocation = parsedLocation;
+          } else {
+            console.warn("Saved Explore search location is invalid and was ignored.");
+          }
+        }
+      } catch (error) {
+        console.warn("Saved Explore search location could not be loaded:", error.message);
+      }
     }
-  }, [user]);
+
+    setSearchLocation(nextLocation);
+    setSearchCoordinates(nextLocation.geoLocation);
+  }, [user, searchLocationStorageKey]);
 
   useEffect(() => {
     if (!showSearchLocationPicker) return undefined;
@@ -293,6 +337,7 @@ export default function Explore() {
 
   const openSearchLocationPicker = () => {
     setLocationError("");
+    setLocationSaveWarning("");
     setDraftSearchLocation(searchLocation.geoLocation ? searchLocation : {
       address: user?.address || registeredLocationLabel,
       geoLocation: user?.geoLocation || null,
@@ -301,14 +346,24 @@ export default function Explore() {
   };
 
   const applySearchLocation = () => {
-    const coordinates = draftSearchLocation.geoLocation?.coordinates;
-    if (!Array.isArray(coordinates) || coordinates.length !== 2) {
+    if (!isValidSearchLocation(draftSearchLocation)) {
       setLocationError("Choose a point on the map before applying your search location.");
       return;
     }
     setSearchLocation(draftSearchLocation);
     setSearchCoordinates(draftSearchLocation.geoLocation);
     setLocationError("");
+    setLocationSaveWarning("");
+    if (searchLocationStorageKey) {
+      try {
+        localStorage.setItem(searchLocationStorageKey, JSON.stringify(draftSearchLocation));
+      } catch (error) {
+        console.warn("Explore search location could not be saved:", error.message);
+        setLocationSaveWarning("Location updated for now, but could not be saved for your next visit.");
+      }
+    } else {
+      setLocationSaveWarning("Location updated for now, but could not be saved for your next visit.");
+    }
     setShowSearchLocationPicker(false);
   };
 
@@ -493,6 +548,7 @@ export default function Explore() {
                 )}
               </div>
               {locationError && <p className="mt-2 text-sm text-red-700" role="alert">{locationError}</p>}
+              {locationSaveWarning && <p className="mt-2 text-sm text-amber-800" role="status">{locationSaveWarning}</p>}
               {!searchCoordinates && (
                 <p className="mt-2 text-xs text-slate-600">
                   {registeredLocationLabel
