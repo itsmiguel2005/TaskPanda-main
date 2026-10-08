@@ -25,7 +25,7 @@ function completedDateFilter(from, to) {
   if (!Object.keys(range).length) return null;
   return {
     $or: ["settledAt", "workCompletedAt", "completionSubmittedAt", "updatedAt", "createdAt"]
-      .map((field) => ({ [field]: range })),
+      .map((field) => ({ [field]: mongoose.trusted(range) })),
   };
 }
 
@@ -344,6 +344,7 @@ async function handleAdminBroadcast(req, res) {
 }
 
 module.exports = {
+  completedDateFilter,
   handleGetAdminTransactions,
   handleGetAdminRewardAnalytics,
   handleGetAdminSystemSettings,

@@ -40,9 +40,26 @@ function AdminTransactionsPanel() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
+    const q = searchInput.trim();
+    if (q === filters.q) return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      setPage(1);
+      setFilters((current) => current.q === q ? current : { ...current, q });
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [filters.q, searchInput]);
+
+  useEffect(() => {
     if (!token) {
       logout();
       navigate("/login", { replace: true });
+      return undefined;
+    }
+    if (filters.from && filters.to && filters.from > filters.to) {
+      setIsLoading(false);
+      setError("Choose a start date on or before the end date.");
       return undefined;
     }
     const controller = new AbortController();
@@ -72,16 +89,6 @@ function AdminTransactionsPanel() {
     return () => controller.abort();
   }, [filters, logout, navigate, page, refreshKey, token]);
 
-  const applyFilters = (event) => {
-    event.preventDefault();
-    if (filters.from && filters.to && filters.from > filters.to) {
-      setError("Choose a start date on or before the end date.");
-      return;
-    }
-    setPage(1);
-    setFilters({ q: searchInput.trim(), from: filters.from, to: filters.to });
-  };
-
   return (
     <section aria-labelledby="admin-transactions-title" className="space-y-5">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -105,21 +112,20 @@ function AdminTransactionsPanel() {
         </dl>
       )}
 
-      <form onSubmit={applyFilters} className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-2 xl:grid-cols-[minmax(15rem,1fr)_10rem_10rem_auto] xl:items-end">
+      <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-2 xl:grid-cols-[minmax(15rem,1fr)_10rem_10rem] xl:items-end">
         <label className="block text-xs font-semibold text-slate-700 sm:col-span-2 xl:col-span-1">
           Search task, client, provider, or booking ID
           <input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} maxLength={100} className="dashboard-focus mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 placeholder:text-slate-500" placeholder="e.g. plumbing repair or name" />
         </label>
         <label className="block text-xs font-semibold text-slate-700">
           Completed from
-          <input type="date" value={filters.from} onChange={(event) => setFilters((current) => ({ ...current, from: event.target.value }))} className="dashboard-focus mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" />
+          <input type="date" value={filters.from} onChange={(event) => { setPage(1); setFilters((current) => ({ ...current, from: event.target.value })); }} className="dashboard-focus mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" />
         </label>
         <label className="block text-xs font-semibold text-slate-700">
           Completed to
-          <input type="date" value={filters.to} onChange={(event) => setFilters((current) => ({ ...current, to: event.target.value }))} className="dashboard-focus mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" />
+          <input type="date" value={filters.to} onChange={(event) => { setPage(1); setFilters((current) => ({ ...current, to: event.target.value })); }} className="dashboard-focus mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" />
         </label>
-        <button type="submit" className="dashboard-focus h-10 rounded-xl bg-blue-800 px-4 text-sm font-semibold text-white transition hover:bg-blue-900 active:scale-[0.98]">Apply filters</button>
-      </form>
+      </div>
 
       {error && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
