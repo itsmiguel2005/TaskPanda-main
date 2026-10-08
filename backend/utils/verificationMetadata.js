@@ -19,7 +19,7 @@ function collectMetadataText(value, result = []) {
   return result;
 }
 
-function getVerificationMetadataFlags(metadata) {
+function getVerificationMetadataFlags(metadata, { cameraCaptured = false } = {}) {
   const flags = [];
   const metadataText = collectMetadataText(metadata).join(" ");
 
@@ -27,17 +27,17 @@ function getVerificationMetadataFlags(metadata) {
     flags.push(SECURITY_FLAGS.AI_OR_EDITED_METADATA_DETECTED);
   }
 
-  if (!metadata?.Make && !metadata?.Model) {
+  if (!cameraCaptured && !metadata?.Make && !metadata?.Model) {
     flags.push(SECURITY_FLAGS.CAMERA_METADATA_MISSING);
   }
 
   return flags;
 }
 
-async function inspectVerificationMetadata(imageBuffer) {
+async function inspectVerificationMetadata(imageBuffer, options) {
   try {
     const metadata = await exifr.parse(imageBuffer);
-    return { flags: getVerificationMetadataFlags(metadata) };
+    return { flags: getVerificationMetadataFlags(metadata, options) };
   } catch (error) {
     return {
       flags: [SECURITY_FLAGS.METADATA_INSPECTION_FAILED],

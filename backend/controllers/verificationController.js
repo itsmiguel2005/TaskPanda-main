@@ -93,11 +93,20 @@ async function handleSubmitVerification(req, res) {
       uploadVerificationImage(frontBuffer, String(req.user._id), "front"),
       uploadVerificationImage(backBuffer, String(req.user._id), "back"),
     ]);
-    const metadataInspection = await inspectVerificationMetadata(frontBuffer);
-    const securityFlags = metadataInspection.flags;
-    if (metadataInspection.error) {
-      console.warn("Verification metadata inspection failed; routing submission for manual review:", metadataInspection.error.message);
-    }
+    const captureMethods = {
+      front: req.body.idFrontCaptureMethod === "guided-camera" ? "guided-camera" : "upload",
+      back: req.body.idBackCaptureMethod === "guided-camera" ? "guided-camera" : "upload",
+    };
+    const metadataInspections = await Promise.all([
+      inspectVerificationMetadata(frontBuffer, { cameraCaptured: captureMethods.front === "guided-camera" }),
+      inspectVerificationMetadata(backBuffer, { cameraCaptured: captureMethods.back === "guided-camera" }),
+    ]);
+    const securityFlags = [...new Set(metadataInspections.flatMap(({ flags }) => flags))];
+    metadataInspections.forEach((metadataInspection) => {
+      if (metadataInspection.error) {
+        console.warn("Verification metadata inspection failed; routing submission for manual review:", metadataInspection.error.message);
+      }
+    });
     if (securityFlags.includes(SECURITY_FLAGS.AI_OR_EDITED_METADATA_DETECTED)) {
       console.warn("Verification metadata indicates possible AI-generated or edited ID; routing for manual review.", String(req.user._id));
     }

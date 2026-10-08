@@ -1,5 +1,5 @@
 import { apiFetch } from "../services/api.js";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -25,7 +25,6 @@ function ImageUpload({
   imageWarnings,
 }) {
   const uploadInputRef = useRef(null);
-  const cameraInputRef = useRef(null);
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700">
@@ -45,14 +44,14 @@ function ImageUpload({
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-slate-800">{file ? "Replace image" : "Choose image"}</p>
           <p className="mt-1 text-xs text-slate-600">JPEG, PNG, or WebP · up to 8 MB</p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-nowrap gap-1.5">
             <button
               type="button"
               onClick={onTakePhoto}
               disabled={disabled}
-              className="dashboard-focus inline-flex min-h-9 items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 text-xs font-semibold text-sky-950 transition hover:border-sky-400 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="dashboard-focus inline-flex min-h-9 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg border border-sky-200 bg-white px-1.5 text-[11px] font-semibold whitespace-nowrap text-sky-950 transition hover:border-sky-400 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
                 <path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z" />
                 <circle cx="12" cy="13" r="3.5" />
               </svg>
@@ -60,19 +59,11 @@ function ImageUpload({
             </button>
             <button
               type="button"
-              onClick={() => cameraInputRef.current?.click()}
-              disabled={disabled}
-              className="dashboard-focus inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Use device camera
-            </button>
-            <button
-              type="button"
               onClick={() => uploadInputRef.current?.click()}
               disabled={disabled}
-              className="dashboard-focus inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="dashboard-focus inline-flex min-h-9 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white px-1.5 text-[11px] font-semibold whitespace-nowrap text-slate-800 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
                 <path d="M12 16V4m0 0L8 8m4-4 4 4" />
                 <path d="M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5" />
               </svg>
@@ -81,16 +72,6 @@ function ImageUpload({
           </div>
         </div>
       </div>
-      <input
-        ref={cameraInputRef}
-        type="file"
-        name={name}
-        accept={accept}
-        capture="environment"
-        className="hidden"
-        disabled={disabled}
-        onChange={onSelect}
-      />
       <input
         ref={uploadInputRef}
         type="file"
@@ -150,7 +131,7 @@ function GuidedCamera({ side, onCancel, onCapture }) {
 
     const startCamera = async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
-        setCameraError("Live camera capture is not supported in this browser. Use the device camera or upload a photo instead.");
+        setCameraError("Live camera capture is not supported in this browser. Upload a photo instead.");
         return;
       }
 
@@ -197,9 +178,9 @@ function GuidedCamera({ side, onCancel, onCapture }) {
           NotAllowedError: "Camera access is blocked. Allow camera access in your browser settings, or use Upload photo.",
           NotFoundError: "No camera was found. Use Upload photo to choose an ID image.",
           NotReadableError: "The camera is being used by another app. Close it and try again, or use Upload photo.",
-          OverconstrainedError: "This camera could not start with the requested settings. Use Upload photo or the device camera option.",
+          OverconstrainedError: "This camera could not start with the requested settings. Upload a photo instead.",
         };
-        setCameraError(messages[error.name] || "Could not start the camera. Use the device camera or upload a photo instead.");
+        setCameraError(messages[error.name] || "Could not start the camera. Upload a photo instead.");
       }
     };
 
@@ -307,8 +288,11 @@ function GuidedCamera({ side, onCancel, onCapture }) {
 
 export default function VerificationPage() {
   const navigate = useNavigate();
-  const { verify, token, role, isVerified } = useAuth();
+  const { verify, token, role, isVerified, user, updateUser } = useAuth();
   const profilePath = role === "provider" ? "/provider-profile" : "/profile";
+  const [verificationState, setVerificationState] = useState("loading");
+  const [verificationStatusError, setVerificationStatusError] = useState("");
+  const [statusRefreshKey, setStatusRefreshKey] = useState(0);
   const [idFrontFile, setIdFrontFile] = useState(null);
   const [idBackFile, setIdBackFile] = useState(null);
   const [idFrontPreview, setIdFrontPreview] = useState("");
@@ -316,10 +300,9 @@ export default function VerificationPage() {
   const [checkingImages, setCheckingImages] = useState({ front: false, back: false });
   const [imageErrors, setImageErrors] = useState({ front: "", back: "" });
   const [imageWarnings, setImageWarnings] = useState({ front: [], back: [] });
+  const [captureMethods, setCaptureMethods] = useState({ front: "upload", back: "upload" });
   const [cameraSide, setCameraSide] = useState("");
-  const [submitted, setSubmitted] = useState(false);
   const [ocrProcessing, setOcrProcessing] = useState(false);
-  const [autoVerified, setAutoVerified] = useState(false);
   const [voucherAwarded, setVoucherAwarded] = useState(false);
   const [voucherAwardError, setVoucherAwardError] = useState(false);
   const [error, setError] = useState("");
@@ -330,7 +313,52 @@ export default function VerificationPage() {
     if (idBackPreview) URL.revokeObjectURL(idBackPreview);
   }, [idFrontPreview, idBackPreview]);
 
-  const processSelectedImage = async (side, file) => {
+  useEffect(() => {
+    let active = true;
+
+    const loadVerificationStatus = async () => {
+      setVerificationState("loading");
+      setVerificationStatusError("");
+      try {
+        const response = await apiFetch("/api/profile", {
+          cache: "no-store",
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || "Could not check your verification status.");
+        }
+        if (!data.user) {
+          throw new Error("Your profile response did not include verification status.");
+        }
+        if (!active) return;
+
+        updateUser(data.user);
+        const status = String(data.user.verificationStatus || "").toLowerCase();
+        const detailStatus = String(data.user.verificationDetailsStatus || "").toLowerCase();
+        if (data.user.isVerified === true || status === "verified" || detailStatus === "active") {
+          setVerificationState("verified");
+        } else if (status === "pending" || detailStatus === "pending") {
+          setVerificationState("pending");
+        } else if (status === "rejected" || detailStatus === "rejected") {
+          setVerificationState("rejected");
+        } else {
+          setVerificationState("unverified");
+        }
+      } catch (statusError) {
+        console.error("Could not load identity verification status:", statusError);
+        if (!active) return;
+        setVerificationStatusError(statusError.message || "Could not check your verification status. Please try again.");
+        setVerificationState("error");
+      }
+    };
+
+    void loadVerificationStatus();
+    return () => {
+      active = false;
+    };
+  }, [token, updateUser, statusRefreshKey]);
+
+  const processSelectedImage = async (side, file, captureMethod = "upload") => {
     if (!file) return;
     const setter = side === "front" ? setIdFrontFile : setIdBackFile;
     const setPreview = side === "front" ? setIdFrontPreview : setIdBackPreview;
@@ -340,6 +368,7 @@ export default function VerificationPage() {
         return "";
       });
       setter(null);
+      setCaptureMethods((current) => ({ ...current, [side]: "upload" }));
       setImageWarnings((current) => ({ ...current, [side]: [] }));
     };
 
@@ -382,6 +411,7 @@ export default function VerificationPage() {
         return URL.createObjectURL(preparedFile);
       });
       setter(preparedFile);
+      setCaptureMethods((current) => ({ ...current, [side]: captureMethod }));
     } catch (imageError) {
       clearImage();
       setImageErrors((current) => ({
@@ -396,7 +426,7 @@ export default function VerificationPage() {
   const handleFileSelect = (side) => (e) => {
     const file = e.target.files[0];
     e.target.value = "";
-    void processSelectedImage(side, file);
+    void processSelectedImage(side, file, "upload");
   };
 
   const handleRemove = (side, setter, setPreview) => () => {
@@ -405,6 +435,7 @@ export default function VerificationPage() {
       return "";
     });
     setter(null);
+    setCaptureMethods((current) => ({ ...current, [side]: "upload" }));
     setImageErrors((current) => ({ ...current, [side]: "" }));
     setImageWarnings((current) => ({ ...current, [side]: [] }));
   };
@@ -432,6 +463,8 @@ export default function VerificationPage() {
     const formData = new FormData();
     formData.append("idFront", idFrontFile);
     formData.append("idBack", idBackFile);
+    formData.append("idFrontCaptureMethod", captureMethods.front);
+    formData.append("idBackCaptureMethod", captureMethods.back);
 
     try {
       if (idFrontFile.size + idBackFile.size > 3_400_000) {
@@ -459,11 +492,10 @@ export default function VerificationPage() {
         return;
       }
       verify(data);
-      setAutoVerified(data.autoVerified === true);
       setOcrProcessing(data.ocrProcessing === true);
       setVoucherAwarded(data.voucherAwarded === true);
       setVoucherAwardError(data.voucherAwardError === true);
-      setSubmitted(true);
+      setVerificationState(data.isVerified === true ? "verified" : "pending");
       setUploading(false);
     } catch (err) {
       console.error("Identity verification submission failed:", err);
@@ -474,7 +506,7 @@ export default function VerificationPage() {
     }
   };
 
-  const imagesBusy = uploading || submitted || checkingImages.front || checkingImages.back;
+  const imagesBusy = uploading || checkingImages.front || checkingImages.back;
 
   return (
     <div>
@@ -501,13 +533,23 @@ export default function VerificationPage() {
               <path strokeLinecap="round" d="M5.5 16c.7-1.2 1.6-1.8 2.5-1.8s1.8.6 2.5 1.8M13 10h5m-5 4h5" />
             </svg>
           </div>
-          <h1 className="mt-5 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">Identity verification</h1>
+          <h1 className="mt-5 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">
+            {verificationState === "pending"
+              ? "Verification under review"
+              : verificationState === "verified"
+                ? "Identity verified"
+                : "Identity verification"}
+          </h1>
           <p className="mx-auto mt-3 max-w-prose text-sm leading-6 text-slate-600">
-            Capture or upload both sides of a valid photo ID. Use a flat surface, even light, and keep all four ID corners visible so the text can be read.
+            {verificationState === "pending"
+              ? "Your documents are with our team. You can continue using TaskPanda while we review them."
+              : verificationState === "verified"
+                ? "Your identity is confirmed. You can continue using all available TaskPanda features."
+                : "Capture or upload both sides of a valid photo ID. Use a flat surface, even light, and keep all four ID corners visible so the text can be read."}
           </p>
         </div>
 
-        {role === "client" && !isVerified && !submitted && (
+        {role === "client" && !isVerified && (verificationState === "unverified" || verificationState === "rejected") && (
           <aside className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/90 p-4 text-left shadow-sm sm:p-5" aria-label="Identity verification reward">
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-800 ring-1 ring-emerald-200" aria-hidden="true">
@@ -526,47 +568,111 @@ export default function VerificationPage() {
           </aside>
         )}
 
-        {submitted && (
-          <div className={`mt-4 rounded-2xl border p-4 text-center shadow-sm ${autoVerified ? "border-emerald-200 bg-emerald-50/90" : "border-amber-200 bg-amber-50/90"}`} role="status">
-            <p className={`text-sm font-bold ${autoVerified ? "text-emerald-900" : "text-amber-950"}`}>
-              {autoVerified ? "Identity verified" : ocrProcessing ? "ID check in progress" : "Documents sent for manual review"}
-            </p>
-            <p className={`mt-1 text-sm ${autoVerified ? "text-emerald-800" : "text-amber-900"}`}>
-              {ocrProcessing
-                ? "Your ID images are saved securely. We’re checking them in the background, so you can explore TaskPanda now. Check your profile later for the result."
-                : autoVerified
-                  ? voucherAwarded
-                    ? "Your free ₱50 travel-fee voucher is in your wallet."
-                    : voucherAwardError
-                      ? "Your identity check passed, but we couldn’t add the voucher right now. Please contact support."
-                      : "Your identity check passed."
-                  : "Your account will be updated as soon as an administrator reviews your documents. If approved, your free ₱50 travel-fee voucher will be added to your wallet."}
-            </p>
-            {ocrProcessing && (
-              <button
-                type="button"
-                onClick={() => navigate("/explore")}
-                className="dashboard-focus mt-4 inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-sky-800"
-              >
-                Explore TaskPanda
-              </button>
-            )}
+        {verificationState === "loading" && (
+          <div className="mt-5 flex min-h-40 items-center justify-center rounded-3xl border border-slate-200 bg-white/80 p-6 text-sm font-medium text-slate-700 shadow-sm" role="status" aria-live="polite">
+            <span className="flex items-center gap-3">
+              <svg className="h-5 w-5 animate-spin text-emerald-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+              Checking your verification status…
+            </span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="mt-5 space-y-5 rounded-3xl border border-white/80 bg-white/75 p-5 shadow-[0_18px_48px_rgba(15,23,42,0.07)] backdrop-blur-xl sm:p-7">
-          {cameraSide && (
-            <GuidedCamera
-              side={cameraSide}
-              onCancel={() => setCameraSide("")}
-              onCapture={(file) => {
-                const side = cameraSide;
-                setCameraSide("");
-                void processSelectedImage(side, file);
-              }}
-            />
-          )}
+        {verificationState === "error" && (
+          <div className="mt-5 rounded-3xl border border-rose-200 bg-white p-6 text-center shadow-sm" role="alert">
+            <p className="text-sm font-semibold text-rose-900">{verificationStatusError}</p>
+            <button
+              type="button"
+              onClick={() => setStatusRefreshKey((current) => current + 1)}
+              className="dashboard-focus mt-4 inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-sky-800"
+            >
+              Try again
+            </button>
+          </div>
+        )}
 
+        {verificationState === "pending" && (
+          <section className="relative mt-5 overflow-hidden rounded-3xl border border-emerald-200 bg-emerald-50 p-6 text-center shadow-[0_16px_40px_rgba(16,185,129,0.10)] sm:p-8" role="status" aria-live="polite">
+            <div className="pointer-events-none absolute -right-10 -top-12 h-40 w-40 rounded-full bg-white/70 blur-2xl" aria-hidden="true" />
+            <div className="relative mx-auto h-36 w-36">
+              <div className="absolute inset-0 overflow-hidden rounded-full border-[3px] border-emerald-200 bg-white shadow-sm">
+                <img
+                  src="/assets/Panda Cropped.png"
+                  alt="TaskPanda panda mascot"
+                  className="absolute inset-0 h-full w-full object-cover object-top"
+                />
+              </div>
+              <span className="absolute bottom-1 right-1 z-20 flex h-10 w-10 items-center justify-center rounded-full border-2 border-emerald-200 bg-white text-emerald-700 shadow-sm" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                  <circle cx="10.8" cy="10.8" r="6.3" />
+                  <path d="m15.5 15.5 4.2 4.2" />
+                </svg>
+              </span>
+            </div>
+            <span className="relative mt-4 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/80 px-3 py-1 text-xs font-bold text-emerald-800">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 2" />
+              </svg>
+              Under review
+            </span>
+            <h2 className="relative mt-3 text-xl font-extrabold tracking-tight text-emerald-950 sm:text-2xl">
+              Hang tight! Panda is reviewing your ID documents.
+            </h2>
+            <p className="relative mx-auto mt-2 max-w-md text-sm leading-6 text-emerald-800">
+              Verification usually takes 24–48 hours. We’ll notify you once your documents are approved.
+            </p>
+            {ocrProcessing && (
+              <p className="relative mt-2 text-xs font-medium text-emerald-700">
+                Your ID images are saved securely and being checked now.
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => navigate("/explore")}
+              className="dashboard-focus relative mt-5 inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-sky-800"
+            >
+              Explore TaskPanda
+            </button>
+          </section>
+        )}
+
+        {verificationState === "verified" && (
+          <section className="mt-5 rounded-3xl border border-emerald-200 bg-emerald-50 p-6 text-center shadow-sm sm:p-8" role="status">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white text-emerald-700 ring-1 ring-emerald-200">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8" aria-hidden="true">
+                <path d="m5 12 4 4L19 6" />
+              </svg>
+            </div>
+            <h2 className="mt-4 text-xl font-extrabold text-emerald-950">Identity verified</h2>
+            <p className="mt-2 text-sm leading-6 text-emerald-800">
+              {voucherAwarded
+                ? "Your identity has been verified, and your free ₱50 travel-fee voucher is in your wallet."
+                : voucherAwardError
+                  ? "Your identity is verified, but we couldn’t add your voucher right now. Please contact support."
+                  : "Your identity has been verified. You can continue using all available TaskPanda features."}
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate(profilePath)}
+              className="dashboard-focus mt-5 inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-sky-800"
+            >
+              Back to profile
+            </button>
+          </section>
+        )}
+
+        {(verificationState === "unverified" || verificationState === "rejected") && (
+          <form onSubmit={handleSubmit} className="mt-5 space-y-5 rounded-3xl border border-white/80 bg-white/75 p-5 shadow-[0_18px_48px_rgba(15,23,42,0.07)] backdrop-blur-xl sm:p-7">
+            {verificationState === "rejected" && user?.verificationRejectionReason && (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-900" role="status">
+                <p className="font-bold">Your previous verification was not approved.</p>
+                <p className="mt-1">{user.verificationRejectionReason}</p>
+                <p className="mt-1">Upload clear images of both sides to submit again.</p>
+              </div>
+            )}
           <ImageUpload
             label="ID Front"
             name="idFront"
@@ -581,6 +687,16 @@ export default function VerificationPage() {
             imageError={imageErrors.front}
             imageWarnings={imageWarnings.front}
           />
+          {cameraSide === "front" && (
+            <GuidedCamera
+              side="front"
+              onCancel={() => setCameraSide("")}
+              onCapture={(file) => {
+                setCameraSide("");
+                void processSelectedImage("front", file, "guided-camera");
+              }}
+            />
+          )}
 
           <ImageUpload
             label="ID Back"
@@ -596,6 +712,16 @@ export default function VerificationPage() {
             imageError={imageErrors.back}
             imageWarnings={imageWarnings.back}
           />
+          {cameraSide === "back" && (
+            <GuidedCamera
+              side="back"
+              onCancel={() => setCameraSide("")}
+              onCapture={(file) => {
+                setCameraSide("");
+                void processSelectedImage("back", file, "guided-camera");
+              }}
+            />
+          )}
 
           {uploading && (
             <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-left" role="status" aria-live="polite">
@@ -625,7 +751,7 @@ export default function VerificationPage() {
             <button
               type="button"
               onClick={() => navigate(profilePath)}
-              disabled={uploading || submitted || checkingImages.front || checkingImages.back}
+              disabled={uploading || checkingImages.front || checkingImages.back}
               className="dashboard-focus flex-1 rounded-xl border border-slate-300 bg-white/80 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-white"
             >
               Cancel
@@ -638,7 +764,8 @@ export default function VerificationPage() {
               {uploading ? "Uploading..." : "Submit Verification"}
             </button>
           </div>
-        </form>
+          </form>
+        )}
         </div>
       </main>
     </div>

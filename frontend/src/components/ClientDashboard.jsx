@@ -149,6 +149,7 @@ function DashboardProviderCard({
   rating,
   reviews,
   category,
+  professions = [],
   onTimeStreak,
   tesdaCertificates,
   isVerified,
@@ -201,12 +202,23 @@ function DashboardProviderCard({
         <span className="truncate text-[10px] font-medium text-slate-500">{hasRatings ? `${reviews} reviews` : "No ratings yet"}</span>
       </div>
 
-      <div className="mt-2 flex h-12 shrink-0 flex-wrap content-start gap-1 overflow-hidden">
-        <span className="inline-flex max-w-full items-center rounded-full border border-sky-100 bg-sky-50 px-2 py-0.5 text-[9px] font-semibold text-blue-950">
-          <span className="truncate">{category}</span>
-        </span>
-        {isVerified && <VerifiedBadge />}
-        <TesdaBadges certificates={tesdaCertificates} />
+      <div className="mt-2 flex h-12 shrink-0 flex-col gap-1 overflow-hidden">
+        <div className="flex h-5 shrink-0 gap-1 overflow-hidden">
+          {(professions.length ? professions : [category]).slice(0, 3).map((item) => (
+            <span key={item} className="inline-flex max-w-[30%] min-w-0 shrink items-center rounded-full border border-sky-100 bg-sky-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-950">
+              <span className="truncate">{item}</span>
+            </span>
+          ))}
+          {professions.length > 3 && (
+            <span className="inline-flex shrink-0 items-center rounded-full border border-sky-100 bg-sky-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-950">
+              +{professions.length - 3}
+            </span>
+          )}
+        </div>
+        <div className="flex h-5 shrink-0 gap-1 overflow-hidden">
+          {isVerified && <VerifiedBadge />}
+          <TesdaBadges certificates={tesdaCertificates} />
+        </div>
       </div>
 
       <div className="mt-auto flex h-8 shrink-0 gap-2">
@@ -597,6 +609,7 @@ export default function Dashboard() {
         const sameSnapshot = current.length === nextProviders.length && current.every((provider, index) => (
           provider.name === nextProviders[index].name &&
           provider.category === nextProviders[index].category &&
+          provider.professions?.join("|") === nextProviders[index].professions?.join("|") &&
           provider.rating === nextProviders[index].rating &&
           provider.reviews === nextProviders[index].reviews &&
           provider.isVerified === nextProviders[index].isVerified &&
@@ -860,6 +873,7 @@ export default function Dashboard() {
                       rating={pro.rating}
                       reviews={pro.reviews}
                       category={pro.category}
+                      professions={pro.professions}
                       onTimeStreak={pro.onTimeStreak}
                       tesdaCertificates={pro.tesdaCertificates}
                       isVerified={isVerified}
@@ -953,6 +967,7 @@ export default function Dashboard() {
                       rating={rating}
                       reviews={reviews}
                       category={category}
+                      professions={professions}
                       onTimeStreak={provider.onTimeStreak}
                       tesdaCertificates={provider.tesdaCertificates}
                       isVerified={provider.isVerified === true || provider.verificationStatus === "verified"}

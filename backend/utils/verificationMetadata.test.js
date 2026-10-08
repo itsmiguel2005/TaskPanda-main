@@ -21,6 +21,23 @@ test("missing camera metadata is flagged for admin inspection", () => {
   ]);
 });
 
+test("guided camera captures are not flagged when canvas output has no camera metadata", () => {
+  assert.deepEqual(
+    getVerificationMetadataFlags({}, { cameraCaptured: true }),
+    [],
+  );
+});
+
+test("guided camera captures still flag known editing software", () => {
+  assert.deepEqual(
+    getVerificationMetadataFlags(
+      { XMP: { CreatorTool: "Adobe Photoshop 25" } },
+      { cameraCaptured: true },
+    ),
+    [SECURITY_FLAGS.AI_OR_EDITED_METADATA_DETECTED],
+  );
+});
+
 test("camera metadata without editing signatures produces no flags", () => {
   assert.deepEqual(getVerificationMetadataFlags({ Make: "Canon", Model: "EOS 80D" }), []);
 });

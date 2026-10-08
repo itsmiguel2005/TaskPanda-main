@@ -1,7 +1,7 @@
 const express = require("express");
 const { body } = require("express-validator");
 const { requireAuth, requireRole } = require("../middleware/requireAuth");
-const { handleGetProfile, handleUpdateProfile, handleUploadProfilePhoto } = require("../controllers/profileController");
+const { handleGetProfile, handleGetVerificationStatus, handleUpdateProfile, handleUploadProfilePhoto } = require("../controllers/profileController");
 const { validateRequest } = require("../middleware/validateRequest");
 const { limitProfilePhotoUploads } = require("../middleware/rateLimits");
 const uploadProfilePhoto = require("../storage/profilePhotoUpload");
@@ -10,6 +10,7 @@ const router = express.Router();
 
 router.use(requireAuth, requireRole("client", "provider"));
 router.get("/", handleGetProfile);
+router.get("/verification-status", handleGetVerificationStatus);
 router.post("/photo", limitProfilePhotoUploads, uploadProfilePhoto.single("photo"), handleUploadProfilePhoto);
 router.put("/", [
 	body("fullName").isString().trim().isLength({ min: 1, max: 100 }),

@@ -31,7 +31,17 @@ function limitAuthAttempts(req, res, next) {
 const limitRegistrationChecks = createRateLimiter(30);
 const limitLocationLookups = createRateLimiter(30, 60 * 1000, "Location lookup limit reached. Please wait a minute and try again.");
 const limitBookingCreation = createRateLimiter(10);
-const limitVerificationUploads = createRateLimiter(5, 60 * 60 * 1000);
+const limitVerificationUploads = createRateLimiter(
+  10,
+  60 * 60 * 1000,
+  "Verification submission limit reached. Please wait before trying again.",
+  {
+    identifier: "verification-uploads",
+    keyGenerator: (req) => req.user?._id
+      ? `user:${String(req.user._id)}`
+      : `ip:${ipKeyGenerator(req.ip)}`,
+  },
+);
 const limitTesdaCertificateUploads = createRateLimiter(
   10,
   60 * 60 * 1000,

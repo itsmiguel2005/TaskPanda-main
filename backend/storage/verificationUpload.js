@@ -29,7 +29,7 @@ function removeUploadedFiles(files) {
 
 const upload = multer({
   storage,
-  limits: { fileSize: MAX_VERIFICATION_IMAGE_SIZE, files: 2, fields: 1, fieldSize: 200, parts: 3 },
+  limits: { fileSize: MAX_VERIFICATION_IMAGE_SIZE, files: 2, fields: 2, fieldSize: 200, parts: 4 },
   fileFilter: (_req, file, callback) => {
     const accepted = allowedTypes.has(file.mimetype);
     const error = accepted ? null : new Error("Choose a JPEG, PNG, or WebP image.");

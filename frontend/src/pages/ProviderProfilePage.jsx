@@ -40,12 +40,25 @@ function StatusPill({ verified, status }) {
 }
 
 export default function ProviderProfilePage() {
-  const { isVerified, user, logout, refreshProfile } = useAuth();
+  const { isVerified, user, logout, refreshProfile, refreshVerificationStatus } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    refreshProfile();
+    void refreshProfile();
   }, [refreshProfile]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refreshVerificationStatus();
+    };
+    refreshWhenVisible();
+    const intervalId = window.setInterval(refreshWhenVisible, 10_000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [refreshVerificationStatus]);
 
   const fullName = user?.fullName || [user?.firstName, user?.middleName, user?.lastName].filter(Boolean).join(" ") || user?.username || user?.email || "Provider";
   const location = user?.address || [user?.barangay, user?.city, user?.province].filter(Boolean).join(", ");

@@ -111,7 +111,7 @@ function BambooStamp({ filled }) {
 
 export default function ProfilePage() {
   const navigate = useNavigate();
-  const { isLoggedIn, role, isVerified, logout, user, token, updateUser, refreshProfile } = useAuth();
+  const { isLoggedIn, role, isVerified, logout, user, token, updateUser, refreshProfile, refreshVerificationStatus } = useAuth();
   const verificationStatus = user?.verificationStatus || "unverified";
   const { bookings } = useBookings();
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -121,8 +121,21 @@ export default function ProfilePage() {
   const [loadingReferralCode, setLoadingReferralCode] = useState(false);
 
   useEffect(() => {
-    refreshProfile();
+    void refreshProfile();
   }, [refreshProfile]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refreshVerificationStatus();
+    };
+    refreshWhenVisible();
+    const intervalId = window.setInterval(refreshWhenVisible, 10_000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [refreshVerificationStatus]);
 
   const loadReferralCode = useCallback(async () => {
     if (!token) return;

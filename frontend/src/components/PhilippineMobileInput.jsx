@@ -30,13 +30,10 @@ export default function PhilippineMobileInput({ id, value, onChange, theme = "pr
           placeholder="9XXXXXXXXX"
           value={value}
           onChange={(event) => onChange(getPhilippineMobileInputValue(event.target.value))}
-          aria-describedby={`${id}-hint`}
+          aria-label="Mobile number, Philippines country code +63"
           className="block min-w-0 w-full bg-transparent px-3 py-2.5 text-sm text-gray-800 placeholder-gray-400/70 focus:outline-none"
         />
       </div>
-      <p id={`${id}-hint`} className="text-xs leading-5 text-gray-600">
-        Philippines only. Enter 10 digits starting with 9; leave out the first 0.
-      </p>
     </div>
   );
 }

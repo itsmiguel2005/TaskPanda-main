@@ -12,6 +12,7 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const isVerifiedRef = useRef(false);
+  const verificationStatusRefreshInFlight = useRef(false);
 
   useEffect(() => {
     let saved = "";
@@ -172,6 +173,42 @@ export function AuthProvider({ children }) {
     }
   }, [token, updateUser, logout]);
 
+  const refreshVerificationStatus = useCallback(async () => {
+    if (!token || verificationStatusRefreshInFlight.current) return false;
+    verificationStatusRefreshInFlight.current = true;
+    try {
+      const response = await apiFetch("/api/profile/verification-status", {
+        cache: "no-store",
+      });
+      if (response.status === 401) {
+        logout();
+        return false;
+      }
+      if (!response.ok) return false;
+      const data = await response.json();
+      if (typeof data.isVerified !== "boolean" || typeof data.verificationStatus !== "string") return false;
+      const verificationDetailsStatus = data.verificationDetailsStatus ?? null;
+      const verificationRejectionReason = data.verificationRejectionReason || "";
+      if (
+        user?.isVerified === data.isVerified
+        && user?.verificationStatus === data.verificationStatus
+        && user?.verificationDetailsStatus === verificationDetailsStatus
+        && (user?.verificationRejectionReason || "") === verificationRejectionReason
+      ) return true;
+      updateUser({
+        isVerified: data.isVerified,
+        verificationStatus: data.verificationStatus,
+        verificationDetailsStatus,
+        verificationRejectionReason,
+      });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      verificationStatusRefreshInFlight.current = false;
+    }
+  }, [token, user, updateUser, logout]);
+
   useEffect(() => {
     if (isAuthLoading || !isLoggedIn || !token || !["client", "provider"].includes(role)) return;
     void refreshProfile();
@@ -186,7 +223,7 @@ export function AuthProvider({ children }) {
   }, [isAuthLoading, isLoggedIn, token, role, refreshProfile]);
 
   return (
-    <AuthContext.Provider value={{ isLoggedIn, role, isVerified, user, token, isAuthLoading, login, logout, verify, updateUser, refreshProfile }}>
+    <AuthContext.Provider value={{ isLoggedIn, role, isVerified, user, token, isAuthLoading, login, logout, verify, updateUser, refreshProfile, refreshVerificationStatus }}>
       {children}
     </AuthContext.Provider>
   );

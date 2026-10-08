@@ -300,13 +300,12 @@ export default function VerificationsAdmin() {
           </div>
         ) : !error && (
           <div className="admin-ledger-scroll" tabIndex={0} aria-label={activeQueue === "identity" ? "Pending identity verification submissions" : "Pending TESDA certificate submissions"}>
-            <table className="w-full min-w-205 text-left">
+            <table className="w-full min-w-176 text-left">
               <thead className="bg-slate-50/90 text-[11px] font-bold uppercase tracking-wider text-slate-600">
                 <tr>
                   <th scope="col" className="px-6 py-3">Applicant</th>
                   <th scope="col" className="px-5 py-3">Type</th>
                   <th scope="col" className="px-5 py-3">Submitted</th>
-                  <th scope="col" className="px-5 py-3">Trade / OCR details</th>
                   <th scope="col" className="px-6 py-3 text-right">Review</th>
                 </tr>
               </thead>
@@ -320,7 +319,7 @@ export default function VerificationsAdmin() {
                     </td>
                     <td className="px-5 py-4">
                       {applicant.type === "tesda" ? (
-                        <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-900">TESDA certificate</span>
+                        <span className="inline-flex w-max shrink-0 whitespace-nowrap rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-900">TESDA certificate</span>
                       ) : (
                         <>
                           <ConfidenceBadge confidence={applicant.ocrConfidence} autoVerified={applicant.autoVerified} ocrProcessing={applicant.ocrProcessing} />
@@ -349,12 +348,6 @@ export default function VerificationsAdmin() {
                     <td className="px-5 py-4 text-sm text-slate-700">
                       <p>{formatDate(applicant.submittedAt)}</p>
                       <p className="mt-1 text-xs text-slate-500">Joined {formatDate(applicant.accountCreatedAt)}</p>
-                    </td>
-                    <td className="max-w-48 px-5 py-4 text-sm text-slate-700">
-                      <span className="line-clamp-2">{applicant.type === "tesda" ? applicant.trade : applicant.tradeCertificate || "Not provided"}</span>
-                      {applicant.type === "tesda" && !applicant.hasCertificateImage && (
-                        <p className="mt-1 text-xs font-medium text-rose-700">No saved certificate image. Reject this entry or contact support.</p>
-                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex justify-end gap-2">

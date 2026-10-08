@@ -100,6 +100,16 @@ async function handleGetProfile(req, res) {
   }
 }
 
+function handleGetVerificationStatus(req, res) {
+  const user = req.user;
+  return res.json({
+    isVerified: user.isVerified === true,
+    verificationStatus: user.verificationStatus || "unverified",
+    verificationDetailsStatus: user.verificationDetails?.status || null,
+    verificationRejectionReason: user.verificationDetails?.rejectionReason || "",
+  });
+}
+
 async function handleUpdateProfile(req, res) {
   try {
     const user = req.user;
@@ -212,4 +222,4 @@ async function handleUpdateProfile(req, res) {
   }
 }
 
-module.exports = { handleGetProfile, handleUpdateProfile, handleUploadProfilePhoto };
+module.exports = { handleGetProfile, handleGetVerificationStatus, handleUpdateProfile, handleUploadProfilePhoto };
