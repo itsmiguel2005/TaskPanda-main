@@ -20,6 +20,7 @@ const {
 const { handleGetAdminBookings, handleOverrideAdminBooking } = require("../controllers/adminBookingController");
 const {
   handleGetAdminSupportReports,
+  handleGetAdminSupportReportDetails,
   handleUpdateAdminSupportReport,
 } = require("../controllers/adminSupportReportsController");
 const {
@@ -83,13 +84,23 @@ router.get(
   validateRequest,
   handleGetAdminSupportReports
 );
+router.get(
+  "/support-reports/:conversationId/:reportId",
+  requireAdmin,
+  [param("conversationId").isMongoId(), param("reportId").isMongoId()],
+  validateRequest,
+  handleGetAdminSupportReportDetails
+);
 router.patch(
   "/support-reports/:conversationId/:reportId",
   requireAdmin,
   [
     param("conversationId").isMongoId(),
     param("reportId").isMongoId(),
-    body("action").isIn(["resolve", "reopen"]),
+    body("action").isIn(["resolve", "reopen", "save_notes", "suspend", "send_warning"]),
+    body("notes").optional().isString().isLength({ max: 2000 }),
+    body("notes").if(body("action").equals("save_notes")).isString().isLength({ max: 2000 }),
+    body("reason").if(body("action").isIn(["suspend", "send_warning"])).isString().trim().isLength({ min: 5, max: 500 }),
   ],
   validateRequest,
   handleUpdateAdminSupportReport

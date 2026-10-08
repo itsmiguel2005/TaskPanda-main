@@ -23,7 +23,16 @@ const conversationSchema = new mongoose.Schema(
       createdAt: { type: Date, default: Date.now },
       status: { type: String, enum: ["open", "resolved"], default: "open" },
       resolvedAt: { type: Date },
-      resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      resolvedByAdmin: { type: String, trim: true, maxlength: 254 },
+      adminNotes: { type: String, trim: true, maxlength: 2000, default: "" },
+      adminNotesUpdatedAt: { type: Date },
+      adminNotesUpdatedBy: { type: String, trim: true, maxlength: 254 },
+      moderationHistory: [{
+        action: { type: String, enum: ["resolved", "reopened", "suspended", "warned", "notes_updated"], required: true },
+        reason: { type: String, trim: true, maxlength: 2000, default: "" },
+        actorEmail: { type: String, trim: true, maxlength: 254, required: true },
+        createdAt: { type: Date, default: Date.now },
+      }],
     }],
   },
   { timestamps: true }

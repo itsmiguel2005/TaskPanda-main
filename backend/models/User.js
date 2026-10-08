@@ -176,9 +176,10 @@ const userSchema = new mongoose.Schema(
       type: [{
         action: {
           type: String,
-          enum: ["suspended", "unsuspended", "archived", "restored", "password_reset_requested"],
+          enum: ["suspended", "unsuspended", "archived", "restored", "password_reset_requested", "warned"],
           required: true,
         },
+        reason: { type: String, trim: true, maxlength: 500, default: "" },
         actorEmail: { type: String, required: true, trim: true },
         createdAt: { type: Date, default: Date.now },
         _id: false,
