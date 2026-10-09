@@ -4,6 +4,7 @@ const ESTIMATED_TRAVEL_SPEED_KMH = 30;
 const TRAVEL_BUFFER_MINUTES = 15;
 const SCHEDULE_BUFFER_MINUTES = 30;
 const DEFAULT_ESTIMATED_DURATION_MINUTES = 60;
+const NO_SHOW_GRACE_PERIOD_MS = 30 * 60 * 1000;
 const MIN_ESTIMATED_DURATION_MINUTES = 15;
 const MAX_ESTIMATED_DURATION_MINUTES = 720;
 const { calculateDistanceKm } = require("./bookingPricing");
@@ -38,6 +39,17 @@ function getScheduledServiceTime(serviceDate, timeSlot) {
     hours - PH_TIMEZONE_OFFSET_MINUTES / 60,
     minutes
   ));
+}
+
+function getBookingNoShowGraceDeadline(booking) {
+  const scheduledStart = getScheduledServiceTime(booking?.serviceDate, booking?.timeSlot || booking?.time);
+  if (!scheduledStart || booking?.lateNotice?.status === "reschedule_requested") return null;
+
+  const eta = new Date(booking?.lateNotice?.eta || NaN);
+  const graceBase = Number.isNaN(eta.getTime())
+    ? scheduledStart
+    : new Date(Math.max(scheduledStart.getTime(), eta.getTime()));
+  return new Date(graceBase.getTime() + NO_SHOW_GRACE_PERIOD_MS);
 }
 
 function isValidEstimatedDurationMinutes(value) {
@@ -131,6 +143,7 @@ module.exports = {
   DEFAULT_ESTIMATED_DURATION_MINUTES,
   MAX_ESTIMATED_DURATION_MINUTES,
   MIN_ESTIMATED_DURATION_MINUTES,
+  NO_SHOW_GRACE_PERIOD_MS,
   SCHEDULE_BUFFER_MINUTES,
   canArriveForSameDayBooking,
   getBookingOccupiedWindow,
@@ -139,6 +152,7 @@ module.exports = {
   getBookingRequestExpiration,
   getEstimatedTravelDurationMinutes,
   getScheduledServiceTime,
+  getBookingNoShowGraceDeadline,
   hasScheduleConflict,
   isValidEstimatedDurationMinutes,
   isSamePhilippineCalendarDay,

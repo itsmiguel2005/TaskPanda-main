@@ -16,6 +16,7 @@ import ProviderProfileModal from "./ProviderProfileModal.jsx";
 import RequestBookingModal from "./RequestBookingModal.jsx";
 import UserOnlineStatus from "./UserOnlineStatus.jsx";
 import { PROFESSIONS } from "../utils/professions.js";
+import ActionToast from "./ActionToast.jsx";
 
 export const categories = [
   {
@@ -243,6 +244,7 @@ function StatusBadge({ status }) {
     Settled: "bg-emerald-100 text-emerald-700 border-emerald-200",
     "Cancellation Requested": "bg-amber-100 text-amber-700 border-amber-200",
     Cancelled: "bg-red-100 text-red-700 border-red-200",
+    "Cancelled - Provider No-Show": "bg-blue-100 text-blue-800 border-blue-200",
     "Declined by Provider": "bg-rose-100 text-rose-800 border-rose-200",
     Expired: "bg-slate-100 text-slate-700 border-slate-200",
   };
@@ -320,6 +322,7 @@ export default function Dashboard() {
   const [expandedHistoryIds, setExpandedHistoryIds] = useState({});
   const [favoriteProviderIds, setFavoriteProviderIds] = useState(new Set());
   const [favoriteProviders, setFavoriteProviders] = useState([]);
+  const [favoriteToast, setFavoriteToast] = useState("");
   const [topRatedProviders, setTopRatedProviders] = useState([]);
   const [viewingProfileProvider, setViewingProfileProvider] = useState(null);
   const [bookingProvider, setBookingProvider] = useState(null);
@@ -338,7 +341,7 @@ export default function Dashboard() {
   const visibleTopRatedProviders = useMemo(() => topRatedProviders, [topRatedProviders]);
 
   const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined", "Expired"];
-  const dashboardDismissableStatuses = new Set(["Completed", "Settled", "Cancelled", "Declined by Provider"]);
+  const dashboardDismissableStatuses = new Set(["Completed", "Settled", "Cancelled", "Cancelled - Provider No-Show", "Declined by Provider"]);
   const nonDismissedBookingList = bookingList;
 
   const canDismissBookingFromDashboard = (booking) => dashboardDismissableStatuses.has(String(booking?.status || ""));
@@ -352,7 +355,7 @@ export default function Dashboard() {
     Completed: nonDismissedBookingList.filter(
       (b) => b.status === "Completed"
     ).length,
-    Cancelled: nonDismissedBookingList.filter((b) => b.status === "Cancelled").length,
+    Cancelled: nonDismissedBookingList.filter((b) => ["Cancelled", "Cancelled - Provider No-Show"].includes(b.status)).length,
     Declined: nonDismissedBookingList.filter((b) => b.status === "Declined by Provider").length,
     Expired: nonDismissedBookingList.filter((b) => b.status === "Expired").length,
   };
@@ -385,7 +388,7 @@ export default function Dashboard() {
     if (activeTab === "Pending") return booking.status === "Pending Request";
     if (activeTab === "Active") return ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status);
     if (activeTab === "Completed") return booking.status === "Completed";
-    if (activeTab === "Cancelled") return booking.status === "Cancelled";
+    if (activeTab === "Cancelled") return ["Cancelled", "Cancelled - Provider No-Show"].includes(booking.status);
     if (activeTab === "Expired") return booking.status === "Expired";
     return booking.status === "Declined by Provider";
   });
@@ -522,6 +525,7 @@ export default function Dashboard() {
 
       setFavoriteProviderIds(nextSet);
       window.dispatchEvent(new CustomEvent(FAVORITES_SYNC_EVENT, { detail: { favoriteProviderIds: [...nextSet] } }));
+      setFavoriteToast(isSaved ? "Removed from your favorites." : "Saved to your favorites.");
 
       if (isSaved) {
         setFavoriteProviders((current) => current.filter(
@@ -1258,6 +1262,7 @@ export default function Dashboard() {
         onClose={() => setBookingProvider(null)}
         onSubmit={createBooking}
       />
+      <ActionToast message={favoriteToast} onDismiss={() => setFavoriteToast("")} />
     </div>
   );
 }

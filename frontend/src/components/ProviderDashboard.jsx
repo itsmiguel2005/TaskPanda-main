@@ -57,6 +57,7 @@ function StatusBadge({ status }) {
     Settled: "bg-emerald-50 text-emerald-700 border-emerald-200",
     "Cancellation Requested": "bg-amber-50 text-amber-700 border-amber-200",
     Cancelled: "bg-red-50 text-red-700 border-red-200",
+    "Cancelled - Provider No-Show": "bg-blue-50 text-blue-800 border-blue-200",
     "Declined by Provider": "bg-rose-50 text-rose-800 border-rose-200",
     Expired: "bg-slate-100 text-slate-700 border-slate-200",
   };
@@ -340,7 +341,7 @@ function JobCard({
     providerProfession ||
     "Professional Service";
   // X (dismiss) button only for terminal statuses
-  const isDismissable = ["Settled", "Cancelled", "Declined by Provider", "Expired"].includes(booking.status);
+  const isDismissable = ["Settled", "Cancelled", "Cancelled - Provider No-Show", "Declined by Provider", "Expired"].includes(booking.status);
 
   // Determine primary action state button
   // "In Progress" → Mark Complete opens the proof modal (not a simple status advance)

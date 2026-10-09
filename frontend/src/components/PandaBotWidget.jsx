@@ -118,6 +118,7 @@ export default function PandaBotWidget() {
   const { isLoggedIn, isAuthLoading, user, token } = useAuth();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
+  const [hasUnreadAssistantMessage, setHasUnreadAssistantMessage] = useState(false);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [quickActionScroll, setQuickActionScroll] = useState({ left: false, right: false });
@@ -125,6 +126,11 @@ export default function PandaBotWidget() {
   const messageListRef = useRef(null);
   const quickActionsRef = useRef(null);
   const inputRef = useRef(null);
+  const isOpenRef = useRef(isOpen);
+
+  useEffect(() => {
+    isOpenRef.current = isOpen;
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -218,6 +224,7 @@ export default function PandaBotWidget() {
         providerContextIds: Array.isArray(data.contextProviderIds) ? data.contextProviderIds : [],
         contextRequestedDate: typeof data.contextRequestedDate === "string" ? data.contextRequestedDate : "",
       }]);
+      if (!isOpenRef.current) setHasUnreadAssistantMessage(true);
     } catch (error) {
       setMessages((current) => [...current, {
         id: `${Date.now()}-error`,
@@ -390,9 +397,14 @@ export default function PandaBotWidget() {
 
       <button
         type="button"
-        onClick={() => setIsOpen((open) => !open)}
-        className="dashboard-focus flex h-14 w-14 items-center justify-center rounded-full border-2 border-white bg-emerald-800 shadow-[0_8px_28px_rgba(6,78,59,0.38)] transition duration-200 hover:-translate-y-0.5 hover:bg-emerald-900 motion-reduce:transform-none"
-        aria-label={isOpen ? "Close PandaBot support" : "Open PandaBot support"}
+        onClick={() => {
+          const nextOpen = !isOpenRef.current;
+          isOpenRef.current = nextOpen;
+          setIsOpen(nextOpen);
+          if (nextOpen) setHasUnreadAssistantMessage(false);
+        }}
+        className={`dashboard-focus relative flex h-14 w-14 items-center justify-center rounded-full border-2 border-white bg-emerald-800 shadow-[0_8px_28px_rgba(6,78,59,0.38)] transition duration-200 hover:-translate-y-0.5 hover:bg-emerald-900 motion-reduce:transform-none ${hasUnreadAssistantMessage && !isOpen ? "pandabot-attention" : ""}`}
+        aria-label={isOpen ? "Close PandaBot support" : hasUnreadAssistantMessage ? "Open PandaBot support, new message" : "Open PandaBot support"}
         aria-expanded={isOpen}
         title={isOpen ? "Close support chat" : "Chat with PandaBot"}
       >
@@ -400,7 +412,16 @@ export default function PandaBotWidget() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-6 w-6 text-white" aria-hidden="true">
             <path d="m6 6 12 12M18 6 6 18" />
           </svg>
-        ) : <PandaMark className="h-10 w-10" />}
+        ) : (
+          <>
+            <PandaMark className="h-10 w-10" />
+            {hasUnreadAssistantMessage && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full border-2 border-white bg-rose-500" aria-label="New PandaBot message">
+                <span className="sr-only">New message</span>
+              </span>
+            )}
+          </>
+        )}
       </button>
     </div>
   );

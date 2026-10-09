@@ -51,7 +51,10 @@ async function appendSystemMessageToConversation(conversation, booking, text, se
     $inc: {},
   };
   const senderIdValue = String(idOf(senderId || booking.providerId || booking.clientId));
-  if (senderIdValue === String(idOf(booking.clientId))) {
+  if (eventType === "booking_check_in" || eventType === "provider_no_show") {
+    update.$inc.unreadCountClient = 1;
+    update.$inc.unreadCountProvider = 1;
+  } else if (senderIdValue === String(idOf(booking.clientId))) {
     update.$inc.unreadCountProvider = 1;
   } else if (senderIdValue === String(idOf(booking.providerId))) {
     update.$inc.unreadCountClient = 1;

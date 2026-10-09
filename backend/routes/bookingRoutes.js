@@ -12,6 +12,7 @@ const {
   handleRestoreDashboardBookings,
   handleProviderAvailability,
   handleReportRunningLate,
+  handleReportProviderNoShow,
   handleRespondToLateNotice,
   handleServiceLocationSearch,
   handleServiceLocationReverseLookup,
@@ -143,6 +144,7 @@ router.post("/", (req, _res, next) => {
 }, limitBookingCreation, checkBookingMaintenance, upload.array("photos", 5), sanitizeMongoInput, validateBookingCreation, validateRequest, handleCreateBooking);
 router.patch("/:id/status", validateBookingStatus, validateRequest, handleUpdateBookingStatus);
 router.post("/:id/running-late", body("delayMinutes").isInt({ min: 1, max: 720 }), validateRequest, handleReportRunningLate);
+router.post("/:id/provider-no-show", handleReportProviderNoShow);
 router.patch("/:id/late-notice", body("action").isIn(["wait", "reschedule"]), validateRequest, handleRespondToLateNotice);
 router.post("/:id/completion", upload.array("photos", 5), sanitizeMongoInput, body("completionNote").optional().isString().isLength({ max: 2000 }), validateRequest, handleSubmitCompletion);
 router.post("/:id/revisions", upload.array("photos", 5), sanitizeMongoInput, body("note").isString().isLength({ min: 1, max: 1000 }), validateRequest, handleCreateRevisionRequest);

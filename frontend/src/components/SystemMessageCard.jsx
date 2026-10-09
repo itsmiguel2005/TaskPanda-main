@@ -1,5 +1,6 @@
 import { useState } from "react";
 import MessagePhoto from "./MessagePhoto.jsx";
+import ActionToast from "./ActionToast.jsx";
 import { DEFAULT_ESTIMATED_DURATION_MINUTES, formatEstimatedDuration } from "../utils/bookingDuration.js";
 
 function formatPrice(value) {
@@ -43,6 +44,8 @@ const EVENT_TITLES = {
   provider_update: "Provider update",
   running_late: "Provider running late",
   late_response: "Delay response",
+  booking_check_in: "PandaBot check-in",
+  provider_no_show: "Provider no-show report",
   cancellation: "Cancellation update",
   revision_request: "Revision requested",
   revision_response: "Revision response",
@@ -74,6 +77,8 @@ function describeEvent(message, actorName, role) {
   if (message.eventType === "late_response") return event.action === "wait"
     ? "The client chose to wait for the updated arrival"
     : "The client requested a new appointment time";
+  if (message.eventType === "booking_check_in") return "PandaBot is checking in with both participants. Please confirm your status in the conversation.";
+  if (message.eventType === "provider_no_show") return "The client reported a missed arrival window. The booking was cancelled and the report was recorded for reliability review.";
   if (message.eventType === "revision_request") return `${actor} requested a revision`;
   if (message.eventType === "revision_response") return `${actor} responded to the revision request`;
   if (message.eventType === "review") return `${actor} left a ${event.rating || 0}/5 star review`;
@@ -117,6 +122,8 @@ function getEventPresentation(message) {
       ? { title: "Client Will Wait", badge: "Response received", tone: "emerald" }
       : { title: "New Time Requested", badge: "Response received", tone: "amber" };
   }
+  if (message.eventType === "booking_check_in") return { title: "PandaBot Check-In", badge: "Status confirmation", tone: "blue" };
+  if (message.eventType === "provider_no_show") return { title: "Provider No-Show Reported", badge: "Booking cancelled", tone: "rose" };
   if (message.eventType === "cancellation") {
     if (event.cancellationOutcome === "rejected") return { title: "Cancellation Declined", badge: "Booking remains active", tone: "amber" };
     if (status === "cancel_requested") return { title: "Cancellation Requested", badge: "Awaiting response", tone: "amber" };
@@ -144,6 +151,7 @@ function renderReviewStars(rating) {
 
 export default function SystemMessageCard({ message, role, actorName, bookingPricing, receipt = null, onDownloadReceipt, requestHeaders, onOpen, onRespondToOffer, onCounterOffer, onRespondToCancellation, onBookingRequestAction, isBookingRequestPending = false, isCancellationPending = false, isActionSubmitting = false }) {
   const [isDownloadingReceipt, setIsDownloadingReceipt] = useState(false);
+  const [copyToast, setCopyToast] = useState(null);
   const event = message.eventData || {};
   const requestDuration = bookingPricing?.estimatedDurationMinutes
     ?? event.estimatedDurationMinutes
@@ -184,6 +192,16 @@ export default function SystemMessageCard({ message, role, actorName, bookingPri
     const travelFee = bookingPricing?.travelFee ?? receipt.travelFee;
     const tipAmount = bookingPricing?.tipAmount ?? receipt.tipAmount;
     const completionNote = receipt.completionNote || bookingPricing?.completionNote;
+    const copyReceiptId = async () => {
+      try {
+        if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is unavailable in this browser.");
+        await navigator.clipboard.writeText(receipt.receiptNumber);
+        setCopyToast({ message: "Receipt ID copied to clipboard.", kind: "success" });
+      } catch (error) {
+        console.warn("Receipt ID copy failed:", error.message);
+        setCopyToast({ message: "Could not copy the receipt ID. You can select it and copy manually.", kind: "error" });
+      }
+    };
 
     return (
       <article className="my-2 w-full max-w-xl rounded-2xl border border-emerald-200 bg-white px-3.5 py-3.5 text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.06)] sm:px-4">
@@ -227,7 +245,16 @@ export default function SystemMessageCard({ message, role, actorName, bookingPri
         )}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2">
           <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-800">Receipt ID</span>
-          <span className="min-w-0 break-all text-sm font-extrabold tracking-wide text-slate-950">{receipt.receiptNumber}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 break-all text-sm font-extrabold tracking-wide text-slate-950">{receipt.receiptNumber}</span>
+            <button type="button" onClick={() => void copyReceiptId()} className="dashboard-focus inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-2 text-[11px] font-semibold text-emerald-900 transition hover:bg-emerald-50" aria-label={`Copy receipt ID ${receipt.receiptNumber}`} title="Copy receipt ID">
+              <svg viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+                <rect x="7" y="6" width="9" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M13 6V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v9A1.5 1.5 0 0 0 4.5 15H7" stroke="currentColor" strokeWidth="1.5" />
+              </svg>
+              Copy
+            </button>
+          </div>
         </div>
         <footer className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2.5">
           <p className="min-w-0 text-[10px] leading-relaxed text-slate-500">Issued {formatReceiptDate(receipt.issuedAt || message.createdAt)}</p>
@@ -252,6 +279,7 @@ export default function SystemMessageCard({ message, role, actorName, bookingPri
             {isDownloadingReceipt ? "Preparing PDF…" : "Download PDF"}
           </button>
         </footer>
+        <ActionToast message={copyToast?.message} kind={copyToast?.kind} onDismiss={() => setCopyToast(null)} />
       </article>
     );
   }

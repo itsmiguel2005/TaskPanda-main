@@ -139,11 +139,14 @@ MAIL_FROM=your-email@example.com
 ONESIGNAL_APP_ID=your-onesignal-app-id
 ONESIGNAL_REST_API_KEY=your-onesignal-rest-api-key
 VITE_ONESIGNAL_APP_ID=your-onesignal-app-id
+CRON_SECRET=<random-secret-for-vercel-cron-authorization>
 APP_URL=https://your-taskpanda-domain.example
 CORS_ORIGINS=https://your-taskpanda-domain.example,https://www.your-taskpanda-domain.example
 ```
 
 Email verification links use the current Vercel deployment URL when available, or the configured `APP_URL`; locally, they use the Vite app at `http://localhost:5173`. New registrations stay pending until the email link is confirmed; verified users must finish onboarding before they can open the app. Registration can be started on one device and verified on another: the registration-starting browser keeps its own session and automatically resumes onboarding after it sees the verified status. If that browser cannot recover its session, the verified device displays a one-time 12-character resume code, valid for 15 minutes, which can be entered on the registration device. Verification links do not transfer onboarding credentials to the device that opens them. The root `.env` supplies server-only OneSignal credentials; `VITE_ONESIGNAL_APP_ID` is a public app identifier, not a secret.
+
+Vercel Cron runs the booking no-show check-in once per minute. Set `CRON_SECRET` to a strong random value in the Vercel project environment so the scheduled endpoint can authenticate; the always-on Node server and authenticated booking refreshes also process due check-ins.
 
 In Atlas Network Access, allow Vercel's connections. For an initial deployment this is commonly `0.0.0.0/0`, but use a private networking strategy or a narrower policy when your infrastructure supports it. Never commit the Atlas URI or other secrets.
 

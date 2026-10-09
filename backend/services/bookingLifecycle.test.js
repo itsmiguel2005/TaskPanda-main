@@ -2,9 +2,11 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   SAME_DAY_REQUEST_TTL_MS,
+  NO_SHOW_GRACE_PERIOD_MS,
   canArriveForSameDayBooking,
   DEFAULT_ESTIMATED_DURATION_MINUTES,
   getBookingOccupiedWindow,
+  getBookingNoShowGraceDeadline,
   getInterBookingTravelDurationMinutes,
   getBookingRequestExpiration,
   getEstimatedTravelDurationMinutes,
@@ -32,6 +34,40 @@ test("appointment slots are translated from Philippine time to UTC", () => {
   assert.equal(getScheduledServiceTime(serviceDate, "9:00 AM").toISOString(), "2026-10-03T01:00:00.000Z");
   assert.equal(getScheduledServiceTime(serviceDate, "6:00 PM").toISOString(), "2026-10-03T10:00:00.000Z");
   assert.equal(getScheduledServiceTime(serviceDate, "not a slot"), null);
+});
+
+test("no-show grace starts 30 minutes after the scheduled start", () => {
+  const deadline = getBookingNoShowGraceDeadline({
+    serviceDate,
+    timeSlot: "9:00 AM",
+  });
+  assert.equal(deadline.toISOString(), "2026-10-03T01:30:00.000Z");
+  assert.equal(deadline.getTime(), getScheduledServiceTime(serviceDate, "9:00 AM").getTime() + NO_SHOW_GRACE_PERIOD_MS);
+});
+
+test("a booking more than 48 hours overdue remains past its no-show deadline", () => {
+  const deadline = getBookingNoShowGraceDeadline({
+    serviceDate: "2026-10-07T00:00:00.000Z",
+    timeSlot: "3:00 PM",
+  });
+  assert.equal(deadline.toISOString(), "2026-10-07T07:30:00.000Z");
+  assert.ok(deadline < new Date("2026-10-09T11:05:00.000Z"));
+});
+
+test("a running-late ETA extends the no-show deadline by 30 minutes", () => {
+  assert.equal(getBookingNoShowGraceDeadline({
+    serviceDate,
+    timeSlot: "9:00 AM",
+    lateNotice: { eta: "2026-10-03T02:15:00.000Z", status: "waiting" },
+  }).toISOString(), "2026-10-03T02:45:00.000Z");
+});
+
+test("the no-show deadline is paused while a new time is being arranged", () => {
+  assert.equal(getBookingNoShowGraceDeadline({
+    serviceDate,
+    timeSlot: "9:00 AM",
+    lateNotice: { eta: "2026-10-03T02:15:00.000Z", status: "reschedule_requested" },
+  }), null);
 });
 
 test("travel duration uses 30 km/h and includes a 15-minute buffer", () => {

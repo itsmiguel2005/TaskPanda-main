@@ -20,6 +20,18 @@ function getAppointmentStart(serviceDate, timeSlot) {
   ));
 }
 
+export function getBookingNoShowGraceDeadline(booking) {
+  if (booking?.lateNotice?.status === "reschedule_requested") return null;
+  const scheduledStart = getAppointmentStart(booking?.serviceDate, booking?.timeSlot || booking?.time);
+  if (!scheduledStart) return null;
+
+  const eta = new Date(booking?.lateNotice?.eta || NaN);
+  const graceBase = Number.isNaN(eta.getTime())
+    ? scheduledStart
+    : new Date(Math.max(scheduledStart.getTime(), eta.getTime()));
+  return new Date(graceBase.getTime() + 30 * 60 * 1000);
+}
+
 export function getBookingOccupiedWindow(booking) {
   const startAt = booking?.startAt ? new Date(booking.startAt) : getAppointmentStart(
     booking?.serviceDate,

@@ -21,6 +21,7 @@ const {
   canArriveForSameDayBooking,
   DEFAULT_ESTIMATED_DURATION_MINUTES,
   getBookingOccupiedWindow,
+  getBookingNoShowGraceDeadline,
   getBookingRequestExpiration,
   getScheduledServiceTime,
   hasScheduleConflict,
@@ -40,6 +41,8 @@ const STATUS_ALIASES = {
   cancelled: "canceled",
   completed: "complete",
   settled: "settled",
+  "cancelled - provider no-show": "provider_no_show",
+  "canceled - provider no-show": "provider_no_show",
 };
 const STATUS_LABELS = {
   pending: "Pending Request",
@@ -48,6 +51,7 @@ const STATUS_LABELS = {
   in_progress: "In Progress",
   cancel_requested: "Cancellation Requested",
   canceled: "Cancelled",
+  provider_no_show: "Cancelled - Provider No-Show",
   declined: "Declined by Provider",
   complete: "Completed",
   in_revision: "In Revision",
@@ -59,6 +63,8 @@ const STATUS_LABELS = {
 
 const GRACE_PERIOD_MS = 10 * 60 * 1000;
 const CASH_SETTLEMENT_GRACE_MS = 48 * 60 * 60 * 1000;
+const NO_SHOW_CHECK_IN_LEASE_MS = 2 * 60 * 1000;
+let isProcessingNoShowCheckIns = false;
 const ACTIVE_BOOKING_STATUSES = [
   "pending", "approved", "en_route", "in_progress", "cancel_requested",
   "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested",
@@ -241,6 +247,13 @@ function serializeBooking(booking) {
       notifiedAt: booking.lateNotice.notifiedAt || null,
       respondedAt: booking.lateNotice.respondedAt || null,
     } : null,
+    noShowEligibleAt: statusCode === "approved" && !booking.providerNoShowReportedAt
+      ? getBookingNoShowGraceDeadline(booking)?.toISOString() || null
+      : null,
+    noShowCheckInAt: booking.noShowCheckInAt || null,
+    providerNoShowReportedAt: booking.providerNoShowReportedAt || null,
+    providerReliabilityFlagged: Boolean(booking.providerReliabilityFlaggedAt),
+    noShowCheckInSentAt: booking.noShowCheckInSentAt || null,
     counterOffers: (booking.counterOffers || []).map((offer) => ({
       id: String(offer._id),
       proposedBy: offer.proposedBy,
@@ -322,19 +335,20 @@ async function recalculateProviderRatingSummary(providerId) {
 
 async function handleListBookings(req, res) {
   try {
+    await processBookingNoShowCheckIns();
     const requestedClientId = req.query.clientId ? String(req.query.clientId) : "";
     const requestedProviderId = req.query.providerId ? String(req.query.providerId) : "";
     const requestedStatus = req.query.status ? String(req.query.status) : "";
     if (requestedClientId && !mongoose.isValidObjectId(requestedClientId)) return res.status(400).json({ message: "Invalid clientId filter." });
     if (requestedProviderId && !mongoose.isValidObjectId(requestedProviderId)) return res.status(400).json({ message: "Invalid providerId filter." });
     const normalizedStatus = normalizeBookingStatus(requestedStatus);
-    if (requestedStatus && !["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "declined", "expired", "complete", "in_revision", "disputed", "closed", "settled"].includes(normalizedStatus)) return res.status(400).json({ message: "Invalid status filter." });
+    if (requestedStatus && !["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "complete", "in_revision", "disputed", "closed", "settled"].includes(normalizedStatus)) return res.status(400).json({ message: "Invalid status filter." });
 
     const filter = {};
     if (normalizedStatus) {
       filter.status = normalizedStatus;
     } else {
-      filter.status = mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "declined", "expired", "complete", "in_revision", "disputed", "closed", "settled", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Declined by Provider", "Cancelled", "Completed", "Settled", "Expired"] });
+      filter.status = mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "complete", "in_revision", "disputed", "closed", "settled", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Declined by Provider", "Cancelled", "Cancelled - Provider No-Show", "Completed", "Settled", "Expired"] });
     }
     if (req.user.role === "provider") {
       filter.providerId = req.user._id;
@@ -416,8 +430,8 @@ async function handleDismissDashboardBookings(req, res) {
 
   try {
     const statuses = req.user.role === "provider"
-      ? ["settled", "canceled", "declined", "expired", "Settled", "Cancelled", "Declined by Provider", "Expired"]
-      : ["complete", "closed", "settled", "canceled", "declined", "Completed", "Closed", "Settled", "Cancelled", "Declined by Provider"];
+      ? ["settled", "canceled", "declined", "expired", "provider_no_show", "Settled", "Cancelled", "Declined by Provider", "Expired"]
+      : ["complete", "closed", "settled", "canceled", "declined", "provider_no_show", "Completed", "Closed", "Settled", "Cancelled", "Declined by Provider"];
     const ownerField = req.user.role === "provider" ? "providerId" : "clientId";
     const eligibleBookings = await Booking.find({
       _id: mongoose.trusted({ $in: bookingIds }),
@@ -654,6 +668,187 @@ async function handleRespondToLateNotice(req, res) {
   } catch (error) {
     console.error("Running-late response error:", error);
     return res.status(500).json({ message: "Could not save your response to the delay notice." });
+  }
+}
+
+async function deliverBookingNoShowCheckIn(booking, now = new Date()) {
+  const bookingId = booking._id || booking.id;
+  const currentBooking = await Booking.findOne({
+    _id: bookingId,
+    status: mongoose.trusted({ $in: ["approved", "Confirmed"] }),
+    noShowCheckInSentAt: mongoose.trusted({ $exists: false }),
+  }).select("_id clientId providerId serviceDate timeSlot lateNotice noShowCheckInAt noShowCheckInProcessingAt");
+  if (!currentBooking) return false;
+
+  const deadline = getBookingNoShowGraceDeadline(currentBooking);
+  if (!deadline || deadline > now) return false;
+
+  const processingBefore = new Date(now.getTime() - NO_SHOW_CHECK_IN_LEASE_MS);
+  const claimed = await Booking.findOneAndUpdate(
+    {
+      _id: currentBooking._id,
+      status: mongoose.trusted({ $in: ["approved", "Confirmed"] }),
+      noShowCheckInSentAt: mongoose.trusted({ $exists: false }),
+      $or: [
+        { noShowCheckInProcessingAt: mongoose.trusted({ $exists: false }) },
+        { noShowCheckInProcessingAt: mongoose.trusted({ $lte: processingBefore }) },
+      ],
+      "lateNotice.status": mongoose.trusted({ $ne: "reschedule_requested" }),
+    },
+    {
+      $set: {
+        noShowCheckInAt: currentBooking.noShowCheckInAt || now,
+        noShowCheckInProcessingAt: now,
+      },
+    },
+    { new: true }
+  );
+  if (!claimed) return false;
+
+  try {
+    const freshBooking = await Booking.findOne({
+      _id: claimed._id,
+      status: mongoose.trusted({ $in: ["approved", "Confirmed"] }),
+    }).select("_id clientId providerId serviceDate timeSlot lateNotice noShowCheckInAt");
+    const currentDeadline = freshBooking ? getBookingNoShowGraceDeadline(freshBooking) : null;
+    if (!freshBooking || !currentDeadline || currentDeadline > new Date()) {
+      const cleanup = freshBooking
+        ? { $unset: { noShowCheckInAt: 1, noShowCheckInProcessingAt: 1 } }
+        : { $unset: { noShowCheckInProcessingAt: 1 } };
+      await Booking.updateOne(
+        { _id: claimed._id, noShowCheckInSentAt: mongoose.trusted({ $exists: false }) },
+        cleanup
+      );
+      return false;
+    }
+
+    const conversation = await Conversation.findOne({ bookingId: freshBooking._id }).select("_id");
+    const existingCheckIn = conversation && await Message.exists({
+      conversationId: conversation._id,
+      eventType: "booking_check_in",
+      "eventData.bookingId": String(freshBooking._id),
+    });
+    if (!existingCheckIn) {
+      const message = await appendBookingSystemMessage(
+        freshBooking,
+        "PandaBot check-in: The scheduled start and 30-minute arrival grace period have passed without a provider status update. Provider, please confirm your status and share an updated ETA. Client, please confirm whether you are still waiting or need help.",
+        freshBooking.providerId,
+        "booking_check_in",
+        { status: "awaiting_confirmation", graceDeadline: currentDeadline }
+      );
+      const conversationId = encodeURIComponent(String(message.conversationId));
+      const notificationData = { event: "booking.no_show_check_in", bookingId: String(freshBooking._id) };
+      await Promise.all([
+        notifyBooking({
+          userIds: [String(freshBooking.clientId)],
+          title: "PandaBot booking check-in",
+          body: "Please confirm your status in the booking conversation.",
+          url: `/client/messages?conversation=${conversationId}`,
+          data: notificationData,
+        }),
+        notifyBooking({
+          userIds: [String(freshBooking.providerId)],
+          title: "PandaBot booking check-in",
+          body: "Please confirm your status in the booking conversation.",
+          url: `/provider/messages?conversation=${conversationId}`,
+          data: notificationData,
+        }),
+      ]);
+    }
+
+    await Booking.updateOne(
+      { _id: freshBooking._id, noShowCheckInSentAt: mongoose.trusted({ $exists: false }) },
+      { $set: { noShowCheckInSentAt: new Date() }, $unset: { noShowCheckInProcessingAt: 1 } }
+    );
+    return true;
+  } catch (error) {
+    await Booking.updateOne(
+      { _id: claimed._id, noShowCheckInSentAt: mongoose.trusted({ $exists: false }) },
+      { $unset: { noShowCheckInProcessingAt: 1 } }
+    );
+    throw error;
+  }
+}
+
+async function handleReportProviderNoShow(req, res) {
+  const bookingId = String(req.params.id || "");
+  if (!mongoose.isValidObjectId(bookingId)) return res.status(400).json({ message: "Choose a valid booking." });
+  if (req.user.role !== "client") return res.status(403).json({ message: "Only the client can report a provider no-show." });
+
+  try {
+    const booking = await Booking.findOne({ _id: bookingId, clientId: req.user._id });
+    if (!booking) return res.status(404).json({ message: "Booking not found." });
+    if (!["approved", "Confirmed"].includes(booking.status)) {
+      return res.status(409).json({ message: "A no-show can only be reported while the booking is still scheduled." });
+    }
+    const eligibleAt = getBookingNoShowGraceDeadline(booking);
+    if (!eligibleAt || eligibleAt > new Date()) {
+      return res.status(409).json({ message: "The 30-minute arrival grace period has not ended yet." });
+    }
+
+    const checkInSent = await deliverBookingNoShowCheckIn(booking, new Date());
+    if (!checkInSent && !booking.noShowCheckInSentAt) {
+      const latestBooking = await Booking.findById(booking._id).select("noShowCheckInSentAt lateNotice");
+      if (latestBooking?.lateNotice?.status === "reschedule_requested") {
+        return res.status(409).json({ message: "The no-show window is paused while you and your provider arrange a new appointment time." });
+      }
+      if (!latestBooking?.noShowCheckInSentAt) {
+        return res.status(503).json({ message: "PandaBot is still sending the booking check-in. Please try again shortly." });
+      }
+    }
+    const now = new Date();
+    const noShowFilter = {
+      _id: booking._id,
+      clientId: req.user._id,
+      status: mongoose.trusted({ $in: ["approved", "Confirmed"] }),
+      providerNoShowReportedAt: mongoose.trusted({ $exists: false }),
+      serviceDate: booking.serviceDate,
+      timeSlot: booking.timeSlot,
+      "lateNotice.eta": booking.lateNotice?.eta || mongoose.trusted({ $exists: false }),
+      "lateNotice.status": booking.lateNotice?.status || mongoose.trusted({ $exists: false }),
+    };
+    const updatedBooking = await Booking.findOneAndUpdate(
+      noShowFilter,
+      {
+        $set: {
+          status: "provider_no_show",
+          cancellationReason: "Client reported provider no-show after the scheduled arrival grace period.",
+          providerNoShowReportedAt: now,
+          providerNoShowReportedBy: req.user._id,
+          providerReliabilityFlaggedAt: now,
+        },
+        $push: { statusHistory: { status: "provider_no_show", at: now } },
+      },
+      { new: true, runValidators: true }
+    );
+    if (!updatedBooking) {
+      return res.status(409).json({ message: "The booking status changed before the no-show report could be applied. Refresh and review its latest status." });
+    }
+
+    await restoreVoucherForBooking(updatedBooking);
+    try {
+      await appendBookingSystemMessage(
+        updatedBooking,
+        "The client reported that the provider did not arrive within the scheduled arrival window. The booking was cancelled and the report was recorded for provider reliability review.",
+        req.user._id,
+        "provider_no_show",
+        { reportedAt: now, status: "provider_no_show" }
+      );
+    } catch (messageError) {
+      console.error("Provider no-show message error:", messageError);
+    }
+    await notifyBooking({
+      userIds: [String(updatedBooking.providerId)],
+      title: "Booking cancelled: provider no-show reported",
+      body: "The client reported that you did not arrive within the scheduled arrival window. This report was recorded for reliability review.",
+      url: bookingUrl("provider", updatedBooking._id),
+      data: { event: "booking.provider_no_show", bookingId: String(updatedBooking._id) },
+    });
+    await updatedBooking.populate(populatePaths);
+    return res.json({ booking: serializeBooking(updatedBooking) });
+  } catch (error) {
+    console.error("Provider no-show report error:", error);
+    return res.status(500).json({ message: "Could not report the provider no-show." });
   }
 }
 
@@ -1702,9 +1897,19 @@ async function handleProviderUpdateResponse(req, res) {
       }
       booking.serviceDate = update.proposedServiceDate;
       booking.timeSlot = update.proposedTimeSlot;
+      booking.noShowCheckInAt = undefined;
+      booking.noShowCheckInProcessingAt = undefined;
+      booking.noShowCheckInSentAt = undefined;
+      if (booking.lateNotice?.status === "reschedule_requested") {
+        booking.lateNotice.status = "waiting";
+        booking.lateNotice.eta = getScheduledServiceTime(booking.serviceDate, booking.timeSlot);
+      }
       update.status = "accepted";
     } else {
       update.status = "rejected";
+      if (booking.lateNotice?.status === "reschedule_requested") {
+        booking.lateNotice.status = "waiting";
+      }
     }
     update.respondedAt = new Date();
     await booking.save();
@@ -2014,4 +2219,29 @@ async function processExpiredBookingRequests() {
   return result.modifiedCount;
 }
 
-module.exports = { handleListBookings, handleDismissDashboardBookings, handleRestoreDashboardBookings, handleProviderAvailability, handleReportRunningLate, handleRespondToLateNotice, handleServiceLocationSearch, handleServiceLocationReverseLookup, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks, processExpiredBookingRequests };
+async function processBookingNoShowCheckIns() {
+  if (isProcessingNoShowCheckIns) return 0;
+  isProcessingNoShowCheckIns = true;
+  try {
+    const now = new Date();
+    const candidates = await Booking.find({
+      status: mongoose.trusted({ $in: ["approved", "Confirmed"] }),
+      serviceDate: mongoose.trusted({ $lte: now }),
+      noShowCheckInSentAt: mongoose.trusted({ $exists: false }),
+    }).select("_id clientId providerId serviceDate timeSlot lateNotice noShowCheckInAt");
+
+    let sentCount = 0;
+    for (const booking of candidates) {
+      try {
+        if (await deliverBookingNoShowCheckIn(booking, now)) sentCount += 1;
+      } catch (error) {
+        console.error(`PandaBot no-show check-in failed for booking ${booking._id}:`, error);
+      }
+    }
+    return sentCount;
+  } finally {
+    isProcessingNoShowCheckIns = false;
+  }
+}
+
+module.exports = { handleListBookings, handleDismissDashboardBookings, handleRestoreDashboardBookings, handleProviderAvailability, handleReportRunningLate, handleRespondToLateNotice, handleReportProviderNoShow, handleServiceLocationSearch, handleServiceLocationReverseLookup, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks, processExpiredBookingRequests, processBookingNoShowCheckIns };

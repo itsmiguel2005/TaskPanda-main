@@ -13,9 +13,11 @@ import { canRequestCancellation, getCancellationLockMessage } from "../utils/boo
 import StatusChangeConfirmation from "../components/StatusChangeConfirmation.jsx";
 import RevisionRequestModal from "../components/RevisionRequestModal.jsx";
 import RequestBookingModal from "../components/RequestBookingModal.jsx";
+import ProviderNoShowConfirmationModal from "../components/ProviderNoShowConfirmationModal.jsx";
 import PandaSwipeRefresh from "../components/PandaSwipeRefresh.jsx";
 import { BookingCardSkeletonList, SkeletonBlock } from "../components/Skeletons.jsx";
 import { DEFAULT_ESTIMATED_DURATION_MINUTES } from "../utils/bookingDuration.js";
+import { getBookingNoShowGraceDeadline } from "../utils/bookingArrival.js";
 
 const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined", "Expired"];
 
@@ -41,6 +43,13 @@ function revisionLimitReached(booking) {
     && (booking.revisionRequests || []).length >= 2;
 }
 
+function getNoShowDeadlineTimestamp(booking) {
+  const deadline = booking?.noShowEligibleAt !== undefined
+    ? booking.noShowEligibleAt && new Date(booking.noShowEligibleAt)
+    : getBookingNoShowGraceDeadline(booking);
+  return deadline && !Number.isNaN(deadline.getTime()) ? deadline.getTime() : 0;
+}
+
 export default function BookingsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -48,7 +57,7 @@ export default function BookingsPage() {
   const [activeTab, setActiveTab] = useState("All");
   const { token } = useAuth();
   const requestHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
-  const { bookings, isLoading, error, requestCancellation, requestRevision, submitReview, respondToProviderUpdate, respondToLateNotice, refreshBookings, confirmCashSettlement, createBooking } = useBookings();
+  const { bookings, isLoading, error, requestCancellation, requestRevision, submitReview, respondToProviderUpdate, respondToLateNotice, reportProviderNoShow, refreshBookings, confirmCashSettlement, createBooking } = useBookings();
   const isInitialLoading = isLoading && bookings.length === 0;
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("createdAt");
@@ -64,13 +73,15 @@ export default function BookingsPage() {
   const [rebookingBooking, setRebookingBooking] = useState(null);
   const [lateNoticeActionId, setLateNoticeActionId] = useState("");
   const [lateNoticeError, setLateNoticeError] = useState(null);
+  const [noShowBookingId, setNoShowBookingId] = useState("");
+  const [bookingClock, setBookingClock] = useState(Date.now());
 
   const stats = useMemo(() => {
     const total = bookings.length;
     const pending = bookings.filter((b) => b.status === "Pending Request").length;
     const active = bookings.filter((b) => ["Confirmed", "On the Way", "In Progress"].includes(b.status)).length;
     const completed = bookings.filter((b) => isCompletedLikeStatus(b.status)).length;
-    const cancelled = bookings.filter((b) => b.status === "Cancelled").length;
+    const cancelled = bookings.filter((b) => ["Cancelled", "Cancelled - Provider No-Show"].includes(b.status)).length;
     const declined = bookings.filter((b) => ["Declined", "Declined by Provider"].includes(b.status)).length;
     const expired = bookings.filter((b) => b.status === "Expired").length;
     return { total, pending, active, completed, cancelled, declined, expired };
@@ -85,7 +96,7 @@ export default function BookingsPage() {
         || (activeTab === "Pending" && booking.status === "Pending Request")
         || (activeTab === "Active" && ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status))
         || (activeTab === "Completed" && isCompletedLikeStatus(booking.status))
-        || (activeTab === "Cancelled" && booking.status === "Cancelled")
+        || (activeTab === "Cancelled" && ["Cancelled", "Cancelled - Provider No-Show"].includes(booking.status))
         || (activeTab === "Declined" && booking.status === "Declined by Provider")
         || (activeTab === "Expired" && booking.status === "Expired");
       return matchesSearch && matchesTab;
@@ -103,6 +114,7 @@ export default function BookingsPage() {
         Completed: 3,
         Settled: 3,
         Cancelled: 4,
+        "Cancelled - Provider No-Show": 4,
         "Declined by Provider": 5,
         Declined: 5,
       };
@@ -123,6 +135,7 @@ export default function BookingsPage() {
 
   const detailBooking = bookings.find((b) => b.id === detailId) || null;
   const cancelBooking = bookings.find((b) => b.id === cancelingId);
+  const noShowBooking = bookings.find((booking) => booking.id === noShowBookingId) || null;
   const cancelBookingNeedsReason = Boolean(cancelBooking && Date.now() - new Date(cancelBooking.createdAt).getTime() >= 10 * 60 * 1000);
   const revisionBooking = bookings.find((booking) => booking.id === revisioningId) || null;
   const reviewingBooking = bookings.find((b) => b.id === reviewingId);
@@ -130,6 +143,16 @@ export default function BookingsPage() {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+
+  useEffect(() => {
+    const hasUpcomingNoShowDeadline = bookings.some((booking) =>
+      booking.status === "Confirmed"
+      && getNoShowDeadlineTimestamp(booking) > Date.now()
+    );
+    if (!hasUpcomingNoShowDeadline) return undefined;
+    const timerId = window.setInterval(() => setBookingClock(Date.now()), 1000);
+    return () => window.clearInterval(timerId);
+  }, [bookings]);
 
   useEffect(() => {
     if (requestedBookingId && bookings.some((booking) => booking.id === requestedBookingId)) {
@@ -193,6 +216,11 @@ export default function BookingsPage() {
     } finally {
       setLateNoticeActionId("");
     }
+  };
+
+  const handleProviderNoShow = async (bookingId) => {
+    await reportProviderNoShow(bookingId);
+    setNoShowBookingId("");
   };
 
   const handleCashSettlementConfirmation = async (bookingId, confirmation) => {
@@ -273,7 +301,12 @@ export default function BookingsPage() {
           {isInitialLoading ? (
             <BookingCardSkeletonList count={3} label="Loading bookings" />
           ) : filteredBookings.length > 0 ? (
-            filteredBookings.map((booking) => (
+            filteredBookings.map((booking) => {
+              const noShowDeadline = getNoShowDeadlineTimestamp(booking);
+              const isNoShowEligible = booking.status === "Confirmed"
+                && noShowDeadline > 0
+                && bookingClock >= noShowDeadline;
+              return (
               <div
                 key={booking.id}
                 className="content-arrive overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition-[border-color,box-shadow] hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
@@ -337,6 +370,12 @@ export default function BookingsPage() {
                                     ? "You chose to wait for the updated arrival."
                                     : "You requested a new appointment time. Message your provider to arrange the schedule."}
                                 </p>
+                              )}
+                              {booking.noShowCheckInSentAt && booking.status === "Confirmed" && (
+                                <section className="mt-3 rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-950 shadow-sm" aria-label="PandaBot booking check-in">
+                                  <p className="font-semibold text-blue-800">PandaBot is checking in</p>
+                                  <p className="mt-1 text-xs leading-5 text-blue-800">The arrival grace period passed without a provider status update. Please confirm your status in the booking chat.</p>
+                                </section>
                               )}
                               {lateNoticeError?.bookingId === booking.id && <p role="alert" className="mt-2 text-xs font-semibold text-red-800">{lateNoticeError.message}</p>}
                             </section>
@@ -465,6 +504,16 @@ export default function BookingsPage() {
                       {(isCompletedLikeStatus(booking.status) || booking.status === "Cancelled") && (
                         <button type="button" onClick={() => setRebookingBooking(booking)} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50">Rebook</button>
                       )}
+                      {isNoShowEligible && (
+                        <button type="button" onClick={() => setNoShowBookingId(booking.id)} className="dashboard-focus rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-800 transition hover:border-blue-300 hover:bg-blue-100">
+                          Report No-Show / Cancel Unresponsive Booking
+                        </button>
+                      )}
+                      {booking.status === "Cancelled - Provider No-Show" && (
+                        <button type="button" onClick={() => navigate(`/explore?service=${encodeURIComponent(booking.cred || "")}`)} className="dashboard-focus rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700">
+                          Rebook with another Pro
+                        </button>
+                      )}
                       {booking.status === "Cancellation Requested" && booking.cancellationRequestedBy === "provider" && (
                         <>
                           <button
@@ -493,7 +542,8 @@ export default function BookingsPage() {
                   </div>
                 </div>
               </div>
-            ))
+              );
+            })
           ) : (
             <div className="rounded-xl border border-dashed border-gray-300 bg-white py-16 text-center">
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto mb-3 h-10 w-10 text-slate-300"><path strokeLinecap="round" strokeLinejoin="round" d="M8 6.75h8M8 10.75h8M8 14.75h5M5.75 3.75h12.5a1.5 1.5 0 011.5 1.5v13.5a1.5 1.5 0 01-1.5 1.5H5.75a1.5 1.5 0 01-1.5-1.5V5.25a1.5 1.5 0 011.5-1.5z" /></svg>
@@ -535,6 +585,13 @@ export default function BookingsPage() {
             </div>
           )}
         </StatusChangeConfirmation>
+      )}
+      {noShowBooking && (
+        <ProviderNoShowConfirmationModal
+          booking={noShowBooking}
+          onConfirm={() => handleProviderNoShow(noShowBooking.id)}
+          onClose={() => setNoShowBookingId("")}
+        />
       )}
       {revisionBooking && canRequestRevision(revisionBooking) && (
         <RevisionRequestModal

@@ -12,6 +12,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
 import { PROFESSIONS } from "../utils/professions.js";
 import UserOnlineStatus from "./UserOnlineStatus.jsx";
+import ActionToast from "./ActionToast.jsx";
 
 const filterCategories = PROFESSIONS.map((name) => ({ name }));
 
@@ -122,6 +123,7 @@ export default function Explore() {
   const [totalProviders, setTotalProviders] = useState(0);
   const [presenceRefresh, setPresenceRefresh] = useState(0);
   const [favoriteProviderIds, setFavoriteProviderIds] = useState(new Set());
+  const [favoriteToast, setFavoriteToast] = useState("");
   const [verifiedFavoriteProviderIds, setVerifiedFavoriteProviderIds] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
@@ -410,6 +412,7 @@ export default function Explore() {
 
       setFavoriteProviderIds(nextSet);
       window.dispatchEvent(new CustomEvent(FAVORITES_SYNC_EVENT, { detail: { favoriteProviderIds: [...nextSet] } }));
+      setFavoriteToast(isSaved ? "Removed from your favorites." : "Saved to your favorites.");
     } catch (error) {
       setFavoriteProviderIds(fallbackSet);
       window.alert(error.message || "Could not update favorites.");
@@ -890,6 +893,7 @@ export default function Explore() {
           onSubmit={createBooking}
           initialValues={bookingInitialValues}
         />
+        <ActionToast message={favoriteToast} onDismiss={() => setFavoriteToast("")} />
         {showSearchLocationPicker && (
           <div
             className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/50 p-3 sm:p-5"

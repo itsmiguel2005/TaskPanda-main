@@ -2,10 +2,19 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "regions": ["sin1"],
+  "crons": [
+    {
+      "path": "/api/cron/booking-no-show-check-ins",
+      "schedule": "* * * * *"
+    }
+  ],
   "functions": {
     "api/index.js": {
       "maxDuration": 60,
       "includeFiles": "node_modules/tesseract.js-core/**"
+    },
+    "api/cron/booking-no-show-check-ins.js": {
+      "maxDuration": 60
     }
   },
   "rewrites": [

@@ -131,7 +131,7 @@ export default function ProviderBookingsPage() {
     if (activeTab === "All") return true;
     if (activeTab === "Active") return ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status);
     if (activeTab === "Completed") return ["Completed", "Settled"].includes(booking.status);
-    if (activeTab === "Cancelled") return booking.status === "Cancelled";
+    if (activeTab === "Cancelled") return ["Cancelled", "Cancelled - Provider No-Show"].includes(booking.status);
     if (activeTab === "Declined") return booking.status === "Declined by Provider";
     return false;
   });
@@ -149,7 +149,7 @@ export default function ProviderBookingsPage() {
     } else if (sortBy === "price") {
       result.sort((a, b) => parsePrice(b.price) - parsePrice(a.price));
     } else if (sortBy === "status") {
-      const order = { "Cancellation Requested": 0, "Pending Request": 1, Confirmed: 2, "On the Way": 3, "In Progress": 4, Completed: 5, Settled: 5, Cancelled: 6, "Declined by Provider": 7 };
+      const order = { "Cancellation Requested": 0, "Pending Request": 1, Confirmed: 2, "On the Way": 3, "In Progress": 4, Completed: 5, Settled: 5, Cancelled: 6, "Cancelled - Provider No-Show": 6, "Declined by Provider": 7 };
       result.sort((a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99));
     }
     return result;
@@ -160,7 +160,7 @@ export default function ProviderBookingsPage() {
     incoming: requests.length,
     active: managedBookings.filter((b) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(b.status)).length,
     completed: managedBookings.filter((b) => ["Completed", "Settled"].includes(b.status)).length,
-    cancelled: managedBookings.filter((b) => b.status === "Cancelled").length,
+    cancelled: managedBookings.filter((b) => ["Cancelled", "Cancelled - Provider No-Show"].includes(b.status)).length,
     declined: managedBookings.filter((b) => b.status === "Declined by Provider").length,
     earnings: managedBookings
       .filter((b) => ["Completed", "Settled"].includes(b.status))
@@ -309,7 +309,7 @@ export default function ProviderBookingsPage() {
                 ? managedBookings.filter((booking) => ["Completed", "Settled"].includes(booking.status)).length
                 : tab.key === "Declined"
                 ? managedBookings.filter((booking) => booking.status === "Declined by Provider").length
-                : managedBookings.filter((booking) => booking.status === "Cancelled").length;
+                : managedBookings.filter((booking) => ["Cancelled", "Cancelled - Provider No-Show"].includes(booking.status)).length;
             return (
               <button
                 key={tab.key}

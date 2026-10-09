@@ -603,13 +603,20 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                   <path fillRule="evenodd" d="M12 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 006 15h12a1 1 0 00.707-1.707L18 11.586V8a6 6 0 00-6-6zM10 20a2 2 0 114 0a2 2 0 01-4 0z" clipRule="evenodd" />
                 </svg>
                 {totalNotificationCount > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                    <span className="unread-counter-pulse absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
                     {totalNotificationCount > 99 ? "99+" : totalNotificationCount}
                   </span>
                 )}
               </button>
-              {notifOpen && (
-                <div className="absolute right-0 mt-2 w-72 rounded-xl border border-gray-100 bg-white shadow-lg">
+                <div
+                  aria-hidden={!notifOpen}
+                  inert={!notifOpen}
+                  className={`absolute right-0 mt-2 w-72 origin-top-right rounded-xl border border-gray-100 bg-white shadow-lg transition-all duration-200 ease-out ${
+                    notifOpen
+                      ? "visible translate-y-0 scale-100 opacity-100"
+                      : "pointer-events-none invisible -translate-y-1 scale-[0.98] opacity-0"
+                  }`}
+                >
                   <div className="border-b border-gray-100 px-4 py-3">
                     <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
                   </div>
@@ -721,8 +728,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                     </div>
                   )}
                 </div>
-              )}
-            </div>
+              </div>
           )}
           {showNav && (
             <div className="relative">
@@ -754,8 +760,15 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                   />
                 </svg>
               </button>
-              {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 shadow-[0_22px_44px_rgba(15,23,42,0.12)] backdrop-blur-xl">
+              <div
+                aria-hidden={!dropdownOpen}
+                inert={!dropdownOpen}
+                className={`absolute right-0 mt-2 w-80 origin-top-right overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 shadow-[0_22px_44px_rgba(15,23,42,0.12)] backdrop-blur-xl transition-all duration-200 ease-out ${
+                  dropdownOpen
+                    ? "visible translate-y-0 scale-100 opacity-100"
+                    : "pointer-events-none invisible -translate-y-1 scale-[0.98] opacity-0"
+                }`}
+              >
                   <div className="border-b border-slate-200 bg-slate-50/90 px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div className={`avatar-shell h-11 w-11 border border-slate-200 bg-slate-100 text-sm font-semibold text-white shadow-sm ${user?.profileImage ? "bg-transparent" : "bg-linear-to-br from-slate-800 to-slate-600"}`}>
@@ -834,8 +847,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                       Sign Out
                     </button>
                   </div>
-                </div>
-              )}
+              </div>
             </div>
           )}
         </div>

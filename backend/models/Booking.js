@@ -78,7 +78,7 @@ const bookingSchema = new mongoose.Schema(
     }],
     status: {
       type: String,
-      enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "declined", "expired", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Cancelled", "Completed", "Settled"],
+      enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Cancelled", "Completed", "Settled"],
       default: "pending",
       index: true,
     },
@@ -95,7 +95,7 @@ const bookingSchema = new mongoose.Schema(
     clientReviewPhotos: { type: [String], default: [] },
     reviewedAt: { type: Date },
     statusHistory: [{
-      status: { type: String, enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "declined", "expired"] },
+      status: { type: String, enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "provider_no_show", "declined", "expired"] },
       at: { type: Date, default: Date.now },
     }],
     adminOverrideHistory: [{
@@ -122,6 +122,12 @@ const bookingSchema = new mongoose.Schema(
       notifiedAt: { type: Date },
       respondedAt: { type: Date },
     },
+    noShowCheckInAt: { type: Date, default: undefined },
+    noShowCheckInProcessingAt: { type: Date, default: undefined },
+    noShowCheckInSentAt: { type: Date, default: undefined },
+    providerNoShowReportedAt: { type: Date, default: undefined },
+    providerNoShowReportedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: undefined },
+    providerReliabilityFlaggedAt: { type: Date, default: undefined },
     counterOffers: [{
       proposedBy: { type: String, enum: ["client", "provider"], required: true },
       proposedPrice: { type: Number, min: 100 },
