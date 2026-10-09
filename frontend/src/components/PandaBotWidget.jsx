@@ -254,7 +254,7 @@ export default function PandaBotWidget() {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-70 flex flex-col items-end sm:bottom-6 sm:right-6">
+    <div data-onboarding-target="pandabot" className="fixed bottom-4 right-4 z-70 flex flex-col items-end sm:bottom-6 sm:right-6">
       {isOpen && (
         <section
           aria-label="PandaBot customer support chat"

@@ -100,7 +100,7 @@ function formatRewardAmount(amount) {
 
 function BambooStamp({ filled }) {
   return (
-    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" className={`h-6 w-6 ${filled ? "text-emerald-800" : "text-slate-300"}`}>
+    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" className={`h-6 w-6 ${filled ? "text-amber-600" : "text-slate-300"}`}>
       <path d="M16 26c0-6.5.2-12.5 0-19" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       <path d="M16 17c-5.8.2-9.2-2.8-9.1-7.8 5.4-.2 8.6 2.5 9.1 7.8Z" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
       <path d="M16 12c.3-4.5 3.2-7 8-6.8.1 4.7-2.7 7-8 6.8Z" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
@@ -316,9 +316,9 @@ export default function ProfilePage() {
                       {Array.from({ length: 5 }, (_, index) => {
                         const filled = index < stampProgress;
                         return (
-                          <div key={index} className={`flex min-h-18 flex-col items-center justify-center gap-1.5 rounded-xl ${filled ? "bg-emerald-50" : "bg-slate-50"}`}>
+                          <div key={index} className={`flex min-h-18 flex-col items-center justify-center gap-1.5 rounded-xl border ${filled ? "border-amber-200/80 bg-amber-100/70" : "border-slate-100 bg-slate-50"}`}>
                             <BambooStamp filled={filled} />
-                            <span className={`text-[10px] font-semibold ${filled ? "text-emerald-800" : "text-slate-500"}`}>{filled ? "Collected" : "Stamp"}</span>
+                            <span className={`text-[10px] font-semibold ${filled ? "text-amber-900" : "text-slate-500"}`}>{filled ? "Collected" : "Stamp"}</span>
                           </div>
                         );
                       })}

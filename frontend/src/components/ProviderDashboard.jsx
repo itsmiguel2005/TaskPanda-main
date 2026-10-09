@@ -707,7 +707,7 @@ export default function ProviderDashboard() {
           </div>
 
           {/* Total Earnings */}
-          <div className="dashboard-stat">
+          <div data-onboarding-target="provider-earnings" className="dashboard-stat">
             <p className="dashboard-kicker">Total earnings</p>
             <p className="mt-2 text-3xl font-extrabold tabular-nums text-slate-900">{formatPhpAmount(stats.earnings)}</p>
             <p className="mt-1 text-xs text-slate-500">From completed jobs</p>
@@ -761,7 +761,7 @@ export default function ProviderDashboard() {
 
             {/* Incoming Requests */}
             {(activeFilter === "All" || activeFilter === "Pending Request") && (
-              <div className="dashboard-panel">
+              <div data-onboarding-target="provider-requests" className="dashboard-panel">
                 <div className="flex items-center gap-2 border-b border-sky-100 px-5 py-4">
                   <h2 className="text-base font-bold tracking-tight text-slate-900">Incoming requests</h2>
                   {requests.length > 0 && (

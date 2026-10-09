@@ -158,6 +158,14 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    hasCompletedOnboarding: {
+      type: Boolean,
+      default: false,
+    },
+    hasCompletedProviderOnboarding: {
+      type: Boolean,
+      default: false,
+    },
     isSuspended: {
       type: Boolean,
       default: false,

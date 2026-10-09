@@ -13,6 +13,7 @@ import RevisionReviewPanel from "../components/RevisionReviewPanel.jsx";
 import BookingHistory from "../components/BookingHistory.jsx";
 import BookingLocationMap from "../components/BookingLocationMap.jsx";
 import PandaSwipeRefresh from "../components/PandaSwipeRefresh.jsx";
+import OnboardingTour from "../components/OnboardingTour.jsx";
 import { canRequestCancellation, getCancellationLockMessage, requiresCancellationApproval } from "../utils/bookingCancellation.js";
 import { BookingCardSkeletonList, SkeletonBlock } from "../components/Skeletons.jsx";
 import { compareBookingsByLatestActivity, sortBookingsWithOngoingFirst } from "../utils/bookingActivity.js";
@@ -270,6 +271,8 @@ export default function ProviderBookingsPage() {
   };
 
   return (
+    <>
+    <OnboardingTour />
     <div className="dashboard-page text-slate-800">
       <Header showNav activeTab="Bookings" role="provider" />
 
@@ -606,6 +609,7 @@ export default function ProviderBookingsPage() {
                             {booking.status === "In Progress" && (
                               <button
                                 type="button"
+                                data-onboarding-target="provider-running-late"
                                 onClick={() => {
                                   setRunningLateBookingId(booking.id);
                                   setRunningLateMinutes("30");
@@ -952,5 +956,6 @@ export default function ProviderBookingsPage() {
         </div>
       )}
     </div>
+    </>
   );
 }

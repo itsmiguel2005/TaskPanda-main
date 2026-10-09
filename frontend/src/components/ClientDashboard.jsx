@@ -748,7 +748,7 @@ export default function Dashboard() {
                 />
               </div>
             </div>
-            <div className="flex min-w-0 items-center overflow-hidden rounded-xl border border-sky-100 bg-sky-50/60 p-1.5 shadow-sm transition focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/30">
+            <div data-onboarding-target="client-discovery" className="flex min-w-0 items-center overflow-hidden rounded-xl border border-sky-100 bg-sky-50/60 p-1.5 shadow-sm transition focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/30">
               <input
                 type="text"
                 value={search}
@@ -1008,7 +1008,7 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
-            <div className="flex items-center justify-between border-b border-sky-100 px-5 py-4">
+            <div data-onboarding-target="client-bookings" className="flex items-center justify-between border-b border-sky-100 px-5 py-4">
               <h2 className="text-base font-bold tracking-tight text-slate-900">
                 Active Bookings
               </h2>

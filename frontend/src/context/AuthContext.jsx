@@ -11,6 +11,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [isProfileLoaded, setIsProfileLoaded] = useState(false);
   const isVerifiedRef = useRef(false);
   const verificationStatusRefreshInFlight = useRef(false);
 
@@ -80,6 +81,7 @@ export function AuthProvider({ children }) {
     setIsVerified(newVerified);
     isVerifiedRef.current = newVerified;
     setUser(newUser);
+    setIsProfileLoaded(false);
     setToken(authToken || null);
     const authData = JSON.stringify({
       user: newUser,
@@ -107,6 +109,7 @@ export function AuthProvider({ children }) {
     setRole(null);
     setUser(null);
     setToken(null);
+    setIsProfileLoaded(false);
     setIsVerified(false);
     isVerifiedRef.current = false;
     localStorage.removeItem("taskpanda_auth");
@@ -167,6 +170,7 @@ export function AuthProvider({ children }) {
       const data = await response.json();
       if (!data.user) return false;
       updateUser(data.user);
+      setIsProfileLoaded(true);
       return true;
     } catch {
       return false;
@@ -223,7 +227,7 @@ export function AuthProvider({ children }) {
   }, [isAuthLoading, isLoggedIn, token, role, refreshProfile]);
 
   return (
-    <AuthContext.Provider value={{ isLoggedIn, role, isVerified, user, token, isAuthLoading, login, logout, verify, updateUser, refreshProfile, refreshVerificationStatus }}>
+    <AuthContext.Provider value={{ isLoggedIn, role, isVerified, user, token, isAuthLoading, isProfileLoaded, login, logout, verify, updateUser, refreshProfile, refreshVerificationStatus }}>
       {children}
     </AuthContext.Provider>
   );

@@ -8,6 +8,8 @@ function profileFromUser(user) {
   return {
     id: user._id,
     role: user.role,
+    hasCompletedOnboarding: user.hasCompletedOnboarding === true,
+    hasCompletedProviderOnboarding: user.hasCompletedProviderOnboarding === true,
     isVerified: user.isVerified === true,
     verificationStatus: user.verificationStatus || "unverified",
     verificationDetailsStatus: user.verificationDetails?.status || null,
@@ -97,6 +99,23 @@ async function handleGetProfile(req, res) {
   } catch (error) {
     console.error("Get profile error:", error);
     return res.status(500).json({ message: "Could not load your profile." });
+  }
+}
+
+async function handleCompleteOnboarding(req, res) {
+  try {
+    if (req.user.role === "provider") {
+      req.user.hasCompletedProviderOnboarding = true;
+    } else {
+      req.user.hasCompletedOnboarding = true;
+    }
+    await req.user.save();
+    return res.json(req.user.role === "provider"
+      ? { hasCompletedProviderOnboarding: true }
+      : { hasCompletedOnboarding: true });
+  } catch (error) {
+    console.error("Complete onboarding error:", error);
+    return res.status(500).json({ message: "Could not save your onboarding progress. Please try again." });
   }
 }
 
@@ -222,4 +241,4 @@ async function handleUpdateProfile(req, res) {
   }
 }
 
-module.exports = { handleGetProfile, handleGetVerificationStatus, handleUpdateProfile, handleUploadProfilePhoto };
+module.exports = { handleGetProfile, handleGetVerificationStatus, handleCompleteOnboarding, handleUpdateProfile, handleUploadProfilePhoto };
