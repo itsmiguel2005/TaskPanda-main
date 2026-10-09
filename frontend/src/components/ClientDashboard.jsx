@@ -17,6 +17,7 @@ import RequestBookingModal from "./RequestBookingModal.jsx";
 import UserOnlineStatus from "./UserOnlineStatus.jsx";
 import { PROFESSIONS } from "../utils/professions.js";
 import ActionToast from "./ActionToast.jsx";
+import { compareBookingsByLatestActivity } from "../utils/bookingActivity.js";
 
 export const categories = [
   {
@@ -391,7 +392,7 @@ export default function Dashboard() {
     if (activeTab === "Cancelled") return ["Cancelled", "Cancelled - Provider No-Show"].includes(booking.status);
     if (activeTab === "Expired") return booking.status === "Expired";
     return booking.status === "Declined by Provider";
-  });
+  }).sort(compareBookingsByLatestActivity);
 
   const filteredCategories = categories.filter((cat) =>
     search.trim()

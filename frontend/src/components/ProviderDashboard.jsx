@@ -9,6 +9,7 @@ import { BookingCardSkeletonList } from "./Skeletons.jsx";
 import CompletionProofModal from "./CompletionProofModal.jsx";
 import { canRequestCancellation, requiresCancellationApproval } from "../utils/bookingCancellation.js";
 import { canArriveForSameDayBooking, hasScheduleConflict } from "../utils/bookingArrival.js";
+import { compareBookingsByLatestActivity } from "../utils/bookingActivity.js";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -568,12 +569,12 @@ export default function ProviderDashboard() {
   }, [bookings, bookingReviewStats, user]);
 
   const requests = useMemo(
-    () => [...bookings.filter((b) => b.status === "Pending Request")].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+    () => [...bookings.filter((b) => b.status === "Pending Request")].sort(compareBookingsByLatestActivity),
     [bookings]
   );
 
   const jobs = useMemo(
-    () => [...bookings.filter((b) => b.status !== "Pending Request")].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+    () => [...bookings.filter((b) => b.status !== "Pending Request")].sort(compareBookingsByLatestActivity),
     [bookings]
   );
 

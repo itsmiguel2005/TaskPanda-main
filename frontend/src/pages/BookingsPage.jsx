@@ -18,6 +18,7 @@ import PandaSwipeRefresh from "../components/PandaSwipeRefresh.jsx";
 import { BookingCardSkeletonList, SkeletonBlock } from "../components/Skeletons.jsx";
 import { DEFAULT_ESTIMATED_DURATION_MINUTES } from "../utils/bookingDuration.js";
 import { getBookingNoShowGraceDeadline } from "../utils/bookingArrival.js";
+import { compareBookingsByLatestActivity, sortBookingsWithOngoingFirst } from "../utils/bookingActivity.js";
 
 const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined", "Expired"];
 
@@ -60,7 +61,7 @@ export default function BookingsPage() {
   const { bookings, isLoading, error, requestCancellation, requestRevision, submitReview, respondToProviderUpdate, respondToLateNotice, reportProviderNoShow, refreshBookings, confirmCashSettlement, createBooking } = useBookings();
   const isInitialLoading = isLoading && bookings.length === 0;
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortBy, setSortBy] = useState("activityAt");
   const [cancelingId, setCancelingId] = useState(null);
   const [revisioningId, setRevisioningId] = useState(null);
   const [cancellationReason, setCancellationReason] = useState("");
@@ -101,11 +102,13 @@ export default function BookingsPage() {
         || (activeTab === "Expired" && booking.status === "Expired");
       return matchesSearch && matchesTab;
     });
-    const sorted = [...result];
-    if (sortBy === "createdAt") {
-      sorted.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    let compareWithinGroup = compareBookingsByLatestActivity;
+    if (sortBy === "activityAt") {
+      compareWithinGroup = compareBookingsByLatestActivity;
+    } else if (sortBy === "createdAt") {
+      compareWithinGroup = (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
     } else if (sortBy === "price") {
-      sorted.sort((a, b) => Number(b.totalPrice ?? b.offeredPrice ?? 0) - Number(a.totalPrice ?? a.offeredPrice ?? 0));
+      compareWithinGroup = (a, b) => Number(b.totalPrice ?? b.offeredPrice ?? 0) - Number(a.totalPrice ?? a.offeredPrice ?? 0);
     } else if (sortBy === "status") {
       const order = {
         "Cancellation Requested": 0,
@@ -118,9 +121,9 @@ export default function BookingsPage() {
         "Declined by Provider": 5,
         Declined: 5,
       };
-      sorted.sort((a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99));
+      compareWithinGroup = (a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99);
     }
-    return sorted;
+    return sortBookingsWithOngoingFirst(result, compareWithinGroup);
   }, [bookings, activeTab, searchQuery, sortBy]);
 
   const tabCounts = {
@@ -284,6 +287,7 @@ export default function BookingsPage() {
             onChange={(e) => setSortBy(e.target.value)}
             className="dashboard-focus rounded-xl border border-sky-100 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
           >
+            <option value="activityAt">Activity: Newest</option>
             <option value="createdAt">Submitted: Newest</option>
             <option value="price">Sort: Price</option>
             <option value="status">Sort: Status</option>

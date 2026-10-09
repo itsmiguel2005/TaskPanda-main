@@ -15,6 +15,7 @@ import BookingLocationMap from "../components/BookingLocationMap.jsx";
 import PandaSwipeRefresh from "../components/PandaSwipeRefresh.jsx";
 import { canRequestCancellation, getCancellationLockMessage, requiresCancellationApproval } from "../utils/bookingCancellation.js";
 import { BookingCardSkeletonList, SkeletonBlock } from "../components/Skeletons.jsx";
+import { compareBookingsByLatestActivity, sortBookingsWithOngoingFirst } from "../utils/bookingActivity.js";
 
 const STATUS_ACTIONS = {
   Confirmed: { status: "en_route", nextStatus: "On the Way", buttonLabel: "I'm On My Way" },
@@ -99,7 +100,7 @@ export default function ProviderBookingsPage() {
   const requestHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
   const [searchQuery, setSearchQuery] = useState("");
   const { bookings, isLoading, error, updateBookingStatus, submitCompletionProof, requestCancellation, sendProviderUpdate, reportRunningLate, confirmCashSettlement, refreshBookings } = useBookings();
-  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortBy, setSortBy] = useState("activityAt");
   const [acceptingId, setAcceptingId] = useState(null);
   const [statusChange, setStatusChange] = useState(null);
   const [cancelingId, setCancelingId] = useState(null);
@@ -137,22 +138,24 @@ export default function ProviderBookingsPage() {
   });
 
   const sortedRequests = useMemo(() => {
-    return [...requests].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    return [...requests].sort(compareBookingsByLatestActivity);
   }, [requests]);
 
   const sortedBookings = useMemo(() => {
-    let result = [...filteredManagedBookings];
-    if (sortBy === "createdAt") {
-      result.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    let compareWithinGroup = compareBookingsByLatestActivity;
+    if (sortBy === "activityAt") {
+      compareWithinGroup = compareBookingsByLatestActivity;
+    } else if (sortBy === "createdAt") {
+      compareWithinGroup = (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
     } else if (sortBy === "date") {
-      result.sort((a, b) => new Date(a.serviceDate || 0) - new Date(b.serviceDate || 0));
+      compareWithinGroup = (a, b) => new Date(a.serviceDate || 0) - new Date(b.serviceDate || 0);
     } else if (sortBy === "price") {
-      result.sort((a, b) => parsePrice(b.price) - parsePrice(a.price));
+      compareWithinGroup = (a, b) => parsePrice(b.price) - parsePrice(a.price);
     } else if (sortBy === "status") {
       const order = { "Cancellation Requested": 0, "Pending Request": 1, Confirmed: 2, "On the Way": 3, "In Progress": 4, Completed: 5, Settled: 5, Cancelled: 6, "Cancelled - Provider No-Show": 6, "Declined by Provider": 7 };
-      result.sort((a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99));
+      compareWithinGroup = (a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99);
     }
-    return result;
+    return sortBookingsWithOngoingFirst(filteredManagedBookings, compareWithinGroup);
   }, [filteredManagedBookings, sortBy]);
 
   const stats = useMemo(() => ({
@@ -351,6 +354,7 @@ export default function ProviderBookingsPage() {
               onChange={(e) => setSortBy(e.target.value)}
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
             >
+              <option value="activityAt">Activity: Newest</option>
               <option value="createdAt">Submitted: Newest</option>
               <option value="date">Service date: Earliest</option>
               <option value="price">Sort: Price</option>
