@@ -164,7 +164,7 @@ export function AuthProvider({ children }) {
     const previousPreference = user?.dashboardDensityPreference || "comfortable";
     updateUser({ dashboardDensityPreference });
     try {
-      const response = await apiFetch("/api/profile/preferences", {
+      const response = await apiFetch("/api/users/preferences", {
         method: "PATCH",
         headers: {
           Authorization: `Bearer ${token}`,

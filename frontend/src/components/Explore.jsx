@@ -13,6 +13,7 @@ import { useBookings } from "../context/BookingContext.jsx";
 import { PROFESSIONS } from "../utils/professions.js";
 import UserOnlineStatus from "./UserOnlineStatus.jsx";
 import ActionToast from "./ActionToast.jsx";
+import DashboardDensityToggle from "./DashboardDensityToggle.jsx";
 
 const filterCategories = PROFESSIONS.map((name) => ({ name }));
 
@@ -101,6 +102,7 @@ function CheckBox({ label, count, checked, onChange }) {
 export default function Explore() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
+  const dashboardDensity = user?.dashboardDensityPreference === "compact" ? "compact" : "comfortable";
   const { createBooking } = useBookings();
   const [viewingProvider, setViewingProvider] = useState(null);
   const [bookingProvider, setBookingProvider] = useState(null);
@@ -658,7 +660,7 @@ export default function Explore() {
               </p>
               <p className="text-sm text-slate-600">{resultsSubtitle()}</p>
             </div>
-            <div className="shrink-0">
+            <div className="flex shrink-0 items-center gap-2">
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
@@ -670,6 +672,7 @@ export default function Explore() {
                   </option>
                 ))}
               </select>
+              <DashboardDensityToggle iconOnly />
             </div>
           </div>
 
@@ -726,7 +729,7 @@ export default function Explore() {
           ) : loading && filteredProviders.length === 0 ? (
             <SkeletonProviderGrid count={6} label="Searching nearby professionals" />
           ) : filteredProviders.length > 0 ? (
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+            <div className={`${dashboardDensity === "compact" ? "flex flex-col gap-2" : "grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"} transition-all duration-200 ease-in-out`}>
               {filteredProviders.map((provider) => {
                 const isProviderVerified = Boolean(
                   provider.isVerified === true
@@ -739,6 +742,50 @@ export default function Explore() {
                 const travelEstimate = estimateTravelFare(provider.distanceKm);
                 const distance = Number(provider.distanceKm);
                 const distanceLabel = Number.isFinite(distance) ? `${distance.toFixed(2)} km` : "Distance unavailable";
+
+                if (dashboardDensity === "compact") {
+                  const isFavorite = favoriteProviderIds.has(String(provider._id));
+                  return (
+                    <article key={provider._id} className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-sky-100 bg-white px-3 py-3 shadow-sm transition-all duration-200 ease-in-out hover:border-blue-200 hover:bg-slate-50 sm:px-4">
+                      <button type="button" onClick={() => setViewingProvider(provider)} className="dashboard-focus flex min-w-0 flex-1 basis-56 items-center gap-3 rounded-lg text-left">
+                        <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-full border border-sky-100 bg-sky-50 text-sm font-bold text-blue-900">
+                          {provider.profileImage
+                            ? <img src={provider.profileImage} alt="" className="h-full w-full object-cover" />
+                            : (provider.fullName || provider.username || "P").charAt(0)}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5">
+                            <span className="truncate text-sm font-bold text-slate-900">{provider.fullName || provider.username || "Provider"}</span>
+                            {isProviderVerified && <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-800">Verified</span>}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-slate-600">{provider.professions?.join(" · ") || "Service provider"}</span>
+                        </span>
+                      </button>
+                      <div className="flex items-center gap-1.5 text-xs" aria-label={hasRatings ? `${rating.toFixed(1)} out of 5 stars, ${reviews} reviews` : "No ratings yet"}>
+                        <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-amber-500"><path d="m10 1.7 2.55 5.17 5.7.83-4.13 4.02.98 5.68L10 14.72l-5.1 2.68.97-5.68L1.75 7.7l5.7-.83L10 1.7Z" /></svg>
+                        <span className="font-semibold tabular-nums text-slate-900">{hasRatings ? rating.toFixed(1) : "New"}</span>
+                        <span className="text-slate-500">({reviews})</span>
+                      </div>
+                      <div className="min-w-32 text-xs text-slate-600">
+                        <span className="block font-semibold text-slate-800">{distanceLabel}</span>
+                        <span>{[provider.barangay, provider.city].filter(Boolean).join(", ") || "Nearby"}</span>
+                      </div>
+                      <div className="min-w-28 text-xs">
+                        <span className="block text-slate-500">Travel estimate</span>
+                        <span className="font-semibold tabular-nums text-slate-900">{travelEstimate == null ? "Unavailable" : formatPhpAmount(travelEstimate)}</span>
+                        <span className="text-slate-500"> · from {formatPhpAmount(MINIMUM_TASK_OFFER)} task offer</span>
+                      </div>
+                      <div className="ml-auto flex items-center gap-2">
+                        {token && (
+                          <button type="button" aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"} onClick={() => toggleFavorite(provider._id)} className={`dashboard-focus inline-flex h-9 w-9 items-center justify-center rounded-full border transition-all duration-200 ${isFavorite ? "border-rose-200 bg-rose-50 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:border-rose-200 hover:text-rose-600"}`}>
+                            <svg viewBox="0 0 24 24" fill={isFavorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" className="h-4 w-4"><path d="M12 21.35 10.55 20C5.4 15.36 2 12.28 2 8.5A4.5 4.5 0 0 1 6.5 4c1.74 0 3.41.81 4.5 2.09A6.12 6.12 0 0 1 15.5 4 4.5 4.5 0 0 1 20 8.5c0 3.78-3.4 6.86-8.55 11.5L12 21.35Z" /></svg>
+                          </button>
+                        )}
+                        <button type="button" onClick={() => setBookingProvider(provider)} className="dashboard-primary-button dashboard-focus px-3 py-2 text-xs">Book</button>
+                      </div>
+                    </article>
+                  );
+                }
 
                 return (
                   <div

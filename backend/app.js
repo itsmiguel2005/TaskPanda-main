@@ -6,6 +6,7 @@ const authRoutes = require("./routes/authRoutes");
 const healthRoutes = require("./routes/healthRoutes");
 const verificationRoutes = require("./routes/verificationRoutes");
 const profileRoutes = require("./routes/profileRoutes");
+const userRoutes = require("./routes/userRoutes");
 const providerRoutes = require("./routes/providerRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const bookingRoutes = require("./routes/bookingRoutes");
@@ -55,6 +56,7 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/profile", profileRoutes);
+app.use("/api/users", userRoutes);
 app.use("/api/providers", providerRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/client", clientRoutes);
