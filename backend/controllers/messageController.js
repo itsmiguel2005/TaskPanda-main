@@ -3,7 +3,13 @@ const Booking = require("../models/Booking");
 const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
 const { ensureBookingConversation, appendBookingSystemMessage, formatAmount } = require("../services/bookingMessaging");
-const { calculateTotalPrice } = require("../services/bookingPricing");
+const {
+  calculateTotalPrice,
+  MAX_TASK_OFFER_PHP,
+  MAX_TIP_PHP,
+  areBookingAmountsWithinLimits,
+  isBookingTransactionWithinLimit,
+} = require("../services/bookingPricing");
 const { DEFAULT_ESTIMATED_DURATION_MINUTES } = require("../services/bookingLifecycle");
 const { awardSettledBookingStamp } = require("../services/rewards");
 const {
@@ -475,6 +481,10 @@ async function handleCashConfirmation(req, res) {
     if (!booking) return res.status(404).json({ message: "The booking for this conversation no longer exists." });
     if (!["complete", "settled"].includes(booking.status)) return res.status(409).json({ message: "Cash payment can only be confirmed after the task is complete." });
     if (booking.paymentMethod !== "cash") return res.status(409).json({ message: "This booking is not configured for cash payment." });
+    if (!areBookingAmountsWithinLimits(booking.offeredPrice, booking.tipAmount || 0)
+      || !isBookingTransactionWithinLimit(booking.offeredPrice, booking.travelFee || 0, booking.tipAmount || 0)) {
+      return res.status(409).json({ message: `This booking exceeds the PHP ${MAX_TASK_OFFER_PHP.toLocaleString("en-PH")} task-offer, PHP ${MAX_TIP_PHP.toLocaleString("en-PH")} tip, or PHP 100,000 transaction limit. Contact support before confirming payment.` });
+    }
     if ((confirmation === "cash_paid" && req.user.role !== "client") || (confirmation === "cash_received" && req.user.role !== "provider")) {
       return res.status(403).json({ message: "Only the correct booking participant can submit this payment confirmation." });
     }

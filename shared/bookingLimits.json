@@ -1,0 +1,5 @@
+{
+  "maxTaskOfferPhp": 10000,
+  "maxTipPhp": 500,
+  "maxBookingTransactionPhp": 99999.99
+}

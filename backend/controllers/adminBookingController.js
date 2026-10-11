@@ -2,6 +2,12 @@ const mongoose = require("mongoose");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
 const { DEFAULT_ESTIMATED_DURATION_MINUTES, getBookingRequestExpiration } = require("../services/bookingLifecycle");
+const {
+  MAX_TASK_OFFER_PHP,
+  MAX_TIP_PHP,
+  areBookingAmountsWithinLimits,
+  isBookingTransactionWithinLimit,
+} = require("../services/bookingPricing");
 
 const PAGE_SIZE = 25;
 const OVERRIDE_STATUSES = Object.freeze({
@@ -203,8 +209,15 @@ async function handleOverrideAdminBooking(req, res) {
   }
 
   try {
-    const current = await Booking.findById(req.params.bookingId).select("status serviceDate");
+    const current = await Booking.findById(req.params.bookingId).select("status serviceDate offeredPrice travelFee tipAmount");
     if (!current) return res.status(404).json({ message: "Booking not found." });
+    if (
+      ["complete", "settled"].includes(targetStatus) &&
+      (!areBookingAmountsWithinLimits(current.offeredPrice || 0, current.tipAmount || 0)
+        || !isBookingTransactionWithinLimit(current.offeredPrice || 0, current.travelFee || 0, current.tipAmount || 0))
+    ) {
+      return res.status(409).json({ message: `This booking exceeds the PHP ${MAX_TASK_OFFER_PHP.toLocaleString("en-PH")} task-offer, PHP ${MAX_TIP_PHP.toLocaleString("en-PH")} tip, or PHP 100,000 transaction limit and cannot be marked complete or settled.` });
+    }
 
     const fromStatus = current.status || "pending";
     const now = new Date();

@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { maxTaskOfferPhp: MAX_TASK_OFFER_PHP, maxTipPhp: MAX_TIP_PHP } = require("../../shared/bookingLimits.json");
 
 const bookingSchema = new mongoose.Schema(
   {
@@ -35,7 +36,7 @@ const bookingSchema = new mongoose.Schema(
       required: true,
     },
     estimatedDurationMinutes: { type: Number, min: 15, max: 720, default: 60 },
-    offeredPrice: { type: Number, required: true, min: 100 },
+    offeredPrice: { type: Number, required: true, min: 100, max: MAX_TASK_OFFER_PHP },
     travelDistanceKm: { type: Number, min: 0 },
     travelBaseFee: { type: Number, min: 0 },
     travelFeePerKm: { type: Number, min: 0 },
@@ -45,7 +46,7 @@ const bookingSchema = new mongoose.Schema(
     voucherId: { type: mongoose.Schema.Types.ObjectId },
     voucherReservationId: { type: String },
     stampAwardedAt: { type: Date },
-    tipAmount: { type: Number, min: 0, default: 0 },
+    tipAmount: { type: Number, min: 0, max: MAX_TIP_PHP, default: 0 },
     paymentMethod: { type: String, enum: ["cash"], default: "cash", required: true },
     cashPaidConfirmedAt: { type: Date },
     cashReceivedConfirmedAt: { type: Date },
@@ -128,9 +129,21 @@ const bookingSchema = new mongoose.Schema(
     providerNoShowReportedAt: { type: Date, default: undefined },
     providerNoShowReportedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: undefined },
     providerReliabilityFlaggedAt: { type: Date, default: undefined },
+    providerNoShowResponse: {
+      note: { type: String, default: "", trim: true, maxlength: 1000 },
+      respondedAt: { type: Date },
+    },
+    providerNoShowReviewStatus: {
+      type: String,
+      enum: ["pending", "responded", "confirmed", "dismissed"],
+      default: undefined,
+    },
+    providerNoShowAdminNotes: { type: String, default: "", trim: true, maxlength: 2000 },
+    providerNoShowReviewedAt: { type: Date },
+    providerNoShowReviewedBy: { type: String, default: "", trim: true, lowercase: true },
     counterOffers: [{
       proposedBy: { type: String, enum: ["client", "provider"], required: true },
-      proposedPrice: { type: Number, min: 100 },
+      proposedPrice: { type: Number, min: 100, max: MAX_TASK_OFFER_PHP },
       counterOfferDurationMinutes: { type: Number, min: 15, max: 720 },
       proposedServiceDate: { type: Date },
       proposedTimeSlot: { type: String, enum: ["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"] },

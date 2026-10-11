@@ -12,8 +12,11 @@ import { ConversationSkeletonList, MessageSkeletonList } from "./Skeletons.jsx";
 import { canRequestCancellation, getCancellationLockMessage } from "../utils/bookingCancellation.js";
 import { DEFAULT_ESTIMATED_DURATION_MINUTES } from "../utils/bookingDuration.js";
 import UserOnlineStatus, { UserLastActive } from "./UserOnlineStatus.jsx";
+import bookingLimits from "../../../shared/bookingLimits.json";
 
 const MAX_MESSAGE_INPUT_HEIGHT = 144;
+const MAX_TASK_OFFER_PHP = bookingLimits.maxTaskOfferPhp;
+const MAX_TIP_PHP = bookingLimits.maxTipPhp;
 const CONVERSATION_READ_EVENT = "taskpanda:conversation-read";
 const CHAT_POLL_VISIBLE_MS = 1200;
 
@@ -1842,7 +1845,8 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                     />
                     <div className="grid grid-cols-1 gap-3">
                       <label className="text-xs font-semibold text-slate-700">Task offer for {role === "provider" ? counterOfferDurationMinutes : (counteringOfferId ? actionMessage?.eventData?.counterOfferDurationMinutes : null) ?? selectedConversation.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES} minutes (PHP)
-                        <input type="number" min="100" step="1" value={counterOfferPrice} onChange={(event) => { setCounterOfferPrice(event.target.value); updateCounterOfferTyping(Boolean(event.target.value.trim() || counterOfferNote.trim())); }} placeholder={`Current ₱${Number(selectedConversation.offeredPrice || 0).toLocaleString("en-PH")}`} className="dashboard-focus mt-1 block min-h-11 w-full rounded-xl border border-sky-100 bg-white px-3 py-2 text-sm text-slate-900" />
+                        <input type="number" min="100" max={MAX_TASK_OFFER_PHP} step="0.01" value={counterOfferPrice} onChange={(event) => { setCounterOfferPrice(event.target.value); updateCounterOfferTyping(Boolean(event.target.value.trim() || counterOfferNote.trim())); }} placeholder={`Current ₱${Number(selectedConversation.offeredPrice || 0).toLocaleString("en-PH")}`} className="dashboard-focus mt-1 block min-h-11 w-full rounded-xl border border-sky-100 bg-white px-3 py-2 text-sm text-slate-900" />
+                        <span className="mt-1 block font-normal text-slate-500">Maximum task offer: ₱{MAX_TASK_OFFER_PHP.toLocaleString("en-PH")}. Tip limit is ₱{MAX_TIP_PHP.toLocaleString("en-PH")}.</span>
                       </label>
                       {role === "provider" && (
                         <label className="text-xs font-semibold text-slate-700">Proposed duration (minutes)

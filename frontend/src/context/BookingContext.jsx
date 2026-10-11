@@ -436,6 +436,20 @@ export function BookingProvider({ children }) {
     return data.booking;
   }, [notifySync, refreshProfile, token]);
 
+  const respondToProviderNoShow = useCallback(async (id, note) => {
+    const response = await apiFetch(`/api/bookings/${id}/provider-no-show-response`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ note }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Could not save your response to the no-show report.");
+    if (!data.booking?.id) throw new Error("The server returned an invalid no-show response.");
+    setBookings((current) => validBookings(current.map((booking) => booking.id === id ? data.booking : booking)));
+    notifySync({ type: "booking-provider-no-show-response", bookingId: id });
+    return data.booking;
+  }, [notifySync, token]);
+
   const respondToProviderUpdate = useCallback(async (id, updateId, action) => {
     const response = await apiFetch(`/api/bookings/${id}/provider-updates`, {
       method: "PATCH",
@@ -524,13 +538,14 @@ export function BookingProvider({ children }) {
     reportRunningLate,
     respondToLateNotice,
     reportProviderNoShow,
+    respondToProviderNoShow,
     respondToProviderUpdate,
     respondToRevision,
     confirmCashSettlement,
     dismissDashboardBooking,
     restoreDashboardBookings,
     refreshBookings: fetchBookings,
-  }), [bookings, dismissedBookingIds, bookingReviewStats, providerBookingStats, isLoading, error, createBooking, updateBookingStatus, submitCompletionProof, requestRevision, requestCancellation, submitReview, sendProviderUpdate, reportRunningLate, respondToLateNotice, reportProviderNoShow, respondToProviderUpdate, respondToRevision, confirmCashSettlement, dismissDashboardBooking, restoreDashboardBookings, fetchBookings]);
+  }), [bookings, dismissedBookingIds, bookingReviewStats, providerBookingStats, isLoading, error, createBooking, updateBookingStatus, submitCompletionProof, requestRevision, requestCancellation, submitReview, sendProviderUpdate, reportRunningLate, respondToLateNotice, reportProviderNoShow, respondToProviderNoShow, respondToProviderUpdate, respondToRevision, confirmCashSettlement, dismissDashboardBooking, restoreDashboardBookings, fetchBookings]);
 
   return <BookingContext.Provider value={value}>{children}</BookingContext.Provider>;
 }

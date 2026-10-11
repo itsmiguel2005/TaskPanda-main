@@ -6,6 +6,7 @@ const { sanitizeMongoInput } = require("../middleware/sanitizeMongoInput");
 const { limitBookingCreation } = require("../middleware/rateLimits");
 const { validateRequest } = require("../middleware/validateRequest");
 const { getGlobalSettings } = require("../services/systemSettings");
+const { maxTaskOfferPhp: MAX_TASK_OFFER_PHP, maxTipPhp: MAX_TIP_PHP } = require("../../shared/bookingLimits.json");
 const {
   handleListBookings,
   handleDismissDashboardBookings,
@@ -13,6 +14,7 @@ const {
   handleProviderAvailability,
   handleReportRunningLate,
   handleReportProviderNoShow,
+  handleRespondToProviderNoShow,
   handleRespondToLateNotice,
   handleServiceLocationSearch,
   handleServiceLocationReverseLookup,
@@ -68,12 +70,12 @@ const validateBookingCreation = [
   body("date").optional().isISO8601(),
   body("timeSlot").optional().isString().isLength({ min: 1, max: 24 }),
   body("time").optional().isString().isLength({ min: 1, max: 24 }),
-  body("offeredPrice").optional().isFloat({ min: 100, max: 10000000 }),
-  body("offerPrice").optional().isFloat({ min: 100, max: 10000000 }),
-  body("offer").optional().isFloat({ min: 100, max: 10000000 }),
-  body("price").optional().isFloat({ min: 100, max: 10000000 }),
+  body("offeredPrice").optional().isFloat({ min: 100, max: MAX_TASK_OFFER_PHP * 4 }),
+  body("offerPrice").optional().isFloat({ min: 100, max: MAX_TASK_OFFER_PHP * 4 }),
+  body("offer").optional().isFloat({ min: 100, max: MAX_TASK_OFFER_PHP * 4 }),
+  body("price").optional().isFloat({ min: 100, max: MAX_TASK_OFFER_PHP * 4 }),
   body("estimatedDurationMinutes").optional().isInt({ min: 15, max: 720 }).custom((value) => Number(value) % 15 === 0),
-  body("tipAmount").optional().isFloat({ min: 0, max: 1000000 }),
+  body("tipAmount").optional().isFloat({ min: 0, max: MAX_TIP_PHP }),
   body("voucherId").optional({ values: "falsy" }).isMongoId(),
   body("urgency").optional().isIn(["Emergency", "Flexible"]),
   body("paymentMethod").optional().isIn(["cash"]),
@@ -108,7 +110,7 @@ const validateProviderUpdateResponse = [
 
 const validateCounterOffer = [
   body("counterOfferId").optional({ values: "falsy" }).isMongoId(),
-  body("proposedPrice").optional({ values: "falsy" }).isFloat({ min: 100, max: 10000000 }),
+  body("proposedPrice").optional({ values: "falsy" }).isFloat({ min: 100, max: MAX_TASK_OFFER_PHP }),
   body("counterOfferDurationMinutes").optional({ values: "falsy" }).isInt({ min: 15, max: 720 }).custom((value) => Number(value) % 15 === 0),
   body("proposedServiceDate").optional({ values: "falsy" }).isISO8601(),
   body("proposedTimeSlot").optional({ values: "falsy" }).isString().isLength({ max: 24 }),
@@ -145,6 +147,7 @@ router.post("/", (req, _res, next) => {
 router.patch("/:id/status", validateBookingStatus, validateRequest, handleUpdateBookingStatus);
 router.post("/:id/running-late", body("delayMinutes").isInt({ min: 1, max: 720 }), validateRequest, handleReportRunningLate);
 router.post("/:id/provider-no-show", handleReportProviderNoShow);
+router.post("/:id/provider-no-show-response", body("note").isString().trim().isLength({ min: 1, max: 1000 }), validateRequest, handleRespondToProviderNoShow);
 router.patch("/:id/late-notice", body("action").isIn(["wait", "reschedule"]), validateRequest, handleRespondToLateNotice);
 router.post("/:id/completion", upload.array("photos", 5), sanitizeMongoInput, body("completionNote").optional().isString().isLength({ max: 2000 }), validateRequest, handleSubmitCompletion);
 router.post("/:id/revisions", upload.array("photos", 5), sanitizeMongoInput, body("note").isString().isLength({ min: 1, max: 1000 }), validateRequest, handleCreateRevisionRequest);

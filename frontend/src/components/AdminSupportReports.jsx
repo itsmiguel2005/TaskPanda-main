@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { SkeletonBlock } from "./Skeletons.jsx";
 import { adminRequest } from "../services/adminApi.js";
+import AdminProviderNoShowReports from "./AdminProviderNoShowReports.jsx";
 
 const dateTime = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" });
 const timeOnly = new Intl.DateTimeFormat("en-PH", { hour: "numeric", minute: "2-digit" });
@@ -42,7 +43,7 @@ function ActionButton({ children, onClick, disabled = false, tone = "neutral", t
   );
 }
 
-export default function AdminSupportReports() {
+function ConversationSupportReports() {
   const { token, logout } = useAuth();
   const navigate = useNavigate();
   const [status, setStatus] = useState("open");
@@ -198,7 +199,7 @@ export default function AdminSupportReports() {
     <section aria-labelledby="admin-support-reports-title" className="space-y-5">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 id="admin-support-reports-title" className="text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">Support reports</h1>
+          <h1 id="admin-support-reports-title" className="text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">Conversation reports</h1>
           <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-600">Review conversation reports, examine recent context, and record account actions.</p>
         </div>
         <ActionButton onClick={() => setRefreshKey((value) => value + 1)} disabled={isLoading}>
@@ -463,5 +464,39 @@ export default function AdminSupportReports() {
         )}
       </dialog>
     </section>
+  );
+}
+
+export default function AdminSupportReports() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get("reportTab") === "no-shows" ? "no-shows" : "conversations";
+
+  function selectTab(tab) {
+    const nextParams = new URLSearchParams(searchParams);
+    if (tab === "no-shows") nextParams.set("reportTab", "no-shows");
+    else nextParams.delete("reportTab");
+    setSearchParams(nextParams, { replace: true });
+  }
+
+  return (
+    <div className="space-y-5">
+      <nav aria-label="Report categories" className="flex flex-wrap gap-2">
+        {[
+          { id: "conversations", label: "Conversation reports" },
+          { id: "no-shows", label: "Provider no-show reports" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            aria-pressed={activeTab === tab.id}
+            onClick={() => selectTab(tab.id)}
+            className={`dashboard-focus min-h-10 rounded-xl px-4 py-2 text-sm font-semibold transition ${activeTab === tab.id ? "bg-slate-900 text-white shadow-sm" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+      {activeTab === "no-shows" ? <AdminProviderNoShowReports /> : <ConversationSupportReports />}
+    </div>
   );
 }

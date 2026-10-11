@@ -4,7 +4,9 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { canArriveForSameDayBooking, hasScheduleConflict } from "../utils/bookingArrival.js";
 import { DEFAULT_ESTIMATED_DURATION_MINUTES, formatEstimatedDuration } from "../utils/bookingDuration.js";
+import BambooStamp from "./BambooStamp.jsx";
 import ServiceLocationPicker from "./ServiceLocationPicker.jsx";
+import bookingLimits from "../../../shared/bookingLimits.json";
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -14,6 +16,9 @@ const MONTHS = [
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const TIME_SLOTS = ["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"];
 const TIP_PRESETS = [0, 20, 50, 100];
+const MAX_TASK_OFFER_PHP = bookingLimits.maxTaskOfferPhp;
+const MAX_TIP_PHP = bookingLimits.maxTipPhp;
+const MAX_BOOKING_TRANSACTION_PHP = bookingLimits.maxBookingTransactionPhp;
 const MIN_ESTIMATED_DURATION_MINUTES = 15;
 const MAX_ESTIMATED_DURATION_MINUTES = 720;
 
@@ -103,6 +108,195 @@ function AnimatedPhpAmount({ amount }) {
       <span className="sr-only" aria-live="polite" aria-atomic="true">{formatPhpAmount(amount)}</span>
       <span aria-hidden="true">{formatPhpAmount(displayAmount)}</span>
     </>
+  );
+}
+
+function VoucherSelector({ vouchers, value, onChange, disabled, status }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const containerRef = useRef(null);
+  const listRef = useRef(null);
+  const listId = "booking-voucher-options";
+  const options = [
+    { id: "", title: "No voucher", description: "Pay the full travel fare" },
+    ...vouchers.map((voucher) => ({
+      id: voucher.id,
+      title: voucher.title,
+      description: "Travel-fee voucher",
+      amount: voucher.amount,
+    })),
+  ];
+  const selectedIndex = Math.max(0, options.findIndex((option) => option.id === value));
+  const selectedOption = options[selectedIndex];
+  const unavailableTitle = status === "loading"
+    ? "Loading your vouchers…"
+    : status === "error"
+      ? "Voucher list unavailable"
+      : "No voucher available";
+  const unavailableDescription = status === "loading"
+    ? "Checking your rewards"
+    : status === "error"
+      ? "Retry to check your rewards"
+      : "Your next travel-fee reward will appear here";
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      listRef.current?.children[activeIndex]?.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [activeIndex, isOpen]);
+
+  const chooseOption = (index) => {
+    const option = options[index];
+    if (!option) return;
+    onChange(option.id);
+    setIsOpen(false);
+    setActiveIndex(index);
+  };
+
+  const handleKeyDown = (event) => {
+    if (event.key === "Escape") {
+      if (isOpen) event.stopPropagation();
+      setIsOpen(false);
+      return;
+    }
+    if (event.key === "Tab") {
+      setIsOpen(false);
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      if (!isOpen) {
+        setIsOpen(true);
+        setActiveIndex(selectedIndex);
+        return;
+      }
+      setActiveIndex((index) => (index + direction + options.length) % options.length);
+      return;
+    }
+    if (event.key === "Home" || event.key === "End") {
+      if (!isOpen) return;
+      event.preventDefault();
+      setActiveIndex(event.key === "Home" ? 0 : options.length - 1);
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+        setActiveIndex(selectedIndex);
+      } else {
+        chooseOption(activeIndex);
+      }
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative mt-1.5">
+      <button
+        id="booking-voucher"
+        type="button"
+        disabled={disabled}
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-autocomplete="none"
+        aria-expanded={isOpen}
+        aria-controls={isOpen ? listId : undefined}
+        aria-activedescendant={isOpen ? `${listId}-option-${activeIndex}` : undefined}
+        onClick={() => {
+          if (isOpen) {
+            setIsOpen(false);
+          } else {
+            setActiveIndex(selectedIndex);
+            setIsOpen(true);
+          }
+        }}
+        onKeyDown={handleKeyDown}
+        className={`flex min-h-14 w-full items-center gap-3 rounded-xl border bg-white px-3.5 py-2.5 text-left transition-[border-color,box-shadow,background-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/25 ${
+          disabled
+            ? "cursor-not-allowed border-gray-200 bg-gray-50 text-gray-500"
+            : isOpen
+              ? "border-primary-500 ring-2 ring-primary-500/15"
+              : "border-gray-300 text-gray-900 hover:border-gray-400"
+        }`}
+      >
+        {selectedOption.id && (
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-800" aria-hidden="true">
+            <BambooStamp filled />
+          </span>
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold">
+            {disabled && vouchers.length === 0 ? unavailableTitle : selectedOption.title}
+          </span>
+          <span className="mt-0.5 block truncate text-xs text-gray-500">
+            {disabled && vouchers.length === 0 ? unavailableDescription : selectedOption.description}
+          </span>
+        </span>
+        {selectedOption.amount != null && (
+          <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold tabular-nums text-emerald-800">
+            {formatPhpAmount(selectedOption.amount)}
+          </span>
+        )}
+        <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className={`h-4 w-4 shrink-0 text-gray-500 transition-transform ${isOpen ? "rotate-180" : ""}`}>
+          <path d="m5.5 7.5 4.5 4.5 4.5-4.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <ul
+          ref={listRef}
+          id={listId}
+          role="listbox"
+          aria-label="Available vouchers"
+          className="absolute bottom-full z-50 mb-2 max-h-60 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl shadow-gray-900/10"
+        >
+          {options.map((option, index) => {
+            const isSelected = option.id === value;
+            const isActive = index === activeIndex;
+            return (
+              <li
+                key={option.id || "no-voucher"}
+                id={`${listId}-option-${index}`}
+                role="option"
+                aria-selected={isSelected}
+                onMouseMove={() => setActiveIndex(index)}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => chooseOption(index)}
+                className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 transition-colors ${
+                  isActive || isSelected ? "bg-primary-50 text-primary-950" : "text-gray-800 hover:bg-gray-50"
+                }`}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block break-words text-sm font-semibold">{option.title}</span>
+                  <span className="mt-0.5 block text-xs text-gray-500">{option.description}</span>
+                </span>
+                {option.amount != null && (
+                  <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold tabular-nums text-emerald-800">
+                    {formatPhpAmount(option.amount)}
+                  </span>
+                )}
+                {isSelected && (
+                  <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className="h-4 w-4 shrink-0 text-primary-700">
+                    <path d="m4 10 4 4 8-8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -446,6 +640,10 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const selectedTip = Number(tipAmount);
   const safeTipAmount = Number.isFinite(selectedTip) && selectedTip >= 0 ? selectedTip : 0;
   const totalAmount = roundCurrency(adjustedTaskOffer + discountedTravelFee + safeTipAmount);
+  const maximumTipAmount = MAX_TIP_PHP;
+  const maximumBaselineOffer = durationIsValid
+    ? Math.floor((MAX_TASK_OFFER_PHP * DEFAULT_ESTIMATED_DURATION_MINUTES / estimatedDurationMinutes + Number.EPSILON) * 100) / 100
+    : 0;
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files);
@@ -493,7 +691,9 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
     if (travelQuoteStatus !== "loaded" || travelQuoteLocationKey !== serviceLocationKey || travelDistanceKm == null) return setFormError("The travel quote for this service location is not ready. Retry it above before reviewing."), false;
     if (!Number.isFinite(offerAmount) || offerAmount < 100) return setFormError("Your 60-minute baseline offer must be at least PHP 100."), false;
     if (adjustedTaskOffer < 100) return setFormError("The duration-adjusted task offer must be at least PHP 100. Increase your baseline offer or choose a longer duration."), false;
-    if (!Number.isFinite(selectedTip) || selectedTip < 0 || selectedTip > 1000000) return setFormError("Enter a valid tip amount."), false;
+    if (!Number.isFinite(selectedTip) || selectedTip < 0 || selectedTip > maximumTipAmount) return setFormError(`The tip cannot exceed ${formatPhpAmount(MAX_TIP_PHP)}.`), false;
+    if (adjustedTaskOffer > MAX_TASK_OFFER_PHP) return setFormError(`The task offer cannot exceed ${formatPhpAmount(MAX_TASK_OFFER_PHP)} for the selected duration.`), false;
+    if (totalAmount > MAX_BOOKING_TRANSACTION_PHP) return setFormError("The total booking transaction must stay below PHP 100,000. Reduce the task offer, travel fare, or tip."), false;
     if (!termsAccepted) return setFormError("Please agree to the terms and cancellation policy."), false;
     setFormError("");
     return true;
@@ -807,12 +1007,15 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                 id="offer"
                 type="number"
                 min="100"
+                max={maximumBaselineOffer}
+                step="0.01"
                 value={offer}
                 onChange={(e) => setOffer(e.target.value)}
                 placeholder="Enter baseline offer (Min. ₱100)"
+                aria-describedby="booking-offer-limit"
                 className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
               />
-              <p className="mt-1 text-xs text-gray-500">For {durationIsValid ? estimatedDurationMinutes : "your selected"} minutes, the task offer is {formatPhpAmount(adjustedTaskOffer)}. Travel fare and vouchers are unchanged.</p>
+              <p id="booking-offer-limit" className="mt-1 text-xs text-gray-500">For {durationIsValid ? estimatedDurationMinutes : "your selected"} minutes, the task offer is {formatPhpAmount(adjustedTaskOffer)}. The task offer is capped at {formatPhpAmount(MAX_TASK_OFFER_PHP)}; the maximum baseline offer is {formatPhpAmount(maximumBaselineOffer)}.</p>
             </div>
           </div>
 
@@ -888,20 +1091,13 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                   </dl>
                   <div className="mt-3 border-t border-dashed border-gray-200 pt-3">
                     <label htmlFor="booking-voucher" className="block text-xs font-semibold text-gray-700">Vouchers &amp; rewards</label>
-                    <select
-                      id="booking-voucher"
+                    <VoucherSelector
+                      vouchers={availableVouchers}
                       value={selectedVoucherId}
-                      onChange={(event) => setSelectedVoucherId(event.target.value)}
+                      onChange={setSelectedVoucherId}
                       disabled={rewardsStatus !== "loaded" || availableVouchers.length === 0}
-                      className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 disabled:bg-gray-50 disabled:text-gray-500"
-                    >
-                      <option value="">{rewardsStatus === "loading" ? "Loading your vouchers…" : "No voucher"}</option>
-                      {availableVouchers.map((voucher) => (
-                        <option key={voucher.id} value={voucher.id}>
-                          {voucher.title} · {formatPhpAmount(voucher.amount)} travel fee
-                        </option>
-                      ))}
-                    </select>
+                      status={rewardsStatus}
+                    />
                     {rewardsError && <p className="mt-2 text-xs text-red-700" role="alert">{rewardsError}</p>}
                     {rewardsStatus === "error" && (
                       <button
@@ -913,7 +1109,6 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                       </button>
                     )}
                     {selectedVoucher && <p className="mt-1.5 text-xs text-emerald-800">Applied to the travel fee only. Your task offer and tip stay unchanged.</p>}
-                    {!selectedVoucher && rewardsStatus === "loaded" && availableVouchers.length === 0 && <p className="mt-1.5 text-xs text-gray-500">Your next travel-fee reward will appear here.</p>}
                   </div>
                   <div className="mt-3 flex items-end justify-between border-t border-gray-200 pt-3">
                     <span className="text-sm font-semibold text-gray-700">Total amount due</span>
@@ -928,7 +1123,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                   {TIP_PRESETS.map((amount) => {
                     const isSelected = selectedTip === amount;
                     return (
-                      <button key={amount} type="button" aria-pressed={isSelected} onClick={() => { setTipAmount(String(amount)); setTipFeedback(`${amount}-${Date.now()}`); }} className={`tip-preset rounded-full border px-3.5 py-2 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 active:scale-[0.97] ${isSelected ? "is-selected border-primary-700 bg-primary-700 text-white" : "border-gray-300 bg-white text-gray-700 hover:border-primary-400 hover:bg-primary-50"}`}>
+                      <button key={amount} type="button" aria-pressed={isSelected} disabled={amount > maximumTipAmount} onClick={() => { setTipAmount(String(amount)); setTipFeedback(`${amount}-${Date.now()}`); }} className={`tip-preset rounded-full border px-3.5 py-2 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 ${isSelected ? "is-selected border-primary-700 bg-primary-700 text-white" : "border-gray-300 bg-white text-gray-700 hover:border-primary-400 hover:bg-primary-50"}`}>
                         {tipFeedback.startsWith(`${amount}-`) && <span key={tipFeedback} className="tip-ripple" aria-hidden="true" />}
                         <span className="relative z-10">{amount === 0 ? "No tip" : formatPhpAmount(amount)}</span>
                       </button>
@@ -938,8 +1133,9 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                 <label htmlFor="booking-tip" className="mt-3 block text-xs font-medium text-gray-600">Or enter a custom amount</label>
                 <div className="relative mt-1">
                   <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-gray-500">₱</span>
-                  <input id="booking-tip" type="number" min="0" max="1000000" step="0.01" value={tipAmount} onChange={(event) => setTipAmount(event.target.value)} className="w-full rounded-lg border border-gray-300 py-2.5 pl-8 pr-3 text-sm tabular-nums text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20" />
+                  <input id="booking-tip" type="number" min="0" max={maximumTipAmount} step="0.01" value={tipAmount} onChange={(event) => setTipAmount(event.target.value)} aria-describedby="booking-tip-limit" className="w-full rounded-lg border border-gray-300 py-2.5 pl-8 pr-3 text-sm tabular-nums text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20" />
                 </div>
+                <p id="booking-tip-limit" className="mt-1 text-xs text-gray-500">Maximum tip: {formatPhpAmount(MAX_TIP_PHP)}.</p>
               </fieldset>
 
               {formError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>}

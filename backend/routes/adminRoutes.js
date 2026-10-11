@@ -24,6 +24,10 @@ const {
   handleUpdateAdminSupportReport,
 } = require("../controllers/adminSupportReportsController");
 const {
+  handleGetAdminProviderNoShowReports,
+  handleReviewAdminProviderNoShowReport,
+} = require("../controllers/adminProviderNoShowReportsController");
+const {
   handleGetAdminVerifications,
   handleGetVerificationDocument,
   handleGetTesdaCertificateDocument,
@@ -104,6 +108,27 @@ router.patch(
   ],
   validateRequest,
   handleUpdateAdminSupportReport
+);
+router.get(
+  "/provider-no-show-reports",
+  requireAdmin,
+  [
+    query("status").optional().isIn(["needs_review", "reviewed", "all"]),
+    query("page").optional().isInt({ min: 1, max: 10000 }),
+  ],
+  validateRequest,
+  handleGetAdminProviderNoShowReports
+);
+router.patch(
+  "/provider-no-show-reports/:bookingId",
+  requireAdmin,
+  [
+    param("bookingId").isMongoId(),
+    body("action").isIn(["confirm", "dismiss"]),
+    body("notes").optional().isString().isLength({ max: 2000 }),
+  ],
+  validateRequest,
+  handleReviewAdminProviderNoShowReport
 );
 router.get(
   "/bookings",

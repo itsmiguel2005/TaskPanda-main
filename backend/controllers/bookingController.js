@@ -13,6 +13,10 @@ const {
   calculateTravelFare,
   calculateTravelFeeDiscount,
   calculateTotalPrice,
+  MAX_TASK_OFFER_PHP,
+  MAX_TIP_PHP,
+  areBookingAmountsWithinLimits,
+  isBookingTransactionWithinLimit,
 } = require("../services/bookingPricing");
 const { awardSettledBookingStamp, restoreVoucherForBooking } = require("../services/rewards");
 const { getGlobalSettings } = require("../services/systemSettings");
@@ -141,7 +145,7 @@ function isServiceSlotInPast(serviceDate, timeSlot) {
   return appointmentTime.getTime() <= Date.now();
 }
 
-function serializeBooking(booking) {
+function serializeBooking(booking, viewerRole = "") {
   const client = booking.clientId && typeof booking.clientId === "object" ? booking.clientId : null;
   const provider = booking.providerId && typeof booking.providerId === "object" ? booking.providerId : null;
   const statusCode = normalizeBookingStatus(booking.status);
@@ -252,7 +256,18 @@ function serializeBooking(booking) {
       : null,
     noShowCheckInAt: booking.noShowCheckInAt || null,
     providerNoShowReportedAt: booking.providerNoShowReportedAt || null,
-    providerReliabilityFlagged: Boolean(booking.providerReliabilityFlaggedAt),
+    ...(viewerRole === "provider" ? {
+      providerNoShowResponse: booking.providerNoShowResponse?.note ? {
+        note: booking.providerNoShowResponse.note,
+        respondedAt: booking.providerNoShowResponse.respondedAt || null,
+      } : null,
+      providerNoShowReviewStatus: booking.providerNoShowReviewStatus || (booking.providerNoShowReportedAt ? "pending" : ""),
+      providerNoShowAdminNotes: booking.providerNoShowAdminNotes || "",
+      providerNoShowReviewedAt: booking.providerNoShowReviewedAt || null,
+      providerReliabilityFlagged: booking.providerNoShowReviewStatus
+        ? booking.providerNoShowReviewStatus === "confirmed"
+        : Boolean(booking.providerReliabilityFlaggedAt),
+    } : {}),
     noShowCheckInSentAt: booking.noShowCheckInSentAt || null,
     counterOffers: (booking.counterOffers || []).map((offer) => ({
       id: String(offer._id),
@@ -412,7 +427,7 @@ async function handleListBookings(req, res) {
         earnings: Number(completedAggregate[0]?.earnings || 0),
       };
     }
-    return res.json({ bookings: bookings.map(serializeBooking), dismissedBookingIds, reviewStats, bookingStats });
+    return res.json({ bookings: bookings.map((booking) => serializeBooking(booking, req.user.role)), dismissedBookingIds, reviewStats, bookingStats });
   } catch (error) {
     console.error("List bookings error:", error);
     return res.status(500).json({
@@ -617,7 +632,7 @@ async function handleReportRunningLate(req, res) {
       },
     });
     await affectedBooking.populate(populatePaths);
-    return res.json({ booking: serializeBooking(affectedBooking) });
+    return res.json({ booking: serializeBooking(affectedBooking, req.user.role) });
   } catch (error) {
     console.error("Running-late report error:", error);
     return res.status(500).json({ message: "Could not notify the next client about the delay." });
@@ -664,7 +679,7 @@ async function handleRespondToLateNotice(req, res) {
       data: { event: "booking.late_response", bookingId: String(booking._id), action },
     });
     await booking.populate(populatePaths);
-    return res.json({ booking: serializeBooking(booking) });
+    return res.json({ booking: serializeBooking(booking, req.user.role) });
   } catch (error) {
     console.error("Running-late response error:", error);
     return res.status(500).json({ message: "Could not save your response to the delay notice." });
@@ -815,7 +830,7 @@ async function handleReportProviderNoShow(req, res) {
           cancellationReason: "Client reported provider no-show after the scheduled arrival grace period.",
           providerNoShowReportedAt: now,
           providerNoShowReportedBy: req.user._id,
-          providerReliabilityFlaggedAt: now,
+          providerNoShowReviewStatus: "pending",
         },
         $push: { statusHistory: { status: "provider_no_show", at: now } },
       },
@@ -829,26 +844,81 @@ async function handleReportProviderNoShow(req, res) {
     try {
       await appendBookingSystemMessage(
         updatedBooking,
-        "The client reported that the provider did not arrive within the scheduled arrival window. The booking was cancelled and the report was recorded for provider reliability review.",
+        "The client reported that the provider did not arrive within the scheduled arrival window. The booking was cancelled and the report is awaiting admin review.",
         req.user._id,
         "provider_no_show",
-        { reportedAt: now, status: "provider_no_show" }
+        { reportedAt: now, status: "provider_no_show", reviewStatus: "pending" }
       );
     } catch (messageError) {
       console.error("Provider no-show message error:", messageError);
     }
     await notifyBooking({
       userIds: [String(updatedBooking.providerId)],
-      title: "Booking cancelled: provider no-show reported",
-      body: "The client reported that you did not arrive within the scheduled arrival window. This report was recorded for reliability review.",
+      title: "No-show reported on a booking",
+      body: "The client reported a missed arrival. The booking is cancelled, but the report is not confirmed. Review it and share your response.",
       url: bookingUrl("provider", updatedBooking._id),
       data: { event: "booking.provider_no_show", bookingId: String(updatedBooking._id) },
     });
+    await notifyBooking({
+      roles: ["admin"],
+      title: "Provider no-show report needs review",
+      body: "A client reported a missed provider arrival. Review the booking and the provider's response.",
+      url: "/admin?section=reports&reportTab=no-shows",
+      data: { event: "booking.provider_no_show", bookingId: String(updatedBooking._id) },
+    });
     await updatedBooking.populate(populatePaths);
-    return res.json({ booking: serializeBooking(updatedBooking) });
+    return res.json({ booking: serializeBooking(updatedBooking, req.user.role) });
   } catch (error) {
     console.error("Provider no-show report error:", error);
     return res.status(500).json({ message: "Could not report the provider no-show." });
+  }
+}
+
+async function handleRespondToProviderNoShow(req, res) {
+  const bookingId = String(req.params.id || "");
+  const note = typeof req.body?.note === "string" ? req.body.note.trim() : "";
+  if (!mongoose.isValidObjectId(bookingId)) return res.status(400).json({ message: "Choose a valid booking." });
+  if (req.user.role !== "provider") return res.status(403).json({ message: "Only the provider can respond to this report." });
+  if (!note || note.length > 1000) return res.status(400).json({ message: "Enter a response between 1 and 1000 characters." });
+
+  try {
+    const now = new Date();
+    const booking = await Booking.findOneAndUpdate(
+      {
+        _id: bookingId,
+        providerId: req.user._id,
+        status: "provider_no_show",
+        providerNoShowReportedAt: mongoose.trusted({ $exists: true }),
+        "providerNoShowResponse.respondedAt": mongoose.trusted({ $exists: false }),
+        $or: [
+          { providerNoShowReviewStatus: "pending" },
+          { providerNoShowReviewStatus: mongoose.trusted({ $exists: false }) },
+        ],
+      },
+      {
+        $set: {
+          providerNoShowResponse: { note, respondedAt: now },
+          providerNoShowReviewStatus: "responded",
+        },
+      },
+      { new: true, runValidators: true }
+    );
+    if (!booking) {
+      return res.status(409).json({ message: "This report is no longer awaiting a response, or you have already responded. Refresh the booking to see its latest status." });
+    }
+
+    await notifyBooking({
+      roles: ["admin"],
+      title: "Provider responded to a no-show report",
+      body: "A provider response is ready for review.",
+      url: "/admin?section=reports&reportTab=no-shows",
+      data: { event: "booking.provider_no_show_response", bookingId: String(booking._id) },
+    });
+    await booking.populate(populatePaths);
+    return res.json({ booking: serializeBooking(booking, req.user.role) });
+  } catch (error) {
+    console.error("Provider no-show response error:", error);
+    return res.status(500).json({ message: "Could not save your response to the no-show report." });
   }
 }
 
@@ -966,7 +1036,8 @@ async function handleCreateBooking(req, res) {
   if (!isValidEstimatedDurationMinutes(estimatedDurationMinutes)) return res.status(400).json({ message: "Choose a task duration from 15 minutes to 12 hours in 15-minute increments." });
   const adjustedTaskOffer = calculateDurationAdjustedTaskOffer(offeredPrice, estimatedDurationMinutes);
   if (adjustedTaskOffer < 100) return res.status(400).json({ message: "The duration-adjusted task offer must be at least PHP 100." });
-  if (!Number.isFinite(tipAmount) || tipAmount < 0 || tipAmount > 1000000) return res.status(400).json({ message: "Enter a valid tip amount." });
+  if (adjustedTaskOffer > MAX_TASK_OFFER_PHP) return res.status(400).json({ message: `The task offer cannot exceed PHP ${MAX_TASK_OFFER_PHP.toLocaleString("en-PH")} for the selected duration.` });
+  if (!Number.isFinite(tipAmount) || tipAmount < 0 || tipAmount > MAX_TIP_PHP) return res.status(400).json({ message: `The tip cannot exceed PHP ${MAX_TIP_PHP.toLocaleString("en-PH")}.` });
   if (voucherId && !mongoose.isValidObjectId(voucherId)) return res.status(400).json({ message: "Choose a valid travel-fee voucher." });
   if (paymentMethod !== "cash") return res.status(400).json({ message: "Cash on completion is the only supported payment method." });
   if (!["Emergency", "Flexible"].includes(urgency)) return res.status(400).json({ message: "Choose a valid urgency." });
@@ -992,7 +1063,9 @@ async function handleCreateBooking(req, res) {
       ? calculateTravelFeeDiscount(travelFeeBeforeDiscount, selectedVoucher.amount)
       : 0;
     const travelFee = Math.max(0, travelFeeBeforeDiscount - travelFeeDiscount);
-
+    if (!isBookingTransactionWithinLimit(adjustedTaskOffer, travelFee, tipAmount)) {
+      return res.status(400).json({ message: "The total booking transaction must stay below PHP 100,000. Reduce the travel fare, task offer, or tip." });
+    }
     const now = new Date();
     const scheduledTime = getScheduledServiceTime(serviceDate, timeSlot);
     if (!scheduledTime || scheduledTime.getTime() <= now.getTime()) {
@@ -1183,7 +1256,7 @@ async function handleCreateBooking(req, res) {
     }
 
     await booking.populate(populatePaths);
-    return res.status(201).json({ booking: serializeBooking(booking) });
+    return res.status(201).json({ booking: serializeBooking(booking, req.user.role) });
   } catch (error) {
     if (error?.code === 11000) {
       return res.status(409).json({ message: "That time slot is already booked." });
@@ -1358,7 +1431,7 @@ async function handleUpdateBookingStatus(req, res) {
         data: { event: `booking.${status}`, bookingId: bookingIdValue, status },
       });
     }
-    return res.json({ booking: serializeBooking(booking) });
+    return res.json({ booking: serializeBooking(booking, req.user.role) });
   } catch (error) {
     console.error("Update booking status error:", error);
     return res.status(500).json({ message: "Could not update the booking status." });
@@ -1427,7 +1500,7 @@ async function handleSubmitCompletion(req, res) {
     } catch (messageError) {
       console.error("Completion proof system message error:", messageError);
     }
-    return res.json({ booking: serializeBooking(booking) });
+    return res.json({ booking: serializeBooking(booking, req.user.role) });
   } catch (error) {
     console.error("Submit completion proof error:", error);
     return res.status(500).json({ message: "Could not submit completion proof." });
@@ -1478,7 +1551,7 @@ async function handleCreateRevisionRequest(req, res) {
       data: { event: "booking.revision_requested", bookingId: bookingIdValue },
     });
     await booking.populate(populatePaths);
-    return res.status(201).json({ booking: serializeBooking(booking) });
+    return res.status(201).json({ booking: serializeBooking(booking, req.user.role) });
   } catch (error) {
     console.error("Create revision request error:", error);
     return res.status(500).json({ message: "Could not submit the revision request." });
@@ -1542,7 +1615,7 @@ async function handleRespondToRevision(req, res) {
       });
     }
     await booking.populate(populatePaths);
-    return res.json({ booking: serializeBooking(booking) });
+    return res.json({ booking: serializeBooking(booking, req.user.role) });
   } catch (error) {
     console.error("Revision response error:", error);
     return res.status(500).json({ message: "Could not respond to the revision request." });
@@ -1568,7 +1641,7 @@ async function handleCancellation(req, res) {
     if (normalizeBookingStatus(booking.status) === "canceled") {
       await restoreVoucherForBooking(booking);
       await booking.populate(populatePaths);
-      return res.json({ booking: serializeBooking(booking) });
+      return res.json({ booking: serializeBooking(booking, req.user.role) });
     }
 
     if (action === "request") {
@@ -1666,7 +1739,7 @@ async function handleCancellation(req, res) {
       },
     });
     await booking.populate(populatePaths);
-    return res.json({ booking: serializeBooking(booking) });
+    return res.json({ booking: serializeBooking(booking, req.user.role) });
   } catch (error) {
     console.error("Cancellation error:", error);
     return res.status(500).json({ message: "Could not process the cancellation." });
@@ -1714,7 +1787,7 @@ async function handleBookingReview(req, res) {
       console.error("Booking review system message error:", messageError);
     }
     await booking.populate(populatePaths);
-    return res.json({ booking: serializeBooking(booking) });
+    return res.json({ booking: serializeBooking(booking, req.user.role) });
   } catch (error) {
     console.error("Booking review error:", error);
     return res.status(500).json({ message: "Could not save the booking review." });
@@ -1861,7 +1934,7 @@ async function handleProviderUpdate(req, res) {
       data: { event: isReschedule ? "booking.reschedule_requested" : "booking.provider_update", bookingId: bookingIdValue },
     });
     await booking.populate(populatePaths);
-    return res.json({ booking: serializeBooking(booking) });
+    return res.json({ booking: serializeBooking(booking, req.user.role) });
   } catch (error) {
     console.error("Provider booking update error:", error);
     return res.status(500).json({ message: "Could not send the booking update." });
@@ -1914,7 +1987,7 @@ async function handleProviderUpdateResponse(req, res) {
     update.respondedAt = new Date();
     await booking.save();
     await booking.populate(populatePaths);
-    return res.json({ booking: serializeBooking(booking) });
+    return res.json({ booking: serializeBooking(booking, req.user.role) });
   } catch (error) {
     console.error("Schedule request response error:", error);
     return res.status(500).json({ message: "Could not respond to the schedule request." });
@@ -1972,6 +2045,13 @@ async function handleCreateCounterOffer(req, res) {
       return res.status(400).json({ message: "Choose a counter-offer duration from 15 minutes to 12 hours in 15-minute increments." });
     }
     const candidateDuration = counterOfferDurationMinutes ?? currentDuration;
+    if (proposedPrice > MAX_TASK_OFFER_PHP) {
+      return res.status(400).json({ message: `The task offer cannot exceed PHP ${MAX_TASK_OFFER_PHP.toLocaleString("en-PH")}.` });
+    }
+    if (!areBookingAmountsWithinLimits(proposedPrice, booking.tipAmount || 0)
+      || !isBookingTransactionWithinLimit(proposedPrice, booking.travelFee || 0, booking.tipAmount || 0)) {
+      return res.status(400).json({ message: "This counter-offer exceeds the task-offer, tip, or PHP 100,000 transaction limit." });
+    }
     const scheduleBookings = await findProviderBookingsForSchedule(booking.providerId, booking.serviceDate, booking._id);
     if (hasScheduleConflict({
       serviceDate: booking.serviceDate,
@@ -2075,7 +2155,7 @@ async function handleCreateCounterOffer(req, res) {
       eventData
     );
     await booking.populate(populatePaths);
-    return res.status(201).json({ booking: serializeBooking(booking), counterOfferId: String(offer._id) });
+    return res.status(201).json({ booking: serializeBooking(booking, req.user.role), counterOfferId: String(offer._id) });
   } catch (error) {
     console.error("Create counter-offer error:", error);
     return res.status(500).json({ message: "Could not send the counter-offer." });
@@ -2104,6 +2184,11 @@ async function handleRespondToCounterOffer(req, res) {
       const acceptedDuration = offer.counterOfferDurationMinutes
         ?? booking.estimatedDurationMinutes
         ?? DEFAULT_ESTIMATED_DURATION_MINUTES;
+      const acceptedPrice = offer.proposedPrice ?? booking.offeredPrice;
+      if (!areBookingAmountsWithinLimits(acceptedPrice, booking.tipAmount || 0)
+        || !isBookingTransactionWithinLimit(acceptedPrice, booking.travelFee || 0, booking.tipAmount || 0)) {
+        return res.status(409).json({ message: `This counter-offer exceeds the PHP ${MAX_TASK_OFFER_PHP.toLocaleString("en-PH")} task-offer, PHP ${MAX_TIP_PHP.toLocaleString("en-PH")} tip, or PHP 100,000 transaction limit and cannot be accepted.` });
+      }
       const scheduleBookings = await findProviderBookingsForSchedule(booking.providerId, booking.serviceDate, booking._id);
       if (hasScheduleConflict({
         serviceDate: booking.serviceDate,
@@ -2128,7 +2213,7 @@ async function handleRespondToCounterOffer(req, res) {
         },
         {
           $set: {
-            offeredPrice: offer.proposedPrice ?? booking.offeredPrice,
+            offeredPrice: acceptedPrice,
             estimatedDurationMinutes: acceptedDuration,
             status: "approved",
             "counterOffers.$.status": "accepted",
@@ -2197,7 +2282,7 @@ async function handleRespondToCounterOffer(req, res) {
       );
     }
     await booking.populate(populatePaths);
-    return res.json({ booking: serializeBooking(booking) });
+    return res.json({ booking: serializeBooking(booking, req.user.role) });
   } catch (error) {
     console.error("Counter-offer response error:", error);
     return res.status(500).json({ message: "Could not respond to the counter-offer." });
@@ -2244,4 +2329,4 @@ async function processBookingNoShowCheckIns() {
   }
 }
 
-module.exports = { handleListBookings, handleDismissDashboardBookings, handleRestoreDashboardBookings, handleProviderAvailability, handleReportRunningLate, handleRespondToLateNotice, handleReportProviderNoShow, handleServiceLocationSearch, handleServiceLocationReverseLookup, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks, processExpiredBookingRequests, processBookingNoShowCheckIns };
+module.exports = { handleListBookings, handleDismissDashboardBookings, handleRestoreDashboardBookings, handleProviderAvailability, handleReportRunningLate, handleRespondToLateNotice, handleReportProviderNoShow, handleRespondToProviderNoShow, handleServiceLocationSearch, handleServiceLocationReverseLookup, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks, processExpiredBookingRequests, processBookingNoShowCheckIns };

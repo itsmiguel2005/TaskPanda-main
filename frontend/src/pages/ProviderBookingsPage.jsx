@@ -12,6 +12,7 @@ import CompletionProofModal from "../components/CompletionProofModal.jsx";
 import RevisionReviewPanel from "../components/RevisionReviewPanel.jsx";
 import BookingHistory from "../components/BookingHistory.jsx";
 import BookingLocationMap from "../components/BookingLocationMap.jsx";
+import ProviderNoShowReportNotice from "../components/ProviderNoShowReportNotice.jsx";
 import PandaSwipeRefresh from "../components/PandaSwipeRefresh.jsx";
 import OnboardingTour from "../components/OnboardingTour.jsx";
 import { canRequestCancellation, getCancellationLockMessage, requiresCancellationApproval } from "../utils/bookingCancellation.js";
@@ -513,6 +514,7 @@ export default function ProviderBookingsPage() {
                         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.5fr)_minmax(15rem,1fr)]">
                           <div className="min-w-0">
                           <BookingProgress status={booking.status} />
+                          <ProviderNoShowReportNotice booking={booking} />
                           <h4 className="mt-4 text-base font-bold text-slate-900">
                             {booking.task}
                           </h4>
@@ -901,6 +903,7 @@ export default function ProviderBookingsPage() {
                 <BookingStatusBadge status={detailItem.status || "Pending Request"} />
               </div>
               {detailItem.status && <BookingProgress status={detailItem.status} />}
+              <ProviderNoShowReportNotice booking={detailItem} />
 
               <div className="mt-4 grid gap-3 rounded-xl border border-sky-100 bg-white p-4 text-sm sm:grid-cols-2">
                 <div className="sm:col-span-2">

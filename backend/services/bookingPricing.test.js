@@ -4,11 +4,16 @@ const {
   BASELINE_TASK_OFFER_DURATION_MINUTES,
   DEFAULT_TRAVEL_BASE_FEE,
   BASE_FARE_DISTANCE_KM,
+  MAX_TASK_OFFER_PHP,
+  MAX_TIP_PHP,
+  MAX_BOOKING_TRANSACTION_PHP,
   calculateDistanceKm,
   calculateDurationAdjustedTaskOffer,
   calculateTravelFare,
   calculateTravelFeeDiscount,
   calculateTotalPrice,
+  areBookingAmountsWithinLimits,
+  isBookingTransactionWithinLimit,
 } = require("./bookingPricing");
 
 test("distance calculation uses longitude-latitude coordinates", () => {
@@ -47,6 +52,22 @@ test("booking total combines task offer, travel fare, and optional tip", () => {
   assert.equal(calculateTotalPrice(100, 35), 135);
   assert.equal(calculateTotalPrice(100, 20, 50), 170);
   assert.equal(calculateTotalPrice(100, 20, 1.5), 121.5);
+});
+
+test("task offers and tips have independent caps", () => {
+  assert.equal(MAX_TASK_OFFER_PHP, 10000);
+  assert.equal(MAX_TIP_PHP, 500);
+  assert.equal(areBookingAmountsWithinLimits(10000, 500), true);
+  assert.equal(areBookingAmountsWithinLimits(10000.01, 500), false);
+  assert.equal(areBookingAmountsWithinLimits(10000, 500.01), false);
+  assert.equal(calculateTotalPrice(10000, 600, 500), 11100);
+  assert.equal(isBookingTransactionWithinLimit(10000, 600, 500), true);
+});
+
+test("booking transaction remains strictly below PHP 100,000", () => {
+  assert.equal(MAX_BOOKING_TRANSACTION_PHP, 99999.99);
+  assert.equal(isBookingTransactionWithinLimit(10000, 89499.99, 500), true);
+  assert.equal(isBookingTransactionWithinLimit(10000, 89500, 500), false);
 });
 
 test("task offer scales proportionally from the 60-minute baseline", () => {

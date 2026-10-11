@@ -78,7 +78,7 @@ function describeEvent(message, actorName, role) {
     ? "The client chose to wait for the updated arrival"
     : "The client requested a new appointment time";
   if (message.eventType === "booking_check_in") return "PandaBot is checking in with both participants. Please confirm your status in the conversation.";
-  if (message.eventType === "provider_no_show") return "The client reported a missed arrival window. The booking was cancelled and the report was recorded for reliability review.";
+  if (message.eventType === "provider_no_show") return "The client reported a missed arrival window. The booking was cancelled and the report is awaiting admin review.";
   if (message.eventType === "revision_request") return `${actor} requested a revision`;
   if (message.eventType === "revision_response") return `${actor} responded to the revision request`;
   if (message.eventType === "review") return `${actor} left a ${event.rating || 0}/5 star review`;
@@ -123,7 +123,7 @@ function getEventPresentation(message) {
       : { title: "New Time Requested", badge: "Response received", tone: "amber" };
   }
   if (message.eventType === "booking_check_in") return { title: "PandaBot Check-In", badge: "Status confirmation", tone: "blue" };
-  if (message.eventType === "provider_no_show") return { title: "Provider No-Show Reported", badge: "Booking cancelled", tone: "rose" };
+  if (message.eventType === "provider_no_show") return { title: "Provider No-Show Reported", badge: "Awaiting review", tone: "amber" };
   if (message.eventType === "cancellation") {
     if (event.cancellationOutcome === "rejected") return { title: "Cancellation Declined", badge: "Booking remains active", tone: "amber" };
     if (status === "cancel_requested") return { title: "Cancellation Requested", badge: "Awaiting response", tone: "amber" };

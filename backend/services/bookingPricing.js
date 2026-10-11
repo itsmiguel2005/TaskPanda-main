@@ -2,6 +2,11 @@ const EARTH_RADIUS_KM = 6371.0088;
 const BASELINE_TASK_OFFER_DURATION_MINUTES = 60;
 const DEFAULT_TRAVEL_BASE_FEE = 20;
 const BASE_FARE_DISTANCE_KM = 2;
+const {
+  maxTaskOfferPhp: MAX_TASK_OFFER_PHP,
+  maxTipPhp: MAX_TIP_PHP,
+  maxBookingTransactionPhp: MAX_BOOKING_TRANSACTION_PHP,
+} = require("../../shared/bookingLimits.json");
 
 function calculateDistanceKm(originCoordinates, destinationCoordinates) {
   if (!Array.isArray(originCoordinates) || !Array.isArray(destinationCoordinates)) return null;
@@ -84,13 +89,33 @@ function calculateTotalPrice(taskOffer, travelFare, tipAmount = 0) {
   return roundCurrency(Number(taskOffer) + Number(travelFare) + Number(tipAmount));
 }
 
+function areBookingAmountsWithinLimits(taskOffer, tipAmount = 0) {
+  const offer = Number(taskOffer);
+  const tip = Number(tipAmount);
+  return Number.isFinite(offer)
+    && offer >= 0
+    && offer <= MAX_TASK_OFFER_PHP
+    && Number.isFinite(tip)
+    && tip >= 0
+    && tip <= MAX_TIP_PHP;
+}
+
+function isBookingTransactionWithinLimit(taskOffer, travelFare, tipAmount = 0) {
+  return calculateTotalPrice(taskOffer, travelFare, tipAmount) <= MAX_BOOKING_TRANSACTION_PHP;
+}
+
 module.exports = {
   calculateDistanceKm,
   BASELINE_TASK_OFFER_DURATION_MINUTES,
   DEFAULT_TRAVEL_BASE_FEE,
   BASE_FARE_DISTANCE_KM,
+  MAX_TASK_OFFER_PHP,
+  MAX_TIP_PHP,
+  MAX_BOOKING_TRANSACTION_PHP,
   calculateDurationAdjustedTaskOffer,
   calculateTravelFare,
   calculateTravelFeeDiscount,
   calculateTotalPrice,
+  areBookingAmountsWithinLimits,
+  isBookingTransactionWithinLimit,
 };
