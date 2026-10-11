@@ -34,9 +34,9 @@ const STATUS_DOTS = {
   Disputed: "bg-rose-500",
 };
 
-export default function BookingStatusBadge({ status }) {
+export default function BookingStatusBadge({ status, density = "comfortable" }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold tracking-[0.01em] ${STATUS_STYLES[status] || "border-slate-200 bg-slate-100 text-slate-700"}`}>
+    <span className={`inline-flex items-center gap-1 rounded-full border font-bold tracking-[0.01em] ${density === "compact" ? "px-2 py-0.5 text-[10px]" : "gap-1.5 px-2.5 py-1 text-[11px]"} ${STATUS_STYLES[status] || "border-slate-200 bg-slate-100 text-slate-700"}`}>
       <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${STATUS_DOTS[status] || "bg-slate-500"}`} />
       {status}
     </span>

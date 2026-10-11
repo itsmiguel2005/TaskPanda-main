@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import BookingStatusBadge from "../components/BookingStatusBadge.jsx";
+import DashboardDensityToggle from "../components/DashboardDensityToggle.jsx";
 import BookingPriceBreakdown from "../components/BookingPriceBreakdown.jsx";
 import MessagePhoto from "../components/MessagePhoto.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
@@ -98,7 +99,8 @@ export default function ProviderBookingsPage() {
   const [searchParams] = useSearchParams();
   const requestedBookingId = searchParams.get("bookingId");
   const [activeTab, setActiveTab] = useState("All");
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const dashboardDensity = user?.dashboardDensityPreference === "compact" ? "compact" : "comfortable";
   const requestHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
   const [searchQuery, setSearchQuery] = useState("");
   const { bookings, isLoading, error, updateBookingStatus, submitCompletionProof, requestCancellation, sendProviderUpdate, reportRunningLate, confirmCashSettlement, refreshBookings } = useBookings();
@@ -110,6 +112,7 @@ export default function ProviderBookingsPage() {
   const [rejectingId, setRejectingId] = useState(null);
   const [completionBookingId, setCompletionBookingId] = useState(null);
   const [detailId, setDetailId] = useState(null);
+  const [compactExpandedId, setCompactExpandedId] = useState(null);
   const [providerUpdateId, setProviderUpdateId] = useState(null);
   const [providerUpdateNote, setProviderUpdateNote] = useState("");
   const [isRescheduleRequest, setIsRescheduleRequest] = useState(false);
@@ -350,22 +353,20 @@ export default function ProviderBookingsPage() {
           </label>
         </div>
 
-        {showBookings && filteredManagedBookings.length > 0 && (
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-gray-900">My Bookings</h2>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-            >
-              <option value="activityAt">Activity: Newest</option>
-              <option value="createdAt">Submitted: Newest</option>
-              <option value="date">Service date: Earliest</option>
-              <option value="price">Sort: Price</option>
-              <option value="status">Sort: Status</option>
-            </select>
-          </div>
-        )}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <DashboardDensityToggle persona="provider" />
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="dashboard-focus rounded-xl border border-sky-100 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+          >
+            <option value="activityAt">Activity: Newest</option>
+            <option value="createdAt">Submitted: Newest</option>
+            <option value="date">Service date: Earliest</option>
+            <option value="price">Sort: Price</option>
+            <option value="status">Sort: Status</option>
+          </select>
+        </div>
 
         <PandaSwipeRefresh
           disabled={isLoading}
@@ -385,13 +386,35 @@ export default function ProviderBookingsPage() {
                     {requests.length}
                   </span>
                 </h2>
-                <div className="space-y-4">
+                <div className={dashboardDensity === "compact" ? "space-y-2" : "space-y-4"}>
                   {sortedRequests.map((req) => (
                     <div
                       key={req.id}
-                      className="content-arrive overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition-[border-color,box-shadow] hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
+                      className="content-arrive overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition-all duration-200 ease-in-out hover:border-emerald-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
                     >
-                      <div className="p-4 sm:p-6">
+                      {dashboardDensity === "compact" && (
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 sm:px-4">
+                          <button
+                            type="button"
+                            aria-expanded={compactExpandedId === req.id}
+                            onClick={() => setCompactExpandedId((current) => current === req.id ? null : req.id)}
+                            className="dashboard-focus flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left"
+                          >
+                            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-emerald-50 text-xs font-bold text-emerald-800">{req.client.charAt(0)}</span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-semibold text-slate-900">{req.client} <span className="font-normal text-slate-500">· {req.task}</span></span>
+                              <span className="block truncate text-xs text-slate-500">{req.date} · {req.time} · {formatPhpAmount(parsePrice(req.price))}</span>
+                            </span>
+                            <BookingStatusBadge status="Pending Request" density="compact" />
+                            <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 ${compactExpandedId === req.id ? "rotate-180" : ""}`}><path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                          </button>
+                          <div className="flex shrink-0 items-center gap-1.5 pl-10 sm:pl-0">
+                            <button type="button" onClick={() => setRejectingId(req.id)} className="dashboard-focus rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">Decline</button>
+                            <button type="button" onClick={() => acceptRequest(req.id)} className="dashboard-focus rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Accept</button>
+                          </div>
+                        </div>
+                      )}
+                      <div className={`${dashboardDensity === "compact" ? compactExpandedId === req.id ? "block border-t border-sky-100" : "hidden" : "block"} p-4 transition-all duration-200 ease-in-out sm:p-6`}>
                         <div className="flex flex-col gap-4 border-b border-sky-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
                           <div className="flex items-start gap-4">
                             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-sky-50 text-lg font-bold text-blue-950 ring-1 ring-sky-200">
@@ -484,13 +507,58 @@ export default function ProviderBookingsPage() {
           <div>
             {filteredManagedBookings.length > 0 ? (
               <>
-                <div className="space-y-4">
+                <div className={dashboardDensity === "compact" ? "space-y-2" : "space-y-4"}>
                   {sortedBookings.map((booking) => (
                     <div
                       key={booking.id}
-                      className="content-arrive overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition-[border-color,box-shadow] hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
+                      className="content-arrive overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition-all duration-200 ease-in-out hover:border-emerald-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
                     >
-                      <div className="p-4 sm:p-6">
+                      {dashboardDensity === "compact" && (
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 sm:px-4">
+                          <button
+                            type="button"
+                            aria-expanded={compactExpandedId === booking.id}
+                            onClick={() => setCompactExpandedId((current) => current === booking.id ? null : booking.id)}
+                            className="dashboard-focus flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left"
+                          >
+                            <span aria-hidden="true" className={`grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold ${booking.clientProfileImage ? "bg-white" : "bg-emerald-50 text-emerald-800"}`}>
+                              {booking.clientProfileImage ? <img src={booking.clientProfileImage} alt="" className="h-full w-full object-cover" /> : booking.client.charAt(0)}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-semibold text-slate-900">{booking.client} <span className="font-normal text-slate-500">· {booking.task}</span></span>
+                              <span className="block truncate text-xs text-slate-500">{booking.date} · {booking.time} · {formatPhpAmount(parsePrice(booking.price))}</span>
+                            </span>
+                            <BookingStatusBadge status={booking.status} density="compact" />
+                            <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 ${compactExpandedId === booking.id ? "rotate-180" : ""}`}><path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                          </button>
+                          {STATUS_ACTIONS[booking.status] && (
+                            <button
+                              type="button"
+                              onClick={() => STATUS_ACTIONS[booking.status].status === "complete"
+                                ? setCompletionBookingId(booking.id)
+                                : setStatusChange({ bookingId: booking.id, ...STATUS_ACTIONS[booking.status] })}
+                              className="dashboard-focus rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                            >
+                              {booking.status === "In Progress" ? "Complete job" : STATUS_ACTIONS[booking.status].buttonLabel}
+                            </button>
+                          )}
+                          {booking.status === "In Progress" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRunningLateBookingId(booking.id);
+                                setRunningLateMinutes("30");
+                                setRunningLateError("");
+                              }}
+                              className="dashboard-focus rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-950 hover:bg-amber-100"
+                            >
+                              Running late
+                            </button>
+                          )}
+                          <button type="button" onClick={() => navigate(`/provider/messages?bookingId=${booking.id}`)} className="dashboard-secondary-button dashboard-focus ml-10 px-2.5 py-1.5 text-xs sm:ml-0">Chat</button>
+                        </div>
+                      )}
+                      <div className={`${dashboardDensity === "compact" ? compactExpandedId === booking.id ? "block border-t border-sky-100" : "hidden" : "block"} p-4 transition-all duration-200 ease-in-out sm:p-6`}>
                         <div className="flex flex-col gap-4 border-b border-sky-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
                           <div className="flex items-start gap-4">
                             <div className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full text-lg font-bold ring-1 ring-sky-200 ${booking.clientProfileImage ? "bg-white" : "bg-sky-50 text-blue-950"}`}>

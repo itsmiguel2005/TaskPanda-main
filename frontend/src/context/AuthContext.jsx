@@ -155,6 +155,32 @@ export function AuthProvider({ children }) {
     }));
   }, [role]);
 
+  const updateDashboardDensityPreference = useCallback(async (dashboardDensityPreference) => {
+    if (!["comfortable", "compact"].includes(dashboardDensityPreference)) {
+      throw new Error("Choose a valid dashboard display preference.");
+    }
+    if (!token) throw new Error("Sign in again to save your dashboard display preference.");
+
+    const previousPreference = user?.dashboardDensityPreference || "comfortable";
+    updateUser({ dashboardDensityPreference });
+    try {
+      const response = await apiFetch("/api/profile/preferences", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ dashboardDensityPreference }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Could not save your dashboard display preference.");
+      if (data.user) updateUser(data.user);
+    } catch (error) {
+      updateUser({ dashboardDensityPreference: previousPreference });
+      throw error;
+    }
+  }, [token, user?.dashboardDensityPreference, updateUser]);
+
   const refreshProfile = useCallback(async () => {
     if (!token) return false;
     try {
@@ -227,7 +253,7 @@ export function AuthProvider({ children }) {
   }, [isAuthLoading, isLoggedIn, token, role, refreshProfile]);
 
   return (
-    <AuthContext.Provider value={{ isLoggedIn, role, isVerified, user, token, isAuthLoading, isProfileLoaded, login, logout, verify, updateUser, refreshProfile, refreshVerificationStatus }}>
+    <AuthContext.Provider value={{ isLoggedIn, role, isVerified, user, token, isAuthLoading, isProfileLoaded, login, logout, verify, updateUser, refreshProfile, refreshVerificationStatus, updateDashboardDensityPreference }}>
       {children}
     </AuthContext.Provider>
   );

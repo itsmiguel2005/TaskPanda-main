@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import BookingStatusBadge from "../components/BookingStatusBadge.jsx";
+import DashboardDensityToggle from "../components/DashboardDensityToggle.jsx";
 import BookingPriceBreakdown from "../components/BookingPriceBreakdown.jsx";
 import MessagePhoto from "../components/MessagePhoto.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
@@ -51,12 +52,18 @@ function getNoShowDeadlineTimestamp(booking) {
   return deadline && !Number.isNaN(deadline.getTime()) ? deadline.getTime() : 0;
 }
 
+function formatPhpAmount(value) {
+  const amount = Number(value);
+  return `₱${(Number.isFinite(amount) ? amount : 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
+}
+
 export default function BookingsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const requestedBookingId = searchParams.get("bookingId");
   const [activeTab, setActiveTab] = useState("All");
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const dashboardDensity = user?.dashboardDensityPreference === "compact" ? "compact" : "comfortable";
   const requestHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
   const { bookings, isLoading, error, requestCancellation, requestRevision, submitReview, respondToProviderUpdate, respondToLateNotice, reportProviderNoShow, refreshBookings, confirmCashSettlement, createBooking } = useBookings();
   const isInitialLoading = isLoading && bookings.length === 0;
@@ -66,6 +73,7 @@ export default function BookingsPage() {
   const [revisioningId, setRevisioningId] = useState(null);
   const [cancellationReason, setCancellationReason] = useState("");
   const [detailId, setDetailId] = useState(null);
+  const [compactExpandedId, setCompactExpandedId] = useState(null);
   const [reviewingId, setReviewingId] = useState(null);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
@@ -281,7 +289,8 @@ export default function BookingsPage() {
           </label>
         </div>
 
-        <div className="mb-4 flex justify-end">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <DashboardDensityToggle persona="client" />
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
@@ -297,7 +306,7 @@ export default function BookingsPage() {
         {/* Bookings List */}
         <PandaSwipeRefresh
           disabled={isLoading}
-          className="space-y-4"
+          className={dashboardDensity === "compact" ? "space-y-2" : "space-y-4"}
           onRefresh={async () => {
             await refreshBookings(undefined, false);
           }}
@@ -313,9 +322,33 @@ export default function BookingsPage() {
               return (
               <div
                 key={booking.id}
-                className="content-arrive overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition-[border-color,box-shadow] hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
+                className="content-arrive overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition-all duration-200 ease-in-out hover:border-blue-200 hover:shadow-[0_16px_36px_rgba(15,23,42,0.07)]"
               >
-                <div className="p-5 sm:p-6">
+                {dashboardDensity === "compact" && (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 sm:px-4">
+                    <button
+                      type="button"
+                      aria-expanded={compactExpandedId === booking.id}
+                      onClick={() => setCompactExpandedId((current) => current === booking.id ? null : booking.id)}
+                      className="dashboard-focus flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left"
+                    >
+                      <span aria-hidden="true" className={`grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold ${booking.workerProfileImage ? "bg-white" : "bg-sky-50 text-blue-950"}`}>
+                        {booking.workerProfileImage ? <img src={booking.workerProfileImage} alt="" className="h-full w-full object-cover" /> : booking.worker.charAt(0)}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-slate-900">{booking.worker} <span className="font-normal text-slate-500">· {booking.task}</span></span>
+                        <span className="block truncate text-xs text-slate-500">{booking.date} · {booking.time} · {formatPhpAmount(booking.totalPrice ?? booking.offeredPrice)}</span>
+                      </span>
+                      <BookingStatusBadge status={booking.status} density="compact" />
+                      <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 ${compactExpandedId === booking.id ? "rotate-180" : ""}`}><path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                    </button>
+                    <div className="flex shrink-0 items-center gap-1.5 pl-10 sm:pl-0">
+                      {isNoShowEligible && <button type="button" onClick={() => setNoShowBookingId(booking.id)} className="dashboard-focus rounded-lg bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-100">Report no-show</button>}
+                      <button type="button" onClick={() => navigate(`/client/messages?bookingId=${booking.id}`)} className="dashboard-secondary-button dashboard-focus px-2.5 py-1.5 text-xs">Chat</button>
+                    </div>
+                  </div>
+                )}
+                <div className={`${dashboardDensity === "compact" ? compactExpandedId === booking.id ? "block border-t border-sky-100" : "hidden" : "block"} p-5 transition-all duration-200 ease-in-out sm:p-6`}>
                   <div className="flex flex-col gap-4 border-b border-sky-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex items-start gap-4">
                       <div className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full text-lg font-bold ring-1 ring-sky-200 ${booking.workerProfileImage ? "bg-white" : "bg-sky-50 text-blue-950"}`}>

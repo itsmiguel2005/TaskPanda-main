@@ -166,6 +166,11 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    dashboardDensityPreference: {
+      type: String,
+      enum: ["comfortable", "compact"],
+      default: "comfortable",
+    },
     isSuspended: {
       type: Boolean,
       default: false,

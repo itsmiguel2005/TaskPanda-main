@@ -10,6 +10,7 @@ function profileFromUser(user) {
     role: user.role,
     hasCompletedOnboarding: user.hasCompletedOnboarding === true,
     hasCompletedProviderOnboarding: user.hasCompletedProviderOnboarding === true,
+    dashboardDensityPreference: user.dashboardDensityPreference || "comfortable",
     isVerified: user.isVerified === true,
     verificationStatus: user.verificationStatus || "unverified",
     verificationDetailsStatus: user.verificationDetails?.status || null,
@@ -116,6 +117,17 @@ async function handleCompleteOnboarding(req, res) {
   } catch (error) {
     console.error("Complete onboarding error:", error);
     return res.status(500).json({ message: "Could not save your onboarding progress. Please try again." });
+  }
+}
+
+async function handleUpdateDashboardPreferences(req, res) {
+  try {
+    req.user.dashboardDensityPreference = req.body.dashboardDensityPreference;
+    await req.user.save();
+    return res.json({ user: profileFromUser(req.user) });
+  } catch (error) {
+    console.error("Update dashboard preferences error:", error);
+    return res.status(500).json({ message: "Could not save your dashboard display preference." });
   }
 }
 
@@ -241,4 +253,4 @@ async function handleUpdateProfile(req, res) {
   }
 }
 
-module.exports = { handleGetProfile, handleGetVerificationStatus, handleCompleteOnboarding, handleUpdateProfile, handleUploadProfilePhoto };
+module.exports = { handleGetProfile, handleGetVerificationStatus, handleCompleteOnboarding, handleUpdateDashboardPreferences, handleUpdateProfile, handleUploadProfilePhoto };

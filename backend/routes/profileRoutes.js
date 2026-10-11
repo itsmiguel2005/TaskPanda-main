@@ -1,7 +1,7 @@
 const express = require("express");
 const { body } = require("express-validator");
 const { requireAuth, requireRole } = require("../middleware/requireAuth");
-const { handleGetProfile, handleGetVerificationStatus, handleCompleteOnboarding, handleUpdateProfile, handleUploadProfilePhoto } = require("../controllers/profileController");
+const { handleGetProfile, handleGetVerificationStatus, handleCompleteOnboarding, handleUpdateDashboardPreferences, handleUpdateProfile, handleUploadProfilePhoto } = require("../controllers/profileController");
 const { validateRequest } = require("../middleware/validateRequest");
 const { limitProfilePhotoUploads } = require("../middleware/rateLimits");
 const uploadProfilePhoto = require("../storage/profilePhotoUpload");
@@ -19,6 +19,9 @@ router.put("/onboarding", [
 		.if((value, { req }) => req.user.role === "provider")
 		.custom((value) => value === true),
 ], validateRequest, handleCompleteOnboarding);
+router.patch("/preferences", [
+	body("dashboardDensityPreference").isIn(["comfortable", "compact"]),
+], validateRequest, handleUpdateDashboardPreferences);
 router.post("/photo", limitProfilePhotoUploads, uploadProfilePhoto.single("photo"), handleUploadProfilePhoto);
 router.put("/", [
 	body("fullName").isString().trim().isLength({ min: 1, max: 100 }),
