@@ -14,13 +14,15 @@ const options = [
   },
 ];
 
-export default function DashboardDensityToggle({ persona = "client", iconOnly = false }) {
-  const { user, updateDashboardDensityPreference } = useAuth();
+export default function DashboardDensityToggle({ persona = "client", iconOnly = false, preferenceKey = "dashboard" }) {
+  const { user, updateDashboardDensityPreference, updateProviderDensityPreference } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
-  const preference = user?.dashboardDensityPreference === "compact" ? "compact" : "comfortable";
+  const isProviderPreference = preferenceKey.startsWith("provider");
+  const preferenceField = isProviderPreference ? `${preferenceKey}DensityPreference` : "dashboardDensityPreference";
+  const preference = user?.[preferenceField] === "compact" ? "compact" : "comfortable";
   const activeColor = iconOnly
-    ? "bg-blue-50 text-blue-600 shadow-sm"
+    ? persona === "provider" ? "border-emerald-200 bg-emerald-50 text-emerald-600 shadow-sm" : "border-blue-200 bg-blue-50 text-blue-600 shadow-sm"
     : persona === "provider" ? "bg-emerald-600 text-white shadow-sm" : "bg-blue-600 text-white shadow-sm";
 
   const handleChange = async (value) => {
@@ -28,7 +30,11 @@ export default function DashboardDensityToggle({ persona = "client", iconOnly = 
     setError("");
     setIsSaving(true);
     try {
-      await updateDashboardDensityPreference(value);
+      if (isProviderPreference) {
+        await updateProviderDensityPreference(preferenceField, value);
+      } else {
+        await updateDashboardDensityPreference(value);
+      }
     } catch (saveError) {
       setError(saveError.message || "Could not save this display preference.");
     } finally {
@@ -50,7 +56,7 @@ export default function DashboardDensityToggle({ persona = "client", iconOnly = 
               title={`${option.label} view`}
               disabled={isSaving}
               onClick={() => handleChange(option.value)}
-              className={`dashboard-focus inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ease-in-out disabled:cursor-wait disabled:opacity-70 ${iconOnly ? "w-9 px-2" : "px-2.5 sm:px-3"} ${selected ? activeColor : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"}`}
+              className={`dashboard-focus inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border text-xs font-semibold transition-all duration-200 ease-in-out disabled:cursor-wait disabled:opacity-70 ${iconOnly ? "w-9 px-2" : "px-2.5 sm:px-3"} ${selected ? activeColor : "border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900"}`}
             >
               {option.icon}
               {!iconOnly && <span>{option.label}</span>}

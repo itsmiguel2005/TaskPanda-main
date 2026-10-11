@@ -748,10 +748,13 @@ export default function Explore() {
                   return (
                     <article key={provider._id} className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-sky-100 bg-white px-3 py-3 shadow-sm transition-all duration-200 ease-in-out hover:border-blue-200 hover:bg-slate-50 sm:px-4">
                       <button type="button" onClick={() => setViewingProvider(provider)} className="dashboard-focus flex min-w-0 flex-1 basis-56 items-center gap-3 rounded-lg text-left">
-                        <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-full border border-sky-100 bg-sky-50 text-sm font-bold text-blue-900">
-                          {provider.profileImage
-                            ? <img src={provider.profileImage} alt="" className="h-full w-full object-cover" />
-                            : (provider.fullName || provider.username || "P").charAt(0)}
+                        <span className="relative h-11 w-11 shrink-0">
+                          <span className="grid h-full w-full place-items-center overflow-hidden rounded-full border border-sky-100 bg-sky-50 text-sm font-bold text-blue-900">
+                            {provider.profileImage
+                              ? <img src={provider.profileImage} alt="" className="h-full w-full object-cover" />
+                              : (provider.fullName || provider.username || "P").charAt(0)}
+                          </span>
+                          <UserOnlineStatus lastActive={provider.lastActive} isOnline={provider.isOnline} className="absolute bottom-0 right-0 h-3.5 w-3.5" />
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center gap-1.5">

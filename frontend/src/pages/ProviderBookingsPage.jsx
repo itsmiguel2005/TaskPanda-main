@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import BookingStatusBadge from "../components/BookingStatusBadge.jsx";
@@ -125,6 +125,10 @@ export default function ProviderBookingsPage() {
   const [runningLateError, setRunningLateError] = useState("");
   const [runningLateSuccess, setRunningLateSuccess] = useState("");
   const [isReportingLate, setIsReportingLate] = useState(false);
+
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, []);
 
   const safeBookings = Array.isArray(bookings) ? bookings : [];
   const isInitialLoading = isLoading && safeBookings.length === 0;

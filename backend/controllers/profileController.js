@@ -11,6 +11,8 @@ function profileFromUser(user) {
     hasCompletedOnboarding: user.hasCompletedOnboarding === true,
     hasCompletedProviderOnboarding: user.hasCompletedProviderOnboarding === true,
     dashboardDensityPreference: user.dashboardDensityPreference || "comfortable",
+    providerIncomingRequestsDensityPreference: user.providerIncomingRequestsDensityPreference || "comfortable",
+    providerJobsDensityPreference: user.providerJobsDensityPreference || "comfortable",
     isVerified: user.isVerified === true,
     verificationStatus: user.verificationStatus || "unverified",
     verificationDetailsStatus: user.verificationDetails?.status || null,
@@ -128,6 +130,25 @@ async function handleUpdateDashboardPreferences(req, res) {
   } catch (error) {
     console.error("Update dashboard preferences error:", error);
     return res.status(500).json({ message: "Could not save your dashboard display preference." });
+  }
+}
+
+async function handleUpdateProviderPreferences(req, res) {
+  const preferenceFields = [
+    "providerIncomingRequestsDensityPreference",
+    "providerJobsDensityPreference",
+  ];
+  const preferenceField = preferenceFields.find((field) => Object.prototype.hasOwnProperty.call(req.body, field));
+  if (!preferenceField) {
+    return res.status(400).json({ message: "Choose which provider section display preference to update." });
+  }
+  try {
+    req.user[preferenceField] = req.body[preferenceField];
+    await req.user.save();
+    return res.json({ user: profileFromUser(req.user) });
+  } catch (error) {
+    console.error("Update provider preferences error:", error);
+    return res.status(500).json({ message: "Could not save your provider display preference." });
   }
 }
 
@@ -253,4 +274,4 @@ async function handleUpdateProfile(req, res) {
   }
 }
 
-module.exports = { handleGetProfile, handleGetVerificationStatus, handleCompleteOnboarding, handleUpdateDashboardPreferences, handleUpdateProfile, handleUploadProfilePhoto };
+module.exports = { handleGetProfile, handleGetVerificationStatus, handleCompleteOnboarding, handleUpdateDashboardPreferences, handleUpdateProviderPreferences, handleUpdateProfile, handleUploadProfilePhoto };

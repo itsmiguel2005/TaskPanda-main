@@ -316,7 +316,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { isLoggedIn, user, token } = useAuth();
   const serviceArea = getDashboardServiceArea(user);
-  const { bookings: bookingList, dismissedBookingIds, isLoading, error, dismissDashboardBooking, restoreDashboardBookings, requestCancellation, respondToProviderUpdate, createBooking } = useBookings();
+  const { bookings: bookingList, dismissedBookingIds, isLoading, error, dismissDashboardBooking, requestCancellation, respondToProviderUpdate, createBooking } = useBookings();
   const isInitialBookingsLoading = isLoading && bookingList.length === 0;
   const dashboardDensity = user?.dashboardDensityPreference === "compact" ? "compact" : "comfortable";
   const [bannerVisible, setBannerVisible] = useState(true);
@@ -411,7 +411,6 @@ export default function Dashboard() {
   const cancelBookingNeedsReason = Boolean(cancelBooking && Date.now() - new Date(cancelBooking.createdAt).getTime() >= 10 * 60 * 1000);
   const enRouteBooking = bookingList.find((booking) => booking.status === "On the Way");
   const hasDismissedBookings = dismissedBookingIds.length > 0;
-
   useEffect(() => {
     let active = true;
     let latestRequest = 0;
@@ -687,10 +686,6 @@ export default function Dashboard() {
     }
 
     await dismissDashboardBooking(bookingId);
-  };
-
-  const handleRestoreDismissedBookings = async () => {
-    await restoreDashboardBookings();
   };
 
   const toggleHistory = (bookingId) => {
@@ -1020,11 +1015,6 @@ export default function Dashboard() {
                 Active Bookings
               </h2>
               <div className="flex items-center gap-3">
-                {dismissedBookingIds.length > 0 && (
-                  <button type="button" onClick={handleRestoreDismissedBookings} className="text-xs font-semibold text-blue-700 underline-offset-4 hover:text-blue-800 hover:underline">
-                    Restore hidden
-                  </button>
-                )}
                 <button
                   onClick={() => navigate("/bookings")}
                   className="text-sm font-semibold text-blue-700 underline-offset-4 hover:text-blue-800 hover:underline"

@@ -171,6 +171,16 @@ const userSchema = new mongoose.Schema(
       enum: ["comfortable", "compact"],
       default: "comfortable",
     },
+    providerIncomingRequestsDensityPreference: {
+      type: String,
+      enum: ["comfortable", "compact"],
+      default: "comfortable",
+    },
+    providerJobsDensityPreference: {
+      type: String,
+      enum: ["comfortable", "compact"],
+      default: "comfortable",
+    },
     isSuspended: {
       type: Boolean,
       default: false,

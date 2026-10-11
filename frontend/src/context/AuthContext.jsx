@@ -181,6 +181,37 @@ export function AuthProvider({ children }) {
     }
   }, [token, user?.dashboardDensityPreference, updateUser]);
 
+  const updateProviderDensityPreference = useCallback(async (preferenceField, preference) => {
+    const preferenceFields = [
+      "providerIncomingRequestsDensityPreference",
+      "providerJobsDensityPreference",
+    ];
+    if (!preferenceFields.includes(preferenceField) || !["comfortable", "compact"].includes(preference)) {
+      throw new Error("Choose a valid provider display preference.");
+    }
+    if (role !== "provider") throw new Error("Only providers can save this display preference.");
+    if (!token) throw new Error("Sign in again to save your provider display preference.");
+
+    const previousPreference = user?.[preferenceField] || "comfortable";
+    updateUser({ [preferenceField]: preference });
+    try {
+      const response = await apiFetch("/api/providers/preferences", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ [preferenceField]: preference }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Could not save your provider display preference.");
+      if (data.user) updateUser(data.user);
+    } catch (error) {
+      updateUser({ [preferenceField]: previousPreference });
+      throw error;
+    }
+  }, [role, token, user, updateUser]);
+
   const refreshProfile = useCallback(async () => {
     if (!token) return false;
     try {
@@ -253,7 +284,7 @@ export function AuthProvider({ children }) {
   }, [isAuthLoading, isLoggedIn, token, role, refreshProfile]);
 
   return (
-    <AuthContext.Provider value={{ isLoggedIn, role, isVerified, user, token, isAuthLoading, isProfileLoaded, login, logout, verify, updateUser, refreshProfile, refreshVerificationStatus, updateDashboardDensityPreference }}>
+    <AuthContext.Provider value={{ isLoggedIn, role, isVerified, user, token, isAuthLoading, isProfileLoaded, login, logout, verify, updateUser, refreshProfile, refreshVerificationStatus, updateDashboardDensityPreference, updateProviderDensityPreference }}>
       {children}
     </AuthContext.Provider>
   );

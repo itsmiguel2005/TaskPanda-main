@@ -7,6 +7,8 @@ import BookingPriceBreakdown from "../components/BookingPriceBreakdown.jsx";
 import StatusChangeConfirmation from "./StatusChangeConfirmation.jsx";
 import { BookingCardSkeletonList } from "./Skeletons.jsx";
 import CompletionProofModal from "./CompletionProofModal.jsx";
+import BookingLocationMap from "./BookingLocationMap.jsx";
+import DashboardDensityToggle from "./DashboardDensityToggle.jsx";
 import { canRequestCancellation, requiresCancellationApproval } from "../utils/bookingCancellation.js";
 import { canArriveForSameDayBooking, hasScheduleConflict } from "../utils/bookingArrival.js";
 import { compareBookingsByLatestActivity } from "../utils/bookingActivity.js";
@@ -18,9 +20,9 @@ function parsePrice(str) {
   return Number.isFinite(amount) ? amount : 0;
 }
 
-function formatPhpAmount(value) {
+function formatPhpAmount(value, fixed = false) {
   const amount = Number(value);
-  return `₱${(Number.isFinite(amount) ? amount : 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
+  return `₱${(Number.isFinite(amount) ? amount : 0).toLocaleString("en-PH", { minimumFractionDigits: fixed ? 2 : 0, maximumFractionDigits: 2 })}`;
 }
 
 function fmtDate(raw) {
@@ -48,7 +50,7 @@ function initials(name) {
 
 // ─── sub-components ──────────────────────────────────────────────────────────
 
-function StatusBadge({ status }) {
+function StatusBadge({ status, compact = false }) {
   const map = {
     "Pending Request": "bg-amber-50 text-amber-700 border-amber-200",
     Confirmed: "bg-green-50 text-green-700 border-green-200",
@@ -63,7 +65,7 @@ function StatusBadge({ status }) {
     Expired: "bg-slate-100 text-slate-700 border-slate-200",
   };
   return (
-    <span className={`inline-flex items-center rounded-full border px-3 py-0.5 text-xs font-semibold ${map[status] ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
+    <span className={`inline-flex items-center rounded-full border font-semibold ${compact ? "px-2 py-0.5 text-[10px]" : "px-3 py-0.5 text-xs"} ${map[status] ?? "bg-gray-100 text-gray-600 border-gray-200"}`}>
       {status}
     </span>
   );
@@ -147,7 +149,8 @@ const FILTERS = [
 
 // ─── Incoming Request card ───────────────────────────────────────────────────
 
-function RequestCard({ booking, allBookings, onAccept, onDecline, onOpenConversation, currentTime }) {
+function RequestCard({ booking, allBookings, onAccept, onDecline, onOpenConversation, currentTime, density = "comfortable" }) {
+  const [showDetails, setShowDetails] = useState(false);
   const clientName = booking.client || booking.clientName || booking.worker || "Client";
   // Use pre-formatted date string from API + raw timeSlot string — avoids UTC offset conversion bug
   const requestedDate = booking.date || (booking.serviceDate ? new Date(booking.serviceDate).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" }) : "");
@@ -160,6 +163,87 @@ function RequestCard({ booking, allBookings, onAccept, onDecline, onOpenConversa
   const arrivalFeasible = canArriveForSameDayBooking(booking, currentTime);
   const scheduleConflict = hasScheduleConflict(booking, allBookings, booking.id);
   const acceptDisabled = requestExpired || !arrivalFeasible || scheduleConflict;
+  const category = booking.category || booking.serviceCategory || booking.cred || "Professional Service";
+  const distance = booking.travelDistanceKm == null ? Number.NaN : Number(booking.travelDistanceKm);
+
+  if (density === "compact") {
+    return (
+      <div className="border-b border-slate-100 px-4 py-3 transition-all duration-200 ease-in-out last:border-b-0 hover:bg-slate-50">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(5rem,.65fr)_minmax(6rem,.75fr)_auto] sm:items-center">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Avatar name={clientName} image={booking.clientProfileImage} size="sm" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-900">{clientName}</p>
+              <div className="mt-0.5 flex items-center gap-1.5">
+                <StatusBadge status="Pending Request" compact />
+                {secondsRemaining != null && (
+                  <span className={`truncate text-[10px] font-medium ${requestExpired ? "text-rose-700" : "text-amber-800"}`}>
+                    {requestExpired ? "Expired" : `${Math.floor(secondsRemaining / 60)}:${String(secondsRemaining % 60).padStart(2, "0")} left`}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          <p className="truncate text-xs font-medium text-slate-700" title={category}>{category}</p>
+          <p className="text-xs tabular-nums text-slate-600">{Number.isFinite(distance) ? `${distance.toFixed(1)} km` : "Distance —"}</p>
+          <p className="text-sm font-bold tabular-nums text-slate-900">{formatPhpAmount(totalPrice, true)}</p>
+          <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
+            <button
+              type="button"
+              onClick={() => onAccept(booking.id)}
+              disabled={acceptDisabled}
+              title={scheduleConflict ? "This booking overlaps another job" : !arrivalFeasible ? "Arrival time has passed" : requestExpired ? "Request expired" : "Accept request"}
+              className="dashboard-primary-button dashboard-focus min-h-8 px-2.5 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Accept
+            </button>
+            <button
+              type="button"
+              onClick={() => onDecline(booking.id)}
+              disabled={requestExpired}
+              className="dashboard-secondary-button dashboard-focus min-h-8 px-2.5 text-xs text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Decline
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenConversation(booking.id)}
+              aria-label={`Message ${clientName}`}
+              title="Message client"
+              className="dashboard-focus inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+            >
+              <ChatIcon />
+            </button>
+            <button
+              type="button"
+              aria-expanded={showDetails}
+              aria-controls={`request-details-${booking.id}`}
+              aria-label={`${showDetails ? "Hide" : "Show"} details for ${clientName}'s request`}
+              onClick={() => setShowDetails((expanded) => !expanded)}
+              className="dashboard-focus inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
+            >
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 transition-transform duration-200 ${showDetails ? "rotate-180" : ""}`} aria-hidden="true">
+                <path d="m5 7.5 5 5 5-5" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        {showDetails && (
+          <div id={`request-details-${booking.id}`} className="mt-3 grid gap-3 border-t border-slate-200 pt-3 transition-all duration-200 ease-in-out md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="space-y-2 text-xs text-slate-700">
+              <p><span className="font-semibold text-slate-500">Task:</span> {booking.task || booking.cred || "Booking"}</p>
+              {booking.description && <p><span className="font-semibold text-slate-500">Details:</span> {booking.description}</p>}
+              <p><span className="font-semibold text-slate-500">Location:</span> {address || "Address to be confirmed"}</p>
+              <p><span className="font-semibold text-slate-500">Schedule:</span> {requestedTime || "Flexible schedule"}</p>
+              {!arrivalFeasible && <p className="font-medium text-amber-800">Arrival time has passed; request a schedule adjustment.</p>}
+              {scheduleConflict && <p className="font-medium text-amber-800">This task overlaps another booking.</p>}
+            </div>
+            <BookingPriceBreakdown booking={booking} className="mt-0 p-3" />
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="content-arrive border-b border-sky-100/80 px-4 py-5 last:border-b-0 sm:px-5">
@@ -180,7 +264,8 @@ function RequestCard({ booking, allBookings, onAccept, onDecline, onOpenConversa
       <p className="mt-0.5 text-sm leading-6 text-slate-600">{booking.description || ""}</p>
 
       {/* Location + Requested time */}
-      <div className="mt-3 flex flex-wrap items-start gap-x-6 gap-y-1.5">
+      <div className={`mt-3 grid grid-cols-1 items-start gap-3 ${booking.serviceGeoLocation ? "md:grid-cols-[minmax(0,1fr)_180px]" : ""}`}>
+        <div className="flex flex-wrap items-start gap-x-6 gap-y-1.5">
         {address && (
           <div className="flex items-center gap-1.5">
             <LocationIcon />
@@ -199,6 +284,8 @@ function RequestCard({ booking, allBookings, onAccept, onDecline, onOpenConversa
             </div>
           </div>
         )}
+        </div>
+        {booking.serviceGeoLocation && <BookingLocationMap address={address} serviceGeoLocation={booking.serviceGeoLocation} className="h-28" />}
       </div>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -321,6 +408,7 @@ function JobProgressTracker({ status, onAdvanceStatus }) {
 function JobCard({
   booking,
   providerProfession,
+  density = "comfortable",
   onDismiss,
   onNavigate,
   onAdvanceStatus,
@@ -328,6 +416,7 @@ function JobCard({
   onViewDetails,
   onMarkComplete,
 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const clientName = booking.client || booking.clientName || booking.worker || "Client";
   const submittedAt = booking.createdAt ? fmtDate(booking.createdAt) : "";
   // Pre-formatted date string + raw timeSlot with dot separator
@@ -367,6 +456,80 @@ function JobCard({
   }
 
   const canCancel = canRequestCancellation(booking);
+
+  if (density === "compact") {
+    return (
+      <div className="border-b border-slate-100 transition-all duration-200 ease-in-out last:border-b-0 hover:bg-slate-50">
+        <div className="grid grid-cols-1 gap-2.5 px-4 py-3 sm:grid-cols-[minmax(0,1.5fr)_minmax(7rem,.9fr)_minmax(0,1fr)_minmax(6.5rem,.75fr)_auto] sm:items-center sm:gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Avatar name={clientName} image={booking.clientProfileImage} size="sm" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-900">{clientName}</p>
+              <p className="truncate text-[11px] text-slate-500">{booking.task || "Booking"}</p>
+            </div>
+          </div>
+          <div><StatusBadge status={booking.status} compact /></div>
+          <p className="truncate text-xs font-medium text-slate-700" title={category}>{category}</p>
+          <p className="text-sm font-bold tabular-nums text-slate-900">{formatPhpAmount(booking.totalPrice ?? parsePrice(booking.price), true)}</p>
+          <div className="flex items-center gap-1.5 sm:justify-end">
+            {isDismissable && (
+              <button
+                type="button"
+                onClick={() => onDismiss(booking.id)}
+                aria-label="Dismiss booking"
+                className="dashboard-focus inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
+              >
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true" className="h-4 w-4">
+                  <path d="m5 5 10 10M15 5 5 15" />
+                </svg>
+              </button>
+            )}
+            <button
+              type="button"
+              aria-expanded={isExpanded}
+              aria-controls={`job-details-${booking.id}`}
+              aria-label={`${isExpanded ? "Hide" : "Show"} details for ${clientName}'s job`}
+              onClick={() => setIsExpanded((expanded) => !expanded)}
+              className="dashboard-focus inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
+            >
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`} aria-hidden="true">
+                <path d="m5 7.5 5 5 5-5" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        {isExpanded && (
+          <div id={`job-details-${booking.id}`} className="grid gap-4 border-t border-slate-100 px-4 py-4 transition-all duration-200 ease-in-out md:grid-cols-[minmax(0,1fr)_minmax(15rem,.8fr)]">
+            <div className="space-y-3">
+              <div className="grid gap-3 text-xs sm:grid-cols-2">
+                <p><span className="font-semibold text-slate-500">Location:</span> <span className="text-slate-700">{address || "Not specified"}</span></p>
+                <p><span className="font-semibold text-slate-500">Schedule:</span> <span className="text-slate-700">{schedule || "Flexible schedule"}</span></p>
+              </div>
+              <BookingPriceBreakdown booking={booking} className="mt-0 p-3" />
+            </div>
+            <div className="flex flex-wrap content-start gap-2">
+              <button type="button" onClick={() => onNavigate(`/provider/messages?bookingId=${booking.id}`)} className="dashboard-secondary-button dashboard-focus px-3 py-2 text-xs">Open conversation</button>
+              <button type="button" onClick={() => onViewDetails(booking)} className="dashboard-secondary-button dashboard-focus px-3 py-2 text-xs">View details</button>
+              {actionButton && (
+                <button
+                  type="button"
+                  onClick={() => isCompletion ? onMarkComplete(booking) : onAdvanceStatus(booking.id, actionButton.statusCode, actionButton.nextStatus)}
+                  className="dashboard-primary-button dashboard-focus px-3 py-2 text-xs"
+                >
+                  {actionButton.label}
+                </button>
+              )}
+              {canCancel && (
+                <button type="button" onClick={() => onCancelBooking(booking)} className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500">
+                  Cancel booking
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="content-arrive border-b border-sky-100/80 p-4 last:border-b-0 sm:p-5">
@@ -484,7 +647,7 @@ function JobCard({
 export default function ProviderDashboard() {
   const navigate = useNavigate();
   const { user, token, refreshProfile } = useAuth();
-  const { bookings, dismissedBookingIds, bookingReviewStats, providerBookingStats, isLoading, error, dismissDashboardBooking, restoreDashboardBookings, updateBookingStatus, requestCancellation, submitCompletionProof } = useBookings();
+  const { bookings, dismissedBookingIds, bookingReviewStats, providerBookingStats, isLoading, error, dismissDashboardBooking, updateBookingStatus, requestCancellation, submitCompletionProof } = useBookings();
 
   const [activeFilter, setActiveFilter] = useState("All");
   const [search, setSearch] = useState("");
@@ -497,6 +660,8 @@ export default function ProviderDashboard() {
   const [completionBooking, setCompletionBooking] = useState(null);
   // Fresh provider stats fetched directly (user object from localStorage may be stale)
   const [providerStats, setProviderStats] = useState({ rating: 0, reviews: 0 });
+  const incomingRequestsDensity = user?.providerIncomingRequestsDensityPreference === "compact" ? "compact" : "comfortable";
+  const jobsDensity = user?.providerJobsDensityPreference === "compact" ? "compact" : "comfortable";
 
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date()), 1000);
@@ -762,13 +927,16 @@ export default function ProviderDashboard() {
             {/* Incoming Requests */}
             {(activeFilter === "All" || activeFilter === "Pending Request") && (
               <div data-onboarding-target="provider-requests" className="dashboard-panel">
-                <div className="flex items-center gap-2 border-b border-sky-100 px-5 py-4">
-                  <h2 className="text-base font-bold tracking-tight text-slate-900">Incoming requests</h2>
-                  {requests.length > 0 && (
-                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-100 px-1.5 text-xs font-bold text-blue-700">
-                      {requests.length}
-                    </span>
-                  )}
+                <div className="flex items-center justify-between gap-3 border-b border-sky-100 px-5 py-4">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <h2 className="text-base font-bold tracking-tight text-slate-900">Incoming requests</h2>
+                    {requests.length > 0 && (
+                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-100 px-1.5 text-xs font-bold text-blue-700">
+                        {requests.length}
+                      </span>
+                    )}
+                  </div>
+                  <DashboardDensityToggle persona="provider" iconOnly preferenceKey="providerIncomingRequests" />
                 </div>
 
                 {isLoading && requests.length === 0 ? (
@@ -781,7 +949,7 @@ export default function ProviderDashboard() {
                 ) : (
                   <div>
                     {requests.map((req) => (
-                      <RequestCard key={req.id} booking={req} allBookings={bookings} onAccept={handleAccept} onDecline={handleDecline} onOpenConversation={(bookingId) => navigate(`/provider/messages?bookingId=${bookingId}`)} currentTime={currentTime} />
+                      <RequestCard key={req.id} booking={req} allBookings={bookings} onAccept={handleAccept} onDecline={handleDecline} onOpenConversation={(bookingId) => navigate(`/provider/messages?bookingId=${bookingId}`)} currentTime={currentTime} density={incomingRequestsDensity} />
                     ))}
                   </div>
                 )}
@@ -793,11 +961,9 @@ export default function ProviderDashboard() {
               <div className="dashboard-panel">
                 <div className="flex items-center justify-between gap-3 border-b border-sky-100 px-5 py-4">
                   <h2 className="text-base font-bold tracking-tight text-slate-900">My jobs</h2>
-                  {dismissedBookingIds.length > 0 && (
-                    <button type="button" onClick={() => void restoreDashboardBookings()} className="text-xs font-semibold text-blue-700 underline-offset-4 hover:text-blue-800 hover:underline">
-                      Restore hidden
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2.5">
+                    <DashboardDensityToggle persona="provider" iconOnly preferenceKey="providerJobs" />
+                  </div>
                 </div>
 
                 {isLoading && filteredJobs.length === 0 ? (
@@ -814,6 +980,7 @@ export default function ProviderDashboard() {
                         key={job.id}
                         booking={job}
                         providerProfession={providerProfession}
+                        density={jobsDensity}
                         onDismiss={handleDismissBooking}
                         onNavigate={navigate}
                         onAdvanceStatus={handleAdvanceStatus}
