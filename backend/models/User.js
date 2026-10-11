@@ -75,7 +75,7 @@ const userSchema = new mongoose.Schema(
     verificationNotifications: {
       type: [{
         title: { type: String, required: true, trim: true, maxlength: 100 },
-        message: { type: String, required: true, trim: true, maxlength: 240 },
+        message: { type: String, required: true, trim: true, maxlength: 500 },
         href: { type: String, required: true, trim: true, maxlength: 200 },
         createdAt: { type: Date, default: Date.now },
         readAt: { type: Date },

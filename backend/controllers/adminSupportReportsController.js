@@ -3,7 +3,7 @@ const Conversation = require("../models/Conversation");
 const User = require("../models/User");
 const Booking = require("../models/Booking");
 const Message = require("../models/Message");
-const { sendPushNotification } = require("../services/oneSignal");
+const oneSignal = require("../services/oneSignal");
 
 const SUPPORT_REPORT_PAGE_SIZE = 25;
 
@@ -276,7 +276,7 @@ async function handleUpdateAdminSupportReport(req, res) {
 
       if (action === "send_warning") {
         try {
-          const pushResult = await sendPushNotification({
+          const pushResult = await oneSignal.sendPushNotification({
             userIds: [String(reportedUser._id)],
             title: "TaskPanda account warning",
             body: reason,
@@ -316,9 +316,9 @@ async function handleUpdateAdminSupportReport(req, res) {
     const conversation = await Conversation.findOneAndUpdate(
       { _id: conversationId, "supportReports._id": reportId },
       update,
-      { new: true, runValidators: true, projection: { "supportReports.$": 1 } },
+      { new: true, runValidators: true, projection: { supportReports: 1 } },
     ).lean();
-    const report = conversation?.supportReports?.[0];
+    const report = conversation?.supportReports?.find((item) => String(item._id) === reportId);
     if (!report) return res.status(404).json({ message: "That support report could not be found." });
     return res.json({
       id: String(report._id),
