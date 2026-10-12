@@ -52,8 +52,10 @@ export default function AccountLocationPicker({
 
       <div className="grid gap-3 sm:grid-cols-3">
         {AREA_FIELDS.map(({ name, label }) => (
-          <label key={name} htmlFor={`account-location-${name}`} className="block text-xs font-semibold text-slate-700">
-            {label} <span className="text-red-700" aria-hidden="true">*</span>
+          <label key={name} htmlFor={`account-location-${name}`} className="flex flex-col text-xs font-semibold text-slate-700">
+            <span className="flex min-h-10 items-end leading-4">
+              {label} <span className="text-red-700" aria-hidden="true">*</span>
+            </span>
             <input
               id={`account-location-${name}`}
               name={name}

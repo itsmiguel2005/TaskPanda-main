@@ -15,6 +15,7 @@ function profileFromUser(user) {
     providerJobsDensityPreference: user.providerJobsDensityPreference || "comfortable",
     isVerified: user.isVerified === true,
     verificationStatus: user.verificationStatus || "unverified",
+    phoneVerified: user.phoneVerified === true,
     verificationDetailsStatus: user.verificationDetails?.status || null,
     verificationRejectionReason: user.verificationDetails?.rejectionReason || "",
     tesdaCertificates: (user.tesdaCertificates || []).map((certificate) => ({
@@ -250,6 +251,12 @@ async function handleUpdateProfile(req, res) {
     user.middleName = middleName;
     user.lastName = lastName;
     user.username = username;
+    if (mobileNumber !== user.mobileNumber) {
+      user.phoneVerified = false;
+      user.phoneOtpHash = undefined;
+      user.phoneOtpExpiresAt = undefined;
+      user.phoneOtpAttempts = undefined;
+    }
     user.mobileNumber = mobileNumber;
     user.address = address;
     user.geoLocation = geoLocation;

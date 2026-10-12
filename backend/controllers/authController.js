@@ -3,6 +3,7 @@ const { createHash, randomBytes, randomInt, randomUUID } = require("crypto");
 const mongoose = require("mongoose");
 const { waitUntil } = require("@vercel/functions");
 const User = require("../models/User");
+const { normalizePhilippinePhone, sendSms } = require("../utils/sendSms");
 const AdminSession = require("../models/AdminSession");
 const AdminLoginChallenge = require("../models/AdminLoginChallenge");
 const config = require("../config/env");
@@ -81,6 +82,7 @@ function getLoginUserPayload(user) {
     middleName: user.middleName,
     lastName: user.lastName,
     mobileNumber: user.mobileNumber,
+    phoneVerified: user.phoneVerified === true,
     province: user.province,
     city: user.city,
     barangay: user.barangay,
@@ -123,6 +125,25 @@ function normalizePhilippineMobile(value) {
   if (/^09\d{9}$/.test(value)) return value;
   if (/^\+639\d{9}$/.test(value)) return `0${value.slice(3)}`;
   return "";
+}
+
+function getPhoneLookupValues(phone) {
+  const internationalPhone = normalizePhilippinePhone(phone);
+  return [internationalPhone, `0${internationalPhone.slice(3)}`, internationalPhone.slice(1)];
+}
+
+async function findRegistrationPhoneOtpUser(token, phoneValues, includeOtpFields = false) {
+  if (!/^[a-f\d]{64}$/i.test(token)) return null;
+  const query = User.findOne(mongoose.trusted({
+    ...onboardingTokenFilter(hashToken(token)),
+    ...(phoneValues ? { mobileNumber: mongoose.trusted({ $in: phoneValues }) } : {}),
+    emailVerified: true,
+    registrationComplete: false,
+    isSuspended: mongoose.trusted({ $ne: true }),
+    archivedAt: mongoose.trusted({ $exists: false }),
+  }));
+  if (includeOtpFields) query.select("+phoneOtpHash +phoneOtpExpiresAt +phoneOtpAttempts");
+  return query;
 }
 
 function hasGoodRegistrationPassword(password) {
@@ -665,19 +686,12 @@ async function handleRegistrationStatus(req, res) {
     const onboardingToken = randomBytes(32).toString("hex");
     const onboardingTokenHash = hashToken(onboardingToken);
     const onboardingExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const claimAvailable = mongoose.trusted({
-      $or: [
-        { registrationResumeClaimedAt: mongoose.trusted({ $exists: false }) },
-        { registrationResumeClaimedAt: mongoose.trusted({ $lt: new Date(Date.now() - 10 * 60 * 1000) }) },
-      ],
-    });
     const claimedUser = await User.findOneAndUpdate(
       mongoose.trusted({
         _id: user._id,
         ...sessionFilter,
         emailVerified: true,
         registrationComplete: false,
-        ...claimAvailable,
       }),
       {
         $set: {
@@ -868,6 +882,9 @@ async function handleCompleteRegistration(req, res) {
   if (!mobileNumber) {
     return res.status(400).json({ message: "Enter a valid Philippine mobile number, such as +63 9XX XXX XXXX." });
   }
+  if (user.phoneVerified !== true || user.mobileNumber !== mobileNumber) {
+    return res.status(400).json({ message: "Verify this mobile number by SMS before completing registration." });
+  }
   const address = String(req.body.address || formatAddress("", barangay, city, province)).trim();
   let geoLocation = normalizeGeoLocation(req.body.geoLocation);
   if (req.body.geoLocation != null && !geoLocation) {
@@ -903,6 +920,8 @@ async function handleCompleteRegistration(req, res) {
       ...onboardingTokenFilter(tokenHash),
       emailVerified: true,
       registrationComplete: false,
+      mobileNumber,
+      phoneVerified: true,
     }),
     {
       $set: {
@@ -921,6 +940,9 @@ async function handleCompleteRegistration(req, res) {
         ...(user.role === "provider" ? { dateOfBirth: parsedDateOfBirth } : {}),
       },
       $unset: {
+        phoneOtpHash: 1,
+        phoneOtpExpiresAt: 1,
+        phoneOtpAttempts: 1,
         onboardingTokenHash: 1,
         onboardingTokenExpiresAt: 1,
         onboardingTokens: 1,
@@ -967,6 +989,7 @@ async function handleCompleteRegistration(req, res) {
       middleName: updatedUser.middleName,
       lastName: updatedUser.lastName,
       professions: updatedUser.professions,
+      phoneVerified: updatedUser.phoneVerified === true,
       bio: updatedUser.bio,
       createdAt: updatedUser.createdAt,
       role: updatedUser.role,
@@ -1311,6 +1334,142 @@ async function handleResendLoginOtp(req, res) {
   }
 }
 
+async function handleSendSmsOtp(req, res) {
+  try {
+    if (config.authOtpSecret.length < 32) {
+      return res.status(503).json({ message: "Phone verification is not configured." });
+    }
+
+    const phone = normalizePhilippinePhone(String(req.body.phone || "").trim());
+    const phoneValues = getPhoneLookupValues(phone);
+    const onboardingToken = getPreAuthToken(req);
+    const registrationUser = onboardingToken
+      ? await findRegistrationPhoneOtpUser(onboardingToken, null)
+      : null;
+    const user = registrationUser || await User.findOne({
+      mobileNumber: mongoose.trusted({ $in: phoneValues }),
+      role: mongoose.trusted({ $in: ["client", "provider"] }),
+      registrationComplete: true,
+      isSuspended: mongoose.trusted({ $ne: true }),
+      archivedAt: mongoose.trusted({ $exists: false }),
+    }).select("_id");
+    if (!user) {
+      return res.status(404).json({ message: "No active account was found for that phone number." });
+    }
+
+    const otpCode = generateLoginOtpCode();
+    const phoneOtpHash = hashLoginOtpCode(otpCode, user._id, config.authOtpSecret);
+    const phoneOtpExpiresAt = new Date(Date.now() + LOGIN_OTP_TTL_MS);
+    if (registrationUser) {
+      user.mobileNumber = `0${phone.slice(3)}`;
+      user.phoneVerified = false;
+      user.phoneOtpHash = phoneOtpHash;
+      user.phoneOtpExpiresAt = phoneOtpExpiresAt;
+      user.phoneOtpAttempts = 0;
+      await user.save();
+    } else {
+      const otpSaved = await User.updateOne(
+        { _id: user._id, mobileNumber: mongoose.trusted({ $in: phoneValues }) },
+        { $set: { phoneOtpHash, phoneOtpExpiresAt, phoneOtpAttempts: 0 } },
+      );
+      if (!otpSaved.matchedCount) {
+        return res.status(409).json({ message: "That phone number changed. Please try again." });
+      }
+    }
+
+    try {
+      await sendSms(phone, otpCode);
+    } catch (error) {
+      try {
+        await User.updateOne(
+          { _id: user._id, phoneOtpHash },
+          { $unset: { phoneOtpHash: 1, phoneOtpExpiresAt: 1, phoneOtpAttempts: 1 } },
+        );
+      } catch (cleanupError) {
+        console.error("Failed to clear phone verification code after SMS delivery failed:", cleanupError);
+      }
+      return res.status(502).json({ message: "We could not send the verification SMS. Please try again." });
+    }
+
+    return res.status(200).json({ message: "Your verification code has been sent by SMS." });
+  } catch (error) {
+    console.error("Send phone verification code error:", error);
+    return res.status(500).json({ message: "Could not send the verification code. Please try again." });
+  }
+}
+
+async function handleVerifySmsOtp(req, res) {
+  try {
+    if (config.authOtpSecret.length < 32) {
+      return res.status(503).json({ message: "Phone verification is not configured." });
+    }
+
+    const phone = normalizePhilippinePhone(String(req.body.phone || "").trim());
+    const phoneValues = getPhoneLookupValues(phone);
+    const otpCode = String(req.body.otpCode || "").trim();
+    const onboardingToken = getPreAuthToken(req);
+    const registrationUser = onboardingToken
+      ? await findRegistrationPhoneOtpUser(onboardingToken, phoneValues, true)
+      : null;
+    const user = registrationUser || await User.findOne({
+      mobileNumber: mongoose.trusted({ $in: phoneValues }),
+      role: mongoose.trusted({ $in: ["client", "provider"] }),
+      registrationComplete: true,
+      isSuspended: mongoose.trusted({ $ne: true }),
+      archivedAt: mongoose.trusted({ $exists: false }),
+    }).select("+phoneOtpHash +phoneOtpExpiresAt +phoneOtpAttempts");
+    const now = new Date();
+    if (
+      !user?.phoneOtpHash ||
+      !user.phoneOtpExpiresAt ||
+      user.phoneOtpExpiresAt.getTime() <= now.getTime()
+    ) {
+      return res.status(400).json({ message: "The verification code is invalid or expired." });
+    }
+
+    const submittedOtpHash = hashLoginOtpCode(otpCode, user._id, config.authOtpSecret);
+    if (!timingSafeOtpHexEqual(user.phoneOtpHash, submittedOtpHash)) {
+      const attempt = await User.findOneAndUpdate(
+        {
+          _id: user._id,
+          phoneOtpHash: user.phoneOtpHash,
+          phoneOtpExpiresAt: mongoose.trusted({ $gt: now }),
+          phoneOtpAttempts: mongoose.trusted({ $lt: 5 }),
+          mobileNumber: mongoose.trusted({ $in: phoneValues }),
+        },
+        { $inc: { phoneOtpAttempts: 1 } },
+        { returnDocument: "after" },
+      ).select("+phoneOtpAttempts");
+      if (!attempt || attempt.phoneOtpAttempts >= 5) {
+        return res.status(429).json({ message: "Too many incorrect codes. Request a new verification code." });
+      }
+      return res.status(400).json({ message: "The verification code is incorrect." });
+    }
+
+    const verifiedUser = await User.updateOne(
+      {
+        _id: user._id,
+        phoneOtpHash: user.phoneOtpHash,
+        phoneOtpExpiresAt: mongoose.trusted({ $gt: now }),
+        phoneOtpAttempts: mongoose.trusted({ $lt: 5 }),
+        mobileNumber: mongoose.trusted({ $in: phoneValues }),
+      },
+      {
+        $set: { phoneVerified: true },
+        $unset: { phoneOtpHash: 1, phoneOtpExpiresAt: 1, phoneOtpAttempts: 1 },
+      },
+    );
+    if (!verifiedUser.matchedCount) {
+      return res.status(400).json({ message: "The verification code is invalid or expired." });
+    }
+
+    return res.status(200).json({ message: "Phone number verified successfully.", phoneVerified: true });
+  } catch (error) {
+    console.error("Phone verification code check failed:", error);
+    return res.status(500).json({ message: "Could not verify the phone number. Please try again." });
+  }
+}
+
 async function handleVerifyAdminLogin(req, res) {
   try {
     const challengeToken = String(req.body.challengeToken || "").trim();
@@ -1492,6 +1651,8 @@ module.exports = {
   handleLogin,
   handleVerifyLoginOtp,
   handleResendLoginOtp,
+  handleSendSmsOtp,
+  handleVerifySmsOtp,
   handleLogout,
   handleVerifyAdminLogin,
   handleForgotPassword,

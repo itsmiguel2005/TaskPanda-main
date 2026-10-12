@@ -13,6 +13,39 @@ export default function ClientRegisterPhone() {
   const [mobileNumber, setMobileNumber] = useState(() => getPhilippineMobileInputValue(readRegistrationDraft("clientPhoneStep", { mobileNumber: "" }).mobileNumber));
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [verifiedPhone, setVerifiedPhone] = useState("");
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+
+  const handleSendOtp = async () => {
+    setError("");
+    const phone = normalizePhilippineMobile(mobileNumber);
+    if (!phone) return setError("Enter 10 digits starting with 9 for a Philippine mobile number.");
+    const onboardingToken = sessionStorage.getItem("taskpanda_onboarding_token");
+    if (!onboardingToken) return setError("Your registration session expired. Sign in again to continue.");
+
+    try {
+      setIsSendingOtp(true);
+      const response = await apiFetch("/api/auth/send-sms-otp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${onboardingToken}`,
+        },
+        body: JSON.stringify({ phone }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return setError(data.message || "Could not send the verification code.");
+      setOtpSent(true);
+      setOtpCode("");
+      setVerifiedPhone("");
+    } catch {
+      setError("Network error. Could not send the verification code.");
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -21,6 +54,14 @@ export default function ClientRegisterPhone() {
     const normalizedMobileNumber = normalizePhilippineMobile(mobileNumber);
     if (!normalizedMobileNumber) {
       setError("Enter 10 digits starting with 9 for a Philippine mobile number.");
+      return;
+    }
+    if (verifiedPhone !== normalizedMobileNumber && !otpSent) {
+      setError("Send a verification code to your phone before completing registration.");
+      return;
+    }
+    if (verifiedPhone !== normalizedMobileNumber && !/^\d{6}$/.test(otpCode)) {
+      setError("Enter the 6-digit SMS verification code.");
       return;
     }
     const onboardingToken = sessionStorage.getItem("taskpanda_onboarding_token");
@@ -38,6 +79,22 @@ export default function ClientRegisterPhone() {
 
     try {
       setIsSubmitting(true);
+      if (verifiedPhone !== normalizedMobileNumber) {
+        const verificationResponse = await apiFetch("/api/auth/verify-sms-otp", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${onboardingToken}`,
+          },
+          body: JSON.stringify({ phone: normalizedMobileNumber, otpCode }),
+        });
+        const verificationData = await verificationResponse.json().catch(() => ({}));
+        if (!verificationResponse.ok) {
+          setError(verificationData.message || "The verification code is incorrect. Check it and try again.");
+          return;
+        }
+        setVerifiedPhone(normalizedMobileNumber);
+      }
       const step1 = JSON.parse(step1Raw);
       const nameData = JSON.parse(nameRaw);
       const locationData = JSON.parse(locationRaw);
@@ -108,10 +165,27 @@ export default function ClientRegisterPhone() {
                   onChange={(value) => {
                     setMobileNumber(value);
                     saveRegistrationDraft("clientPhoneStep", { mobileNumber: value });
+                    setOtpCode("");
+                    setOtpSent(false);
+                    setVerifiedPhone("");
                   }}
                 />
+                <div className="space-y-3">
+                  <button type="button" onClick={handleSendOtp} disabled={isSendingOtp} className="w-full rounded-lg border border-primary-600 px-4 py-2.5 font-semibold text-primary-700 transition-colors hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50">
+                    {isSendingOtp ? "Sending code..." : otpSent ? "Resend verification code" : "Send verification code"}
+                  </button>
+                  {otpSent && (
+                    <div className="space-y-3">
+                      <label htmlFor="phoneOtpCode" className="block text-sm font-medium text-gray-700">6-digit SMS verification code</label>
+                      <input id="phoneOtpCode" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otpCode} onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-center text-lg tracking-[0.35em] focus:border-primary-500 focus:outline-none" />
+                      {verifiedPhone === normalizePhilippineMobile(mobileNumber) && (
+                        <p className="text-sm font-medium text-green-700" role="status">Phone number verified.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
                 {error && <p className="text-sm text-red-600" role="alert">{error} {error.toLowerCase().includes("sign in again") && <Link to="/login" className="font-semibold underline">Sign in again</Link>}</p>}
-                <button type="submit" disabled={isSubmitting} className={`w-full rounded-lg bg-linear-to-r ${a.button} px-4 py-2.5 font-semibold text-white transition-opacity hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50`}>{isSubmitting ? "Finishing registration..." : "Complete Sign up"}</button>
+                <button type="submit" disabled={isSubmitting} className={`w-full rounded-lg bg-linear-to-r ${a.button} px-4 py-2.5 font-semibold text-white transition-opacity hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50`}>{isSubmitting ? (verifiedPhone === normalizePhilippineMobile(mobileNumber) ? "Finishing registration..." : "Verifying code...") : "Complete Sign up"}</button>
               </form>
             </div>
           </section>

@@ -15,6 +15,14 @@ if (config.mailFrom && !hasAlignedMailFrom) {
 }
 
 const taskPandaSender = { name: "TaskPanda", address: mailFrom };
+const transientSmtpErrorCodes = new Set([
+  "ECONNECTION",
+  "ECONNRESET",
+  "EAI_AGAIN",
+  "EHOSTUNREACH",
+  "ESOCKET",
+  "ETIMEDOUT",
+]);
 
 const mailTransport = nodemailer.createTransport({
   host: config.smtpHost,
@@ -29,6 +37,24 @@ const mailTransport = nodemailer.createTransport({
     ? { user: config.smtpUser, pass: config.smtpPassword }
     : undefined,
 });
+
+async function sendVerificationMailWithRetry(sendMail) {
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      return await sendMail();
+    } catch (error) {
+      const retryable = transientSmtpErrorCodes.has(error.code)
+        || (Number(error.responseCode) >= 400 && Number(error.responseCode) < 500);
+      if (!retryable || attempt === 2) throw error;
+      console.warn("Temporary SMTP failure while sending verification email; retrying once:", {
+        code: error.code || "",
+        responseCode: error.responseCode || 0,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  throw new Error("Verification email could not be sent.");
+}
 
 if (process.env.VERCEL) {
   console.log("SMTP status:", {
@@ -59,16 +85,26 @@ async function sendPasswordResetEmail(email, code) {
 }
 
 async function sendEmailVerificationEmail(email, verificationUrl) {
-  const result = await mailTransport.sendMail({
-    from: taskPandaSender,
-    to: email,
-    subject: "Verify your TaskPanda email",
-    text: `Verify your email to continue your TaskPanda registration: ${verificationUrl}\nThis link expires in 24 hours.`,
-    html: `<p>Verify your email to continue your TaskPanda registration:</p><p><a href="${verificationUrl}">Verify email</a></p><p>This link expires in 24 hours.</p>`,
-  });
+  const result = await sendVerificationMailWithRetry(() => mailTransport.sendMail({
+      from: taskPandaSender,
+      to: email,
+      subject: "Verify your TaskPanda email",
+      text: `Verify your email to continue your TaskPanda registration: ${verificationUrl}\nThis link expires in 24 hours.`,
+      html: `<p>Verify your email to continue your TaskPanda registration:</p><p><a href="${verificationUrl}">Verify email</a></p><p>This link expires in 24 hours.</p>`,
+    }));
+  const acceptedRecipients = (result.accepted || []).map((recipient) =>
+    String(typeof recipient === "string" ? recipient : recipient.address || "").trim().toLowerCase()
+  );
+  if (!acceptedRecipients.includes(String(email).trim().toLowerCase())) {
+    console.error("SMTP did not accept the verification email recipient:", {
+      acceptedCount: acceptedRecipients.length,
+      rejectedCount: result.rejected?.length || 0,
+    });
+    throw new Error("The email provider did not accept the verification message.");
+  }
   console.log("Email verification message accepted by SMTP:", {
     messageId: result.messageId,
-    acceptedCount: result.accepted?.length || 0,
+    acceptedCount: acceptedRecipients.length,
     rejectedCount: result.rejected?.length || 0,
   });
 }
@@ -113,6 +149,7 @@ async function sendOtpEmail(email, code, name) {
 
 module.exports = {
   hasValidSmtpCredentials,
+  sendVerificationMailWithRetry,
   sendAdminLoginOtpEmail,
   sendOtpEmail,
   sendEmailVerificationEmail,

@@ -11,6 +11,8 @@ const {
   handleLogin,
   handleVerifyLoginOtp,
   handleResendLoginOtp,
+  handleSendSmsOtp,
+  handleVerifySmsOtp,
   handleLogout,
   handleVerifyAdminLogin,
   handleForgotPassword,
@@ -92,6 +94,11 @@ router.post("/verify-otp", limitAuthAttempts, [
   body("rememberDevice").optional().isBoolean(),
 ], validateRequest, handleVerifyLoginOtp);
 router.post("/resend-otp", limitAuthAttempts, handleResendLoginOtp);
+router.post("/send-sms-otp", limitAuthAttempts, body("phone").isString().matches(/^(?:09\d{9}|\+?639\d{9})$/), validateRequest, handleSendSmsOtp);
+router.post("/verify-sms-otp", limitAuthAttempts, [
+  body("phone").isString().matches(/^(?:09\d{9}|\+?639\d{9})$/),
+  body("otpCode").isString().matches(/^\d{6}$/),
+], validateRequest, handleVerifySmsOtp);
 router.post("/logout", requireAuth, requireRole("client", "provider"), handleLogout);
 router.post("/admin-login/verify", limitAuthAttempts, [
   body("challengeToken").isString().matches(/^[a-f\d]{64}$/i),

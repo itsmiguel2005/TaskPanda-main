@@ -98,6 +98,23 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    phoneVerified: {
+      type: Boolean,
+      default: false,
+    },
+    phoneOtpHash: {
+      type: String,
+      select: false,
+    },
+    phoneOtpExpiresAt: {
+      type: Date,
+      select: false,
+    },
+    phoneOtpAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
     email: {
       type: String,
       required: true,

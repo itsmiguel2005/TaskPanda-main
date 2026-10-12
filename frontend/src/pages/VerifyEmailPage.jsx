@@ -86,7 +86,6 @@ export default function VerifyEmailPage() {
         }
         setEmail(data.user.email || "");
         setStatus("verified");
-        await continueRegistrationOnThisBrowser();
       })
       .catch((error) => {
         setStatus("error");
@@ -169,7 +168,7 @@ export default function VerifyEmailPage() {
                 : message || (email ? `We sent a verification link to ${email}.` : "Enter the email used for registration to request a new verification link.")}
             </p>
             {status === "waiting" && (
-              <p className="text-xs text-gray-500">Leave this page open. It will continue automatically once your email is verified, even if you verify from another device.</p>
+              <p className="text-xs text-gray-500">Keep this registration page open. After you verify your email, it will continue automatically—even if you verify from another device.</p>
             )}
 
             {status !== "verified" && (
@@ -209,7 +208,7 @@ export default function VerifyEmailPage() {
                   Check this browser again
                 </button>
                 <p className="text-xs leading-5 text-gray-500" role="status">
-                  If you started registration on another device, return to it. It should continue automatically.
+                  Return to the browser where you started registration. That page will continue automatically, including when you verify from your phone.
                 </p>
               </div>
             )}

@@ -20,10 +20,15 @@ const authPaths = [
   "/login",
   "/verify-otp",
   "/resend-otp",
+  "/send-sms-otp",
+  "/verify-sms-otp",
   "/forgot-password",
   "/reset-password",
 ];
-const authLimiters = new Map(authPaths.map((path) => [path, createRateLimiter(10)]));
+const authLimiters = new Map(authPaths.map((path) => [
+  path,
+  createRateLimiter(path === "/send-sms-otp" ? 3 : 10),
+]));
 const fallbackAuthLimiter = createRateLimiter(10);
 
 function limitAuthAttempts(req, res, next) {
