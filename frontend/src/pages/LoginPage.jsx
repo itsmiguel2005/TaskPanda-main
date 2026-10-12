@@ -24,6 +24,7 @@ export default function LoginPage() {
   const loginOtpInputs = useRef([]);
   const [adminChallengeToken, setAdminChallengeToken] = useState("");
   const [adminOtp, setAdminOtp] = useState("");
+  const adminOtpInputs = useRef([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [capsLockOn, setCapsLockOn] = useState(false);
@@ -100,6 +101,12 @@ export default function LoginPage() {
     loginOtpInputs.current[0]?.focus();
     return undefined;
   }, [loginOtpToken]);
+
+  useEffect(() => {
+    if (!adminChallengeToken) return undefined;
+    adminOtpInputs.current[0]?.focus();
+    return undefined;
+  }, [adminChallengeToken]);
 
   useEffect(() => {
     if (!loginOtpToken || resendSeconds <= 0) return undefined;
@@ -289,6 +296,30 @@ export default function LoginPage() {
     loginOtpInputs.current[Math.min(digits.length, 5)]?.focus();
   };
 
+  const updateAdminOtpDigit = (index, rawValue) => {
+    const digits = rawValue.replace(/\D/g, "");
+    if (digits.length > 1) {
+      const nextOtp = digits.slice(0, 6);
+      setAdminOtp(nextOtp);
+      adminOtpInputs.current[Math.min(nextOtp.length, 5)]?.focus();
+      return;
+    }
+    setAdminOtp((current) => {
+      const next = current.padEnd(6, " ").split("");
+      next[index] = digits || " ";
+      return next.join("").trimEnd();
+    });
+    if (digits && index < 5) adminOtpInputs.current[index + 1]?.focus();
+  };
+
+  const handleAdminOtpPaste = (event) => {
+    event.preventDefault();
+    const digits = event.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (!digits) return;
+    setAdminOtp(digits);
+    adminOtpInputs.current[Math.min(digits.length, 5)]?.focus();
+  };
+
   const handleAdminOtpSubmit = async (event) => {
     event.preventDefault();
     setServerError("");
@@ -442,39 +473,65 @@ export default function LoginPage() {
                 </div>
               </div>
             ) : adminChallengeToken ? (
-              <>
-                <div className="space-y-1 text-center">
+              <div className="space-y-6">
+                <div className="space-y-2 text-center">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700" aria-hidden="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="5" width="18" height="14" rx="2" />
+                      <path d="m3 7 9 6 9-6" />
+                    </svg>
+                  </div>
                   <h2 className="font-bold text-2xl text-slate-900">Verify your admin sign-in</h2>
                   <p className="text-sm leading-6 text-slate-600">
                     Enter the 6-digit code sent to the configured admin email. The code expires in 5 minutes.
                   </p>
                 </div>
 
-                <form onSubmit={handleAdminOtpSubmit} className="space-y-4">
+                <form onSubmit={handleAdminOtpSubmit} className="space-y-5">
                   <div className="space-y-2">
-                    <label htmlFor="adminLoginCode" className="block text-sm font-medium text-slate-700">
+                    <p id="adminOtpLabel" className="text-center text-sm font-medium text-slate-700">
                       Verification code
-                    </label>
-                    <input
-                      id="adminLoginCode"
-                      name="adminLoginCode"
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      pattern="[0-9]{6}"
-                      maxLength={6}
-                      required
-                      value={adminOtp}
-                      onChange={(event) => setAdminOtp(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                      placeholder="000000"
-                      className="block w-full rounded-xl border border-slate-200 bg-white px-4 py-1.5 text-center text-xl font-semibold leading-7 tracking-[0.35em] text-slate-900 placeholder:text-slate-300 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                    </p>
+                    <div
+                      className="grid grid-cols-6 gap-2"
+                      role="group"
+                      aria-labelledby="adminOtpLabel"
                       aria-describedby={serverError ? "adminLoginError" : undefined}
-                    />
+                    >
+                      {Array.from({ length: 6 }, (_, index) => (
+                        <input
+                          key={index}
+                          ref={(element) => { adminOtpInputs.current[index] = element; }}
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete={index === 0 ? "one-time-code" : "off"}
+                          pattern="[0-9]*"
+                          maxLength={6}
+                          required
+                          aria-label={`Digit ${index + 1}`}
+                          value={adminOtp[index] || ""}
+                          onChange={(event) => updateAdminOtpDigit(index, event.target.value)}
+                          onPaste={handleAdminOtpPaste}
+                          onKeyDown={(event) => {
+                            if (event.key === "Backspace" && !adminOtp[index] && index > 0) {
+                              adminOtpInputs.current[index - 1]?.focus();
+                            } else if (event.key === "ArrowLeft" && index > 0) {
+                              event.preventDefault();
+                              adminOtpInputs.current[index - 1]?.focus();
+                            } else if (event.key === "ArrowRight" && index < 5) {
+                              event.preventDefault();
+                              adminOtpInputs.current[index + 1]?.focus();
+                            }
+                          }}
+                          className="!h-12 min-w-0 rounded-xl border border-slate-200 bg-white px-0 text-center text-xl font-semibold tabular-nums text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                        />
+                      ))}
+                    </div>
                   </div>
                   {serverError && <p id="adminLoginError" className="text-sm text-red-600" role="alert">{serverError}</p>}
                   <button
                     type="submit"
-                    disabled={isSubmitting || adminOtp.length !== 6}
+                    disabled={isSubmitting || !/^\d{6}$/.test(adminOtp)}
                     className={`w-full rounded-xl bg-linear-to-r ${a.button} px-4 py-3 font-semibold text-white transition-opacity hover:brightness-110 focus:outline-none focus:ring-2 ${a.buttonHover} focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50`}
                   >
                     {isSubmitting ? "Verifying..." : "Verify and sign in"}
@@ -492,7 +549,7 @@ export default function LoginPage() {
                 >
                   Back to credentials
                 </button>
-              </>
+              </div>
             ) : (
               <>
             <div className="space-y-1 text-center">

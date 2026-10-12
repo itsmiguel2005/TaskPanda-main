@@ -174,6 +174,54 @@ function sendLoginOtpEmailInBackground(user, otpCode, context) {
   }
 }
 
+function sendAdminLoginOtpEmailInBackground(adminEmail, code, challengeTokenHash) {
+  const deliverEmail = async () => {
+    try {
+      await sendAdminLoginOtpEmail(adminEmail, code);
+    } catch (error) {
+      console.error("Admin sign-in email could not be sent:", error.message);
+      try {
+        await AdminLoginChallenge.deleteOne({ adminEmail, challengeTokenHash });
+      } catch (cleanupError) {
+        console.error("Failed to clean up admin sign-in challenge after email delivery failed:", cleanupError.message);
+      }
+    }
+  };
+
+  if (process.env.VERCEL) {
+    waitUntil(deliverEmail());
+  } else {
+    setImmediate(() => {
+      void deliverEmail();
+    });
+  }
+}
+
+function sendPasswordResetEmailInBackground(userId, email, code, tokenHash) {
+  const deliverEmail = async () => {
+    try {
+      await sendPasswordResetEmail(email, code);
+    } catch (error) {
+      console.error("Password reset email could not be sent:", error.message);
+      try {
+        await User.updateOne({ _id: userId, passwordResetTokenHash: tokenHash }, {
+          $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 },
+        });
+      } catch (cleanupError) {
+        console.error("Failed to clean up password reset code after email delivery failed:", cleanupError.message);
+      }
+    }
+  };
+
+  if (process.env.VERCEL) {
+    waitUntil(deliverEmail());
+  } else {
+    setImmediate(() => {
+      void deliverEmail();
+    });
+  }
+}
+
 function formatAddress(street, barangay, city, province) {
   return [street, barangay, city, province]
     .map((part) => String(part || "").trim())
@@ -1004,13 +1052,7 @@ async function handleLogin(req, res) {
         },
         { returnDocument: "after", upsert: true }
       );
-      try {
-        await sendAdminLoginOtpEmail(config.adminOtpEmail, code);
-      } catch (mailError) {
-        await AdminLoginChallenge.deleteOne({ adminEmail, challengeTokenHash });
-        console.error("Admin sign-in email could not be sent:", mailError.message);
-        return res.status(502).json({ message: "Could not send the admin verification code. Please try again." });
-      }
+      sendAdminLoginOtpEmailInBackground(config.adminOtpEmail, code, challengeTokenHash);
       sendAdminPushAlertInBackground({
         roles: ["admin"],
         title: "Admin sign-in requested",
@@ -1021,7 +1063,7 @@ async function handleLogin(req, res) {
 
       clearLoginAttempts(normalizedIdentifier);
       return res.json({
-        message: "A verification code was sent to the configured admin email.",
+        message: "A verification code is on its way to the configured admin email.",
         requiresAdminOtp: true,
         challengeToken,
       });
@@ -1371,18 +1413,29 @@ async function handleForgotPassword(req, res) {
     await User.updateOne({ _id: user._id }, {
       $set: { passwordResetTokenHash: tokenHash, passwordResetExpiresAt: expiresAt },
     });
-    try {
-      await sendPasswordResetEmail(email, code);
-    } catch (error) {
-      await User.updateOne({ _id: user._id, passwordResetTokenHash: tokenHash }, {
-        $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 },
-      });
-      throw error;
-    }
-    return res.json({ message: "If an account exists for that email, a reset code has been sent." });
+    sendPasswordResetEmailInBackground(user._id, email, code, tokenHash);
+    return res.json({ message: "If an account exists for that email, a reset code is on its way." });
   } catch (error) {
     console.error("Forgot password error:", error);
     return res.status(502).json({ message: "We could not send the reset email. Please try again." });
+  }
+}
+
+async function handleVerifyPasswordResetCode(req, res) {
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const code = String(req.body.code || "").trim();
+    const user = await User.findOne({ email }).select("+passwordResetTokenHash +passwordResetExpiresAt");
+    if (!user?.passwordResetTokenHash || !user.passwordResetExpiresAt || user.passwordResetExpiresAt <= new Date()) {
+      return res.status(400).json({ message: "The reset code is missing or expired." });
+    }
+    if (!/^\d{6}$/.test(code) || !(await bcrypt.compare(code, user.passwordResetTokenHash))) {
+      return res.status(400).json({ message: "The reset code is incorrect." });
+    }
+    return res.json({ message: "Reset code verified." });
+  } catch (error) {
+    console.error("Verify password reset code error:", error);
+    return res.status(500).json({ message: "Could not verify the reset code. Please try again." });
   }
 }
 
@@ -1442,5 +1495,6 @@ module.exports = {
   handleLogout,
   handleVerifyAdminLogin,
   handleForgotPassword,
+  handleVerifyPasswordResetCode,
   handleResetPassword,
 };

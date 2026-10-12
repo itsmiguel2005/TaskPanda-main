@@ -1,5 +1,5 @@
 import { apiFetch } from "../services/api.js";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 
@@ -27,6 +27,7 @@ export default function ForgotPasswordPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const codeInputs = useRef([]);
 
   useEffect(() => {
     const linkedEmail = String(searchParams.get("email") || "").trim().toLowerCase();
@@ -36,9 +37,14 @@ export default function ForgotPasswordPage() {
     setEmail(linkedEmail);
     setCode(linkedCode);
     setStep(2);
-    setMessage("Reset code loaded. Choose a new password.");
+    setError("");
+    setMessage("Reset code loaded. Verify it to choose a new password.");
     navigate("/forgot-password", { replace: true });
   }, [navigate, searchParams]);
+
+  useEffect(() => {
+    if (step === 2 && !isSubmitting) codeInputs.current[0]?.focus();
+  }, [isSubmitting, step]);
 
   useEffect(() => {
     if (resendCooldown <= 0) return undefined;
@@ -75,8 +81,65 @@ export default function ForgotPasswordPage() {
           : data.message
       );
       setError("");
+      setCode("");
       setStep(2);
       setResendCooldown(60);
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const updateCodeDigit = (index, rawValue) => {
+    const digits = rawValue.replace(/\D/g, "");
+    if (digits.length > 1) {
+      const nextCode = digits.slice(0, 6);
+      setCode(nextCode);
+      codeInputs.current[Math.min(nextCode.length, 5)]?.focus();
+      setError("");
+      return;
+    }
+    setCode((current) => {
+      const next = current.padEnd(6, " ").split("");
+      next[index] = digits || " ";
+      return next.join("").trimEnd();
+    });
+    setError("");
+    if (digits && index < 5) codeInputs.current[index + 1]?.focus();
+  };
+
+  const handleCodePaste = (event) => {
+    event.preventDefault();
+    const digits = event.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (!digits) return;
+    setCode(digits);
+    setError("");
+    codeInputs.current[Math.min(digits.length, 5)]?.focus();
+  };
+
+  const verifyCode = async (event) => {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    if (!/^\d{6}$/.test(code)) {
+      setError("Enter the 6-digit reset code.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const response = await apiFetch("/api/auth/forgot-password/verify-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), code }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(data.message || "Unable to verify the reset code.");
+        return;
+      }
+      setStep(3);
+      setMessage(data.message || "Reset code verified. Choose a new password.");
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -106,6 +169,7 @@ export default function ForgotPasswordPage() {
           : data.message
       );
       setCode("");
+      codeInputs.current[0]?.focus();
       setResendCooldown(60);
     } catch {
       setError("Network error. Please try again.");
@@ -165,7 +229,11 @@ export default function ForgotPasswordPage() {
             <div className="space-y-1 text-center">
               <h2 className="text-2xl font-bold text-gray-900">Reset your password</h2>
               <p className="text-sm text-gray-600">
-                {step === 1 ? "Enter your account email and we will send you a reset code." : "Enter the code from your email and choose a new password."}
+                {step === 1
+                  ? "Enter your account email and we will send you a reset code."
+                  : step === 2
+                  ? "Enter the 6-digit code sent to your email."
+                  : "Your code is verified. Choose a new password."}
               </p>
             </div>
 
@@ -178,15 +246,64 @@ export default function ForgotPasswordPage() {
                 {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
                 <button type="submit" disabled={isSubmitting} className={`w-full rounded-lg bg-linear-to-r ${a.button} px-4 py-2.5 font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50`}>{isSubmitting ? "Sending..." : "Send reset code"}</button>
               </form>
-            ) : (
-              <form onSubmit={submitReset} className="space-y-4">
-                <div className="space-y-2">
-                  <label htmlFor="resetCode" className="block text-sm font-medium text-gray-700">Reset Code</label>
-                  <input id="resetCode" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="Enter 6-digit code" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} className="block w-full rounded-lg border border-primary-200 bg-primary-50/50 px-4 py-2.5 text-center text-lg tracking-[0.35em] text-gray-800 placeholder-gray-400/70 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30" />
-                  <button type="button" onClick={resendCode} disabled={resendCooldown > 0 || isSubmitting} className="text-sm font-medium text-primary-700 hover:text-primary-900 disabled:cursor-not-allowed disabled:text-gray-400">
+            ) : step === 2 ? (
+              <div className="space-y-5">
+                <p className="text-center text-sm leading-6 text-slate-600">
+                  We sent a reset code to <span className="font-medium text-slate-800">{email}</span>. It expires in 10 minutes.
+                </p>
+                <form onSubmit={verifyCode} className="space-y-5">
+                  <div className="space-y-2">
+                    <p id="resetCodeLabel" className="text-center text-sm font-medium text-slate-700">
+                      Verification code
+                    </p>
+                    <div className="grid grid-cols-6 gap-2" role="group" aria-labelledby="resetCodeLabel" aria-describedby={error ? "resetCodeError" : undefined}>
+                      {Array.from({ length: 6 }, (_, index) => (
+                        <input
+                          key={index}
+                          ref={(element) => { codeInputs.current[index] = element; }}
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete={index === 0 ? "one-time-code" : "off"}
+                          pattern="[0-9]*"
+                          maxLength={6}
+                          aria-label={`Digit ${index + 1}`}
+                          value={code[index] || ""}
+                          onChange={(event) => updateCodeDigit(index, event.target.value)}
+                          onPaste={handleCodePaste}
+                          onKeyDown={(event) => {
+                            if (event.key === "Backspace" && !code[index] && index > 0) {
+                              codeInputs.current[index - 1]?.focus();
+                            } else if (event.key === "ArrowLeft" && index > 0) {
+                              event.preventDefault();
+                              codeInputs.current[index - 1]?.focus();
+                            } else if (event.key === "ArrowRight" && index < 5) {
+                              event.preventDefault();
+                              codeInputs.current[index + 1]?.focus();
+                            }
+                          }}
+                          className="!h-12 min-w-0 rounded-xl border border-slate-200 bg-white px-0 text-center text-xl font-semibold tabular-nums text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  {error && <p id="resetCodeError" className="text-sm text-red-600" role="alert">{error}</p>}
+                  {message && <p className="text-center text-sm text-sky-800" role="status">{message}</p>}
+                  <button type="submit" disabled={isSubmitting || !/^\d{6}$/.test(code)} className={`w-full rounded-xl bg-linear-to-r ${a.button} px-4 py-3 font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50`}>
+                    {isSubmitting ? "Checking code..." : "Verify code"}
+                  </button>
+                </form>
+                <div className="flex flex-col items-center gap-3 text-sm">
+                  <button type="button" onClick={resendCode} disabled={resendCooldown > 0 || isSubmitting} className="font-semibold text-primary-700 hover:text-primary-900 disabled:cursor-not-allowed disabled:text-gray-400">
                     {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Resend code"}
                   </button>
+                  <button type="button" onClick={() => { setStep(1); setError(""); setMessage(""); }} className="font-medium text-slate-600 hover:text-slate-900">
+                    Change email address
+                  </button>
                 </div>
+              </div>
+            ) : (
+              <form onSubmit={submitReset} className="space-y-4">
+                {message && <p className="text-sm text-emerald-700" role="status">{message}</p>}
                 <div className="space-y-2">
                   <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700">New Password</label>
                   <div className="relative">
@@ -224,6 +341,9 @@ export default function ForgotPasswordPage() {
                   </div>
                 </div>
                 {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
+                <button type="button" onClick={() => { setStep(2); setError(""); setMessage(""); }} className="w-full text-center text-sm font-medium text-slate-600 hover:text-slate-900">
+                  Back to verification code
+                </button>
                 <button type="submit" disabled={isSubmitting} className={`w-full rounded-lg bg-linear-to-r ${a.button} px-4 py-2.5 font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50`}>{isSubmitting ? "Updating..." : "Reset password"}</button>
               </form>
             )}

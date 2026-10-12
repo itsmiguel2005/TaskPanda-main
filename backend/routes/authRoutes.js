@@ -14,6 +14,7 @@ const {
   handleLogout,
   handleVerifyAdminLogin,
   handleForgotPassword,
+  handleVerifyPasswordResetCode,
   handleResetPassword,
 } = require("../controllers/authController");
 const { body, query } = require("express-validator");
@@ -97,6 +98,10 @@ router.post("/admin-login/verify", limitAuthAttempts, [
   body("code").isString().matches(/^\d{6}$/),
 ], validateRequest, handleVerifyAdminLogin);
 router.post("/forgot-password", limitAuthAttempts, emailField(), validateRequest, handleForgotPassword);
+router.post("/forgot-password/verify-code", limitAuthAttempts, [
+  emailField(),
+  body("code").isString().matches(/^\d{6}$/),
+], validateRequest, handleVerifyPasswordResetCode);
 router.post("/reset-password", limitAuthAttempts, [
   emailField(),
   body("code").isString().matches(/^\d{6}$/),
