@@ -38,6 +38,17 @@ function limitAuthAttempts(req, res, next) {
 const limitRegistrationChecks = createRateLimiter(30);
 const limitLocationLookups = createRateLimiter(30, 60 * 1000, "Location lookup limit reached. Please wait a minute and try again.");
 const limitBookingCreation = createRateLimiter(10);
+const limitPhoneVerificationSends = createRateLimiter(
+  3,
+  15 * 60 * 1000,
+  "Too many verification codes requested. Please wait before trying again.",
+  {
+    identifier: "phone-verification-sends",
+    keyGenerator: (req) => req.user?._id
+      ? `user:${String(req.user._id)}`
+      : `ip:${ipKeyGenerator(req.ip)}`,
+  },
+);
 const limitVerificationUploads = createRateLimiter(
   10,
   60 * 60 * 1000,
@@ -64,4 +75,4 @@ const limitChatPhotoUploads = createRateLimiter(30, 15 * 60 * 1000);
 const limitTypingUpdates = createRateLimiter(60, 60 * 1000);
 const limitProfilePhotoUploads = createRateLimiter(30, 15 * 60 * 1000);
 
-module.exports = { createRateLimiter, limitAuthAttempts, limitRegistrationChecks, limitLocationLookups, limitBookingCreation, limitVerificationUploads, limitTesdaCertificateUploads, limitChatPhotoUploads, limitTypingUpdates, limitProfilePhotoUploads };
+module.exports = { createRateLimiter, limitAuthAttempts, limitRegistrationChecks, limitLocationLookups, limitBookingCreation, limitPhoneVerificationSends, limitVerificationUploads, limitTesdaCertificateUploads, limitChatPhotoUploads, limitTypingUpdates, limitProfilePhotoUploads };

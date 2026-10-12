@@ -98,6 +98,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    pendingMobileNumber: {
+      type: String,
+      select: false,
+    },
     phoneVerified: {
       type: Boolean,
       default: false,

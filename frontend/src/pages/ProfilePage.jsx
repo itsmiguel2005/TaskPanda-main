@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import ProfileSetupPanel from "../components/ProfileSetupPanel.jsx";
 import BambooStamp from "../components/BambooStamp.jsx";
+import PhoneVerificationPanel, { PhoneVerificationStatus } from "../components/PhoneVerificationPanel.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
 
@@ -404,9 +405,13 @@ export default function ProfilePage() {
                   </div>
                   <div>
                     <dt className="text-xs font-semibold uppercase tracking-wider text-slate-500">Mobile number</dt>
-                    <dd className="mt-1 text-sm font-medium text-slate-900">{user?.mobileNumber || "Not provided"}</dd>
+                    <dd className="mt-1 flex flex-wrap items-center gap-2 text-sm font-medium text-slate-900">
+                      <span>{user?.mobileNumber || "Not provided"}</span>
+                      <PhoneVerificationStatus verified={Boolean(user?.mobileNumber) && user?.phoneVerified === true} />
+                    </dd>
                   </div>
                 </dl>
+                <PhoneVerificationPanel />
               </section>
 
               <section className="dashboard-panel">

@@ -1,8 +1,13 @@
 const mongoose = require("mongoose");
+const config = require("../config/env");
 const User = require("../models/User");
 const { geocodeAddress } = require("../services/geocoder");
 const { uploadProfileImage } = require("../services/cloudinaryMedia");
 const { ensureReferralCode } = require("../services/rewards");
+const { generateLoginOtpCode, hashLoginOtpCode, timingSafeHexEqual } = require("../services/loginOtpSecurity");
+const { normalizePhilippinePhone, sendSms } = require("../utils/sendSms");
+
+const PHONE_OTP_TTL_MS = 5 * 60 * 1000;
 
 function profileFromUser(user) {
   return {
@@ -163,6 +168,145 @@ function handleGetVerificationStatus(req, res) {
   });
 }
 
+async function handleSendProfilePhoneOtp(req, res) {
+  try {
+    if (config.authOtpSecret.length < 32) {
+      return res.status(503).json({ message: "Phone verification is not configured." });
+    }
+
+    let phone;
+    try {
+      const internationalPhone = normalizePhilippinePhone(req.body.phone);
+      phone = internationalPhone.replace(/^\+639/, "09");
+    } catch {
+      return res.status(400).json({ message: "Enter a valid Philippine mobile number starting with 09." });
+    }
+    if (phone === req.user.mobileNumber && req.user.phoneVerified === true) {
+      return res.status(409).json({ message: "Your phone number is already verified." });
+    }
+
+    const phoneVariants = [phone, `+63${phone.slice(1)}`, `63${phone.slice(1)}`];
+    const existingPhone = await User.findOne({
+      mobileNumber: mongoose.trusted({ $in: phoneVariants }),
+      _id: mongoose.trusted({ $ne: req.user._id }),
+    }).select("_id");
+    if (existingPhone) {
+      return res.status(409).json({ message: "This phone number is already linked to another account." });
+    }
+
+    const otpCode = generateLoginOtpCode();
+    const phoneOtpHash = hashLoginOtpCode(otpCode, req.user._id, config.authOtpSecret);
+    const phoneOtpExpiresAt = new Date(Date.now() + PHONE_OTP_TTL_MS);
+    const saved = await User.updateOne(
+      { _id: req.user._id, mobileNumber: req.user.mobileNumber },
+      { $set: { pendingMobileNumber: phone, phoneOtpHash, phoneOtpExpiresAt, phoneOtpAttempts: 0 } },
+    );
+    if (!saved.matchedCount) {
+      return res.status(409).json({ message: "Your phone number changed. Refresh your profile and try again." });
+    }
+
+    try {
+      await sendSms(phone, otpCode);
+    } catch {
+      try {
+        await User.updateOne(
+          { _id: req.user._id, pendingMobileNumber: phone, phoneOtpHash },
+          { $unset: { pendingMobileNumber: 1, phoneOtpHash: 1, phoneOtpExpiresAt: 1, phoneOtpAttempts: 1 } },
+        );
+      } catch (cleanupError) {
+        console.error("Failed to clear profile phone code after SMS delivery failed:", cleanupError);
+      }
+      return res.status(502).json({ message: "We could not send the verification SMS. Check the number and try again." });
+    }
+
+    return res.status(200).json({ message: `A verification code was sent to ${phone}. Your current number stays active until verification.` });
+  } catch (error) {
+    console.error("Send profile phone verification code error:", error);
+    return res.status(500).json({ message: "Could not send a phone verification code. Please try again." });
+  }
+}
+
+async function handleVerifyProfilePhoneOtp(req, res) {
+  try {
+    if (config.authOtpSecret.length < 32) {
+      return res.status(503).json({ message: "Phone verification is not configured." });
+    }
+
+    const otpCode = String(req.body.otpCode || "").trim();
+    let phone;
+    try {
+      phone = normalizePhilippinePhone(req.body.phone).replace(/^\+639/, "09");
+    } catch {
+      return res.status(400).json({ message: "Enter the phone number that received the verification code." });
+    }
+    const user = await User.findOne({
+      _id: req.user._id,
+      pendingMobileNumber: phone,
+    }).select("+pendingMobileNumber +phoneOtpHash +phoneOtpExpiresAt +phoneOtpAttempts");
+    const now = new Date();
+    if (
+      !user?.phoneOtpHash ||
+      !user.phoneOtpExpiresAt ||
+      user.phoneOtpExpiresAt.getTime() <= now.getTime()
+    ) {
+      return res.status(400).json({ message: "The verification code is missing or expired. Request a new one." });
+    }
+
+    const submittedOtpHash = hashLoginOtpCode(otpCode, user._id, config.authOtpSecret);
+    if (!timingSafeHexEqual(user.phoneOtpHash, submittedOtpHash)) {
+      const attempt = await User.findOneAndUpdate(
+        {
+          _id: user._id,
+          pendingMobileNumber: phone,
+          phoneOtpHash: user.phoneOtpHash,
+          phoneOtpExpiresAt: mongoose.trusted({ $gt: now }),
+          phoneOtpAttempts: mongoose.trusted({ $lt: 5 }),
+        },
+        { $inc: { phoneOtpAttempts: 1 } },
+        { returnDocument: "after" },
+      ).select("+phoneOtpAttempts");
+      if (!attempt || attempt.phoneOtpAttempts >= 5) {
+        return res.status(429).json({ message: "Too many incorrect codes. Request a new verification code." });
+      }
+      return res.status(400).json({ message: "The verification code is incorrect." });
+    }
+
+    const phoneVariants = [phone, `+63${phone.slice(1)}`, `63${phone.slice(1)}`];
+    const existingPhone = await User.findOne({
+      mobileNumber: mongoose.trusted({ $in: phoneVariants }),
+      _id: mongoose.trusted({ $ne: user._id }),
+    }).select("_id");
+    if (existingPhone) {
+      return res.status(409).json({ message: "This phone number is already linked to another account." });
+    }
+
+    const verified = await User.updateOne(
+      {
+        _id: user._id,
+        pendingMobileNumber: phone,
+        mobileNumber: req.user.mobileNumber,
+        phoneOtpHash: user.phoneOtpHash,
+        phoneOtpExpiresAt: mongoose.trusted({ $gt: now }),
+        phoneOtpAttempts: mongoose.trusted({ $lt: 5 }),
+      },
+      {
+        $set: { mobileNumber: phone, phoneVerified: true },
+        $unset: { pendingMobileNumber: 1, phoneOtpHash: 1, phoneOtpExpiresAt: 1, phoneOtpAttempts: 1 },
+      },
+    );
+    if (!verified.matchedCount) {
+      return res.status(400).json({ message: "The verification code is invalid or expired. Request a new one." });
+    }
+
+    req.user.mobileNumber = phone;
+    req.user.phoneVerified = true;
+    return res.status(200).json({ message: "Your phone number is verified and saved.", phoneVerified: true, mobileNumber: phone });
+  } catch (error) {
+    console.error("Verify profile phone code error:", error);
+    return res.status(500).json({ message: "Could not verify your phone number. Please try again." });
+  }
+}
+
 async function handleUpdateProfile(req, res) {
   try {
     const user = req.user;
@@ -199,6 +343,12 @@ async function handleUpdateProfile(req, res) {
     }
     if (mobileNumber && !/^09\d{9}$/.test(mobileNumber)) {
       return res.status(400).json({ message: "Enter a valid 11-digit mobile number starting with 09.", field: "phone" });
+    }
+    if (mobileNumber !== user.mobileNumber) {
+      return res.status(400).json({
+        message: "Phone number changes are saved only after SMS verification. Request a code for the new number first.",
+        field: "phone",
+      });
     }
     if (address.length > 300) {
       return res.status(400).json({ message: "Location must be under 300 characters.", field: "location" });
@@ -251,12 +401,6 @@ async function handleUpdateProfile(req, res) {
     user.middleName = middleName;
     user.lastName = lastName;
     user.username = username;
-    if (mobileNumber !== user.mobileNumber) {
-      user.phoneVerified = false;
-      user.phoneOtpHash = undefined;
-      user.phoneOtpExpiresAt = undefined;
-      user.phoneOtpAttempts = undefined;
-    }
     user.mobileNumber = mobileNumber;
     user.address = address;
     user.geoLocation = geoLocation;
@@ -281,4 +425,4 @@ async function handleUpdateProfile(req, res) {
   }
 }
 
-module.exports = { handleGetProfile, handleGetVerificationStatus, handleCompleteOnboarding, handleUpdateDashboardPreferences, handleUpdateProviderPreferences, handleUpdateProfile, handleUploadProfilePhoto };
+module.exports = { handleGetProfile, handleGetVerificationStatus, handleSendProfilePhoneOtp, handleVerifyProfilePhoneOtp, handleCompleteOnboarding, handleUpdateDashboardPreferences, handleUpdateProviderPreferences, handleUpdateProfile, handleUploadProfilePhoto };

@@ -1,9 +1,9 @@
 const express = require("express");
 const { body } = require("express-validator");
 const { requireAuth, requireRole } = require("../middleware/requireAuth");
-const { handleGetProfile, handleGetVerificationStatus, handleCompleteOnboarding, handleUpdateDashboardPreferences, handleUpdateProfile, handleUploadProfilePhoto } = require("../controllers/profileController");
+const { handleGetProfile, handleGetVerificationStatus, handleSendProfilePhoneOtp, handleVerifyProfilePhoneOtp, handleCompleteOnboarding, handleUpdateDashboardPreferences, handleUpdateProfile, handleUploadProfilePhoto } = require("../controllers/profileController");
 const { validateRequest } = require("../middleware/validateRequest");
-const { limitProfilePhotoUploads } = require("../middleware/rateLimits");
+const { limitPhoneVerificationSends, limitProfilePhotoUploads } = require("../middleware/rateLimits");
 const uploadProfilePhoto = require("../storage/profilePhotoUpload");
 
 const router = express.Router();
@@ -11,6 +11,11 @@ const router = express.Router();
 router.use(requireAuth, requireRole("client", "provider"));
 router.get("/", handleGetProfile);
 router.get("/verification-status", handleGetVerificationStatus);
+router.post("/phone-verification/send", body("phone").isString().trim().notEmpty(), validateRequest, limitPhoneVerificationSends, handleSendProfilePhoneOtp);
+router.post("/phone-verification/verify", [
+	body("phone").isString().trim().notEmpty(),
+	body("otpCode").isString().matches(/^\d{6}$/),
+], validateRequest, handleVerifyProfilePhoneOtp);
 router.put("/onboarding", [
 	body("hasCompletedOnboarding")
 		.if((value, { req }) => req.user.role === "client")

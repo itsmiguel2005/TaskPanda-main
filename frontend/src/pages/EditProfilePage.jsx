@@ -3,8 +3,11 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import AccountLocationPicker from "../components/AccountLocationPicker.jsx";
+import PhilippineMobileInput from "../components/PhilippineMobileInput.jsx";
+import PhoneVerificationPanel, { PhoneVerificationStatus } from "../components/PhoneVerificationPanel.jsx";
 import ProfessionSelector from "../components/ProfessionSelector.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
+import { getPhilippineMobileInputValue } from "../utils/registrationValidation.js";
 
 const buildFullName = ({ firstName = "", middleName = "", lastName = "" } = {}) => [firstName, middleName, lastName].filter(Boolean).join(" ").trim();
 
@@ -26,7 +29,7 @@ const getFormFromUser = (user = {}) => {
     lastName: inferredLastName,
     username: user.username || "",
     email: user.email || "",
-    phone: user.mobileNumber || "",
+    phone: getPhilippineMobileInputValue(user.mobileNumber || ""),
     address: user.address || "",
     province: user.province || "",
     city: user.city || "",
@@ -47,7 +50,7 @@ function validateForm(form, role) {
     else if (!/^[A-Za-z0-9_.-]{3,30}$/.test(form.username) || /^\S+@\S+\.\S+$/.test(form.username)) errors.username = "Use 3-30 letters, numbers, dots, underscores, or hyphens";
   if (!form.email.trim()) errors.email = "Email is required";
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errors.email = "Invalid email format";
-  if (form.phone && !/^09\d{9}$/.test(form.phone)) errors.phone = "Enter an 11-digit number starting with 09";
+  if (form.phone && !/^9\d{9}$/.test(form.phone)) errors.phone = "Enter the 10 digits after +63, starting with 9.";
   if (!form.province || !form.city || !form.barangay) errors.location = "Confirm your barangay, city, and province.";
   else if (!Array.isArray(form.geoLocation?.coordinates) || form.geoLocation.coordinates.length !== 2) errors.location = "Pin your exact location on the map.";
   if (role === "provider" && !form.professions.some((profession) => profession.trim())) errors.professions = "Add at least one service you offer";
@@ -61,6 +64,7 @@ export default function EditProfilePage() {
   const profilePath = role === "provider" ? "/provider-profile" : "/profile";
   const [form, setForm] = useState(() => getFormFromUser());
   const [saved, setSaved] = useState(false);
+  const [savedMessage, setSavedMessage] = useState("Profile saved successfully!");
   const [isSavedToastFading, setIsSavedToastFading] = useState(false);
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState("");
@@ -86,10 +90,11 @@ export default function EditProfilePage() {
     setSaved(false);
   };
 
-  const showSavedToast = () => {
+  const showSavedToast = (message = "Profile saved successfully!") => {
     window.clearTimeout(savedToastTimersRef.current.fade);
     window.clearTimeout(savedToastTimersRef.current.hide);
     setSaved(true);
+    setSavedMessage(message);
     setIsSavedToastFading(false);
     savedToastTimersRef.current.fade = window.setTimeout(() => setIsSavedToastFading(true), 2300);
     savedToastTimersRef.current.hide = window.setTimeout(() => setSaved(false), 3000);
@@ -206,6 +211,12 @@ export default function EditProfilePage() {
     setPhotoError("");
   };
 
+  const handlePhoneVerified = (verifiedPhone) => {
+    const savedForm = getFormFromUser(user);
+    savedForm.phone = getPhilippineMobileInputValue(verifiedPhone);
+    initialFormRef.current = JSON.stringify(comparableForm(savedForm));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (isSaving || (!dirty && !selectedPhoto)) return;
@@ -232,7 +243,7 @@ export default function EditProfilePage() {
           middleName: form.middleName,
           lastName: form.lastName,
           username: form.username,
-          mobileNumber: form.phone,
+          mobileNumber: user?.mobileNumber || "",
           address: form.address,
           province: form.province,
           city: form.city,
@@ -283,10 +294,13 @@ export default function EditProfilePage() {
       updateUser(savedUser);
       setLocationError(data.locationWarning || "");
       const savedForm = getFormFromUser(savedUser);
-      setForm(savedForm);
+      setForm({ ...savedForm, phone: form.phone });
       initialFormRef.current = JSON.stringify(comparableForm(savedForm));
-      setDirty(false);
-      showSavedToast();
+      showSavedToast(
+        `0${form.phone}` === (savedUser.mobileNumber || "")
+          ? "Profile saved successfully!"
+          : "Profile details saved. Verify the new phone number to apply it.",
+      );
     } catch {
       setServerError("Network error. Please try again.");
     } finally {
@@ -448,16 +462,30 @@ export default function EditProfilePage() {
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Phone</label>
-            <input
-              type="tel"
-              name="phone"
+            <PhilippineMobileInput
+              id="profile-phone"
               value={form.phone}
-              onChange={handleChange}
-              className="mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-              style={{ borderColor: errors.phone ? "#ef4444" : "#e5e7eb" }}
+              label="Phone"
+              rightSlot={(
+                <PhoneVerificationStatus
+                  verified={Boolean(form.phone) && `0${form.phone}` === user?.mobileNumber && user?.phoneVerified === true}
+                />
+              )}
+              onChange={(value) => {
+                setForm((previous) => ({ ...previous, phone: value }));
+                setServerError("");
+                setErrors((previous) => {
+                  const next = { ...previous };
+                  delete next.phone;
+                  return next;
+                });
+              }}
             />
             {errors.phone && <p className="mt-1 text-xs text-red-500">{errors.phone}</p>}
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              Phone changes are saved only after you verify the new number by SMS.
+            </p>
+            <PhoneVerificationPanel phone={form.phone ? `0${form.phone}` : ""} onVerified={handlePhoneVerified} />
           </div>
 
           <div>
@@ -520,7 +548,7 @@ export default function EditProfilePage() {
       {saved && (
         <div className={`fixed bottom-5 right-5 z-50 flex max-w-[calc(100vw-2.5rem)] items-center gap-3 rounded-lg border border-green-200 bg-white px-4 py-3 text-sm text-green-800 shadow-lg transition-opacity duration-500 ${isSavedToastFading ? "opacity-0" : "opacity-100"}`} role="status" aria-live="polite">
           <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-100 text-xs font-bold text-green-700">✓</span>
-          <p className="flex-1 font-semibold">Profile saved successfully!</p>
+          <p className="flex-1 font-semibold">{savedMessage}</p>
           <button type="button" onClick={dismissSavedToast} className="text-green-600 hover:text-green-900" aria-label="Dismiss notification">×</button>
         </div>
       )}

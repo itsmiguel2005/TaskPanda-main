@@ -1,6 +1,6 @@
 import { getPhilippineMobileInputValue } from "../utils/registrationValidation.js";
 
-export default function PhilippineMobileInput({ id, value, onChange, theme = "primary" }) {
+export default function PhilippineMobileInput({ id, value, onChange, theme = "primary", label = "Mobile Number", rightSlot = null }) {
   const styles = theme === "green"
     ? {
         border: "border-green-200",
@@ -17,7 +17,10 @@ export default function PhilippineMobileInput({ id, value, onChange, theme = "pr
 
   return (
     <div className="space-y-2">
-      <label htmlFor={id} className="block text-sm font-medium text-gray-700">Mobile Number</label>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <label htmlFor={id} className="block text-sm font-medium text-gray-700">{label}</label>
+        {rightSlot}
+      </div>
       <div className={`flex overflow-hidden rounded-lg border ${styles.border} ${styles.background} transition focus-within:ring-2 ${styles.focus}`}>
         <span aria-hidden="true" className={`flex items-center border-r border-inherit px-3 text-sm font-semibold ${styles.prefix}`}>+63</span>
         <input
