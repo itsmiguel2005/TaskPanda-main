@@ -1,5 +1,5 @@
 const bcrypt = require("bcryptjs");
-const { createHash, randomBytes, randomInt } = require("crypto");
+const { createHash, randomBytes, randomInt, randomUUID } = require("crypto");
 const mongoose = require("mongoose");
 const { waitUntil } = require("@vercel/functions");
 const User = require("../models/User");
@@ -12,6 +12,7 @@ const { createReferralCode, creditReferralRewards } = require("../services/rewar
 const {
   hasValidSmtpCredentials,
   sendAdminLoginOtpEmail,
+  sendOtpEmail,
   sendEmailVerificationEmail,
   sendPasswordResetEmail,
 } = require("../services/mailer");
@@ -26,6 +27,13 @@ const {
   consumeAdminRateLimit,
 } = require("../services/adminLoginSecurity");
 const {
+  generateLoginOtpCode,
+  hashLoginOtpCode,
+  signPreAuthToken,
+  verifyPreAuthToken,
+  timingSafeHexEqual: timingSafeOtpHexEqual,
+} = require("../services/loginOtpSecurity");
+const {
   getLoginLock,
   recordFailedLogin,
   clearLoginAttempts,
@@ -35,7 +43,81 @@ const {
 const hashToken = (token) => createHash("sha256").update(token).digest("hex");
 const registrationSessionCookie = "taskpanda_registration";
 const ADMIN_LOGIN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const LOGIN_OTP_TTL_MS = 5 * 60 * 1000;
+const TRUSTED_DEVICE_TTL_SECONDS = 30 * 24 * 60 * 60;
+const TRUSTED_DEVICE_COOKIE = "taskpanda_device_trust";
 const personNamePattern = /^[\p{L}\p{M}]+(?:[ .'-][\p{L}\p{M}]+)*$/u;
+
+function getRequestCookie(req, name) {
+  const parsedCookie = req.cookies?.[name];
+  if (typeof parsedCookie === "string" && parsedCookie) return parsedCookie;
+  const cookieHeader = String(req.get("cookie") || "");
+  const encodedName = `${name}=`;
+  const match = cookieHeader.split(";").map((part) => part.trim()).find((part) => part.startsWith(encodedName));
+  return match ? match.slice(encodedName.length) : "";
+}
+
+function getDeviceName(req) {
+  const userAgent = String(req.get("user-agent") || "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return userAgent.slice(0, 120) || "Unknown device";
+}
+
+function getPreAuthToken(req) {
+  const authorization = String(req.get("authorization") || "");
+  const match = authorization.match(/^Bearer\s+(\S+)$/i);
+  return match ? match[1] : "";
+}
+
+function getLoginUserPayload(user) {
+  return {
+    id: user._id,
+    email: user.email,
+    username: user.username,
+    fullName: user.fullName,
+    firstName: user.firstName,
+    middleName: user.middleName,
+    lastName: user.lastName,
+    mobileNumber: user.mobileNumber,
+    province: user.province,
+    city: user.city,
+    barangay: user.barangay,
+    address: user.address,
+    geoLocation: user.geoLocation,
+    professions: user.professions,
+    bio: user.bio,
+    profileImage: user.profileImage || "",
+    createdAt: user.createdAt,
+    role: user.role,
+    isVerified: user.isVerified === true,
+    verificationStatus: user.verificationStatus || "unverified",
+    emailVerified: user.emailVerified !== false,
+    registrationComplete: user.registrationComplete !== false,
+  };
+}
+
+function sendTrustedDeviceCookie(res, token) {
+  res.append(
+    "Set-Cookie",
+    `${TRUSTED_DEVICE_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=${TRUSTED_DEVICE_TTL_SECONDS}`
+  );
+}
+
+async function findPreAuthUser(req) {
+  const tokenPayload = verifyPreAuthToken(getPreAuthToken(req), config.authOtpSecret);
+  if (!tokenPayload || !mongoose.isValidObjectId(tokenPayload.sub)) return null;
+  return User.findOne({
+    _id: tokenPayload.sub,
+    role: mongoose.trusted({ $in: ["client", "provider"] }),
+    registrationComplete: true,
+    isSuspended: mongoose.trusted({ $ne: true }),
+    archivedAt: mongoose.trusted({ $exists: false }),
+    otpExpiresAt: mongoose.trusted({ $gt: new Date() }),
+    otpAttempts: mongoose.trusted({ $lt: 5 }),
+  }).select("+otpHash +otpExpiresAt +otpAttempts");
+}
 
 function normalizePhilippineMobile(value) {
   if (/^09\d{9}$/.test(value)) return value;
@@ -70,6 +152,24 @@ function sendAdminPushAlertInBackground(options, warningMessage) {
   } else {
     setImmediate(() => {
       void sendAlert();
+    });
+  }
+}
+
+function sendLoginOtpEmailInBackground(user, otpCode, context) {
+  const deliverEmail = async () => {
+    try {
+      await sendOtpEmail(user.email, otpCode, user.fullName || user.firstName || user.username);
+    } catch (error) {
+      console.error(`${context} email could not be sent:`, error.message);
+    }
+  };
+
+  if (process.env.VERCEL) {
+    waitUntil(deliverEmail());
+  } else {
+    setImmediate(() => {
+      void deliverEmail();
     });
   }
 }
@@ -927,7 +1027,8 @@ async function handleLogin(req, res) {
       });
     }
 
-    const user = await User.findOne({ $or: [{ email: normalizedIdentifier }, { username: identifier }] });
+    const user = await User.findOne({ $or: [{ email: normalizedIdentifier }, { username: identifier }] })
+      .select("+trustedDevices");
     if (!user) {
       const attempt = recordFailedLogin(normalizedIdentifier);
       if (attempt.lockedUntil) return loginLockResponse(res, attempt);
@@ -989,38 +1090,182 @@ async function handleLogin(req, res) {
       }
     }
 
+    const presentedDeviceToken = getRequestCookie(req, TRUSTED_DEVICE_COOKIE);
+    const presentedDeviceTokenHash = presentedDeviceToken ? hashToken(presentedDeviceToken) : "";
+    const isTrustProtectedRole = ["client", "provider"].includes(user.role);
+    let trustedDevice = isTrustProtectedRole && presentedDeviceTokenHash && (user.trustedDevices || []).find((device) =>
+      timingSafeOtpHexEqual(device.deviceTokenHash, presentedDeviceTokenHash)
+      && new Date(device.lastLoginAt).getTime() > Date.now() - TRUSTED_DEVICE_TTL_SECONDS * 1000
+    );
+    if (trustedDevice) {
+      const now = new Date();
+      const trustExpiresAfter = new Date(now.getTime() - TRUSTED_DEVICE_TTL_SECONDS * 1000);
+      const updatedDevice = await User.updateOne(
+        {
+          _id: user._id,
+          trustedDevices: mongoose.trusted({
+            $elemMatch: {
+              deviceTokenHash: presentedDeviceTokenHash,
+              lastLoginAt: mongoose.trusted({ $gt: trustExpiresAfter }),
+            },
+          }),
+        },
+        { $set: { "trustedDevices.$.lastLoginAt": now } },
+      );
+      if (!updatedDevice.matchedCount) trustedDevice = null;
+    }
+    if (isTrustProtectedRole && !trustedDevice) {
+      if (config.authOtpSecret.length < 32 || !hasValidSmtpCredentials) {
+        return res.status(503).json({ message: "Email sign-in verification is not configured." });
+      }
+
+      const otpCode = generateLoginOtpCode();
+      const otpHash = hashLoginOtpCode(otpCode, user._id, config.authOtpSecret);
+      await User.updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            otpHash,
+            otpExpiresAt: new Date(Date.now() + LOGIN_OTP_TTL_MS),
+            otpAttempts: 0,
+          },
+        },
+      );
+      sendLoginOtpEmailInBackground(user, otpCode, "Sign-in verification");
+
+      clearLoginAttempts(normalizedIdentifier);
+      return res.json({
+        message: "Your verification code is on its way to your email.",
+        requiresOtp: true,
+        preAuthToken: signPreAuthToken(user._id, config.authOtpSecret),
+        role: user.role,
+      });
+    }
+
+    if (trustedDevice) sendTrustedDeviceCookie(res, presentedDeviceToken);
     clearLoginAttempts(normalizedIdentifier);
     const accountToken = await issueAccountToken(user._id);
     return res.json({
       message: "Login successful.", token: accountToken, role: user.role,
-      user: {
-        id: user._id,
-        email: user.email,
-        username: user.username,
-        fullName: user.fullName,
-        firstName: user.firstName,
-        middleName: user.middleName,
-        lastName: user.lastName,
-        mobileNumber: user.mobileNumber,
-        province: user.province,
-        city: user.city,
-        barangay: user.barangay,
-        address: user.address,
-        geoLocation: user.geoLocation,
-        professions: user.professions,
-        bio: user.bio,
-        profileImage: user.profileImage || "",
-        createdAt: user.createdAt,
-        role: user.role,
-        isVerified: user.isVerified === true,
-        verificationStatus: user.verificationStatus || "unverified",
-        emailVerified: user.emailVerified !== false,
-        registrationComplete: user.registrationComplete !== false,
-      },
+      user: getLoginUserPayload(user),
     });
   } catch (error) {
     console.error("Login error:", error);
     return res.status(500).json({ message: "Login failed. Please try again." });
+  }
+}
+
+async function handleVerifyLoginOtp(req, res) {
+  try {
+    if (config.authOtpSecret.length < 32) {
+      return res.status(503).json({ message: "Email sign-in verification is not configured." });
+    }
+
+    const otpCode = String(req.body.otpCode || "").trim();
+    if (!/^\d{6}$/.test(otpCode)) {
+      return res.status(400).json({ message: "Enter the 6-digit verification code." });
+    }
+
+    const user = await findPreAuthUser(req);
+    if (!user?.otpHash) {
+      return res.status(400).json({ message: "The verification code is invalid or expired. Sign in again to request a new one." });
+    }
+    const submittedOtpHash = hashLoginOtpCode(otpCode, user._id, config.authOtpSecret);
+    if (!timingSafeOtpHexEqual(user.otpHash, submittedOtpHash)) {
+      const attempt = await User.findOneAndUpdate(
+        {
+          _id: user._id,
+          otpHash: user.otpHash,
+          otpExpiresAt: mongoose.trusted({ $gt: new Date() }),
+          otpAttempts: mongoose.trusted({ $lt: 5 }),
+        },
+        { $inc: { otpAttempts: 1 } },
+        { returnDocument: "after" },
+      ).select("+otpAttempts");
+      if (!attempt || attempt.otpAttempts >= 5) {
+        return res.status(429).json({ message: "Too many incorrect codes. Sign in again to request a new one." });
+      }
+      return res.status(400).json({ message: "The verification code is incorrect." });
+    }
+
+    const rememberDevice = req.body.rememberDevice === true;
+    const deviceToken = rememberDevice ? randomUUID() : "";
+    const now = new Date();
+    const update = {
+      $unset: { otpHash: 1, otpExpiresAt: 1, otpAttempts: 1 },
+    };
+    if (rememberDevice) {
+      update.$push = {
+        trustedDevices: {
+          $each: [{
+            deviceTokenHash: hashToken(deviceToken),
+            deviceName: getDeviceName(req),
+            lastLoginAt: now,
+          }],
+          $slice: -10,
+        },
+      };
+    }
+    const consumedOtp = await User.findOneAndUpdate(
+      {
+        _id: user._id,
+        otpHash: submittedOtpHash,
+        otpExpiresAt: mongoose.trusted({ $gt: now }),
+        otpAttempts: mongoose.trusted({ $lt: 5 }),
+        isSuspended: mongoose.trusted({ $ne: true }),
+        archivedAt: mongoose.trusted({ $exists: false }),
+      },
+      update,
+      { returnDocument: "after" },
+    );
+    if (!consumedOtp) {
+      return res.status(400).json({ message: "The verification code is invalid or expired. Sign in again to request a new one." });
+    }
+    if (rememberDevice) sendTrustedDeviceCookie(res, deviceToken);
+
+    const accountToken = await issueAccountToken(consumedOtp._id);
+    return res.json({
+      message: "Login successful.",
+      token: accountToken,
+      role: consumedOtp.role,
+      user: getLoginUserPayload(consumedOtp),
+    });
+  } catch (error) {
+    console.error("Sign-in code verification error:", error);
+    return res.status(500).json({ message: "Could not verify the sign-in code. Please try again." });
+  }
+}
+
+async function handleResendLoginOtp(req, res) {
+  try {
+    if (config.authOtpSecret.length < 32 || !hasValidSmtpCredentials) {
+      return res.status(503).json({ message: "Email sign-in verification is not configured." });
+    }
+
+    const user = await findPreAuthUser(req);
+    if (!user?.otpHash) {
+      return res.status(400).json({ message: "This verification request has expired. Sign in again to request a new code." });
+    }
+    const otpCode = generateLoginOtpCode();
+    const otpHash = hashLoginOtpCode(otpCode, user._id, config.authOtpSecret);
+    const expiresAt = new Date(Date.now() + LOGIN_OTP_TTL_MS);
+    const updated = await User.updateOne(
+      {
+        _id: user._id,
+        otpHash: user.otpHash,
+        otpExpiresAt: mongoose.trusted({ $gt: new Date() }),
+        otpAttempts: mongoose.trusted({ $lt: 5 }),
+      },
+      { $set: { otpHash, otpExpiresAt: expiresAt, otpAttempts: 0 } },
+    );
+    if (!updated.modifiedCount) {
+      return res.status(400).json({ message: "This verification request has expired. Sign in again to request a new code." });
+    }
+    sendLoginOtpEmailInBackground(user, otpCode, "Resent sign-in verification");
+    return res.json({ message: "Your new verification code is on its way to your email." });
+  } catch (error) {
+    console.error("Resend sign-in code error:", error);
+    return res.status(500).json({ message: "Could not resend the verification code. Please try again." });
   }
 }
 
@@ -1192,6 +1437,8 @@ module.exports = {
   handleResendVerification,
   handleCompleteRegistration,
   handleLogin,
+  handleVerifyLoginOtp,
+  handleResendLoginOtp,
   handleLogout,
   handleVerifyAdminLogin,
   handleForgotPassword,

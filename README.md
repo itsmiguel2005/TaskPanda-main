@@ -67,6 +67,8 @@ ADMIN_PASSWORD=change-this-password
 # Required for admin login email verification
 ADMIN_OTP_EMAIL=admin-security@example.com
 ADMIN_OTP_SECRET=generate-a-random-secret-of-at-least-32-characters
+# Optional; falls back to ADMIN_OTP_SECRET if omitted
+AUTH_OTP_SECRET=generate-a-different-random-secret-of-at-least-32-characters
 
 # SMTP sends registration verification, password reset, and admin sign-in OTP emails
 SMTP_HOST=smtp.gmail.com
@@ -110,7 +112,7 @@ Urgent admin broadcasts are stored for clients and providers in the in-app notif
 - **Request validation:** `express-validator` checks authentication, profile, and booking inputs. Booking, provider, conversation, revision, and offer IDs are validated before database use. Mongoose schemas enforce field types, enums, ranges, and required values.
 - **Request size limits:** JSON and URL-encoded bodies are limited to 10KB, with at most 100 URL-encoded parameters. Multipart uploads are limited to 5MB per file, five files, 40 fields, 10KB per field, and 45 total parts.
 - **Rate limiting:** Authentication endpoints are limited to 10 requests per IP per 15 minutes; registration availability checks to 30 per 15 minutes; booking creation to 10 per 15 minutes; and verification uploads to five per hour. Login also has account-based failed-attempt lockouts.
-- **Authentication and sessions:** Passwords and reset codes are hashed with bcrypt. Email-verification and onboarding tokens are random, stored as hashes, and expire. Account sessions use random 32-byte opaque bearer tokens stored as hashes with 30-day expiry; this app does not use JWTs or require a `JWT_SECRET`. The registration-session cookie is `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
+- **Authentication and sessions:** Passwords and reset codes are hashed with bcrypt. Email-verification and onboarding tokens are random, stored as hashes, and expire. Account sessions use random 32-byte opaque bearer tokens stored as hashes with 30-day expiry. Client/provider sign-ins from untrusted devices require a five-minute email OTP; the OTP is HMAC-hashed and its narrowly scoped pre-auth JWT is signed with `AUTH_OTP_SECRET` (or `ADMIN_OTP_SECRET` when no separate secret is configured). Trusted-device cookies are HTTP-only, secure, `SameSite=Lax`, renewed at sign-in, and expire after 30 days of inactivity. The registration-session cookie is `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
 - **Admin sign-in:** Admin credentials require a second six-digit email code sent to `ADMIN_OTP_EMAIL`. Challenges expire after five minutes, are usable once, and lock after five invalid attempts. Codes are HMAC-hashed with `ADMIN_OTP_SECRET`; admin credential, email-send, and verification limits are stored in MongoDB and shared across instances.
 - **Authorization:** Server middleware restricts profile, booking, messaging, favorites, and verification routes by role. Booking and conversation handlers also check participant ownership before access or updates.
 - **Safer error responses:** Unexpected server and database failures return generic messages rather than stack traces or raw database errors. Unknown `/api` paths return JSON 404 responses.
@@ -130,6 +132,7 @@ ADMIN_EMAIL=your-admin-email
 ADMIN_PASSWORD=your-strong-admin-password
 ADMIN_OTP_EMAIL=your-admin-security-email
 ADMIN_OTP_SECRET=<at-least-32-random-characters>
+AUTH_OTP_SECRET=<a-different-at-least-32-random-characters>
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_SECURE=false

@@ -18,6 +18,8 @@ const authPaths = [
   "/resend-verification",
   "/complete-registration",
   "/login",
+  "/verify-otp",
+  "/resend-otp",
   "/forgot-password",
   "/reset-password",
 ];

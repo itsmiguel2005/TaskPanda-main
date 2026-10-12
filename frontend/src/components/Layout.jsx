@@ -26,7 +26,7 @@ const accentClasses = {
   },
 };
 
-export default function Layout({ theme = "primary", children }) {
+export default function Layout({ theme = "primary", focusContent = false, children }) {
   const a = accentClasses[theme];
   return (
     <div className="auth-shell bg-white text-gray-800 antialiased">
@@ -77,22 +77,27 @@ export default function Layout({ theme = "primary", children }) {
         }
       `}</style>
       <Header logoColor={theme === "green" ? "text-emerald-700" : "text-sky-700"} />
-      <main className="auth-main grid min-h-screen grid-cols-1 gap-6 bg-white lg:h-screen lg:grid-cols-2 lg:gap-0" data-theme={theme}>
-        <section className={`relative isolate ${a.body} h-full min-h-0 flex flex-col items-center justify-end gap-6 overflow-hidden px-6 pt-16 pb-0 text-center md:pt-20 lg:text-left lg:px-8 lg:pt-12 xl:gap-8 xl:pt-20`}>
-          <div className="mb-10 lg:mb-12">
-            <h1
-              className="font-extrabold leading-tight tracking-tight text-gray-900 text-3xl sm:text-4xl md:text-5xl xl:text-6xl"
-            >
-              Connect with skilled<br className="hidden sm:block" />local tradespeople
-            </h1>
-            <p className="mt-6 max-w-md text-lg/relaxed text-gray-600 md:text-xl">
-              TaskPanda bridges local homeowners and independent mechanics,
-              plumbers, electricians, etc. with AI-quick matching.
-            </p>
-          </div>
-          <Mascot theme={theme} />
-        </section>
-        <div className="auth-form-area h-full min-w-0 bg-white">
+      <main
+        className={`auth-main grid min-h-screen grid-cols-1 bg-white ${focusContent ? "" : "gap-6 lg:h-screen lg:grid-cols-2 lg:gap-0"}`}
+        data-theme={theme}
+      >
+        {!focusContent && (
+          <section className={`relative isolate ${a.body} h-full min-h-0 flex flex-col items-center justify-end gap-6 overflow-hidden px-6 pt-16 pb-0 text-center md:pt-20 lg:text-left lg:px-8 lg:pt-12 xl:gap-8 xl:pt-20`}>
+            <div className="mb-10 lg:mb-12">
+              <h1
+                className="font-extrabold leading-tight tracking-tight text-gray-900 text-3xl sm:text-4xl md:text-5xl xl:text-6xl"
+              >
+                Connect with skilled<br className="hidden sm:block" />local tradespeople
+              </h1>
+              <p className="mt-6 max-w-md text-lg/relaxed text-gray-600 md:text-xl">
+                TaskPanda bridges local homeowners and independent mechanics,
+                plumbers, electricians, etc. with AI-quick matching.
+              </p>
+            </div>
+            <Mascot theme={theme} />
+          </section>
+        )}
+        <div className={`auth-form-area min-w-0 bg-white ${focusContent ? "min-h-screen" : "h-full"}`}>
           {typeof children === "function" ? children(a) : children}
         </div>
       </main>

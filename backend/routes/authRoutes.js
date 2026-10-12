@@ -9,6 +9,8 @@ const {
   handleResendVerification,
   handleCompleteRegistration,
   handleLogin,
+  handleVerifyLoginOtp,
+  handleResendLoginOtp,
   handleLogout,
   handleVerifyAdminLogin,
   handleForgotPassword,
@@ -84,6 +86,11 @@ router.post("/verify-email", limitAuthAttempts, body("token").isString().matches
 router.post("/resend-verification", limitAuthAttempts, emailField(), validateRequest, handleResendVerification);
 router.post("/complete-registration", limitAuthAttempts, completionValidation, validateRequest, handleCompleteRegistration);
 router.post("/login", limitAuthAttempts, loginValidation, validateRequest, handleLogin);
+router.post("/verify-otp", limitAuthAttempts, [
+  body("otpCode").isString().matches(/^\d{6}$/),
+  body("rememberDevice").optional().isBoolean(),
+], validateRequest, handleVerifyLoginOtp);
+router.post("/resend-otp", limitAuthAttempts, handleResendLoginOtp);
 router.post("/logout", requireAuth, requireRole("client", "provider"), handleLogout);
 router.post("/admin-login/verify", limitAuthAttempts, [
   body("challengeToken").isString().matches(/^[a-f\d]{64}$/i),

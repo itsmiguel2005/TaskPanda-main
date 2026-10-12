@@ -1,5 +1,5 @@
 import { apiFetch } from "../services/api.js";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import SocialButton from "../components/SocialButton.jsx";
@@ -16,6 +16,12 @@ export default function LoginPage() {
   const location = useLocation();
   const { login, logout } = useAuth();
   const [formData, setFormData] = useState({ email: "", password: "", remember: true });
+  const [loginOtpToken, setLoginOtpToken] = useState("");
+  const [loginOtpRole, setLoginOtpRole] = useState("client");
+  const [loginOtp, setLoginOtp] = useState("");
+  const [rememberDevice, setRememberDevice] = useState(false);
+  const [resendSeconds, setResendSeconds] = useState(0);
+  const loginOtpInputs = useRef([]);
   const [adminChallengeToken, setAdminChallengeToken] = useState("");
   const [adminOtp, setAdminOtp] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -89,6 +95,20 @@ export default function LoginPage() {
     return () => window.clearInterval(countdownTimer);
   }, [lockoutSeconds]);
 
+  useEffect(() => {
+    if (!loginOtpToken) return undefined;
+    loginOtpInputs.current[0]?.focus();
+    return undefined;
+  }, [loginOtpToken]);
+
+  useEffect(() => {
+    if (!loginOtpToken || resendSeconds <= 0) return undefined;
+    const countdownTimer = window.setInterval(() => {
+      setResendSeconds((remaining) => Math.max(0, remaining - 1));
+    }, 1000);
+    return () => window.clearInterval(countdownTimer);
+  }, [loginOtpToken, resendSeconds]);
+
   const errors = {
     email:
       !formData.email.trim()
@@ -118,6 +138,7 @@ export default function LoginPage() {
     try {
       const response = await apiFetch("/api/auth/login", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: formData.email,
@@ -148,6 +169,15 @@ export default function LoginPage() {
         setServerError("");
         return;
       }
+      if (response.ok && data.requiresOtp) {
+        setLoginOtpToken(data.preAuthToken || "");
+        setLoginOtpRole(data.role === "provider" ? "provider" : "client");
+        setLoginOtp("");
+        setRememberDevice(false);
+        setResendSeconds(60);
+        setServerError("");
+        return;
+      }
       if (response.ok) {
         const loggedInUser = data.user || { email: formData.email, role: data.role || "client" };
         login({ ...loggedInUser, role: data.role || loggedInUser.role || "client" }, data.token, formData.remember);
@@ -173,6 +203,90 @@ export default function LoginPage() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleLoginOtpSubmit = async (event) => {
+    event.preventDefault();
+    setServerError("");
+    if (!/^\d{6}$/.test(loginOtp)) {
+      setServerError("Enter the 6-digit verification code.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await apiFetch("/api/auth/verify-otp", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${loginOtpToken}`,
+        },
+        body: JSON.stringify({ otpCode: loginOtp, rememberDevice }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setServerError(data.message || "Unable to verify the sign-in code.");
+        return;
+      }
+
+      const loggedInUser = data.user || { email: formData.email, role: loginOtpRole };
+      const role = data.role || loggedInUser.role || loginOtpRole;
+      login({ ...loggedInUser, role }, data.token, formData.remember);
+      navigate(role === "provider" ? "/provider-dashboard" : "/dashboard");
+    } catch {
+      setServerError("Network error. Please check your connection and try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleResendLoginOtp = async () => {
+    setServerError("");
+    setIsSubmitting(true);
+    try {
+      const response = await apiFetch("/api/auth/resend-otp", {
+        method: "POST",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${loginOtpToken}` },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setServerError(data.message || "Unable to resend the sign-in code.");
+        return;
+      }
+      setLoginOtp("");
+      setResendSeconds(60);
+      loginOtpInputs.current[0]?.focus();
+    } catch {
+      setServerError("Network error. Please check your connection and try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const updateLoginOtpDigit = (index, rawValue) => {
+    const digits = rawValue.replace(/\D/g, "");
+    if (digits.length > 1) {
+      const nextOtp = digits.slice(0, 6);
+      setLoginOtp(nextOtp);
+      loginOtpInputs.current[Math.min(nextOtp.length, 5)]?.focus();
+      return;
+    }
+    setLoginOtp((current) => {
+      const next = current.padEnd(6, " ").split("");
+      next[index] = digits || " ";
+      return next.join("").trimEnd();
+    });
+    if (digits && index < 5) loginOtpInputs.current[index + 1]?.focus();
+  };
+
+  const handleLoginOtpPaste = (event) => {
+    event.preventDefault();
+    const digits = event.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (!digits) return;
+    setLoginOtp(digits);
+    loginOtpInputs.current[Math.min(digits.length, 5)]?.focus();
   };
 
   const handleAdminOtpSubmit = async (event) => {
@@ -223,12 +337,111 @@ export default function LoginPage() {
   };
 
   return (
-    <Layout theme="primary">
+    <Layout theme={loginOtpToken && loginOtpRole === "provider" ? "green" : "primary"}>
       {(a) => (
         <>
         <section className="flex items-center justify-center bg-white px-6 pt-16 pb-6 lg:h-full sm:px-8 md:pt-20">
           <div className="w-full max-w-sm space-y-6">
-            {adminChallengeToken ? (
+            {loginOtpToken ? (
+              <div className="space-y-6">
+                <div className="space-y-2 text-center">
+                  <div className={`mx-auto flex h-12 w-12 items-center justify-center rounded-full ${loginOtpRole === "provider" ? "bg-emerald-50 text-emerald-700" : "bg-sky-50 text-sky-700"}`} aria-hidden="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="5" width="18" height="14" rx="2" />
+                      <path d="m3 7 9 6 9-6" />
+                    </svg>
+                  </div>
+                  <h2 className="font-bold text-2xl text-slate-900">Check your email</h2>
+                  <p className="text-sm leading-6 text-slate-600">
+                    Enter the 6-digit sign-in code on its way to your email. It expires in 5 minutes.
+                  </p>
+                </div>
+
+                <form onSubmit={handleLoginOtpSubmit} className="space-y-5">
+                  <div className="space-y-2">
+                    <p id="loginOtpLabel" className="text-center text-sm font-medium text-slate-700">
+                      Verification code
+                    </p>
+                    <div className="grid grid-cols-6 gap-2" role="group" aria-labelledby="loginOtpLabel">
+                      {Array.from({ length: 6 }, (_, index) => (
+                        <input
+                          key={index}
+                          ref={(element) => { loginOtpInputs.current[index] = element; }}
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete={index === 0 ? "one-time-code" : "off"}
+                          pattern="[0-9]*"
+                          maxLength={6}
+                          aria-label={`Digit ${index + 1}`}
+                          value={loginOtp[index] || ""}
+                          onChange={(event) => updateLoginOtpDigit(index, event.target.value)}
+                          onPaste={handleLoginOtpPaste}
+                          onKeyDown={(event) => {
+                            if (event.key === "Backspace" && !loginOtp[index] && index > 0) {
+                              loginOtpInputs.current[index - 1]?.focus();
+                            } else if (event.key === "ArrowLeft" && index > 0) {
+                              event.preventDefault();
+                              loginOtpInputs.current[index - 1]?.focus();
+                            } else if (event.key === "ArrowRight" && index < 5) {
+                              event.preventDefault();
+                              loginOtpInputs.current[index + 1]?.focus();
+                            }
+                          }}
+                          className={`!h-12 min-w-0 rounded-xl border border-slate-200 bg-white px-0 text-center text-xl font-semibold tabular-nums text-slate-900 focus:outline-none focus:ring-2 ${loginOtpRole === "provider" ? "focus:border-emerald-500 focus:ring-emerald-500/30" : "focus:border-sky-500 focus:ring-sky-500/30"}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 text-sm ${loginOtpRole === "provider" ? "border-emerald-100 bg-emerald-50/60 text-emerald-950" : "border-sky-100 bg-sky-50/60 text-sky-950"}`}>
+                    <input
+                      type="checkbox"
+                      checked={rememberDevice}
+                      onChange={(event) => setRememberDevice(event.target.checked)}
+                      className={`mt-0.5 h-4 w-4 shrink-0 rounded focus:ring-2 ${loginOtpRole === "provider" ? "accent-emerald-600 focus:ring-emerald-500/40" : "accent-sky-600 focus:ring-sky-500/40"}`}
+                    />
+                    <span>
+                      <span className="block font-semibold">Trust this device</span>
+                      <span className={`mt-0.5 block leading-5 ${loginOtpRole === "provider" ? "text-emerald-800" : "text-sky-800"}`}>
+                        Don&apos;t ask for a code on this browser again.
+                      </span>
+                    </span>
+                  </label>
+
+                  {serverError && <p className="text-sm text-red-600" role="alert">{serverError}</p>}
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !/^\d{6}$/.test(loginOtp)}
+                    className={`w-full rounded-xl bg-linear-to-r ${a.button} px-4 py-3 font-semibold text-white transition-opacity hover:brightness-110 focus:outline-none focus:ring-2 ${a.buttonHover} focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50`}
+                  >
+                    {isSubmitting ? "Verifying..." : "Verify and sign in"}
+                  </button>
+                </form>
+
+                <div className="flex flex-col items-center gap-3 text-sm">
+                  <button
+                    type="button"
+                    onClick={handleResendLoginOtp}
+                    disabled={isSubmitting || resendSeconds > 0}
+                    className={`font-semibold disabled:cursor-not-allowed disabled:text-slate-400 ${a.link}`}
+                  >
+                    {resendSeconds > 0 ? `Resend code in ${formatWaitTime(resendSeconds)}` : "Resend code"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginOtpToken("");
+                      setLoginOtp("");
+                      setServerError("");
+                      setResendSeconds(0);
+                    }}
+                    className="font-medium text-slate-600 hover:text-slate-900"
+                  >
+                    Back to credentials
+                  </button>
+                </div>
+              </div>
+            ) : adminChallengeToken ? (
               <>
                 <div className="space-y-1 text-center">
                   <h2 className="font-bold text-2xl text-slate-900">Verify your admin sign-in</h2>

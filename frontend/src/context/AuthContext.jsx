@@ -21,8 +21,7 @@ export function AuthProvider({ children }) {
       const rememberedAuth = localStorage.getItem("taskpanda_auth");
       const tabAuth = sessionStorage.getItem("taskpanda_auth");
       saved = rememberedAuth || tabAuth || "";
-      if (!rememberedAuth && tabAuth) {
-        localStorage.setItem("taskpanda_auth", tabAuth);
+      if (rememberedAuth && tabAuth) {
         sessionStorage.removeItem("taskpanda_auth");
       }
     } catch (error) {

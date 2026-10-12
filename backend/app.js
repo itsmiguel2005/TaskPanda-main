@@ -25,6 +25,7 @@ app.use(cors({
   origin(origin, callback) {
     callback(null, Boolean(origin && corsOrigins.includes(origin)));
   },
+  credentials: true,
   allowedHeaders: ["Authorization", "Content-Type"],
   methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 }));

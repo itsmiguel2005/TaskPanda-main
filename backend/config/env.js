@@ -45,6 +45,7 @@ module.exports = {
   mailFrom: String(process.env.MAIL_FROM || process.env.SMTP_USER || "").replace(/\s+/g, "").trim(),
   adminOtpEmail: String(process.env.ADMIN_OTP_EMAIL || "").trim().toLowerCase(),
   adminOtpSecret: String(process.env.ADMIN_OTP_SECRET || "").trim(),
+  authOtpSecret: String(process.env.AUTH_OTP_SECRET || process.env.ADMIN_OTP_SECRET || "").trim(),
   appUrl: String(
     process.env.APP_URL ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||

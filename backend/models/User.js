@@ -109,6 +109,29 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    trustedDevices: {
+      type: [{
+        deviceTokenHash: { type: String, required: true },
+        deviceName: { type: String, default: "Unknown device", maxlength: 120 },
+        lastLoginAt: { type: Date, default: Date.now },
+        _id: false,
+      }],
+      default: [],
+      select: false,
+    },
+    otpHash: {
+      type: String,
+      select: false,
+    },
+    otpExpiresAt: {
+      type: Date,
+      select: false,
+    },
+    otpAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
     passwordResetTokenHash: {
       type: String,
       select: false,

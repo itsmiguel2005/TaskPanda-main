@@ -88,9 +88,33 @@ async function sendAdminLoginOtpEmail(email, code) {
   });
 }
 
+async function sendOtpEmail(email, code, name) {
+  const greeting = String(name || "").trim() || "there";
+  const htmlGreeting = greeting.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  })[character]);
+  const result = await mailTransport.sendMail({
+    from: taskPandaSender,
+    to: email,
+    subject: "Your TaskPanda sign-in code",
+    text: `Hi ${greeting}, your TaskPanda sign-in code is ${code}. It expires in 5 minutes. If you did not request this code, you can ignore this email.`,
+    html: `<p>Hi ${htmlGreeting},</p><p>Your TaskPanda sign-in code is:</p><p style="font-size: 24px; font-weight: 700; letter-spacing: 4px">${code}</p><p>This code expires in 5 minutes. If you did not request this code, you can ignore this email.</p>`,
+  });
+  console.log("Sign-in code accepted by SMTP:", {
+    messageId: result.messageId,
+    acceptedCount: result.accepted?.length || 0,
+    rejectedCount: result.rejected?.length || 0,
+  });
+}
+
 module.exports = {
   hasValidSmtpCredentials,
   sendAdminLoginOtpEmail,
+  sendOtpEmail,
   sendEmailVerificationEmail,
   sendPasswordResetEmail,
 };
