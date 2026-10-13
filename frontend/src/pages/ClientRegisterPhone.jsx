@@ -6,6 +6,8 @@ import PhilippineMobileInput from "../components/PhilippineMobileInput.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { clearRegistrationDraft, readRegistrationDraft, saveRegistrationDraft } from "../utils/registrationDraft.js";
 import { getPhilippineMobileInputValue, normalizePhilippineMobile } from "../utils/registrationValidation.js";
+import { executeRecaptcha } from "../utils/recaptcha.js";
+import RecaptchaDisclosure from "../components/RecaptchaDisclosure.jsx";
 
 export default function ClientRegisterPhone() {
   const navigate = useNavigate();
@@ -27,21 +29,24 @@ export default function ClientRegisterPhone() {
 
     try {
       setIsSendingOtp(true);
+      const recaptchaToken = await executeRecaptcha("verify_phone_otp");
       const response = await apiFetch("/api/auth/send-sms-otp", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${onboardingToken}`,
         },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ phone, recaptchaToken }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) return setError(data.message || "Could not send the verification code.");
       setOtpSent(true);
       setOtpCode("");
       setVerifiedPhone("");
-    } catch {
-      setError("Network error. Could not send the verification code.");
+    } catch (sendError) {
+      setError(sendError.message?.startsWith("reCAPTCHA")
+        ? sendError.message
+        : "Network error. Could not send the verification code.");
     } finally {
       setIsSendingOtp(false);
     }
@@ -80,13 +85,14 @@ export default function ClientRegisterPhone() {
     try {
       setIsSubmitting(true);
       if (verifiedPhone !== normalizedMobileNumber) {
-        const verificationResponse = await apiFetch("/api/auth/verify-sms-otp", {
+        const recaptchaToken = await executeRecaptcha("verify_phone_otp");
+        const verificationResponse = await apiFetch("/api/auth/verify-phone-otp", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${onboardingToken}`,
           },
-          body: JSON.stringify({ phone: normalizedMobileNumber, otpCode }),
+          body: JSON.stringify({ phone: normalizedMobileNumber, otpCode, recaptchaToken }),
         });
         const verificationData = await verificationResponse.json().catch(() => ({}));
         if (!verificationResponse.ok) {
@@ -129,8 +135,10 @@ export default function ClientRegisterPhone() {
       sessionStorage.removeItem("taskpanda_onboarding_token");
       login(data.user, data.token, false);
       navigate("/dashboard", { replace: true });
-    } catch {
-      setError("Network error. Please try again.");
+    } catch (submitError) {
+      setError(submitError.message?.startsWith("reCAPTCHA")
+        ? submitError.message
+        : "Network error. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -187,6 +195,7 @@ export default function ClientRegisterPhone() {
                 {error && <p className="text-sm text-red-600" role="alert">{error} {error.toLowerCase().includes("sign in again") && <Link to="/login" className="font-semibold underline">Sign in again</Link>}</p>}
                 <button type="submit" disabled={isSubmitting} className={`w-full rounded-lg bg-linear-to-r ${a.button} px-4 py-2.5 font-semibold text-white transition-opacity hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50`}>{isSubmitting ? (verifiedPhone === normalizePhilippineMobile(mobileNumber) ? "Finishing registration..." : "Verifying code...") : "Complete Sign up"}</button>
               </form>
+              <RecaptchaDisclosure />
             </div>
           </section>
         </>

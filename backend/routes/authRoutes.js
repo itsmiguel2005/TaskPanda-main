@@ -22,6 +22,7 @@ const {
 const { body, query } = require("express-validator");
 const { limitAuthAttempts, limitRegistrationChecks, limitLocationLookups } = require("../middleware/rateLimits");
 const { validateRequest } = require("../middleware/validateRequest");
+const { verifyRecaptcha } = require("../middleware/verifyRecaptcha");
 const { handleLocationSearch, handleLocationReverseLookup } = require("../controllers/locationController");
 const { requireAuth, requireRole } = require("../middleware/requireAuth");
 
@@ -94,17 +95,21 @@ router.post("/verify-otp", limitAuthAttempts, [
   body("rememberDevice").optional().isBoolean(),
 ], validateRequest, handleVerifyLoginOtp);
 router.post("/resend-otp", limitAuthAttempts, handleResendLoginOtp);
-router.post("/send-sms-otp", limitAuthAttempts, body("phone").isString().matches(/^(?:09\d{9}|\+?639\d{9})$/), validateRequest, handleSendSmsOtp);
+router.post("/send-sms-otp", limitAuthAttempts, body("phone").isString().matches(/^(?:09\d{9}|\+?639\d{9})$/), validateRequest, verifyRecaptcha("verify_phone_otp"), handleSendSmsOtp);
 router.post("/verify-sms-otp", limitAuthAttempts, [
   body("phone").isString().matches(/^(?:09\d{9}|\+?639\d{9})$/),
   body("otpCode").isString().matches(/^\d{6}$/),
-], validateRequest, handleVerifySmsOtp);
+], validateRequest, verifyRecaptcha("verify_phone_otp"), handleVerifySmsOtp);
+router.post("/verify-phone-otp", limitAuthAttempts, [
+  body("phone").isString().matches(/^(?:09\d{9}|\+?639\d{9})$/),
+  body("otpCode").isString().matches(/^\d{6}$/),
+], validateRequest, verifyRecaptcha("verify_phone_otp"), handleVerifySmsOtp);
 router.post("/logout", requireAuth, requireRole("client", "provider"), handleLogout);
 router.post("/admin-login/verify", limitAuthAttempts, [
   body("challengeToken").isString().matches(/^[a-f\d]{64}$/i),
   body("code").isString().matches(/^\d{6}$/),
 ], validateRequest, handleVerifyAdminLogin);
-router.post("/forgot-password", limitAuthAttempts, emailField(), validateRequest, handleForgotPassword);
+router.post("/forgot-password", limitAuthAttempts, emailField(), validateRequest, verifyRecaptcha("forgot_password"), handleForgotPassword);
 router.post("/forgot-password/verify-code", limitAuthAttempts, [
   emailField(),
   body("code").isString().matches(/^\d{6}$/),

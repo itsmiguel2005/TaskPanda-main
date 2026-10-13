@@ -2,6 +2,9 @@ import { apiFetch } from "../services/api.js";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
+import PasswordStrengthMeter from "../components/PasswordStrengthMeter.jsx";
+import RecaptchaDisclosure from "../components/RecaptchaDisclosure.jsx";
+import { executeRecaptcha } from "../utils/recaptcha.js";
 
 function passwordError(password) {
   if (!password) return "Password is required";
@@ -64,10 +67,11 @@ export default function ForgotPasswordPage() {
     }
     setIsSubmitting(true);
     try {
+      const recaptchaToken = await executeRecaptcha("forgot_password");
       const response = await apiFetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: email.trim(), recaptchaToken }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -84,8 +88,10 @@ export default function ForgotPasswordPage() {
       setCode("");
       setStep(2);
       setResendCooldown(60);
-    } catch {
-      setError("Network error. Please try again.");
+    } catch (submitError) {
+      setError(submitError.message?.startsWith("reCAPTCHA")
+        ? submitError.message
+        : "Network error. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -153,10 +159,11 @@ export default function ForgotPasswordPage() {
     setMessage("");
     setIsSubmitting(true);
     try {
+      const recaptchaToken = await executeRecaptcha("forgot_password");
       const response = await apiFetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: email.trim(), recaptchaToken }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -171,8 +178,10 @@ export default function ForgotPasswordPage() {
       setCode("");
       codeInputs.current[0]?.focus();
       setResendCooldown(60);
-    } catch {
-      setError("Network error. Please try again.");
+    } catch (submitError) {
+      setError(submitError.message?.startsWith("reCAPTCHA")
+        ? submitError.message
+        : "Network error. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -322,6 +331,7 @@ export default function ForgotPasswordPage() {
                     </button>
                   </div>
                 </div>
+                <PasswordStrengthMeter password={password} />
                 <div className="space-y-2">
                   <label htmlFor="confirmNewPassword" className="block text-sm font-medium text-gray-700">Confirm New Password</label>
                   <div className="relative">
@@ -341,12 +351,10 @@ export default function ForgotPasswordPage() {
                   </div>
                 </div>
                 {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
-                <button type="button" onClick={() => { setStep(2); setError(""); setMessage(""); }} className="w-full text-center text-sm font-medium text-slate-600 hover:text-slate-900">
-                  Back to verification code
-                </button>
                 <button type="submit" disabled={isSubmitting} className={`w-full rounded-lg bg-linear-to-r ${a.button} px-4 py-2.5 font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50`}>{isSubmitting ? "Updating..." : "Reset password"}</button>
               </form>
             )}
+            <RecaptchaDisclosure />
           </div>
         </section>
       )}

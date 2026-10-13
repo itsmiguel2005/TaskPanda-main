@@ -22,6 +22,7 @@ const authPaths = [
   "/resend-otp",
   "/send-sms-otp",
   "/verify-sms-otp",
+  "/verify-phone-otp",
   "/forgot-password",
   "/reset-password",
 ];
