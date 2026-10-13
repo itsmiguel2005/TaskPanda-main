@@ -30,6 +30,9 @@ const STATUS_ALIASES = Object.freeze({
   canceled: ["canceled", "Cancelled"],
   declined: ["declined", "Declined", "Declined by Provider"],
   expired: ["expired", "Expired"],
+  refund_pending: ["refund_pending"],
+  refunded: ["refunded"],
+  partially_refunded: ["partially_refunded"],
 });
 
 const STATUS_LABELS = Object.freeze({
@@ -43,6 +46,9 @@ const STATUS_LABELS = Object.freeze({
   canceled: "Cancelled",
   declined: "Declined",
   expired: "Expired",
+  refund_pending: "Refund Under Review",
+  refunded: "Refunded",
+  partially_refunded: "Partially Refunded",
   cancel_requested: "Cancellation Requested",
   in_revision: "In Revision",
   disputed: "Disputed",
@@ -107,6 +113,10 @@ function serializeAdminBooking(booking) {
     total: Number(booking.offeredPrice || 0) + Number(booking.travelFee || 0) + Number(booking.tipAmount || 0),
     workCompletedAt: booking.workCompletedAt || null,
     settledAt: booking.settledAt || null,
+    isRefunded: booking.isRefunded === true,
+    refundAmount: Number(booking.refundAmount || 0),
+    refundStatus: booking.refundStatus || "none",
+    refundRequestId: booking.refundRequestId ? String(booking.refundRequestId) : null,
     cashPaidConfirmedAt: booking.cashPaidConfirmedAt || null,
     cashReceivedConfirmedAt: booking.cashReceivedConfirmedAt || null,
     clientConfirmedCash: booking.clientConfirmedCash === true,
@@ -209,8 +219,11 @@ async function handleOverrideAdminBooking(req, res) {
   }
 
   try {
-    const current = await Booking.findById(req.params.bookingId).select("status serviceDate offeredPrice travelFee tipAmount");
+    const current = await Booking.findById(req.params.bookingId).select("status serviceDate offeredPrice travelFee tipAmount refundRequestId isRefunded");
     if (!current) return res.status(404).json({ message: "Booking not found." });
+    if (current.status === "refund_pending" || current.isRefunded) {
+      return res.status(409).json({ message: "Refund requests must be managed through the refund review workflow." });
+    }
     if (
       ["complete", "settled"].includes(targetStatus) &&
       (!areBookingAmountsWithinLimits(current.offeredPrice || 0, current.tipAmount || 0)

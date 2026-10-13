@@ -7,6 +7,7 @@ function HeaderIcon({ name, className = "h-5 w-5" }) {
   const shapes = {
     bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></>,
     chevron: <path d="m7 10 5 5 5-5" />,
+    check: <path d="m5 12 4 4L19 6" />,
     dashboard: <><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="m19.4 15 .1.1a1.7 1.7 0 1 1-2.4 2.4l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a1.7 1.7 0 1 1-3.4 0v-.2a1.7 1.7 0 0 0-2.9-1.2l-.1.1a1.7 1.7 0 1 1-2.4-2.4l.1-.1a1.7 1.7 0 0 0-1.2-2.9H4a1.7 1.7 0 1 1 0-3.4h.2a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a1.7 1.7 0 1 1 2.4-2.4l.1.1a1.7 1.7 0 0 0 2.9-1.2V2a1.7 1.7 0 1 1 3.4 0v.2a1.7 1.7 0 0 0 2.9 1.2l.1-.1a1.7 1.7 0 1 1 2.4 2.4l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a1.7 1.7 0 1 1 0 3.4h-.2a1.7 1.7 0 0 0-1.2 2.9Z" /></>,
     logout: <><path d="M10 17l5-5-5-5M15 12H3" /><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6" /></>,
@@ -77,6 +78,22 @@ export default function AdminHeaderActions() {
     };
   }, [openMenu]);
 
+  useEffect(() => {
+    if (openMenu !== "notifications") return undefined;
+
+    const refreshNotificationPermission = () => {
+      setNotificationPermission(readNotificationPermission());
+    };
+
+    refreshNotificationPermission();
+    window.addEventListener("focus", refreshNotificationPermission);
+    document.addEventListener("visibilitychange", refreshNotificationPermission);
+    return () => {
+      window.removeEventListener("focus", refreshNotificationPermission);
+      document.removeEventListener("visibilitychange", refreshNotificationPermission);
+    };
+  }, [openMenu]);
+
   const handleEnableAlerts = async () => {
     setIsPrompting(true);
     setPushPromptStatus("");
@@ -92,17 +109,32 @@ export default function AdminHeaderActions() {
     }
   };
 
-  const notificationMessage = notificationPermission === "granted"
-    ? "Browser alerts are enabled for this device."
-    : notificationPermission === "denied"
-      ? "Alerts are blocked. Allow notifications in your browser settings."
-      : notificationPermission === "unsupported"
-        ? "This browser does not support push alerts."
-        : pushPromptStatus === "unavailable"
-          ? "Push alerts are not configured."
-          : pushPromptStatus === "error"
-            ? "Could not open the browser alert prompt. Try again."
-            : "Get browser alerts for important updates.";
+  const notificationStatus = {
+    granted: {
+      label: "Enabled",
+      message: "This browser allows TaskPanda to show alerts.",
+      className: "bg-emerald-50 text-emerald-800",
+    },
+    denied: {
+      label: "Blocked",
+      message: "Alerts are blocked. Allow notifications for TaskPanda in your browser settings.",
+      className: "bg-rose-50 text-rose-800",
+    },
+    unsupported: {
+      label: "Unsupported",
+      message: "This browser does not support push alerts.",
+      className: "bg-slate-100 text-slate-700",
+    },
+    default: {
+      label: "Not enabled",
+      message: pushPromptStatus === "unavailable"
+        ? "Browser alerts are not configured for TaskPanda on this site."
+        : pushPromptStatus === "error"
+          ? "Could not open the browser alert prompt. Try again."
+          : "Choose Allow in your browser to receive alerts.",
+      className: "bg-amber-50 text-amber-800",
+    },
+  }[notificationPermission];
 
   const handleSignOut = () => {
     setOpenMenu(null);
@@ -118,7 +150,7 @@ export default function AdminHeaderActions() {
           onClick={() => setOpenMenu((current) => current === "notifications" ? null : "notifications")}
           aria-label="Notifications"
           aria-expanded={openMenu === "notifications"}
-          className="relative inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-600 transition hover:bg-blue-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="relative inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <HeaderIcon name="bell" />
         </button>
@@ -129,17 +161,27 @@ export default function AdminHeaderActions() {
           >
             <div className="border-b border-slate-100 px-4 py-3">
               <h2 className="text-sm font-semibold text-slate-900">Notifications</h2>
-              <p className="mt-0.5 text-xs text-slate-500">Admin alerts for this device</p>
             </div>
-            <div className="px-4 py-4">
-              <p className="text-sm font-medium text-slate-800">No new admin notifications</p>
-              <p className="mt-1 text-xs leading-5 text-slate-500">{notificationMessage}</p>
-              {notificationPermission === "default" && (
+            <div className="px-4 py-5 text-center text-sm text-slate-500">
+              No new notifications.
+            </div>
+            <div className="border-t border-slate-100 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold text-blue-800">Browser alerts</h3>
+                <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold ${notificationStatus.className}`}>
+                  {notificationPermission === "granted" && <HeaderIcon name="check" className="h-3.5 w-3.5" />}
+                  {notificationStatus.label}
+                </span>
+              </div>
+              <p role="status" className="mt-1 text-xs leading-5 text-slate-500">
+                {notificationStatus.message}
+              </p>
+              {notificationPermission === "default" && pushPromptStatus !== "unavailable" && (
                 <button
                   type="button"
                   onClick={handleEnableAlerts}
                   disabled={isPrompting}
-                  className="mt-3 inline-flex min-h-10 items-center justify-center rounded-lg bg-indigo-600 px-3 text-sm font-medium text-white transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
+                  className="mt-2 inline-flex min-h-10 items-center text-sm font-semibold text-blue-800 transition hover:text-blue-950 focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
                 >
                   {isPrompting ? "Opening browser prompt…" : "Enable browser alerts"}
                 </button>

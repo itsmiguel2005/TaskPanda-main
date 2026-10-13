@@ -30,6 +30,7 @@ const {
   handleCreateRevisionRequest,
   handleRespondToRevision,
 } = require("../controllers/bookingController");
+const { handleRequestRefund } = require("../controllers/refundController");
 
 const router = express.Router();
 
@@ -153,6 +154,18 @@ router.post("/:id/completion", upload.array("photos", 5), sanitizeMongoInput, bo
 router.post("/:id/revisions", upload.array("photos", 5), sanitizeMongoInput, body("note").isString().isLength({ min: 1, max: 1000 }), validateRequest, handleCreateRevisionRequest);
 router.patch("/:id/revisions/:revisionId", validateRevisionResponse, validateRequest, handleRespondToRevision);
 router.patch("/:id/cancel", validateCancellation, validateRequest, handleCancellation);
+router.post(
+  "/:id/request-refund",
+  upload.array("photos", 5),
+  sanitizeMongoInput,
+  [
+    body("reason").isIn(["INCOMPLETE_WORK", "POOR_QUALITY", "OVERCHARGED", "OTHER"]),
+    body("requestedAmount").isFloat({ min: 0 }),
+    body("description").isString().trim().isLength({ min: 1, max: 2000 }),
+  ],
+  validateRequest,
+  handleRequestRefund
+);
 router.patch("/:id/review", upload.array("photos", 5), sanitizeMongoInput, body("rating").isFloat({ min: 1, max: 5 }), body("review").optional().isString().isLength({ max: 1000 }), validateRequest, handleBookingReview);
 router.post("/:id/rate", upload.array("photos", 5), sanitizeMongoInput, body("rating").isFloat({ min: 1, max: 5 }), body("review").optional().isString().isLength({ max: 1000 }), validateRequest, handleBookingReview);
 router.post("/:id/provider-updates", validateProviderUpdate, validateRequest, handleProviderUpdate);

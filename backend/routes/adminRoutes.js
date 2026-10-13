@@ -18,6 +18,7 @@ const {
   handleAdminBroadcast,
 } = require("../controllers/adminOperationsController");
 const { handleGetAdminBookings, handleOverrideAdminBooking } = require("../controllers/adminBookingController");
+const { handleListAdminRefunds, handleResolveAdminRefund } = require("../controllers/refundController");
 const {
   handleGetAdminSupportReports,
   handleGetAdminSupportReportDetails,
@@ -136,7 +137,7 @@ router.get(
   [
     query("q").optional().isString().isLength({ max: 100 }),
     query("page").optional().isInt({ min: 1, max: 10000 }),
-    query("status").optional().isIn(["pending", "approved", "in_progress", "complete", "settled", "canceled", "declined", "expired"]),
+    query("status").optional().isIn(["pending", "approved", "in_progress", "complete", "settled", "canceled", "declined", "expired", "refund_pending", "refunded", "partially_refunded"]),
   ],
   validateRequest,
   handleGetAdminBookings
@@ -151,6 +152,29 @@ router.patch(
   ],
   validateRequest,
   handleOverrideAdminBooking
+);
+router.get(
+  "/refunds",
+  requireAdmin,
+  [
+    query("status").optional().isIn(["PENDING", "APPROVED", "REJECTED", "ALL"]),
+    query("page").optional().isInt({ min: 1, max: 10000 }),
+  ],
+  validateRequest,
+  handleListAdminRefunds
+);
+router.post(
+  "/refunds/:id/resolve",
+  requireAdmin,
+  [
+    param("id").isMongoId(),
+    body("action").isIn(["APPROVE_FULL", "APPROVE_PARTIAL", "REJECT"]),
+    body("approvedCashAmount").if(body("action").isIn(["APPROVE_FULL", "APPROVE_PARTIAL"])).isFloat({ min: 0 }),
+    body("adminNotes").optional().isString().isLength({ max: 2000 }),
+    body("adminNotes").if(body("action").equals("REJECT")).isString().trim().isLength({ min: 5, max: 2000 }),
+  ],
+  validateRequest,
+  handleResolveAdminRefund
 );
 router.get(
   "/transactions",

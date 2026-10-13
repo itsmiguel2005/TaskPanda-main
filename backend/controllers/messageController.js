@@ -497,6 +497,7 @@ async function handleCashConfirmation(req, res) {
     const timestamp = new Date();
     const confirmationField = confirmation === "cash_paid" ? "cashPaidConfirmedAt" : "cashReceivedConfirmedAt";
     const booleanField = confirmation === "cash_paid" ? "clientConfirmedCash" : "providerConfirmedCash";
+    const autoConfirmationField = confirmation === "cash_paid" ? "cashPaidAutoConfirmed" : "cashReceivedAutoConfirmed";
     const participantField = req.user.role === "client" ? "clientId" : "providerId";
     const wasAlreadyConfirmed = Boolean(booking[confirmationField]);
     if (!wasAlreadyConfirmed) {
@@ -508,7 +509,7 @@ async function handleCashConfirmation(req, res) {
           paymentMethod: "cash",
           [confirmationField]: mongoose.trusted({ $exists: false }),
         },
-        { $set: { [confirmationField]: timestamp, [booleanField]: true } },
+        { $set: { [confirmationField]: timestamp, [booleanField]: true, [autoConfirmationField]: false } },
         { new: true }
       );
       if (!confirmedBooking) return res.status(409).json({ message: "This cash payment confirmation could not be saved. Refresh the booking and try again." });

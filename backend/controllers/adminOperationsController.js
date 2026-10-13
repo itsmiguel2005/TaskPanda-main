@@ -6,7 +6,7 @@ const { getTransactionAmounts } = require("../services/financialLedger");
 const { hasOneSignalCredentials, sendPushNotification } = require("../services/oneSignal");
 const { getGlobalSettings, updateGlobalSettings } = require("../services/systemSettings");
 
-const COMPLETED_STATUSES = ["complete", "closed", "settled", "Completed", "Settled"];
+const COMPLETED_STATUSES = ["complete", "closed", "settled", "refunded", "partially_refunded", "Completed", "Settled", "Refunded", "Partially Refunded"];
 const VOUCHER_ORIGINS = ["referral", "stamp-card", "promotion"];
 const TRANSACTION_PAGE_SIZE = 25;
 
@@ -113,6 +113,8 @@ async function handleGetAdminTransactions(req, res) {
           status: booking.status,
           completedAt,
           distanceKm: Number(booking.travelDistanceKm || 0),
+          refundStatus: booking.refundStatus || "none",
+          refundAmount: Number(booking.refundAmount || 0),
           ...amounts,
         };
       }),

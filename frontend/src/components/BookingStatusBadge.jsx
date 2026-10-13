@@ -14,6 +14,9 @@ const STATUS_STYLES = {
   "Cancellation Requested": "border-amber-200 bg-amber-50 text-amber-800",
   "In Revision": "border-amber-200 bg-amber-50 text-amber-800",
   Disputed: "border-rose-200 bg-rose-50 text-rose-800",
+  "Refund Under Review": "border-amber-200 bg-amber-50 text-amber-800",
+  Refunded: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  "Partially Refunded": "border-teal-200 bg-teal-50 text-teal-800",
 };
 
 const STATUS_DOTS = {
@@ -32,6 +35,9 @@ const STATUS_DOTS = {
   "Cancellation Requested": "bg-amber-500",
   "In Revision": "bg-amber-500",
   Disputed: "bg-rose-500",
+  "Refund Under Review": "bg-amber-500",
+  Refunded: "bg-emerald-500",
+  "Partially Refunded": "bg-teal-500",
 };
 
 export default function BookingStatusBadge({ status, density = "comfortable" }) {

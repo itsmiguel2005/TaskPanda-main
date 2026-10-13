@@ -13,6 +13,7 @@ import BookingLocationMap from "../components/BookingLocationMap.jsx";
 import { canRequestCancellation, getCancellationLockMessage } from "../utils/bookingCancellation.js";
 import StatusChangeConfirmation from "../components/StatusChangeConfirmation.jsx";
 import RevisionRequestModal from "../components/RevisionRequestModal.jsx";
+import RefundRequestModal from "../components/RefundRequestModal.jsx";
 import RequestBookingModal from "../components/RequestBookingModal.jsx";
 import ProviderNoShowConfirmationModal from "../components/ProviderNoShowConfirmationModal.jsx";
 import PandaSwipeRefresh from "../components/PandaSwipeRefresh.jsx";
@@ -24,7 +25,7 @@ import { compareBookingsByLatestActivity, sortBookingsWithOngoingFirst } from ".
 const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined", "Expired"];
 
 function isCompletedLikeStatus(status) {
-  return status === "Completed" || status === "Settled";
+  return ["Completed", "Settled", "Refunded", "Partially Refunded"].includes(status);
 }
 
 function canRequestRevision(booking) {
@@ -33,6 +34,16 @@ function canRequestRevision(booking) {
     && !booking.cashReceipt?.receiptNumber
     && revisions.length < 2
     && !revisions.some((revision) => ["open", "accepted"].includes(revision.status));
+}
+
+function canRequestRefund(booking, now = Date.now()) {
+  const status = String(booking?.statusCode || booking?.status || "").trim().toLowerCase();
+  const completionTime = new Date(booking?.workCompletedAt || booking?.completionSubmittedAt || NaN).getTime();
+  return ["complete", "completed", "closed", "settled", "disputed"].includes(status)
+    && Number.isFinite(completionTime)
+    && now <= completionTime + 48 * 60 * 60 * 1000
+    && booking?.isRefunded !== true
+    && booking?.refundStatus !== "pending";
 }
 
 function hasMutualSettlement(booking) {
@@ -65,7 +76,7 @@ export default function BookingsPage() {
   const { token, user } = useAuth();
   const dashboardDensity = user?.dashboardDensityPreference === "compact" ? "compact" : "comfortable";
   const requestHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
-  const { bookings, isLoading, error, requestCancellation, requestRevision, submitReview, respondToProviderUpdate, respondToLateNotice, reportProviderNoShow, refreshBookings, confirmCashSettlement, createBooking } = useBookings();
+  const { bookings, isLoading, error, requestCancellation, requestRevision, requestRefund, submitReview, respondToProviderUpdate, respondToLateNotice, reportProviderNoShow, refreshBookings, confirmCashSettlement, createBooking } = useBookings();
   const isInitialLoading = isLoading && bookings.length === 0;
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("activityAt");
@@ -75,6 +86,7 @@ export default function BookingsPage() {
   const [detailId, setDetailId] = useState(null);
   const [compactExpandedId, setCompactExpandedId] = useState(null);
   const [reviewingId, setReviewingId] = useState(null);
+  const [refundingId, setRefundingId] = useState(null);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
   const [reviewPhotos, setReviewPhotos] = useState([]);
@@ -88,7 +100,7 @@ export default function BookingsPage() {
   const stats = useMemo(() => {
     const total = bookings.length;
     const pending = bookings.filter((b) => b.status === "Pending Request").length;
-    const active = bookings.filter((b) => ["Confirmed", "On the Way", "In Progress"].includes(b.status)).length;
+    const active = bookings.filter((b) => ["Confirmed", "On the Way", "In Progress", "Refund Under Review"].includes(b.status)).length;
     const completed = bookings.filter((b) => isCompletedLikeStatus(b.status)).length;
     const cancelled = bookings.filter((b) => ["Cancelled", "Cancelled - Provider No-Show"].includes(b.status)).length;
     const declined = bookings.filter((b) => ["Declined", "Declined by Provider"].includes(b.status)).length;
@@ -103,7 +115,7 @@ export default function BookingsPage() {
         .some((value) => String(value || "").toLowerCase().includes(query));
       const matchesTab = activeTab === "All"
         || (activeTab === "Pending" && booking.status === "Pending Request")
-        || (activeTab === "Active" && ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status))
+        || (activeTab === "Active" && ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed", "Refund Under Review"].includes(booking.status))
         || (activeTab === "Completed" && isCompletedLikeStatus(booking.status))
         || (activeTab === "Cancelled" && ["Cancelled", "Cancelled - Provider No-Show"].includes(booking.status))
         || (activeTab === "Declined" && booking.status === "Declined by Provider")
@@ -144,12 +156,19 @@ export default function BookingsPage() {
     Expired: stats.expired,
   };
 
+  const handleRequestRefund = async (reason, requestedAmount, description, photos) => {
+    if (!refundingId) throw new Error("Choose a booking before requesting a refund.");
+    await requestRefund(refundingId, reason, requestedAmount, description, photos);
+    setRefundingId(null);
+  };
+
   const detailBooking = bookings.find((b) => b.id === detailId) || null;
   const cancelBooking = bookings.find((b) => b.id === cancelingId);
   const noShowBooking = bookings.find((booking) => booking.id === noShowBookingId) || null;
   const cancelBookingNeedsReason = Boolean(cancelBooking && Date.now() - new Date(cancelBooking.createdAt).getTime() >= 10 * 60 * 1000);
   const revisionBooking = bookings.find((booking) => booking.id === revisioningId) || null;
   const reviewingBooking = bookings.find((b) => b.id === reviewingId);
+  const refundingBooking = bookings.find((booking) => booking.id === refundingId) || null;
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -387,6 +406,22 @@ export default function BookingsPage() {
                           )}
                           {booking.cancellationOutcome === "rejected" && (
                             <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">The cancellation was declined. This booking remains active.</p>
+                          )}
+                          {booking.refundStatus === "pending" && (
+                            <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">Your refund request is awaiting admin review.</p>
+                          )}
+                          {booking.refundStatus === "rejected" && (
+                            <p className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">The refund request was declined. You can submit another request while the 48-hour window remains open.</p>
+                          )}
+                          {booking.isRefunded && (
+                            <p className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-900">
+                              Refund resolved{booking.refundAmount > 0 ? ` · ₱${Number(booking.refundAmount).toLocaleString("en-PH", { maximumFractionDigits: 2 })} cash repayment agreed for direct provider-to-client return` : " · voucher restoration; no cash transfer"}.
+                            </p>
+                          )}
+                          {canRequestRefund(booking) && (
+                            <button type="button" onClick={() => setRefundingId(booking.id)} className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-950 hover:bg-amber-100">
+                              Request refund review
+                            </button>
                           )}
                           {booking.lateNotice && (
                             <section className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950" aria-label="Provider delay notice">
@@ -778,6 +813,9 @@ export default function BookingsPage() {
                 {canRequestRevision(detailBooking) && (
                   <button type="button" onClick={() => { setDetailId(null); setRevisioningId(detailBooking.id); }} className="dashboard-focus min-h-11 flex-1 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900 hover:bg-amber-100">Request Revision</button>
                 )}
+                {canRequestRefund(detailBooking) && (
+                  <button type="button" onClick={() => { setDetailId(null); setRefundingId(detailBooking.id); }} className="dashboard-focus min-h-11 flex-1 rounded-xl border border-orange-200 bg-orange-50 px-4 py-2.5 text-sm font-semibold text-orange-900 hover:bg-orange-100">Request Refund Review</button>
+                )}
                 {canRequestCancellation(detailBooking) ? (
                   <button
                     onClick={() => {
@@ -795,6 +833,15 @@ export default function BookingsPage() {
             </div>
           </section>
         </div>
+      )}
+
+      {refundingBooking && canRequestRefund(refundingBooking) && (
+        <RefundRequestModal
+          key={refundingBooking.id}
+          booking={refundingBooking}
+          onSubmit={handleRequestRefund}
+          onClose={() => setRefundingId(null)}
+        />
       )}
     </div>
   );

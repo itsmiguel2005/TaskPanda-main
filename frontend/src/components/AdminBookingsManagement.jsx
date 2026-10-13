@@ -24,6 +24,9 @@ const statusFilters = [
   { id: "in_progress", label: "In Progress" },
   { id: "complete", label: "Completed" },
   { id: "settled", label: "Settled" },
+  { id: "refund_pending", label: "Refund Under Review" },
+  { id: "refunded", label: "Refunded" },
+  { id: "partially_refunded", label: "Partially Refunded" },
   { id: "canceled", label: "Cancelled" },
 ];
 const overrideStatuses = [
@@ -55,6 +58,9 @@ function normalizedStatus(status) {
   if (["en_route", "in_progress", "on the way", "in progress"].includes(value)) return "in_progress";
   if (["complete", "closed", "completed"].includes(value)) return "complete";
   if (["settled"].includes(value)) return "settled";
+  if (["refund_pending", "refund under review"].includes(value)) return "refund_pending";
+  if (["refunded"].includes(value)) return "refunded";
+  if (["partially_refunded", "partially refunded"].includes(value)) return "partially_refunded";
   if (["canceled", "cancelled"].includes(value)) return "canceled";
   if (["declined", "declined by provider"].includes(value)) return "declined";
   return value;
@@ -65,7 +71,7 @@ function statusRank(status) {
   if (normalized === "pending") return 0;
   if (normalized === "approved") return 1;
   if (normalized === "in_progress") return 2;
-  if (["complete", "settled"].includes(normalized)) return 3;
+  if (["complete", "settled", "refund_pending", "refunded", "partially_refunded"].includes(normalized)) return 3;
   return -1;
 }
 
@@ -79,6 +85,9 @@ function StatusBadge({ status }) {
     canceled: "border-rose-200 bg-rose-50 text-rose-800",
     declined: "border-rose-200 bg-rose-50 text-rose-800",
     expired: "border-slate-300 bg-slate-100 text-slate-700",
+    refund_pending: "border-amber-200 bg-amber-50 text-amber-800",
+    refunded: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    partially_refunded: "border-teal-200 bg-teal-50 text-teal-800",
   };
   const normalized = normalizedStatus(status);
   return (
@@ -148,7 +157,7 @@ function BookingTimeline({ booking }) {
 
 function BookingDrawer({ booking, onClose, onOverride }) {
   const status = normalizedStatus(booking.status);
-  const isException = ["canceled", "declined", "expired"].includes(status);
+  const isException = ["canceled", "declined", "expired", "refund_pending", "refunded", "partially_refunded"].includes(status);
   return createPortal(
     <div className="fixed inset-0 z-50">
       <button type="button" aria-label="Close booking details" onClick={onClose} className="absolute inset-0 h-full w-full cursor-default bg-slate-950/40" />

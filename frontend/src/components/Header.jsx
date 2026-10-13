@@ -22,6 +22,11 @@ function getProfileRejectionNoticeId(user) {
   return `verification-rejected:${userId}:${reason}`;
 }
 
+function readNotificationPermission() {
+  if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
+  return window.Notification.permission;
+}
+
 export default function Header({ logoColor = "text-primary-700", showNav = false, activeTab = "Home", role = "client" }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -33,6 +38,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState([]);
   const [notificationError, setNotificationError] = useState("");
   const [pushPromptStatus, setPushPromptStatus] = useState("");
+  const [notificationPermission, setNotificationPermission] = useState(readNotificationPermission);
   const [rewardToast, setRewardToast] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -46,9 +52,12 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     setPushPromptStatus("loading");
     try {
       setPushPromptStatus(await promptForPushPermission());
+      setNotificationPermission(readNotificationPermission());
     } catch (error) {
       console.warn("OneSignal permission prompt failed:", error.message);
       setPushPromptStatus("error");
+    } finally {
+      setNotificationPermission(readNotificationPermission());
     }
   };
 
@@ -465,6 +474,22 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   }, [notifOpen]);
 
   useEffect(() => {
+    if (!notifOpen) return undefined;
+
+    const refreshNotificationPermission = () => {
+      setNotificationPermission(readNotificationPermission());
+    };
+
+    refreshNotificationPermission();
+    window.addEventListener("focus", refreshNotificationPermission);
+    document.addEventListener("visibilitychange", refreshNotificationPermission);
+    return () => {
+      window.removeEventListener("focus", refreshNotificationPermission);
+      document.removeEventListener("visibilitychange", refreshNotificationPermission);
+    };
+  }, [notifOpen]);
+
+  useEffect(() => {
     setNotifOpen(false);
     setDropdownOpen(false);
     setMobileOpen(false);
@@ -514,6 +539,32 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   const visibleNotificationList = notificationList.filter((item) => !dismissedNotificationIds.includes(item.id));
   const unreadNotificationCount = visibleNotificationList.reduce((total, item) => total + Math.max(0, Number(item.unreadCount) || 0), 0);
   const totalNotificationCount = unreadNotificationCount;
+  const notificationStatus = {
+    granted: {
+      label: "Enabled",
+      message: "This browser allows TaskPanda to show alerts.",
+      className: "bg-emerald-50 text-emerald-800",
+    },
+    denied: {
+      label: "Blocked",
+      message: "Alerts are blocked. Allow notifications for TaskPanda in your browser settings.",
+      className: "bg-rose-50 text-rose-800",
+    },
+    unsupported: {
+      label: "Unsupported",
+      message: "This browser does not support push alerts.",
+      className: "bg-slate-100 text-slate-700",
+    },
+    default: {
+      label: "Not enabled",
+      message: pushPromptStatus === "unavailable"
+        ? "Browser alerts are not configured for TaskPanda on this site."
+        : pushPromptStatus === "error"
+          ? "Could not open the browser alert prompt. Try again."
+          : "Choose Allow in your browser to receive alerts.",
+      className: "bg-amber-50 text-amber-800",
+    },
+  }[notificationPermission];
   const availablePerkCount = (user?.vouchers || []).filter((voucher) =>
     voucher.status === "active" && (!voucher.expiresAt || new Date(voucher.expiresAt) > new Date())
   ).length;
@@ -707,23 +758,31 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                       <div className="px-4 py-6 text-center text-sm text-gray-500">No new notifications.</div>
                     )}
                   </div>
-                  {isLoggedIn && import.meta.env.VITE_ONESIGNAL_APP_ID && (
+                  {isLoggedIn && (
                     <div className="border-t border-gray-100 px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={handleEnablePush}
-                        disabled={pushPromptStatus === "loading"}
-                        className="text-sm font-semibold text-primary-700 hover:text-primary-800 disabled:opacity-60"
-                      >
-                        {pushPromptStatus === "loading" ? "Opening browser prompt…" : "Enable browser alerts"}
-                      </button>
-                      {pushPromptStatus && pushPromptStatus !== "loading" && (
-                        <p className="mt-1 text-xs text-gray-500" role="status">
-                          {pushPromptStatus === "prompted" ? "Choose Allow in your browser to receive alerts." :
-                            pushPromptStatus === "unsupported" ? "This browser does not support push alerts." :
-                              pushPromptStatus === "unavailable" ? "Push alerts are not configured." :
-                                "Could not open the browser alert prompt. Try again."}
-                        </p>
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-sm font-semibold text-primary-700">Browser alerts</h4>
+                        <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold ${notificationStatus.className}`}>
+                          {notificationPermission === "granted" && (
+                            <MenuIcon className="h-3.5 w-3.5">
+                              <path d="m5 12 4 4L19 6" />
+                            </MenuIcon>
+                          )}
+                          {notificationStatus.label}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-gray-500" role="status">
+                        {notificationStatus.message}
+                      </p>
+                      {notificationPermission === "default" && import.meta.env.VITE_ONESIGNAL_APP_ID && pushPromptStatus !== "unavailable" && (
+                        <button
+                          type="button"
+                          onClick={handleEnablePush}
+                          disabled={pushPromptStatus === "loading"}
+                          className="mt-2 inline-flex min-h-10 items-center text-sm font-semibold text-primary-700 hover:text-primary-800 focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
+                        >
+                          {pushPromptStatus === "loading" ? "Opening browser prompt…" : "Enable browser alerts"}
+                        </button>
                       )}
                     </div>
                   )}

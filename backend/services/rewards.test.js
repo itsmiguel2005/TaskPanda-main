@@ -5,6 +5,7 @@ const User = require("../models/User");
 const {
   awardVerificationVoucher,
   restoreVoucherForBooking,
+  restoreVoucherForRefund,
 } = require("./rewards");
 
 test("verification reward awards one active voucher and notification to a verified client", async () => {
@@ -106,5 +107,54 @@ test("voucher restoration skips bookings that did not use a voucher", async () =
     assert.equal(await restoreVoucherForBooking({ _id: new mongoose.Types.ObjectId() }), false);
   } finally {
     User.updateOne = originalUpdateOne;
+  }
+});
+
+test("refund voucher restoration is idempotent for an already active voucher", async () => {
+  const clientId = new mongoose.Types.ObjectId();
+  const bookingId = new mongoose.Types.ObjectId();
+  const voucherId = new mongoose.Types.ObjectId();
+  const originalUpdateOne = User.updateOne;
+  const originalExists = User.exists;
+  User.updateOne = async () => ({ modifiedCount: 0 });
+  User.exists = async (filter) => {
+    assert.equal(String(filter._id), String(clientId));
+    assert.equal(String(filter.vouchers.$elemMatch._id), String(voucherId));
+    assert.equal(filter.vouchers.$elemMatch.status, "active");
+    return { _id: voucherId };
+  };
+
+  try {
+    assert.equal(await restoreVoucherForRefund({
+      _id: bookingId,
+      clientId,
+      voucherId,
+      travelFeeDiscount: 50,
+    }), true);
+  } finally {
+    User.updateOne = originalUpdateOne;
+    User.exists = originalExists;
+  }
+});
+
+test("refund voucher restoration fails explicitly when its voucher cannot be found", async () => {
+  const originalUpdateOne = User.updateOne;
+  const originalExists = User.exists;
+  User.updateOne = async () => ({ modifiedCount: 0 });
+  User.exists = async () => null;
+
+  try {
+    await assert.rejects(
+      restoreVoucherForRefund({
+        _id: new mongoose.Types.ObjectId(),
+        clientId: new mongoose.Types.ObjectId(),
+        voucherId: new mongoose.Types.ObjectId(),
+        travelFeeDiscount: 50,
+      }),
+      /could not be restored/
+    );
+  } finally {
+    User.updateOne = originalUpdateOne;
+    User.exists = originalExists;
   }
 });

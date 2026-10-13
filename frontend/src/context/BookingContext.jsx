@@ -306,6 +306,25 @@ export function BookingProvider({ children }) {
     return data.booking;
   }, [notifySync, token]);
 
+  const requestRefund = useCallback(async (id, reason, requestedAmount, description, photos = []) => {
+    const formData = new FormData();
+    formData.append("reason", reason);
+    formData.append("requestedAmount", String(requestedAmount));
+    formData.append("description", description);
+    (Array.isArray(photos) ? photos : []).forEach((photo) => formData.append("photos", photo));
+    const response = await apiFetch(`/api/bookings/${id}/request-refund`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Could not submit the refund request.");
+    if (!data.refund?.id) throw new Error("The server returned an invalid refund response.");
+    await fetchBookings(undefined, true);
+    notifySync({ type: "booking-updated", bookingId: id });
+    return data.refund;
+  }, [fetchBookings, notifySync, token]);
+
   const requestCancellation = useCallback(async (id, action = "request", reason = "") => {
     const response = await apiFetch(`/api/bookings/${id}/cancel`, {
       method: "PATCH",
@@ -532,6 +551,7 @@ export function BookingProvider({ children }) {
     updateBookingStatus,
     submitCompletionProof,
     requestRevision,
+    requestRefund,
     requestCancellation,
     submitReview,
     sendProviderUpdate,
@@ -545,7 +565,7 @@ export function BookingProvider({ children }) {
     dismissDashboardBooking,
     restoreDashboardBookings,
     refreshBookings: fetchBookings,
-  }), [bookings, dismissedBookingIds, bookingReviewStats, providerBookingStats, isLoading, error, createBooking, updateBookingStatus, submitCompletionProof, requestRevision, requestCancellation, submitReview, sendProviderUpdate, reportRunningLate, respondToLateNotice, reportProviderNoShow, respondToProviderNoShow, respondToProviderUpdate, respondToRevision, confirmCashSettlement, dismissDashboardBooking, restoreDashboardBookings, fetchBookings]);
+  }), [bookings, dismissedBookingIds, bookingReviewStats, providerBookingStats, isLoading, error, createBooking, updateBookingStatus, submitCompletionProof, requestRevision, requestRefund, requestCancellation, submitReview, sendProviderUpdate, reportRunningLate, respondToLateNotice, reportProviderNoShow, respondToProviderNoShow, respondToProviderUpdate, respondToRevision, confirmCashSettlement, dismissDashboardBooking, restoreDashboardBookings, fetchBookings]);
 
   return <BookingContext.Provider value={value}>{children}</BookingContext.Provider>;
 }

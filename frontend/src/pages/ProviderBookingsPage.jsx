@@ -139,8 +139,8 @@ export default function ProviderBookingsPage() {
   const managedBookings = safeBookings.filter((booking) => booking.status !== "Pending Request" && matchesSearch(booking));
   const filteredManagedBookings = managedBookings.filter((booking) => {
     if (activeTab === "All") return true;
-    if (activeTab === "Active") return ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status);
-    if (activeTab === "Completed") return ["Completed", "Settled"].includes(booking.status);
+    if (activeTab === "Active") return ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed", "Refund Under Review"].includes(booking.status);
+    if (activeTab === "Completed") return ["Completed", "Settled", "Refunded", "Partially Refunded"].includes(booking.status);
     if (activeTab === "Cancelled") return ["Cancelled", "Cancelled - Provider No-Show"].includes(booking.status);
     if (activeTab === "Declined") return booking.status === "Declined by Provider";
     return false;
@@ -161,7 +161,7 @@ export default function ProviderBookingsPage() {
     } else if (sortBy === "price") {
       compareWithinGroup = (a, b) => parsePrice(b.price) - parsePrice(a.price);
     } else if (sortBy === "status") {
-      const order = { "Cancellation Requested": 0, "Pending Request": 1, Confirmed: 2, "On the Way": 3, "In Progress": 4, Completed: 5, Settled: 5, Cancelled: 6, "Cancelled - Provider No-Show": 6, "Declined by Provider": 7 };
+      const order = { "Cancellation Requested": 0, "Pending Request": 1, Confirmed: 2, "On the Way": 3, "In Progress": 4, "Refund Under Review": 5, Completed: 6, Settled: 6, Refunded: 6, "Partially Refunded": 6, Cancelled: 7, "Cancelled - Provider No-Show": 7, "Declined by Provider": 8 };
       compareWithinGroup = (a, b) => (order[a.status] ?? 99) - (order[b.status] ?? 99);
     }
     return sortBookingsWithOngoingFirst(filteredManagedBookings, compareWithinGroup);
@@ -170,12 +170,12 @@ export default function ProviderBookingsPage() {
   const stats = useMemo(() => ({
     total: requests.length + managedBookings.length,
     incoming: requests.length,
-    active: managedBookings.filter((b) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(b.status)).length,
-    completed: managedBookings.filter((b) => ["Completed", "Settled"].includes(b.status)).length,
+    active: managedBookings.filter((b) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed", "Refund Under Review"].includes(b.status)).length,
+    completed: managedBookings.filter((b) => ["Completed", "Settled", "Refunded", "Partially Refunded"].includes(b.status)).length,
     cancelled: managedBookings.filter((b) => ["Cancelled", "Cancelled - Provider No-Show"].includes(b.status)).length,
     declined: managedBookings.filter((b) => b.status === "Declined by Provider").length,
     earnings: managedBookings
-      .filter((b) => ["Completed", "Settled"].includes(b.status))
+      .filter((b) => ["Completed", "Settled", "Refunded", "Partially Refunded"].includes(b.status))
       .reduce((sum, booking) => sum + Number(booking.totalPrice ?? parsePrice(booking.price)), 0),
   }), [requests, managedBookings]);
 
@@ -320,7 +320,7 @@ export default function ProviderBookingsPage() {
                 : tab.key === "Active"
                 ? managedBookings.filter((booking) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status)).length
                 : tab.key === "Completed"
-                ? managedBookings.filter((booking) => ["Completed", "Settled"].includes(booking.status)).length
+                ? managedBookings.filter((booking) => ["Completed", "Settled", "Refunded", "Partially Refunded"].includes(booking.status)).length
                 : tab.key === "Declined"
                 ? managedBookings.filter((booking) => booking.status === "Declined by Provider").length
                 : managedBookings.filter((booking) => ["Cancelled", "Cancelled - Provider No-Show"].includes(booking.status)).length;
@@ -708,6 +708,15 @@ export default function ProviderBookingsPage() {
                               >
                                 Send Update
                               </button>
+                            )}
+                            {(booking.refundStatus === "pending" || booking.refundStatus === "refunded" || booking.refundStatus === "partially_refunded") && (
+                              <p className="w-full rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">
+                                {booking.refundStatus === "pending"
+                                  ? "A client refund request is awaiting admin review. Do not send cash until a resolution is recorded."
+                                  : booking.refundAmount > 0
+                                    ? `Admin recorded ₱${Number(booking.refundAmount).toLocaleString("en-PH", { maximumFractionDigits: 2 })} for you to return directly to the client. TaskPanda does not deduct or transfer cash.`
+                                    : "The refund was resolved through travel-voucher restoration. No cash repayment is due."}
+                              </p>
                             )}
                             {booking.paymentMethod === "cash" && ["Completed", "Settled"].includes(booking.status) && (
                               <button

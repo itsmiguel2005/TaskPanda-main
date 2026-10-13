@@ -218,6 +218,48 @@ async function restoreVoucherForBooking(booking) {
   return result.modifiedCount === 1;
 }
 
+async function restoreVoucherForRefund(booking) {
+  if (!booking?.voucherId || !booking?._id || !booking?.clientId || Number(booking.travelFeeDiscount || 0) <= 0) {
+    return false;
+  }
+
+  const clientId = booking.clientId._id || booking.clientId;
+  const restored = await User.updateOne(
+    mongoose.trusted({
+      _id: clientId,
+      vouchers: mongoose.trusted({
+        $elemMatch: {
+          _id: booking.voucherId,
+          status: "redeemed",
+          bookingId: booking._id,
+        },
+      }),
+    }),
+    {
+      $set: { "vouchers.$.status": "active" },
+      $unset: {
+        "vouchers.$.bookingId": 1,
+        "vouchers.$.redeemedAt": 1,
+      },
+    }
+  );
+  if (restored.modifiedCount === 1) return true;
+
+  const alreadyRestored = await User.exists(
+    mongoose.trusted({
+      _id: clientId,
+      vouchers: mongoose.trusted({
+        $elemMatch: {
+          _id: booking.voucherId,
+          status: "active",
+        },
+      }),
+    })
+  );
+  if (alreadyRestored) return true;
+  throw new Error("The booking's travel-fee voucher could not be restored.");
+}
+
 async function awardSettledBookingStamp(bookingId) {
   const stampAwardedAt = new Date();
   const booking = await Booking.findOneAndUpdate(
@@ -312,5 +354,6 @@ module.exports = {
   creditReferralRewards,
   recoverExpiredVoucherReservations,
   restoreVoucherForBooking,
+  restoreVoucherForRefund,
   awardSettledBookingStamp,
 };

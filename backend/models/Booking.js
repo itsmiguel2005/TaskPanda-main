@@ -52,6 +52,8 @@ const bookingSchema = new mongoose.Schema(
     cashReceivedConfirmedAt: { type: Date },
     clientConfirmedCash: { type: Boolean, default: false },
     providerConfirmedCash: { type: Boolean, default: false },
+    cashPaidAutoConfirmed: { type: Boolean, default: undefined },
+    cashReceivedAutoConfirmed: { type: Boolean, default: undefined },
     workCompletedAt: { type: Date },
     settledAt: { type: Date },
     cashReceipt: {
@@ -79,10 +81,15 @@ const bookingSchema = new mongoose.Schema(
     }],
     status: {
       type: String,
-      enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Cancelled", "Completed", "Settled"],
+      enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "refund_pending", "refunded", "partially_refunded", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Cancelled", "Completed", "Settled"],
       default: "pending",
       index: true,
     },
+    refundRequestId: { type: mongoose.Schema.Types.ObjectId, ref: "RefundRequest" },
+    previousRefundableStatus: { type: String, enum: ["complete", "closed", "settled", "disputed"] },
+    isRefunded: { type: Boolean, default: false },
+    refundAmount: { type: Number, min: 0, default: 0 },
+    refundStatus: { type: String, enum: ["none", "pending", "refunded", "partially_refunded", "rejected"], default: "none" },
     requestExpiresAt: { type: Date, default: undefined, index: true },
     cancellationReason: { type: String, default: "", trim: true, maxlength: 500 },
     cancellationRequestedBy: { type: String, enum: ["client", "provider"], default: undefined },
@@ -96,7 +103,7 @@ const bookingSchema = new mongoose.Schema(
     clientReviewPhotos: { type: [String], default: [] },
     reviewedAt: { type: Date },
     statusHistory: [{
-      status: { type: String, enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "provider_no_show", "declined", "expired"] },
+      status: { type: String, enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "refund_pending", "refunded", "partially_refunded"] },
       at: { type: Date, default: Date.now },
     }],
     adminOverrideHistory: [{

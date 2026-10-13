@@ -31,6 +31,7 @@ const {
   hasScheduleConflict,
   isValidEstimatedDurationMinutes,
 } = require("../services/bookingLifecycle");
+const { wasCashPaidManuallyConfirmed } = require("../services/refundPolicy");
 
 const TIME_SLOTS = new Set(["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"]);
 const PH_TIMEZONE_OFFSET_HOURS = 8;
@@ -45,6 +46,9 @@ const STATUS_ALIASES = {
   cancelled: "canceled",
   completed: "complete",
   settled: "settled",
+  "refund under review": "refund_pending",
+  refunded: "refunded",
+  "partially refunded": "partially_refunded",
   "cancelled - provider no-show": "provider_no_show",
   "canceled - provider no-show": "provider_no_show",
 };
@@ -55,6 +59,9 @@ const STATUS_LABELS = {
   in_progress: "In Progress",
   cancel_requested: "Cancellation Requested",
   canceled: "Cancelled",
+  refund_pending: "Refund Under Review",
+  refunded: "Refunded",
+  partially_refunded: "Partially Refunded",
   provider_no_show: "Cancelled - Provider No-Show",
   declined: "Declined by Provider",
   complete: "Completed",
@@ -200,9 +207,15 @@ function serializeBooking(booking, viewerRole = "") {
     cashReceivedConfirmedAt: booking.cashReceivedConfirmedAt || null,
     clientConfirmedCash: Boolean(booking.clientConfirmedCash || booking.cashPaidConfirmedAt),
     providerConfirmedCash: Boolean(booking.providerConfirmedCash || booking.cashReceivedConfirmedAt),
+    cashPaidAutoConfirmed: !wasCashPaidManuallyConfirmed(booking)
+      && Boolean(booking.cashPaidConfirmedAt || booking.clientConfirmedCash),
     workCompletedAt: booking.workCompletedAt || booking.completionSubmittedAt || null,
     settledAt: booking.settledAt || null,
     cashReceipt: booking.cashReceipt || null,
+    isRefunded: booking.isRefunded === true,
+    refundAmount: Number(booking.refundAmount || 0),
+    refundStatus: booking.refundStatus || "none",
+    refundRequestId: booking.refundRequestId ? String(booking.refundRequestId) : null,
     completionNote: booking.completionNote || "",
     completionPhotos: booking.completionPhotos || [],
     completionSubmittedAt: booking.completionSubmittedAt || null,
@@ -320,7 +333,7 @@ async function recalculateProviderRatingSummary(providerId) {
     {
       $match: {
         providerId: new mongoose.Types.ObjectId(String(providerId)),
-        status: { $in: ["complete", "closed", "settled", "Completed", "Settled"] },
+        status: { $in: ["complete", "closed", "settled", "refunded", "partially_refunded", "Completed", "Settled", "Refunded", "Partially Refunded"] },
         clientRating: { $ne: null },
       },
     },
@@ -357,13 +370,13 @@ async function handleListBookings(req, res) {
     if (requestedClientId && !mongoose.isValidObjectId(requestedClientId)) return res.status(400).json({ message: "Invalid clientId filter." });
     if (requestedProviderId && !mongoose.isValidObjectId(requestedProviderId)) return res.status(400).json({ message: "Invalid providerId filter." });
     const normalizedStatus = normalizeBookingStatus(requestedStatus);
-    if (requestedStatus && !["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "complete", "in_revision", "disputed", "closed", "settled"].includes(normalizedStatus)) return res.status(400).json({ message: "Invalid status filter." });
+    if (requestedStatus && !["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "complete", "in_revision", "disputed", "closed", "settled", "refund_pending", "refunded", "partially_refunded"].includes(normalizedStatus)) return res.status(400).json({ message: "Invalid status filter." });
 
     const filter = {};
     if (normalizedStatus) {
       filter.status = normalizedStatus;
     } else {
-      filter.status = mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "complete", "in_revision", "disputed", "closed", "settled", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Declined by Provider", "Cancelled", "Cancelled - Provider No-Show", "Completed", "Settled", "Expired"] });
+      filter.status = mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "complete", "in_revision", "disputed", "closed", "settled", "refund_pending", "refunded", "partially_refunded", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Declined by Provider", "Cancelled", "Cancelled - Provider No-Show", "Completed", "Settled", "Expired"] });
     }
     if (req.user.role === "provider") {
       filter.providerId = req.user._id;
@@ -1817,6 +1830,8 @@ async function processCashSettlementFallbacks() {
         providerConfirmedCash: booking.providerConfirmedCash || true,
         cashPaidConfirmedAt: booking.cashPaidConfirmedAt || autoSettledAt,
         cashReceivedConfirmedAt: booking.cashReceivedConfirmedAt || autoSettledAt,
+        cashPaidAutoConfirmed: booking.cashPaidAutoConfirmed || !booking.cashPaidConfirmedAt,
+        cashReceivedAutoConfirmed: booking.cashReceivedAutoConfirmed || !booking.cashReceivedConfirmedAt,
       };
       await Booking.findByIdAndUpdate(
         booking._id,

@@ -141,7 +141,7 @@ function AdminTransactionsPanel() {
             <p className="mt-0.5 text-xs text-slate-500">{data ? `${data.pagination.total.toLocaleString()} matching transactions` : "Loading transaction count"}</p>
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            <p className="text-xs text-slate-600">Voucher discounts reduce travel fees only, never provider labor.</p>
+            <p className="text-xs text-slate-600">Voucher discounts reduce travel fees only. Cash repayment obligations are recorded separately and are not platform transfers.</p>
             <p id="ledger-scroll-hint" className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-900">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
                 <path d="M4 10h12M8 6l-4 4 4 4M12 6l4 4-4 4" />
@@ -179,6 +179,15 @@ function AdminTransactionsPanel() {
                     <p className="truncate font-semibold text-slate-900" title={row.task}>{row.task}</p>
                     <p className="mt-1 truncate text-xs text-slate-600">Client: {row.client}</p>
                     <p className="mt-0.5 truncate text-xs text-slate-600">Provider: {row.provider}</p>
+                    {row.refundStatus && row.refundStatus !== "none" && (
+                      <p className="mt-1 text-xs font-semibold text-amber-800">
+                        {row.refundStatus === "refunded" || row.refundStatus === "partially_refunded"
+                          ? row.refundAmount > 0
+                            ? `Cash repayment obligation: ${amount(row.refundAmount)} (provider-to-client)`
+                            : "Voucher restored; no cash transfer"
+                          : `Refund status: ${row.refundStatus}`}
+                      </p>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-4 text-right tabular-nums"><span className="block font-semibold text-slate-900">{amount(row.grossTaskValue)}</span><span className="mt-1 block text-xs text-slate-600">labor</span></td>
                   <td className="whitespace-nowrap px-4 py-4 text-right tabular-nums"><span className="block font-semibold text-slate-900">{amount(row.travelFee)}</span><span className="mt-1 block text-xs text-slate-600">{row.distanceKm.toFixed(2)} km</span></td>
