@@ -23,7 +23,10 @@ const navigationGroups = [
   },
   {
     label: "System",
-    links: [{ id: "settings", label: "Settings", icon: "settings" }],
+    links: [
+      { id: "settings", label: "Settings", icon: "settings" },
+      { id: "audit-logs", label: "System Logs", icon: "logs" },
+    ],
   },
 ];
 
@@ -49,6 +52,7 @@ function AdminIcon({ name, className = "h-5 w-5" }) {
     transactions: <><path d="M3 7h18M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" /><path d="M7 15h3M15 13l2 2-2 2" /></>,
     rewards: <><path d="M20 12v9H4v-9M2 7h20v5H2zM12 21V7" /><path d="M12 7H7.5a2.5 2.5 0 1 1 2.5-2.5C10 6 12 7 12 7ZM12 7h4.5A2.5 2.5 0 1 0 14 4.5C14 6 12 7 12 7Z" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="m19.4 15 .1.1a1.7 1.7 0 1 1-2.4 2.4l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a1.7 1.7 0 1 1-3.4 0v-.2a1.7 1.7 0 0 0-2.9-1.2l-.1.1a1.7 1.7 0 1 1-2.4-2.4l.1-.1a1.7 1.7 0 0 0-1.2-2.9H4a1.7 1.7 0 1 1 0-3.4h.2a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a1.7 1.7 0 1 1 2.4-2.4l.1.1a1.7 1.7 0 0 0 2.9-1.2V2a1.7 1.7 0 1 1 3.4 0v.2a1.7 1.7 0 0 0 2.9 1.2l.1-.1a1.7 1.7 0 1 1 2.4 2.4l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a1.7 1.7 0 1 1 0 3.4h-.2a1.7 1.7 0 0 0-1.2 2.9Z" /></>,
+    logs: <><path d="M8 6h13M8 12h13M8 18h13" /><path d="M3 6h.01M3 12h.01M3 18h.01" /></>,
     close: <><path d="m18 6-12 12M6 6l12 12" /></>,
     collapse: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16m6-11-3 3 3 3" /></>,
     expand: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16m3-11 3 3-3 3" /></>,

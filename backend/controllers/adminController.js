@@ -6,6 +6,7 @@ const User = require("../models/User");
 const config = require("../config/env");
 const { hasValidSmtpCredentials, sendPasswordResetEmail } = require("../services/mailer");
 const { getPandaBotHealth } = require("../services/pandaBotUsage");
+const { logAuditAction } = require("../utils/logAuditAction");
 
 const ACTIVE_STATUSES = ["approved", "en_route", "in_progress", "Confirmed", "On the Way", "In Progress"];
 const IN_PROGRESS_STATUSES = ["en_route", "in_progress", "On the Way", "In Progress"];
@@ -416,6 +417,14 @@ async function handleSetAdminUserSuspension(req, res) {
       { new: true, runValidators: true }
     ).select("fullName email role isSuspended archivedAt");
     if (!user) return res.status(404).json({ message: "Active user account not found." });
+    void logAuditAction(req, {
+      category: "OPERATIONS",
+      action: suspended && user.role === "provider" ? "PROVIDER_SUSPENDED"
+        : suspended ? "USER_SUSPENDED" : "USER_UNSUSPENDED",
+      targetResource: "User",
+      targetId: user._id,
+      details: `${user.role === "provider" ? "Provider" : "User"} ${user.fullName || user.email} was ${suspended ? "suspended" : "unsuspended"}.`,
+    });
     return res.json({ message: suspended ? "Account suspended and active sessions revoked." : "Account suspension lifted.", isSuspended: user.isSuspended });
   } catch (error) {
     console.error("Admin user suspension error:", error);
@@ -517,6 +526,13 @@ async function handleRequestAdminPasswordReset(req, res) {
       });
       throw mailError;
     }
+    void logAuditAction(req, {
+      category: "SECURITY",
+      action: "PASSWORD_RESET",
+      targetResource: "User",
+      targetId: user._id,
+      details: `Administrator requested a password reset for ${resetRequest.email}.`,
+    });
     return res.json({ message: `A secure password reset code has been sent to ${resetRequest.email}.` });
   } catch (error) {
     console.error("Admin password reset email error:", error);

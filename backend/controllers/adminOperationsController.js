@@ -5,6 +5,7 @@ const User = require("../models/User");
 const { getTransactionAmounts } = require("../services/financialLedger");
 const { hasOneSignalCredentials, sendPushNotification } = require("../services/oneSignal");
 const { getGlobalSettings, updateGlobalSettings } = require("../services/systemSettings");
+const { logAuditAction } = require("../utils/logAuditAction");
 
 const COMPLETED_STATUSES = ["complete", "closed", "settled", "refunded", "partially_refunded", "Completed", "Settled", "Refunded", "Partially Refunded"];
 const VOUCHER_ORIGINS = ["referral", "stamp-card", "promotion"];
@@ -290,7 +291,28 @@ async function handleGetAdminSystemSettings(_req, res) {
 
 async function handleUpdateAdminSystemSettings(req, res) {
   try {
+    const previousSettings = await getGlobalSettings();
     const settings = await updateGlobalSettings(req.body, req.adminEmail);
+    const changedSettings = ["maxTravelDistanceKm", "travelFeePerKm", "maintenanceMode"]
+      .filter((key) => previousSettings[key] !== settings[key]);
+    if (changedSettings.length) {
+      void logAuditAction(req, {
+        category: "GOVERNANCE",
+        action: "SYSTEM_SETTING_TOGGLED",
+        targetResource: "SystemSettings",
+        targetId: "global",
+        details: `Updated system settings: ${changedSettings.map((key) => `${key} (${previousSettings[key]} to ${settings[key]})`).join(", ")}.`,
+      });
+    }
+    if (changedSettings.includes("travelFeePerKm")) {
+      void logAuditAction(req, {
+        category: "FINANCIAL",
+        action: "PLATFORM_FEE_MODIFIED",
+        targetResource: "SystemSettings",
+        targetId: "global",
+        details: `Travel fee per kilometer changed from ${previousSettings.travelFeePerKm} to ${settings.travelFeePerKm}.`,
+      });
+    }
     return res.json({ message: "Global settings saved.", settings });
   } catch (error) {
     console.error("Admin system settings update error:", error);

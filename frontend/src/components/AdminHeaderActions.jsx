@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { apiFetch } from "../services/api.js";
 import { promptForPushPermission } from "../services/oneSignal.js";
 
 function HeaderIcon({ name, className = "h-5 w-5" }) {
@@ -35,7 +36,7 @@ function readNotificationPermission() {
 }
 
 export default function AdminHeaderActions() {
-  const { user, logout } = useAuth();
+  const { user, token, role, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const actionsRef = useRef(null);
@@ -138,6 +139,15 @@ export default function AdminHeaderActions() {
 
   const handleSignOut = () => {
     setOpenMenu(null);
+    if (token && role === "admin") {
+      void apiFetch("/api/auth/admin-logout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        keepalive: true,
+      }).catch((error) => {
+        console.warn("Admin sign-out could not be confirmed:", error.message);
+      });
+    }
     logout();
     navigate("/", { replace: true });
   };

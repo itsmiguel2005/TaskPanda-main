@@ -6,6 +6,7 @@ const User = require("../models/User");
 const { normalizePhilippinePhone, sendSms } = require("../utils/sendSms");
 const AdminSession = require("../models/AdminSession");
 const AdminLoginChallenge = require("../models/AdminLoginChallenge");
+const { logAuditAction } = require("../utils/logAuditAction");
 const config = require("../config/env");
 const { geocodeAddress } = require("../services/geocoder");
 const { getAgeFromDateOfBirth } = require("../utils/providerAge");
@@ -388,6 +389,29 @@ async function handleLogout(req, res) {
   } catch (error) {
     console.error("Logout error:", error);
     return res.status(500).json({ message: "Could not end this session cleanly." });
+  }
+}
+
+async function handleAdminLogout(req, res) {
+  const token = String(req.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  try {
+    const result = await AdminSession.deleteOne({
+      _id: req.adminSessionId,
+      tokenHash: hashToken(token),
+      adminEmail: req.adminEmail,
+    });
+    if (!result.deletedCount) return res.status(401).json({ message: "Your admin session has already ended." });
+    void logAuditAction(req, {
+      category: "SECURITY",
+      action: "ADMIN_LOGOUT",
+      targetResource: "AdminSession",
+      targetId: req.adminSessionId,
+      details: "Administrator signed out.",
+    });
+    return res.json({ message: "Admin session ended." });
+  } catch (error) {
+    console.error("Admin logout error:", error);
+    return res.status(500).json({ message: "Could not end the admin session cleanly." });
   }
 }
 
@@ -1039,6 +1063,13 @@ async function handleLogin(req, res) {
       if (!credentialAccountLimit.allowed) return rejectAdminRateLimit(res, credentialAccountLimit.retryAfterSeconds);
 
       if (password !== adminPassword) {
+        void logAuditAction(req, {
+          category: "SECURITY",
+          action: "FAILED_LOGIN_ATTEMPT",
+          targetResource: "AdminAccount",
+          targetId: adminEmail,
+          details: "Administrator password verification failed.",
+        });
         const attempt = recordFailedLogin(normalizedIdentifier);
         if (attempt.lockedUntil) return loginLockResponse(res, attempt);
         return res.status(401).json({ message: "Invalid admin credentials. Please try again." });
@@ -1493,6 +1524,13 @@ async function handleVerifyAdminLogin(req, res) {
       attempts: mongoose.trusted({ $lt: 5 }),
     }).select("+codeHash");
     if (!challenge || !/^\d{6}$/.test(code)) {
+      void logAuditAction(req, {
+        category: "SECURITY",
+        action: "FAILED_LOGIN_ATTEMPT",
+        targetResource: "AdminAccount",
+        targetId: adminEmail,
+        details: "Administrator verification code was invalid or expired.",
+      });
       return res.status(400).json({ message: "The verification code is invalid or expired. Sign in again to request a new one." });
     }
 
@@ -1509,8 +1547,22 @@ async function handleVerifyAdminLogin(req, res) {
         { returnDocument: "after" }
       );
       if (!updatedChallenge || updatedChallenge.attempts >= 5) {
+        void logAuditAction(req, {
+          category: "SECURITY",
+          action: "FAILED_LOGIN_ATTEMPT",
+          targetResource: "AdminAccount",
+          targetId: adminEmail,
+          details: "Administrator verification code attempts exceeded the allowed limit.",
+        });
         return res.status(429).json({ message: "Too many incorrect codes. Sign in again to request a new one." });
       }
+      void logAuditAction(req, {
+        category: "SECURITY",
+        action: "FAILED_LOGIN_ATTEMPT",
+        targetResource: "AdminAccount",
+        targetId: adminEmail,
+        details: "Administrator verification code was incorrect.",
+      });
       return res.status(400).json({ message: "The verification code is incorrect." });
     }
 
@@ -1536,6 +1588,12 @@ async function handleVerifyAdminLogin(req, res) {
       adminEmail,
       tokenHash: hashToken(adminToken),
       expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000),
+    });
+    void logAuditAction(req, {
+      category: "SECURITY",
+      action: "ADMIN_LOGIN",
+      targetResource: "AdminSession",
+      details: "Administrator completed multi-factor sign-in.",
     });
     sendAdminPushAlertInBackground({
       roles: ["admin"],
@@ -1654,6 +1712,7 @@ module.exports = {
   handleSendSmsOtp,
   handleVerifySmsOtp,
   handleLogout,
+  handleAdminLogout,
   handleVerifyAdminLogin,
   handleForgotPassword,
   handleVerifyPasswordResetCode,

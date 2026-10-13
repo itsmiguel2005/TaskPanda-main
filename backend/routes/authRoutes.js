@@ -14,6 +14,7 @@ const {
   handleSendSmsOtp,
   handleVerifySmsOtp,
   handleLogout,
+  handleAdminLogout,
   handleVerifyAdminLogin,
   handleForgotPassword,
   handleVerifyPasswordResetCode,
@@ -25,6 +26,7 @@ const { validateRequest } = require("../middleware/validateRequest");
 const { verifyRecaptcha } = require("../middleware/verifyRecaptcha");
 const { handleLocationSearch, handleLocationReverseLookup } = require("../controllers/locationController");
 const { requireAuth, requireRole } = require("../middleware/requireAuth");
+const { requireAdmin } = require("../middleware/requireAdmin");
 
 const router = express.Router();
 const emailField = () => body("email").isString().trim().isEmail().isLength({ max: 254 });
@@ -105,6 +107,7 @@ router.post("/verify-phone-otp", limitAuthAttempts, [
   body("otpCode").isString().matches(/^\d{6}$/),
 ], validateRequest, handleVerifySmsOtp);
 router.post("/logout", requireAuth, requireRole("client", "provider"), handleLogout);
+router.post("/admin-logout", requireAdmin, handleAdminLogout);
 router.post("/admin-login/verify", limitAuthAttempts, [
   body("challengeToken").isString().matches(/^[a-f\d]{64}$/i),
   body("code").isString().matches(/^\d{6}$/),

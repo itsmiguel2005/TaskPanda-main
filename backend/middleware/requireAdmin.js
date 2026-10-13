@@ -19,6 +19,7 @@ async function requireAdmin(req, res, next) {
     }));
     if (!session) return res.status(401).json({ message: "Your admin session expired. Sign in again." });
     req.adminEmail = session.adminEmail;
+    req.adminSessionId = session._id;
     return next();
   } catch (error) {
     return next(error);

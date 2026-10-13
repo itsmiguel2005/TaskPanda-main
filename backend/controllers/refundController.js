@@ -6,6 +6,7 @@ const { appendBookingSystemMessage } = require("../services/bookingMessaging");
 const { sendPushNotification } = require("../services/oneSignal");
 const { restoreVoucherForRefund } = require("../services/rewards");
 const { calculateTotalPrice } = require("../services/bookingPricing");
+const { logAuditAction } = require("../utils/logAuditAction");
 const {
   getRefundDeadline,
   isRefundableBookingStatus,
@@ -466,6 +467,15 @@ async function handleResolveAdminRefund(req, res) {
         voucherRestored,
         adminNotes,
       });
+      if (action !== "REJECT") {
+        void logAuditAction(req, {
+          category: "FINANCIAL",
+          action: "REFUND_ISSUED",
+          targetResource: "Booking",
+          targetId: booking._id,
+          details: `Refund approved for booking ${booking._id}: PHP ${approvedAmount.toFixed(2)} (refund ${refund._id}).`,
+        });
+      }
       return res.json({ refund: serializeRefund({ ...resolvedRefund.toObject(), bookingId: booking }) });
     }
 
@@ -529,6 +539,15 @@ async function handleResolveAdminRefund(req, res) {
         voucherRestored,
         adminNotes,
       });
+      if (action !== "REJECT") {
+        void logAuditAction(req, {
+          category: "FINANCIAL",
+          action: "REFUND_ISSUED",
+          targetResource: "Booking",
+          targetId: updatedBooking._id,
+          details: `Refund approved for booking ${updatedBooking._id}: PHP ${approvedAmount.toFixed(2)} (refund ${refund._id}).`,
+        });
+      }
       return res.json({ refund: serializeRefund({ ...resolvedRefund.toObject(), bookingId: updatedBooking }) });
     } catch (resolutionError) {
       try {

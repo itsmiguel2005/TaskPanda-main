@@ -1,5 +1,6 @@
 const fs = require("fs/promises");
 const mongoose = require("mongoose");
+const { logAuditAction } = require("../utils/logAuditAction");
 const { waitUntil } = require("@vercel/functions");
 const User = require("../models/User");
 const tesdaSectors = require("../../shared/tesdaQualifications.json");
@@ -604,6 +605,13 @@ async function handleReviewTesdaCertificate(req, res) {
       runValidators: true,
     });
     if (!user) return res.status(404).json({ message: "This pending TESDA certificate could not be found." });
+    void logAuditAction(req, {
+      category: "OPERATIONS",
+      action: approved ? "VERIFICATION_APPROVED" : "VERIFICATION_REJECTED",
+      targetResource: "ProviderVerification",
+      targetId: req.params.certificateId,
+      details: `TESDA certificate ${approved ? "approved" : "rejected"} for ${user.fullName || user.email}.`,
+    });
     return res.json({
       success: true,
       userId: String(user._id),
@@ -656,6 +664,13 @@ async function handleReviewVerification(req, res) {
       role: mongoose.trusted({ $in: ["client", "provider"] }),
     }, update, { new: true, runValidators: true });
     if (!user) return res.status(404).json({ message: "This pending verification could not be found." });
+    void logAuditAction(req, {
+      category: "OPERATIONS",
+      action: approved ? "VERIFICATION_APPROVED" : "VERIFICATION_REJECTED",
+      targetResource: "User",
+      targetId: user._id,
+      details: `Identity verification ${approved ? "approved" : "rejected"} for ${user.fullName || user.email}.`,
+    });
 
     let voucherAwarded = false;
     let voucherAwardError = false;

@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { logAuditAction } = require("../utils/logAuditAction");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
 const { DEFAULT_ESTIMATED_DURATION_MINUTES, getBookingRequestExpiration } = require("../services/bookingLifecycle");
@@ -278,6 +279,15 @@ async function handleOverrideAdminBooking(req, res) {
       .lean();
     if (!booking) {
       return res.status(409).json({ message: "This booking changed while you were reviewing it. Refresh and try again." });
+    }
+    if (targetStatus === "settled" && fromStatus !== "settled") {
+      void logAuditAction(req, {
+        category: "FINANCIAL",
+        action: "PAYMENT_RELEASED",
+        targetResource: "Booking",
+        targetId: booking._id,
+        details: `Payment settlement was released by admin override for booking ${booking._id}.`,
+      });
     }
     return res.json({ booking: serializeAdminBooking(booking), message: "Booking status updated and audit note recorded." });
   } catch (error) {

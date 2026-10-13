@@ -4,6 +4,7 @@ const User = require("../models/User");
 const Booking = require("../models/Booking");
 const Message = require("../models/Message");
 const oneSignal = require("../services/oneSignal");
+const { logAuditAction } = require("../utils/logAuditAction");
 
 const SUPPORT_REPORT_PAGE_SIZE = 25;
 
@@ -273,6 +274,15 @@ async function handleUpdateAdminSupportReport(req, res) {
         { new: true, runValidators: true },
       ).select("_id role email isSuspended");
       if (!reportedUser) return res.status(404).json({ message: "The reported account is no longer active." });
+      if (action === "suspend") {
+        void logAuditAction(req, {
+          category: "OPERATIONS",
+          action: reportedUser.role === "provider" ? "PROVIDER_SUSPENDED" : "USER_SUSPENDED",
+          targetResource: "User",
+          targetId: reportedUser._id,
+          details: `${reportedUser.role === "provider" ? "Provider" : "User"} ${reportedUser.email} was suspended after a support report.`,
+        });
+      }
 
       if (action === "send_warning") {
         try {
@@ -320,6 +330,15 @@ async function handleUpdateAdminSupportReport(req, res) {
     ).lean();
     const report = conversation?.supportReports?.find((item) => String(item._id) === reportId);
     if (!report) return res.status(404).json({ message: "That support report could not be found." });
+    if (action === "resolve") {
+      void logAuditAction(req, {
+        category: "GOVERNANCE",
+        action: "REPORT_RESOLVED",
+        targetResource: "SupportReport",
+        targetId: reportId,
+        details: `Support report ${reportId} was resolved.`,
+      });
+    }
     return res.json({
       id: String(report._id),
       status: report.status,

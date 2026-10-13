@@ -37,9 +37,22 @@ const {
 } = require("../controllers/verificationController");
 const { requireAdmin } = require("../middleware/requireAdmin");
 const { validateRequest } = require("../middleware/validateRequest");
+const { handleGetAdminAuditLogs } = require("../controllers/auditLogController");
 
 const router = express.Router();
 
+router.get(
+  "/audit-logs",
+  requireAdmin,
+  [
+    query("page").optional().isInt({ min: 1, max: 100000 }),
+    query("limit").optional().isInt({ min: 1, max: 100 }),
+    query("category").optional().isIn(["SECURITY", "OPERATIONS", "FINANCIAL", "GOVERNANCE"]),
+    query("adminName").optional().isString().trim().isLength({ max: 100 }),
+  ],
+  validateRequest,
+  handleGetAdminAuditLogs
+);
 router.get("/verifications", requireAdmin, handleGetAdminVerifications);
 router.get(
   "/verifications/:userId/tesda/:certificateId/document",

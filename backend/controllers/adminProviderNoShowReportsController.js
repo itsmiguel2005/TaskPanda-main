@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const Booking = require("../models/Booking");
+const { logAuditAction } = require("../utils/logAuditAction");
 const { sendPushNotification } = require("../services/oneSignal");
 
 const PROVIDER_NO_SHOW_REPORT_PAGE_SIZE = 25;
@@ -117,6 +118,13 @@ async function handleReviewAdminProviderNoShowReport(req, res) {
     if (!booking) {
       return res.status(409).json({ message: "This report has already been reviewed or is no longer available. Refresh the report list." });
     }
+    void logAuditAction(req, {
+      category: "GOVERNANCE",
+      action: "REPORT_RESOLVED",
+      targetResource: "Booking",
+      targetId: booking._id,
+      details: `Provider no-show report was ${action === "dismiss" ? "dismissed" : "confirmed"}.`,
+    });
     try {
       await sendPushNotification({
         userIds: [String(booking.providerId)],
