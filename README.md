@@ -55,7 +55,7 @@ MONGO_DB_NAME=taskpanda
 PORT=3000
 # Optional API origin for a separately hosted HTTPS backend; unset to use the same-origin Vercel API
 VITE_API_BASE_URL=
-# Google reCAPTCHA v3 public site key
+# Google reCAPTCHA v3 public site key (registration start and password reset)
 VITE_RECAPTCHA_SITE_KEY=your-recaptcha-v3-site-key
 # Optional Vite development proxy target; defaults to the local Express server
 VITE_API_PROXY_TARGET=http://localhost:3000
@@ -71,7 +71,7 @@ ADMIN_OTP_EMAIL=admin-security@example.com
 ADMIN_OTP_SECRET=generate-a-random-secret-of-at-least-32-characters
 # Optional; falls back to ADMIN_OTP_SECRET if omitted
 AUTH_OTP_SECRET=generate-a-different-random-secret-of-at-least-32-characters
-# Google reCAPTCHA v3 secret key (server-side only)
+# Google reCAPTCHA v3 secret key (server-side only; registration start and password reset)
 RECAPTCHA_SECRET_KEY=your-recaptcha-v3-secret-key
 
 # SMTP sends registration verification, password reset, and admin sign-in OTP emails

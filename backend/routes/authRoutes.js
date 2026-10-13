@@ -76,7 +76,7 @@ const completionValidation = [
   body("geoLocation.coordinates.*").optional().isFloat(),
 ];
 
-router.post("/register", limitAuthAttempts, registrationValidation, validateRequest, handleRegister);
+router.post("/register", limitAuthAttempts, registrationValidation, validateRequest, verifyRecaptcha("registration_start"), handleRegister);
 router.post("/check-registration", limitRegistrationChecks, [
   body("email").optional().isString().trim().isLength({ max: 254 }),
   body("username").optional().isString().trim().matches(usernamePattern).withMessage("Username must be 4-15 characters and use only letters, numbers, dots, underscores, or hyphens."),
@@ -95,15 +95,15 @@ router.post("/verify-otp", limitAuthAttempts, [
   body("rememberDevice").optional().isBoolean(),
 ], validateRequest, handleVerifyLoginOtp);
 router.post("/resend-otp", limitAuthAttempts, handleResendLoginOtp);
-router.post("/send-sms-otp", limitAuthAttempts, body("phone").isString().matches(/^(?:09\d{9}|\+?639\d{9})$/), validateRequest, verifyRecaptcha("verify_phone_otp"), handleSendSmsOtp);
+router.post("/send-sms-otp", limitAuthAttempts, body("phone").isString().matches(/^(?:09\d{9}|\+?639\d{9})$/), validateRequest, handleSendSmsOtp);
 router.post("/verify-sms-otp", limitAuthAttempts, [
   body("phone").isString().matches(/^(?:09\d{9}|\+?639\d{9})$/),
   body("otpCode").isString().matches(/^\d{6}$/),
-], validateRequest, verifyRecaptcha("verify_phone_otp"), handleVerifySmsOtp);
+], validateRequest, handleVerifySmsOtp);
 router.post("/verify-phone-otp", limitAuthAttempts, [
   body("phone").isString().matches(/^(?:09\d{9}|\+?639\d{9})$/),
   body("otpCode").isString().matches(/^\d{6}$/),
-], validateRequest, verifyRecaptcha("verify_phone_otp"), handleVerifySmsOtp);
+], validateRequest, handleVerifySmsOtp);
 router.post("/logout", requireAuth, requireRole("client", "provider"), handleLogout);
 router.post("/admin-login/verify", limitAuthAttempts, [
   body("challengeToken").isString().matches(/^[a-f\d]{64}$/i),

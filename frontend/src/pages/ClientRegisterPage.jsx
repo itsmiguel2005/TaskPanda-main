@@ -4,7 +4,9 @@ import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import TermsModal from "../components/TermsModal.jsx";
 import PasswordStrengthMeter from "../components/PasswordStrengthMeter.jsx";
+import RecaptchaDisclosure from "../components/RecaptchaDisclosure.jsx";
 import { getPasswordStrength, getUsernameError } from "../utils/registrationValidation.js";
+import { executeRecaptcha } from "../utils/recaptcha.js";
 
 export default function ClientRegisterPage() {
   console.log("[ClientRegisterPage] MOUNTED");
@@ -141,6 +143,7 @@ export default function ClientRegisterPage() {
 
     setIsChecking(true);
     try {
+      const recaptchaToken = await executeRecaptcha("registration_start");
       const response = await apiFetch("/api/auth/register", {
         method: "POST",
         credentials: "same-origin",
@@ -148,6 +151,7 @@ export default function ClientRegisterPage() {
         body: JSON.stringify({
           role: "client",
           registrationPhase: "start",
+          recaptchaToken,
           username: formData.username.trim(),
           email: formData.email.trim().toLowerCase(),
           referralCode: formData.referralCode.trim().toUpperCase(),
@@ -168,8 +172,10 @@ export default function ClientRegisterPage() {
       sessionStorage.setItem("clientStep1", JSON.stringify(step1));
       localStorage.removeItem("clientStep1");
       navigate(`/verify-email?email=${encodeURIComponent(formData.email.trim().toLowerCase())}`);
-    } catch {
-      setError("Network error. Please try again.");
+    } catch (registerError) {
+      setError(registerError.message?.startsWith("reCAPTCHA")
+        ? registerError.message
+        : "Network error. Please try again.");
     } finally {
       setIsChecking(false);
     }
@@ -450,6 +456,7 @@ export default function ClientRegisterPage() {
               </button>
             </form>
 
+            <RecaptchaDisclosure />
             <div className="text-center text-sm text-gray-600">
               Already have an account?{" "}
               <Link to="/login" className={`font-medium ${a.link}`}>
