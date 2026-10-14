@@ -240,9 +240,9 @@ export default function AdminRefundManagement() {
         </div>
       </header>
 
-      <div className="flex flex-wrap gap-2" aria-label="Refund status filter">
+      <div className="flex gap-1 overflow-x-auto border-b border-slate-200" role="group" aria-label="Filter refund requests by status">
         {filters.map(([value, label]) => (
-          <button key={value} type="button" onClick={() => { setFilter(value); setPage(1); }} aria-pressed={filter === value} className={`rounded-full px-4 py-2 text-sm font-semibold ${filter === value ? "bg-blue-800 text-white" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>{label}</button>
+          <button key={value} type="button" onClick={() => { setFilter(value); setPage(1); }} aria-pressed={filter === value} className={`dashboard-focus shrink-0 border-b-2 px-3 py-2.5 text-xs font-semibold transition ${filter === value ? "border-blue-800 text-blue-950" : "border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-900"}`}>{label}</button>
         ))}
       </div>
 

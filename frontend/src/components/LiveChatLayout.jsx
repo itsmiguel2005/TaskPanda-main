@@ -77,22 +77,30 @@ const STATUS_LABELS = {
   disputed: "Disputed",
   closed: "Completed",
   settled: "Settled",
+  expired: "Expired",
+  refund_pending: "Refund Under Review",
+  refunded: "Refunded",
+  partially_refunded: "Partially Refunded",
 };
 
 const STATUS_BADGE_STYLES = {
   pending: "border-amber-200 bg-amber-50 text-amber-800",
   approved: "border-emerald-200 bg-emerald-50 text-emerald-800",
   en_route: "border-cyan-200 bg-cyan-50 text-cyan-800",
-  in_progress: "border-violet-200 bg-violet-50 text-violet-800",
+  in_progress: "border-green-200 bg-green-50 text-green-800",
   cancel_requested: "border-amber-200 bg-amber-50 text-amber-800",
-  canceled: "border-red-200 bg-red-50 text-red-800",
-  provider_no_show: "border-blue-200 bg-blue-50 text-blue-800",
-  declined: "border-rose-200 bg-rose-50 text-rose-800",
-  complete: "border-blue-200 bg-blue-50 text-blue-800",
+  canceled: "border-slate-200 bg-slate-100 text-slate-700",
+  provider_no_show: "border-slate-200 bg-slate-100 text-slate-700",
+  declined: "border-slate-200 bg-slate-100 text-slate-700",
+  expired: "border-slate-200 bg-slate-100 text-slate-700",
+  complete: "border-slate-200 bg-slate-100 text-slate-700",
   in_revision: "border-amber-200 bg-amber-50 text-amber-800",
   disputed: "border-red-200 bg-red-50 text-red-800",
-  closed: "border-blue-200 bg-blue-50 text-blue-800",
-  settled: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  closed: "border-slate-200 bg-slate-100 text-slate-700",
+  settled: "border-slate-200 bg-slate-100 text-slate-700",
+  refund_pending: "border-amber-200 bg-amber-50 text-amber-800",
+  refunded: "border-slate-200 bg-slate-100 text-slate-700",
+  partially_refunded: "border-slate-200 bg-slate-100 text-slate-700",
 };
 
 function normalizeBookingStatus(status) {
@@ -105,7 +113,10 @@ function normalizeBookingStatus(status) {
     en_route: "en_route",
     in_progress: "in_progress",
     "in progress": "in_progress",
+    "pending request": "pending",
+    "in revision": "in_revision",
     cancel_requested: "cancel_requested",
+    "cancellation requested": "cancel_requested",
     canceled: "canceled",
     cancelled: "canceled",
     provider_no_show: "provider_no_show",
@@ -118,15 +129,26 @@ function normalizeBookingStatus(status) {
     completed: "complete",
     closed: "closed",
     settled: "settled",
-    "settled": "settled",
     in_revision: "in_revision",
-    "in revision": "in_revision",
     disputed: "disputed",
+    "refund under review": "refund_pending",
   }[normalized] || normalized || "pending";
 }
 
+function getConversationStatusGroup(status) {
+  const normalizedStatus = normalizeBookingStatus(status);
+  if (["pending", "approved", "en_route", "in_progress", "in_revision", "disputed", "refund_pending", "cancel_requested"].includes(normalizedStatus)) {
+    return "active";
+  }
+  if (["settled", "complete", "closed", "canceled", "provider_no_show", "declined", "expired", "refunded", "partially_refunded"].includes(normalizedStatus)) {
+    return "archived";
+  }
+  return null;
+}
+
 function getStatusLabel(status) {
-  return STATUS_LABELS[normalizeBookingStatus(status)] || "Pending Request";
+  const normalizedStatus = normalizeBookingStatus(status);
+  return STATUS_LABELS[normalizedStatus] || "Booking status";
 }
 
 function getStatusBadgeClass(status) {
@@ -191,9 +213,10 @@ function renderStarRating(rating, className = "text-xs") {
 function isConversationArchivedForRole(conversation, role) {
   if (!conversation) return false;
   const archiveField = role === "client" ? "isArchivedByClient" : "isArchivedByProvider";
-  return typeof conversation[archiveField] === "boolean"
+  const isManuallyArchived = typeof conversation[archiveField] === "boolean"
     ? conversation[archiveField]
     : Boolean(conversation.isArchived);
+  return isManuallyArchived || getConversationStatusGroup(conversation.bookingStatus) === "archived";
 }
 
 function isManuallyArchivedForRole(conversation, role) {
@@ -229,6 +252,8 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const navigate = useNavigate();
   const { token, role: authenticatedRole } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const showArchived = tabParam === "archived";
   const [conversations, setConversations] = useState([]);
   const [selectedId, setSelectedId] = useState(searchParams.get("conversation") || null);
   const [messages, setMessages] = useState([]);
@@ -236,7 +261,6 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [search, setSearch] = useState("");
-  const [showArchived, setShowArchived] = useState(false);
   const [archivingConversationIds, setArchivingConversationIds] = useState(() => new Set());
   const [input, setInput] = useState("");
   const [chatPhotos, setChatPhotos] = useState([]);
@@ -298,6 +322,15 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
 
   const requestHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
   selectedIdRef.current = selectedId;
+
+  useEffect(() => {
+    if (tabParam === "active" || tabParam === "archived") return;
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("tab", "active");
+      return next;
+    }, { replace: true });
+  }, [setSearchParams, tabParam]);
 
   const sendCounterTypingUpdate = useCallback(async (typing, conversationId = selectedIdRef.current, keepalive = false) => {
     if (!conversationId || !token) return;
@@ -382,15 +415,33 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const loadConversations = useCallback(async () => {
     if (!token || authenticatedRole !== role) return;
     try {
-      const params = new URLSearchParams({ includeArchived: String(showArchived) });
+      const params = new URLSearchParams({ tab: showArchived ? "archived" : "active" });
       const response = await apiFetch(`/api/conversations?${params.toString()}`, { headers: requestHeaders });
       const data = await response.json().catch(() => ({}));
       console.log("Fetched conversations:", data);
       if (!response.ok) throw new Error(data.message || "Could not load conversations.");
       const payload = Array.isArray(data) ? data : (Array.isArray(data?.conversations) ? data.conversations : []);
-      const nextConversations = payload
+      let nextConversations = payload
         .filter((conversation) => conversation && typeof conversation.id === "string")
         .map((conversation) => conversation.id === selectedIdRef.current ? { ...conversation, unreadCount: 0 } : conversation);
+      const linkedConversationId = searchParams.get("conversation");
+      if (linkedConversationId && !nextConversations.some((conversation) => conversation.id === linkedConversationId)) {
+        const otherTab = showArchived ? "active" : "archived";
+        const otherResponse = await apiFetch(`/api/conversations?tab=${otherTab}`, { headers: requestHeaders });
+        const otherData = await otherResponse.json().catch(() => ({}));
+        if (!otherResponse.ok) throw new Error(otherData.message || "Could not load the linked conversation.");
+        const otherPayload = Array.isArray(otherData) ? otherData : (Array.isArray(otherData?.conversations) ? otherData.conversations : []);
+        const linkedConversation = otherPayload.find((conversation) => conversation?.id === linkedConversationId);
+        if (linkedConversation) {
+          nextConversations = otherPayload
+            .filter((conversation) => conversation && typeof conversation.id === "string")
+            .map((conversation) => conversation.id === linkedConversationId
+              ? { ...conversation, unreadCount: 0 }
+              : conversation);
+          setSelectedId(linkedConversationId);
+          setSearchParams({ tab: otherTab, conversation: linkedConversationId }, { replace: true });
+        }
+      }
       setConversations(nextConversations);
       setError("");
     } catch (requestError) {
@@ -398,7 +449,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     } finally {
       setIsLoading(false);
     }
-  }, [authenticatedRole, requestHeaders, role, showArchived, token]);
+  }, [authenticatedRole, requestHeaders, role, searchParams, setSearchParams, showArchived, token]);
 
   useEffect(() => {
     loadConversations();
@@ -423,7 +474,8 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
         if (!conversation || typeof conversation.id !== "string") throw new Error("Could not load the booking conversation.");
         setConversations((current) => [conversation, ...current.filter((item) => item?.id !== conversation.id)]);
         setSelectedId(conversation.id);
-        setSearchParams({ conversation: conversation.id }, { replace: true });
+        const folder = isConversationArchivedForRole(conversation, role) ? "archived" : "active";
+        setSearchParams({ tab: folder, conversation: conversation.id }, { replace: true });
         setError("");
       })
       .catch((requestError) => {
@@ -439,9 +491,9 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
       setSelectedId(conversationId);
     } else if (!searchParams.get("bookingId") && conversationId && !isLoading) {
       setSelectedId(null);
-      setSearchParams({}, { replace: true });
+      setSearchParams({ tab: showArchived ? "archived" : "active" }, { replace: true });
     }
-  }, [conversations, isLoading, searchParams, setSearchParams]);
+  }, [conversations, isLoading, searchParams, setSearchParams, showArchived]);
 
   useEffect(() => {
     if (!selectedId || !token || authenticatedRole !== role) {
@@ -633,8 +685,8 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     setCounterFormOpen(false);
     setSupportReportOpen(false);
     setSupportReportDetails("");
-    setSearchParams({}, { replace: true });
-  }, [isLoading, selectedConversation, selectedId, setSearchParams]);
+    setSearchParams({ tab: showArchived ? "archived" : "active" }, { replace: true });
+  }, [isLoading, selectedConversation, selectedId, setSearchParams, showArchived]);
 
   const isBookingComplete = ["complete", "Completed", "closed", "settled", "Settled"].includes(selectedConversation?.bookingStatus);
   const clientCancellationNeedsReason = Boolean(selectedConversation && Date.now() - new Date(selectedConversation.bookingCreatedAt || 0).getTime() >= 10 * 60 * 1000);
@@ -662,7 +714,14 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const filteredConversations = useMemo(() => {
     const query = search.trim().toLowerCase();
     const sorted = conversations
-      .filter((conversation) => conversation && isConversationArchivedForRole(conversation, role) === showArchived)
+      .filter((conversation) => {
+        if (!conversation) return false;
+        const statusGroup = getConversationStatusGroup(conversation.bookingStatus);
+        const isManuallyArchived = isManuallyArchivedForRole(conversation, role);
+        return showArchived
+          ? statusGroup === "archived" || isManuallyArchived
+          : statusGroup === "active" && !isManuallyArchived;
+      })
       .sort((a, b) => new Date(b.lastMessageAt || b.updatedAt || 0) - new Date(a.lastMessageAt || a.updatedAt || 0));
     if (!query) return sorted;
     return sorted.filter((conversation) => [conversation.name, conversation.task, conversation.lastMessage]
@@ -746,7 +805,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     setMessages([]);
     setHasMoreMessages(false);
     setInput("");
-    setSearchParams({ conversation: conversationId }, { replace: true });
+    setSearchParams({ tab: showArchived ? "archived" : "active", conversation: conversationId }, { replace: true });
   };
 
   const loadOlderMessages = async () => {
@@ -1204,7 +1263,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
         setSupportReportDetails("");
         setRevisionRequestOpen(false);
         setActionModalView("DETAILS");
-        setSearchParams({}, { replace: true });
+        setSearchParams({ tab: showArchived ? "archived" : "active" }, { replace: true });
       }
       setError("");
     } catch (requestError) {
@@ -1345,12 +1404,11 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
             <h1 className="text-xl font-extrabold tracking-tight text-slate-900">Messages</h1>
             <p className="mt-1 text-xs text-slate-600">Booking conversations</p>
             <div className="mt-3 flex rounded-full bg-slate-100 p-1" role="tablist" aria-label="Conversation folders">
-              {[{ archived: false, label: "Active" }, { archived: true, label: "Archived" }].map((folder) => (
-                <button key={folder.label} role="tab" aria-selected={showArchived === folder.archived} onClick={() => {
-                  setShowArchived(folder.archived);
+              {[{ tab: "active", label: "Active" }, { tab: "archived", label: "Archived" }].map((folder) => (
+                <button key={folder.label} role="tab" aria-selected={(showArchived ? "archived" : "active") === folder.tab} onClick={() => {
                   setSelectedId(null);
-                  setSearchParams({}, { replace: true });
-                }} className={`dashboard-focus flex-1 rounded-full px-3 py-1.5 text-xs font-semibold transition ${showArchived === folder.archived ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>
+                  setSearchParams({ tab: folder.tab }, { replace: true });
+                }} className={`dashboard-focus flex-1 rounded-full px-3 py-1.5 text-xs font-semibold transition ${(showArchived ? "archived" : "active") === folder.tab ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>
                   {folder.label}
                 </button>
               ))}
@@ -1381,15 +1439,20 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                         <time className="text-[11px] text-slate-500">{formatConversationTime(conversation.lastMessageAt || conversation.updatedAt)}</time>
                       </span>
                     </span>
-                    <span className="block truncate pt-0.5 text-xs font-medium text-slate-600">{conversation.task}</span>
+                    <span className="flex min-w-0 items-center gap-1.5 pt-0.5">
+                      <span className="min-w-0 truncate text-xs font-medium text-slate-600">{conversation.task}</span>
+                      <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold leading-none ${getStatusBadgeClass(conversation.bookingStatus)}`}>
+                        {getStatusLabel(conversation.bookingStatus)}
+                      </span>
+                    </span>
                     <span className={`block truncate pt-0.5 text-xs ${conversation.unreadCount > 0 ? "font-semibold text-slate-800" : "text-slate-500"}`}>{previewIsMine ? "You: " : ""}{previewText}</span>
                   </span>
                 </button>
-                <button type="button" onClick={() => handleArchiveConversation(conversation)} disabled={archivingConversationIds.has(conversation.id)} aria-busy={archivingConversationIds.has(conversation.id)} aria-label={isManuallyArchivedForRole(conversation, role) ? "Restore conversation" : "Archive conversation"} title={archivingConversationIds.has(conversation.id) ? "Updating archive…" : isManuallyArchivedForRole(conversation, role) ? "Restore conversation" : "Archive conversation"} className="dashboard-focus shrink-0 rounded-lg p-2 text-slate-500 hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50">
+                {!conversation.isAutoArchived && <button type="button" onClick={() => handleArchiveConversation(conversation)} disabled={archivingConversationIds.has(conversation.id)} aria-busy={archivingConversationIds.has(conversation.id)} aria-label={isManuallyArchivedForRole(conversation, role) ? "Restore conversation" : "Archive conversation"} title={archivingConversationIds.has(conversation.id) ? "Updating archive…" : isManuallyArchivedForRole(conversation, role) ? "Restore conversation" : "Archive conversation"} className="dashboard-focus shrink-0 rounded-lg p-2 text-slate-500 hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-4 w-4" aria-hidden="true">
                     {isManuallyArchivedForRole(conversation, role) ? <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5h18M5 7.5v11h14v-11M9 11h6m-3-7v9m-3-3 3 3 3-3" /> : <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5h18M5 7.5v11h14v-11M9 11h6M4 4h16v3.5H4z" />}
                   </svg>
-                </button>
+                </button>}
               </div>
               );
             }) : (
@@ -1405,7 +1468,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
           {selectedConversation ? (
             <>
               <header className="flex flex-wrap items-center gap-2.5 border-b border-sky-100 bg-white px-3 py-3 sm:flex-nowrap sm:gap-3 sm:px-5 sm:py-4">
-                <button onClick={() => { setSelectedId(null); setSearchParams({}, { replace: true }); }} className="dashboard-focus mr-0.5 rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 md:hidden" aria-label="Back to conversations">
+                <button onClick={() => { setSelectedId(null); setSearchParams({ tab: showArchived ? "archived" : "active" }, { replace: true }); }} className="dashboard-focus mr-0.5 rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 md:hidden" aria-label="Back to conversations">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5"><path strokeLinecap="round" strokeLinejoin="round" d="m15 18-6-6 6-6" /></svg>
                 </button>
                 <ConversationAvatar conversation={selectedConversation} size="h-10 w-10 ring-2 ring-sky-100" showPresence />

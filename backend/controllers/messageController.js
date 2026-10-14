@@ -11,6 +11,7 @@ const {
   isBookingTransactionWithinLimit,
 } = require("../services/bookingPricing");
 const { DEFAULT_ESTIMATED_DURATION_MINUTES } = require("../services/bookingLifecycle");
+const { getConversationStatusGroup } = require("../utils/conversationStatus");
 const { awardSettledBookingStamp } = require("../services/rewards");
 const {
   deleteChatPhoto,
@@ -32,6 +33,10 @@ function serializeConversation(conversation, role) {
   const provider = conversation.providerId && typeof conversation.providerId === "object" ? conversation.providerId : null;
   const booking = conversation.bookingId && typeof conversation.bookingId === "object" ? conversation.bookingId : null;
   const other = role === "client" ? provider : client;
+  const isAutoArchived = getConversationStatusGroup(booking?.status) === "archived";
+  const isManuallyArchived = role === "client"
+    ? Boolean(conversation.isArchivedByClient)
+    : Boolean(conversation.isArchivedByProvider);
   return {
     id: String(conversation._id),
     bookingId: String(booking?._id || conversation.bookingId),
@@ -90,7 +95,8 @@ function serializeConversation(conversation, role) {
     } : null,
     isArchivedByClient: Boolean(conversation.isArchivedByClient),
     isArchivedByProvider: Boolean(conversation.isArchivedByProvider),
-    isArchived: role === "client" ? Boolean(conversation.isArchivedByClient) : Boolean(conversation.isArchivedByProvider),
+    isAutoArchived,
+    isArchived: isManuallyArchived || isAutoArchived,
     unreadCount: role === "client" ? Number(conversation.unreadCountClient || 0) : Number(conversation.unreadCountProvider || 0),
     lastMessage: conversation.lastMessage || "No messages yet",
     updatedAt: conversation.updatedAt,
@@ -130,29 +136,47 @@ async function handleListConversations(req, res) {
   const filter = participantFilter(req.user);
   if (!filter) return res.status(403).json({ message: "Messaging is only available to clients and providers." });
   const archiveField = req.user.role === "client" ? "isArchivedByClient" : "isArchivedByProvider";
-  if (req.query.includeArchived === "true") {
-    filter[archiveField] = true;
-  } else {
-    filter.$or = [
-      { [archiveField]: false },
-      { [archiveField]: mongoose.trusted({ $exists: false }) },
-    ];
+  const tab = req.query.tab;
+  if (tab !== undefined && (typeof tab !== "string" || !["active", "archived"].includes(tab))) {
+    return res.status(400).json({ message: "Choose the active or archived conversation tab." });
+  }
+  if (tab === undefined) {
+    if (req.query.includeArchived === "true") {
+      filter[archiveField] = true;
+    } else {
+      filter.$or = [
+        { [archiveField]: false },
+        { [archiveField]: mongoose.trusted({ $exists: false }) },
+      ];
+    }
   }
 
   try {
     const conversations = await Conversation.find(filter)
       .sort({ lastMessageAt: -1, _id: -1 })
       .populate(conversationPopulate);
-    const latestMessageSenders = conversations.length
+    const tabConversations = tab === undefined
+      ? conversations
+      : conversations.filter((conversation) => {
+        const booking = conversation.bookingId && typeof conversation.bookingId === "object"
+          ? conversation.bookingId
+          : null;
+        const statusGroup = getConversationStatusGroup(booking?.status);
+        const isManuallyArchived = Boolean(conversation[archiveField]);
+        return tab === "archived"
+          ? statusGroup === "archived" || isManuallyArchived
+          : statusGroup === "active" && !isManuallyArchived;
+      });
+    const latestMessageSenders = tabConversations.length
       ? await Message.aggregate([
-        { $match: { conversationId: { $in: conversations.map((conversation) => conversation._id) } } },
+        { $match: { conversationId: { $in: tabConversations.map((conversation) => conversation._id) } } },
         { $sort: { createdAt: -1, _id: -1 } },
         { $group: { _id: "$conversationId", sender: { $first: "$sender" } } },
       ])
       : [];
     const senderByConversation = new Map(latestMessageSenders.map(({ _id, sender }) => [String(_id), String(sender)]));
     const currentUserId = String(req.user._id);
-    return res.json({ conversations: conversations.map((conversation) => ({
+    return res.json({ conversations: tabConversations.map((conversation) => ({
       ...serializeConversation(conversation, req.user.role),
       lastMessageIsMine: senderByConversation.get(String(conversation._id)) === currentUserId,
     })) });
