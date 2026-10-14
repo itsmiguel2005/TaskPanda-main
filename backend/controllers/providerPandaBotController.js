@@ -361,26 +361,54 @@ function isEarningsRequest(message) {
 }
 
 function isProviderProfileRequest(message) {
-  return /\b(?:rating|ratings|reviews?|verification|verified|identity|profile status|account status)\b/i.test(message);
+  return /\b(?:rating|ratings|reviews?|verification|verified|identity|profile|account status)\b/i.test(message);
 }
 
 async function getProviderProfile(providerId) {
   return User.findOne({ _id: providerId, role: "provider" })
-    .select("fullName averageRating totalReviews isVerified verificationStatus")
+    .select("fullName professions profileImage averageRating totalReviews isVerified verificationStatus")
     .lean();
 }
 
+function getProviderVerificationStatus(provider) {
+  const normalized = String(provider.verificationStatus || "").trim().toUpperCase();
+  if (provider.isVerified === true || normalized === "VERIFIED" || normalized === "VERIFICATION_APPROVED") {
+    return "VERIFICATION_APPROVED";
+  }
+  if (normalized.includes("PENDING") || normalized.includes("REVIEW")) return "VERIFICATION_PENDING";
+  if (normalized.includes("REJECT")) return "VERIFICATION_REJECTED";
+  return "VERIFICATION_UNVERIFIED";
+}
+
+function buildProviderProfileCardData(provider) {
+  const ratingValue = Number(provider.averageRating);
+  const reviewCountValue = Number(provider.totalReviews);
+  return {
+    name: provider.fullName || "Name not set",
+    profession: Array.isArray(provider.professions) && provider.professions.length
+      ? provider.professions.join(" · ")
+      : "Service provider",
+    rating: Number.isFinite(ratingValue) ? Math.max(0, Math.min(5, ratingValue)) : 0,
+    reviewCount: Number.isFinite(reviewCountValue) ? Math.max(0, Math.floor(reviewCountValue)) : 0,
+    verificationStatus: getProviderVerificationStatus(provider),
+    profileImage: typeof provider.profileImage === "string" ? provider.profileImage : "",
+  };
+}
+
 function formatProviderProfile(provider) {
-  const verificationApproved = provider.isVerified === true || provider.verificationStatus === "verified";
-  const verificationStatus = verificationApproved
-    ? "VERIFICATION_APPROVED"
-    : `VERIFICATION_${String(provider.verificationStatus || "unverified").toUpperCase()}`;
+  const verificationLabels = {
+    VERIFICATION_APPROVED: "Verified Pro",
+    VERIFICATION_PENDING: "Under Review",
+    VERIFICATION_REJECTED: "Verification not approved",
+    VERIFICATION_UNVERIFIED: "Not verified",
+  };
+  const verificationStatus = getProviderVerificationStatus(provider);
   return [
     "## Provider profile",
     `- **Provider:** ${provider.fullName || "Name not set"}`,
     `- **Average rating:** ${Number(provider.averageRating || 0).toFixed(1)} / 5`,
     `- **Review count:** ${Math.max(0, Number(provider.totalReviews) || 0)}`,
-    `- **Identity verification:** ${verificationStatus}`,
+    `- **Identity verification:** ${verificationLabels[verificationStatus]}`,
   ].join("\n");
 }
 
@@ -444,8 +472,8 @@ async function handleProviderPandaBotRequest(req, res, message) {
     const provider = await getProviderProfile(providerId);
     if (!provider) return res.status(404).json({ message: "Provider profile not found." });
     return res.json({
-      type: "text",
-      response: `${getFriendlyAddress(req.user, conversationHistory)}Here’s how your profile is looking:\n\n${formatProviderProfile(provider)}`,
+      type: "PROFILE_CARD",
+      data: buildProviderProfileCardData(provider),
     });
   }
 
@@ -475,12 +503,14 @@ module.exports = {
   EARNING_STATUSES,
   PENDING_STATUSES,
   buildProviderBookingFilter,
+  buildProviderProfileCardData,
   formatEarningsSummary,
   formatProviderJob,
   formatProviderProfile,
   findNamedBooking,
   getPhilippinePeriodBounds,
   getProviderScheduleRequest,
+  getProviderVerificationStatus,
   getStatusUpdateIntent,
   handleProviderPandaBotRequest,
   isActiveJobsRequest,

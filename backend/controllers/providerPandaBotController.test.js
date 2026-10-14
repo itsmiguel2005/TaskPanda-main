@@ -2,8 +2,10 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
 const Booking = require("../models/Booking");
+const User = require("../models/User");
 const {
   buildProviderBookingFilter,
+  buildProviderProfileCardData,
   findNamedBooking,
   formatEarningsSummary,
   formatProviderJob,
@@ -16,6 +18,7 @@ const {
   isEarningsRequest,
   isIncomingJobsRequest,
   isProviderProfileRequest,
+  getProviderVerificationStatus,
   summarizeEarnings,
 } = require("./providerPandaBotController");
 
@@ -192,7 +195,8 @@ test("formats provider job, profile, and cash collection summaries", () => {
   });
   assert.match(profileMarkdown, /4\.7 \/ 5/);
   assert.match(profileMarkdown, /12/);
-  assert.match(profileMarkdown, /VERIFICATION_APPROVED/);
+  assert.match(profileMarkdown, /Verified Pro/);
+  assert.doesNotMatch(profileMarkdown, /VERIFICATION_APPROVED/);
 
   const bookings = [
     {
@@ -221,4 +225,83 @@ test("formats provider job, profile, and cash collection summaries", () => {
   assert.equal(summary.awaitingConfirmation, 550);
   assert.equal(summary.awaitingCount, 1);
   assert.match(formatEarningsSummary(bookings, bounds), /awaiting confirmation/);
+});
+
+test("builds structured provider profile card data and human verification states", () => {
+  const data = buildProviderProfileCardData({
+    fullName: "Chinito Cruz Lopez",
+    professions: ["Aerospace Engineer"],
+    profileImage: "https://example.test/profile.png",
+    averageRating: 4.9,
+    totalReviews: 8,
+    verificationStatus: "VERIFICATION_APPROVED",
+  });
+
+  assert.deepEqual(data, {
+    name: "Chinito Cruz Lopez",
+    profession: "Aerospace Engineer",
+    rating: 4.9,
+    reviewCount: 8,
+    verificationStatus: "VERIFICATION_APPROVED",
+    profileImage: "https://example.test/profile.png",
+  });
+  assert.equal(getProviderVerificationStatus({ verificationStatus: "pending" }), "VERIFICATION_PENDING");
+  assert.equal(getProviderVerificationStatus({ verificationStatus: "rejected" }), "VERIFICATION_REJECTED");
+  assert.equal(getProviderVerificationStatus({ verificationStatus: "unverified" }), "VERIFICATION_UNVERIFIED");
+  assert.equal(buildProviderProfileCardData({
+    averageRating: Number.NaN,
+    totalReviews: Number.POSITIVE_INFINITY,
+  }).rating, 0);
+  assert.equal(buildProviderProfileCardData({
+    averageRating: 8,
+    totalReviews: -2,
+  }).rating, 5);
+  assert.equal(buildProviderProfileCardData({
+    averageRating: 8,
+    totalReviews: -2,
+  }).reviewCount, 0);
+});
+
+test("provider profile requests return a structured card for the authenticated provider", async () => {
+  const originalFindOne = User.findOne;
+  const providerId = new mongoose.Types.ObjectId();
+  let queriedFilter;
+  User.findOne = (filter) => {
+    queriedFilter = filter;
+    return {
+      select() { return this; },
+      async lean() {
+        return {
+          fullName: "Chinito Cruz Lopez",
+          professions: ["Aerospace Engineer"],
+          profileImage: "https://example.test/chinito.png",
+          averageRating: 4.9,
+          totalReviews: 8,
+          verificationStatus: "VERIFICATION_APPROVED",
+        };
+      },
+    };
+  };
+  try {
+    const response = { json(payload) { this.payload = payload; return payload; } };
+    await handleProviderPandaBotRequest({
+      user: { _id: providerId, role: "provider" },
+      body: { conversationHistory: [] },
+    }, response, "Show my profile");
+
+    assert.deepEqual(queriedFilter, { _id: providerId, role: "provider" });
+    assert.deepEqual(response.payload, {
+      type: "PROFILE_CARD",
+      data: {
+        name: "Chinito Cruz Lopez",
+        profession: "Aerospace Engineer",
+        rating: 4.9,
+        reviewCount: 8,
+        verificationStatus: "VERIFICATION_APPROVED",
+        profileImage: "https://example.test/chinito.png",
+      },
+    });
+  } finally {
+    User.findOne = originalFindOne;
+  }
 });

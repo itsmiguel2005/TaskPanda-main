@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { apiFetch } from "../services/api.js";
+import PandaBotProfileCard from "./PandaBotProfileCard.jsx";
 
 const clientQuickActions = [
   "Find top pros near me",
@@ -251,8 +252,27 @@ export default function PandaBotWidget() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "PandaBot couldn’t reply right now. Please try again.");
+      const isProfileCard = data.type === "PROFILE_CARD";
+      const profileData = isProfileCard &&
+        data.data &&
+        typeof data.data.name === "string" &&
+        typeof data.data.profession === "string" &&
+        typeof data.data.rating === "number" &&
+        Number.isFinite(data.data.rating) &&
+        typeof data.data.reviewCount === "number" &&
+        Number.isFinite(data.data.reviewCount) &&
+        typeof data.data.verificationStatus === "string"
+        ? data.data
+        : null;
+      if (isProfileCard && !profileData) {
+        throw new Error("PandaBot returned incomplete profile details. Please try again.");
+      }
       const isRecommendationCards = data.type === "recommendation_cards" && typeof data.intro === "string";
-      const responseText = isRecommendationCards ? data.intro : data.response;
+      const responseText = isProfileCard
+        ? `Provider profile: ${profileData.name}, ${profileData.profession}, ${Number(profileData.rating).toFixed(1)} stars, ${Math.max(0, Math.floor(Number(profileData.reviewCount)))} reviews.`
+        : isRecommendationCards
+        ? data.intro
+        : data.response;
       if (typeof responseText !== "string" || !responseText.trim()) {
         throw new Error("PandaBot returned an empty reply. Please try again.");
       }
@@ -266,7 +286,9 @@ export default function PandaBotWidget() {
       setMessages((current) => [...current, {
         id: `${Date.now()}-assistant`,
         role: "assistant",
+        type: isProfileCard ? "PROFILE_CARD" : "",
         text: responseText.trim(),
+        profileData,
         recommendations,
         providerContextIds: Array.isArray(data.contextProviderIds) ? data.contextProviderIds : [],
         contextRequestedDate: typeof data.contextRequestedDate === "string" ? data.contextRequestedDate : "",
@@ -341,13 +363,19 @@ export default function PandaBotWidget() {
               <div key={item.id} className={`flex ${item.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div className={item.role === "user" ? "max-w-[88%]" : "w-full max-w-[94%]"}>
                   <div className={`whitespace-pre-wrap wrap-break-word rounded-2xl px-3.5 py-2.5 text-sm leading-5 ${
-                    item.role === "user"
+                    item.type === "PROFILE_CARD"
+                      ? "rounded-bl-md bg-transparent p-0 text-slate-800 shadow-none"
+                      : item.role === "user"
                       ? "rounded-br-md bg-emerald-800 text-white"
                       : item.role === "error"
                       ? "rounded-bl-md border border-rose-200 bg-rose-50 text-rose-800"
                       : "rounded-bl-md border border-slate-200 bg-white text-slate-800 shadow-sm"
                   }`}>
-                    {item.role === "assistant" ? renderAssistantMessage(item.text) : item.text}
+                    {item.type === "PROFILE_CARD"
+                      ? <PandaBotProfileCard profile={item.profileData} />
+                      : item.role === "assistant"
+                      ? renderAssistantMessage(item.text)
+                      : item.text}
                   </div>
                   {item.role === "assistant" && item.recommendations?.length > 0 && (
                     <div className="mt-2.5 space-y-2">
