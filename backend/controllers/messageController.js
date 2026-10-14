@@ -588,4 +588,24 @@ async function handleCashConfirmation(req, res) {
   }
 }
 
-module.exports = { handleListConversations, handleCreateConversation, handleListMessages, handleConversationTyping, handleUploadChatPhoto, handleReadChatPhoto, handleCleanupChatPhotos, handleSendMessage, handleCashConfirmation, handleArchiveConversation, handleReportConversation };
+async function handleProviderCashConfirmationByBooking(req, res) {
+  if (req.user.role !== "provider") {
+    return res.status(403).json({ message: "Only providers can confirm cash received." });
+  }
+  try {
+    const booking = await Booking.findOne({ _id: req.params.id, providerId: req.user._id });
+    if (!booking) return res.status(404).json({ message: "Booking not found." });
+    const conversation = await Conversation.findOne({ bookingId: booking._id, providerId: req.user._id })
+      || await ensureBookingConversation(booking);
+    return handleCashConfirmation({
+      user: req.user,
+      params: { conversationId: String(conversation._id) },
+      body: { confirmation: "cash_received" },
+    }, res);
+  } catch (error) {
+    console.error("Booking cash confirmation lookup error:", error);
+    return res.status(500).json({ message: "Could not confirm the cash payment." });
+  }
+}
+
+module.exports = { handleListConversations, handleCreateConversation, handleListMessages, handleConversationTyping, handleUploadChatPhoto, handleReadChatPhoto, handleCleanupChatPhotos, handleSendMessage, handleCashConfirmation, handleProviderCashConfirmationByBooking, handleArchiveConversation, handleReportConversation };

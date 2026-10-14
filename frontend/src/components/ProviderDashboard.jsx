@@ -12,6 +12,7 @@ import DashboardDensityToggle from "./DashboardDensityToggle.jsx";
 import { canRequestCancellation, requiresCancellationApproval } from "../utils/bookingCancellation.js";
 import { canArriveForSameDayBooking, hasScheduleConflict } from "../utils/bookingArrival.js";
 import { compareBookingsByLatestActivity } from "../utils/bookingActivity.js";
+import { apiFetch } from "../services/api.js";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -646,8 +647,8 @@ function JobCard({
 
 export default function ProviderDashboard() {
   const navigate = useNavigate();
-  const { user, token, refreshProfile } = useAuth();
-  const { bookings, dismissedBookingIds, bookingReviewStats, providerBookingStats, isLoading, error, dismissDashboardBooking, updateBookingStatus, requestCancellation, submitCompletionProof } = useBookings();
+  const { user, token, refreshProfile, updateUser } = useAuth();
+  const { bookings, dismissedBookingIds, bookingReviewStats, providerBookingStats, isLoading, error, dismissDashboardBooking, updateBookingStatus, requestCancellation, submitCompletionProof, refreshBookings } = useBookings();
 
   const [activeFilter, setActiveFilter] = useState("All");
   const [search, setSearch] = useState("");
@@ -658,10 +659,70 @@ export default function ProviderDashboard() {
   const [cancellationReason, setCancellationReason] = useState("");
   const [detailBooking, setDetailBooking] = useState(null);
   const [completionBooking, setCompletionBooking] = useState(null);
+  const [isAvailable, setIsAvailable] = useState(user?.isAvailable !== false);
+  const [isAvailabilitySaving, setIsAvailabilitySaving] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState("");
+  const [cashConfirmationBookingId, setCashConfirmationBookingId] = useState("");
+  const [cashConfirmationError, setCashConfirmationError] = useState("");
   // Fresh provider stats fetched directly (user object from localStorage may be stale)
   const [providerStats, setProviderStats] = useState({ rating: 0, reviews: 0 });
   const incomingRequestsDensity = user?.providerIncomingRequestsDensityPreference === "compact" ? "compact" : "comfortable";
   const jobsDensity = user?.providerJobsDensityPreference === "compact" ? "compact" : "comfortable";
+
+  const cashBookingsAwaitingConfirmation = useMemo(() => bookings.filter((booking) => (
+    ["complete", "completed"].includes(String(booking.status || "").toLowerCase())
+    && String(booking.paymentMethod || "").toLowerCase() === "cash"
+    && Boolean(booking.cashPaidConfirmedAt || booking.clientConfirmedCash)
+    && !booking.cashReceivedConfirmedAt
+    && !booking.providerConfirmedCash
+  )), [bookings]);
+
+  useEffect(() => {
+    setIsAvailable(user?.isAvailable !== false);
+  }, [user?.isAvailable]);
+
+  const handleAvailabilityChange = useCallback(async () => {
+    const nextAvailability = !isAvailable;
+    setIsAvailabilitySaving(true);
+    setAvailabilityError("");
+    try {
+      const response = await apiFetch("/api/provider/availability", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ isAvailable: nextAvailability }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "Could not update your availability.");
+      if (data.isAvailable !== nextAvailability) throw new Error("The server did not confirm your availability change. Refresh and try again.");
+      setIsAvailable(data.isAvailable);
+      updateUser({ isAvailable: data.isAvailable });
+    } catch (requestError) {
+      setAvailabilityError(requestError.message || "Could not update your availability.");
+    } finally {
+      setIsAvailabilitySaving(false);
+    }
+  }, [isAvailable, token, updateUser]);
+
+  const handleConfirmCashReceived = useCallback(async (bookingId) => {
+    setCashConfirmationBookingId(bookingId);
+    setCashConfirmationError("");
+    try {
+      const response = await apiFetch(`/api/bookings/${bookingId}/confirm-cash-received`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "Could not confirm cash received.");
+      await refreshBookings(undefined, true);
+    } catch (requestError) {
+      setCashConfirmationError(requestError.message || "Could not confirm cash received.");
+    } finally {
+      setCashConfirmationBookingId("");
+    }
+  }, [refreshBookings, token]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date()), 1000);
@@ -830,8 +891,70 @@ export default function ProviderDashboard() {
             <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">Manage your work</h1>
             <p className="mt-1 text-sm text-slate-600">Requests, active jobs, and earnings in one place.</p>
           </div>
-          {providerProfession && <p className="text-sm font-semibold text-blue-700">{providerProfession}</p>}
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            {providerProfession && <p className="text-sm font-semibold text-blue-700">{providerProfession}</p>}
+            <div className="flex flex-col items-start gap-1 sm:items-end">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isAvailable}
+                aria-label={isAvailable ? "Go offline" : "Go online"}
+                disabled={isAvailabilitySaving}
+                onClick={handleAvailabilityChange}
+                className={`dashboard-focus inline-flex min-h-10 items-center gap-3 rounded-full border px-3 py-1.5 text-sm font-semibold transition disabled:cursor-wait disabled:opacity-60 ${
+                  isAvailable
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                    : "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+              >
+                <span>{isAvailabilitySaving ? "Saving..." : isAvailable ? "Online - Receiving requests" : "Offline / Busy"}</span>
+                <span className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${isAvailable ? "bg-emerald-600" : "bg-slate-400"}`}>
+                  <span className={`h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isAvailable ? "translate-x-4" : "translate-x-0.5"}`} />
+                </span>
+              </button>
+              {availabilityError && <p role="alert" className="text-xs font-medium text-rose-700">{availabilityError}</p>}
+              <p className="text-xs text-slate-500">Offline blocks same-day requests; future bookings remain available.</p>
+            </div>
+          </div>
         </div>
+
+        {cashBookingsAwaitingConfirmation.length > 0 && (
+          <section aria-labelledby="cash-confirmation-title" className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm sm:p-5">
+            <div className="flex items-start gap-3">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" aria-hidden="true">
+                <path d="M12 3 2.7 19.1A1.3 1.3 0 0 0 3.8 21h16.4a1.3 1.3 0 0 0 1.1-1.9L12 3Z" />
+                <path d="M12 9v4m0 4h.01" />
+              </svg>
+              <div className="min-w-0 flex-1">
+                <h2 id="cash-confirmation-title" className="text-sm font-bold text-amber-950">
+                  Action needed: {cashBookingsAwaitingConfirmation.length} completed {cashBookingsAwaitingConfirmation.length === 1 ? "job is" : "jobs are"} awaiting cash confirmation
+                </h2>
+                <p className="mt-1 text-sm text-amber-900">
+                  Confirm the cash you received to generate {cashBookingsAwaitingConfirmation.length === 1 ? "a receipt and settle the booking" : "receipts and settle these bookings"}.
+                </p>
+                {cashConfirmationError && <p role="alert" className="mt-2 text-sm font-medium text-rose-700">{cashConfirmationError}</p>}
+                <ul className="mt-3 divide-y divide-amber-200/80">
+                  {cashBookingsAwaitingConfirmation.map((booking) => (
+                    <li key={booking.id} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{booking.client || booking.clientName || "Client"} · {booking.task || booking.cred || "Service booking"}</p>
+                        <p className="mt-0.5 text-xs text-slate-600">{fmtDate(booking.serviceDate || booking.date)}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmCashReceived(booking.id)}
+                        disabled={Boolean(cashConfirmationBookingId)}
+                        className="dashboard-primary-button dashboard-focus min-h-10 shrink-0 bg-emerald-700 px-4 text-sm hover:bg-emerald-800 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {cashConfirmationBookingId === booking.id ? "Confirming…" : "Confirm Cash Received"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </section>
+        )}
 
         {error && (
           <p role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>

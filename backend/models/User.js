@@ -202,6 +202,10 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    isAvailable: {
+      type: Boolean,
+      default: true,
+    },
     hasCompletedOnboarding: {
       type: Boolean,
       default: false,

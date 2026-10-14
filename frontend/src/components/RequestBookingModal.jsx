@@ -2,7 +2,7 @@ import { apiFetch } from "../services/api.js";
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
-import { canArriveForSameDayBooking, hasScheduleConflict } from "../utils/bookingArrival.js";
+import { canArriveForSameDayBooking, hasScheduleConflict, isSamePhilippineCalendarDay } from "../utils/bookingArrival.js";
 import { DEFAULT_ESTIMATED_DURATION_MINUTES, formatEstimatedDuration } from "../utils/bookingDuration.js";
 import BambooStamp from "./BambooStamp.jsx";
 import ServiceLocationPicker from "./ServiceLocationPicker.jsx";
@@ -403,6 +403,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [selectedTime, setSelectedTime] = useState(initialTime);
   const [bookedSlots, setBookedSlots] = useState([]);
+  const [providerIsAvailable, setProviderIsAvailable] = useState(null);
   const [availabilityStatus, setAvailabilityStatus] = useState("loading");
   const [availabilityRetry, setAvailabilityRetry] = useState(0);
   const [travelQuote, setTravelQuote] = useState(null);
@@ -529,6 +530,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   useEffect(() => {
     if (!provider?._id || !token) {
       setAvailabilityStatus("loading");
+      setProviderIsAvailable(null);
       setTravelQuote(null);
       setTravelQuoteStatus("loading");
       return undefined;
@@ -537,6 +539,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
     let active = true;
     let isLoadingAvailability = false;
     setAvailabilityStatus("loading");
+    setProviderIsAvailable(null);
     setTravelQuote(null);
     setTravelQuoteError("");
     setTravelQuoteStatus("loading");
@@ -562,6 +565,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
           !Number.isFinite(data.travelDistanceKm) ||
           typeof data.travelFee !== "number" ||
           !Number.isFinite(data.travelFee) ||
+          typeof data.isAvailable !== "boolean" ||
           data.travelDistanceKm < 0 ||
           data.travelFee < 0
         ) {
@@ -578,6 +582,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
           setTravelQuoteStatus("loaded");
           setBookedSlots(Array.isArray(data.bookedSlots) ? data.bookedSlots : []);
           setAvailabilityStatus("loaded");
+          setProviderIsAvailable(data.isAvailable);
         }
       } catch (error) {
         if (active && error.name !== "AbortError") {
@@ -597,6 +602,19 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
       window.clearInterval(intervalId);
     };
   }, [provider?._id, token, availabilityRetry, travelQuoteRetry, serviceLocationKey]);
+
+  const selectedDateIsToday = selectedDate
+    ? isSamePhilippineCalendarDay(`${selectedDate}T00:00:00.000Z`, currentTime)
+    : false;
+  const sameDayUnavailable = availabilityStatus === "loaded"
+    && providerIsAvailable === false
+    && selectedDateIsToday;
+
+  useEffect(() => {
+    if (!sameDayUnavailable || !selectedTime) return;
+    setSelectedTime("");
+    setFormError("This provider is offline / busy and cannot accept same-day requests. Choose a future date.");
+  }, [sameDayUnavailable, selectedTime]);
 
   useEffect(() => {
     if (!selectedDate || !selectedTime) return;
@@ -673,6 +691,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
     if (!serviceLocation.address.trim() || serviceLocation.address.trim().length > 300) return setFormError("Choose or enter the exact service address."), false;
     if (!serviceLocationKey) return setFormError("Select a service location pin on the map to calculate travel distance."), false;
     if (!selectedDate) return setFormError("Please select a service date."), false;
+    if (sameDayUnavailable) return setFormError("This provider is offline / busy and cannot accept same-day requests. Choose a future date."), false;
     if (!selectedTime) return setFormError("Please select an available time."), false;
     if (!durationIsValid) return setFormError("Enter a duration from 15 minutes to 12 hours in 15-minute increments."), false;
     if (isPastTimeSlot(selectedDate, selectedTime, new Date())) {
@@ -944,6 +963,13 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                 )}
               </div>
 
+              {sameDayUnavailable && (
+                <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                  <p className="font-semibold">This provider is offline / busy.</p>
+                  <p className="mt-1 text-amber-900">Same-day requests aren’t available. Choose a future date to book with this provider.</p>
+                </div>
+              )}
+
               <div>
                 <p className="mb-1.5 text-sm font-medium text-gray-700">Available Time</p>
                 {!selectedDate && <p className="mb-2 text-xs text-gray-500">Choose a date to see available times.</p>}
@@ -955,14 +981,14 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                     const isPast = selectedDate && isPastTimeSlot(selectedDate, time, currentTime);
                     const arrivalWindowTooShort = selectedDate && isArrivalWindowTooShort(selectedDate, time);
                     const isBooked = selectedDate && isTimeSlotBooked(selectedDate, time);
-                    const isDisabled = !selectedDate || isPast || arrivalWindowTooShort || isBooked || availabilityStatus !== "loaded";
-                    const isSelected = Boolean(selectedDate) && selectedTime === time && !isPast && !arrivalWindowTooShort && !isBooked;
+                    const isDisabled = !selectedDate || isPast || arrivalWindowTooShort || isBooked || sameDayUnavailable || availabilityStatus !== "loaded";
+                    const isSelected = Boolean(selectedDate) && selectedTime === time && !isPast && !arrivalWindowTooShort && !isBooked && !sameDayUnavailable;
                     return (
                       <button
                         key={time}
                         type="button"
                         disabled={isDisabled}
-                        title={!selectedDate ? "Choose a date first" : isPast ? "This time has passed" : arrivalWindowTooShort ? "Not enough time for the provider to travel to your location" : isBooked ? "Not enough time for the task, travel, and 30-minute safety buffer" : availabilityStatus !== "loaded" ? "Checking availability" : undefined}
+                        title={!selectedDate ? "Choose a date first" : sameDayUnavailable ? "This provider is offline / busy; same-day requests are unavailable" : isPast ? "This time has passed" : arrivalWindowTooShort ? "Not enough time for the provider to travel to your location" : isBooked ? "Not enough time for the task, travel, and 30-minute safety buffer" : availabilityStatus !== "loaded" ? "Checking availability" : undefined}
                         onClick={() => { setSelectedTime(time); setFormError(""); }}
                         className={`min-h-9 rounded-full border px-2 py-2 text-xs font-semibold transition ${
                           isSelected

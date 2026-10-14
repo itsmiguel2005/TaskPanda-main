@@ -18,6 +18,7 @@ function profileFromUser(user) {
     dashboardDensityPreference: user.dashboardDensityPreference || "comfortable",
     providerIncomingRequestsDensityPreference: user.providerIncomingRequestsDensityPreference || "comfortable",
     providerJobsDensityPreference: user.providerJobsDensityPreference || "comfortable",
+    ...(user.role === "provider" ? { isAvailable: user.isAvailable !== false } : {}),
     isVerified: user.isVerified === true,
     verificationStatus: user.verificationStatus || "unverified",
     phoneVerified: user.phoneVerified === true,
@@ -148,6 +149,7 @@ async function handleUpdateProviderPreferences(req, res) {
   if (!preferenceField) {
     return res.status(400).json({ message: "Choose which provider section display preference to update." });
   }
+
   try {
     req.user[preferenceField] = req.body[preferenceField];
     await req.user.save();
@@ -155,6 +157,23 @@ async function handleUpdateProviderPreferences(req, res) {
   } catch (error) {
     console.error("Update provider preferences error:", error);
     return res.status(500).json({ message: "Could not save your provider display preference." });
+  }
+}
+
+async function handleUpdateProviderAvailability(req, res) {
+  if (req.user.role !== "provider") {
+    return res.status(403).json({ message: "Only providers can update their availability." });
+  }
+  if (typeof req.body.isAvailable !== "boolean") {
+    return res.status(400).json({ message: "Choose whether you are available." });
+  }
+  try {
+    req.user.isAvailable = req.body.isAvailable;
+    await req.user.save();
+    return res.json({ isAvailable: req.user.isAvailable });
+  } catch (error) {
+    console.error("Provider availability update error:", error);
+    return res.status(500).json({ message: "Could not update your availability." });
   }
 }
 
@@ -425,4 +444,4 @@ async function handleUpdateProfile(req, res) {
   }
 }
 
-module.exports = { handleGetProfile, handleGetVerificationStatus, handleSendProfilePhoneOtp, handleVerifyProfilePhoneOtp, handleCompleteOnboarding, handleUpdateDashboardPreferences, handleUpdateProviderPreferences, handleUpdateProfile, handleUploadProfilePhoto };
+module.exports = { handleGetProfile, handleGetVerificationStatus, handleSendProfilePhoneOtp, handleVerifyProfilePhoneOtp, handleCompleteOnboarding, handleUpdateDashboardPreferences, handleUpdateProviderPreferences, handleUpdateProviderAvailability, handleUpdateProfile, handleUploadProfilePhoto };

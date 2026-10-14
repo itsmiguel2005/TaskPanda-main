@@ -24,6 +24,7 @@ const { searchServiceLocations, reverseGeocodeServiceLocation } = require("../se
 const {
   canArriveForSameDayBooking,
   DEFAULT_ESTIMATED_DURATION_MINUTES,
+  isSamePhilippineCalendarDay,
   getBookingOccupiedWindow,
   getBookingNoShowGraceDeadline,
   getBookingRequestExpiration,
@@ -540,6 +541,7 @@ async function handleProviderAvailability(req, res) {
     }).select("_id serviceDate timeSlot estimatedDurationMinutes serviceGeoLocation").lean();
 
     return res.json({
+      isAvailable: provider.isAvailable !== false,
       bookedSlots: bookings.map((booking) => {
         const occupiedWindow = getBookingOccupiedWindow(booking);
         return {
@@ -974,7 +976,7 @@ async function getBookingTravelQuote(client, providerId, settings, serviceGeoLoc
     registrationComplete: true,
     isSuspended: mongoose.trusted({ $ne: true }),
     archivedAt: null,
-  }).select("_id geoLocation");
+  }).select("_id geoLocation isAvailable");
   if (!provider) return { errorStatus: 404, message: "That provider is no longer available." };
 
   const originCoordinates = serviceGeoLocation?.coordinates || client.geoLocation?.coordinates;
@@ -1061,6 +1063,9 @@ async function handleCreateBooking(req, res) {
     const travelQuote = await getBookingTravelQuote(req.user, providerId, settings, serviceGeoLocation);
     if (travelQuote.errorStatus) return res.status(travelQuote.errorStatus).json({ message: travelQuote.message });
     const { provider, travelDistanceKm } = travelQuote;
+    if (provider.isAvailable === false && isSamePhilippineCalendarDay(serviceDate)) {
+      return res.status(409).json({ message: "This provider is offline and cannot accept same-day booking requests right now. Choose another provider or a future date." });
+    }
     const travelFeeBeforeDiscount = travelQuote.travelFee;
     const selectedVoucher = voucherId
       ? (req.user.vouchers || []).find((voucher) =>
