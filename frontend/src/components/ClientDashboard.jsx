@@ -162,14 +162,11 @@ function DashboardProviderCard({
   onViewProfile,
 }) {
   const hasRatings = Number(rating) > 0 && Number(reviews) > 0;
+  const cardName = formatProviderCardName(name);
 
   return (
     <article className="group relative flex h-60 w-65 shrink-0 flex-col rounded-xl border border-sky-100 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)]">
-      <div className="flex h-7 shrink-0 items-center justify-end">
-        <ProviderStreak streak={onTimeStreak} className="max-w-full" />
-      </div>
-
-      <div className="flex h-11 shrink-0 items-center gap-2">
+      <div className="flex h-14 shrink-0 items-center gap-2">
         <div className="relative h-11 w-11 shrink-0">
           <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-slate-900 text-sm font-bold text-white">
             {profileImage ? <img src={profileImage} alt={`${name} profile`} className="h-full w-full object-cover" /> : name.charAt(0)}
@@ -177,7 +174,10 @@ function DashboardProviderCard({
           <UserOnlineStatus lastActive={lastActive} isOnline={isOnline} className="absolute -bottom-0.5 -right-0.5" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold text-slate-900">{name}</p>
+          <div className="flex min-w-0 items-center gap-1">
+            <p aria-label={name} title={name} className="min-w-0 flex-1 truncate whitespace-nowrap text-sm font-bold leading-5 text-slate-900">{cardName}</p>
+            <ProviderStreak streak={onTimeStreak} variant="inline" />
+          </div>
           <p className="truncate text-xs text-slate-600">{profession}</p>
         </div>
         {onToggleFavorite && (
@@ -234,6 +234,14 @@ function DashboardProviderCard({
       </div>
     </article>
   );
+}
+
+function formatProviderCardName(name) {
+  const parts = String(name || "").trim().split(/\s+/);
+  if (parts.length < 3) return parts.join(" ");
+
+  const middleInitial = Array.from(parts[1])[0];
+  return `${parts[0]} ${middleInitial}. ${parts.slice(2).join(" ")}`;
 }
 
 function StatusBadge({ status, compact = false }) {

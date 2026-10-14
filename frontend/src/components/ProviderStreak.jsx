@@ -5,6 +5,19 @@ export default function ProviderStreak({ streak, variant = "compact", className 
   const isProfile = variant === "profile";
   if (!count && !isProfile) return null;
 
+  if (variant === "inline") {
+    return (
+      <span
+        className={`inline-flex min-w-10 shrink-0 items-center justify-center gap-0.5 whitespace-nowrap text-xs font-semibold leading-5 text-amber-700 tabular-nums ${className}`}
+        aria-label={`${count} consecutive on-time bookings`}
+        title={`${count} consecutive on-time bookings`}
+      >
+        <span aria-hidden="true">🔥</span>
+        <span>{count}</span>
+      </span>
+    );
+  }
+
   return (
     <div
       className={`rounded-xl border border-amber-200 bg-amber-50/80 ${isProfile ? "p-4" : "inline-flex flex-wrap items-center gap-1.5 px-2.5 py-1.5"} ${className}`}

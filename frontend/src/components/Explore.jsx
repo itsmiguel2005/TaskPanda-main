@@ -795,7 +795,6 @@ export default function Explore() {
                     key={provider._id}
                     className="content-arrive relative flex h-full flex-col justify-between overflow-hidden rounded-xl border border-sky-100 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.035)] transition duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_14px_32px_rgba(15,23,42,0.07)]"
                   >
-                    <ProviderStreak streak={provider.onTimeStreak} className="absolute right-3 top-3 z-10 max-w-[calc(100%-1.5rem)]" />
                     <div className="relative h-40 overflow-hidden bg-sky-50">
                       {provider.profileImage ? (
                         <img
@@ -816,9 +815,16 @@ export default function Explore() {
                     <div className="flex flex-1 flex-col px-4 py-4 sm:px-5">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <h3 className="truncate text-sm font-bold text-slate-900">
-                            {provider.fullName || provider.username || "Provider"}
-                          </h3>
+                          <div className="flex min-w-0 items-center gap-1">
+                            <h3
+                              aria-label={provider.fullName || provider.username || "Provider"}
+                              title={provider.fullName || provider.username || "Provider"}
+                              className="min-w-0 flex-1 truncate whitespace-nowrap text-sm font-bold text-slate-900"
+                            >
+                              {provider.fullName || provider.username || "Provider"}
+                            </h3>
+                            <ProviderStreak streak={provider.onTimeStreak} variant="inline" />
+                          </div>
                           <div className="flex min-w-0 items-center gap-1.5">
                             <p className="truncate text-xs text-slate-600">{provider.professions?.join(" · ") || "Service provider"}</p>
                             {isProviderVerified && (
