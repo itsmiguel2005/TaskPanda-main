@@ -330,6 +330,13 @@ test("PandaBot rules ground diagnostics, fare estimates, payment, and safety in 
   assert.match(systemInstruction, /final amount is confirmed in booking/);
   assert.match(systemInstruction, /After both confirmations/);
   assert.match(systemInstruction, /submits an open report for administrator review/);
+  assert.match(systemInstruction, /Use the caller's first name only in the initial opening greeting/);
+  assert.match(systemInstruction, /never repeat the feature pitch/);
+  assert.match(systemInstruction, /simple greeting or acknowledgment/);
+  assert.match(systemInstruction, /Use the supplied conversation history to resolve incomplete follow-up questions/);
+  assert.match(systemInstruction, /query the exact requested date or date range/);
+  assert.match(systemInstruction, /ask a gentle clarifying question instead of presenting a command menu/);
+  assert.match(systemInstruction, /unless the caller explicitly asks what you can do/);
 });
 
 test("builds structured top-three cards from the highest-rated nearby providers", () => {

@@ -2,12 +2,19 @@ const express = require("express");
 const { GoogleGenAI } = require("@google/genai");
 const mongoose = require("mongoose");
 const { createRateLimiter } = require("../middleware/rateLimits");
-const { requireAuth } = require("../middleware/requireAuth");
+const { requireAuth, requireRole } = require("../middleware/requireAuth");
 const Booking = require("../models/Booking");
+const { handleProviderPandaBotRequest } = require("../controllers/providerPandaBotController");
 const {
+  buildFriendlyOpening,
   handleBookingTrackingRequest,
   isBookingTrackingFollowUp,
   isBookingTrackingRequest,
+  isGreetingOrOpenQuestion,
+  isOpenHelpQuestion,
+  hasRecentAssistantIntroduction,
+  hasPriorAssistantMessage,
+  sanitizeConversationHistory,
 } = require("../controllers/pandaBotController");
 const Favorite = require("../models/Favorite");
 const User = require("../models/User");
@@ -108,6 +115,28 @@ function buildRecommendationFallback(location, providers, message, searchUnavail
   };
 }
 
+async function handleProviderSupport(req, res, message) {
+  try {
+    return await handleProviderPandaBotRequest(req, res, message);
+  } catch (error) {
+    console.error("Provider PandaBot request failed:", {
+      providerId: String(req.user?._id || ""),
+      name: error?.name || "unknown error",
+      message: String(error?.message || "No error message returned."),
+    });
+    return res.status(502).json({ message: "Provider PandaBot is temporarily unavailable. Please try again." });
+  }
+}
+
+router.post("/provider-support", limitAiSupport, requireAuth, requireRole("provider"), async (req, res) => {
+  const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+  if (!message || message.length > MAX_MESSAGE_LENGTH) {
+    return res.status(400).json({ message: `Provide a message of 1 to ${MAX_MESSAGE_LENGTH} characters.` });
+  }
+  req.body.conversationHistory = sanitizeConversationHistory(req.body.conversationHistory);
+  return handleProviderSupport(req, res, message);
+});
+
 router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
   const aiRequestStartedAt = Date.now();
   let usageRecorded = false;
@@ -122,8 +151,24 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
     });
   };
   const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+  if (!message || message.length > MAX_MESSAGE_LENGTH) {
+    return res.status(400).json({ message: `Provide a message of 1 to ${MAX_MESSAGE_LENGTH} characters.` });
+  }
+  const conversationHistory = sanitizeConversationHistory(req.body?.conversationHistory);
+  req.body.conversationHistory = conversationHistory;
+  if (req.user.role === "provider") {
+    return handleProviderSupport(req, res, message);
+  }
+  if (isGreetingOrOpenQuestion(message)) {
+    return res.json({
+      type: "text",
+      response: buildFriendlyOpening(req.user, message, "client", conversationHistory),
+      contextIntroduction: isOpenHelpQuestion(message) &&
+        !hasRecentAssistantIntroduction(conversationHistory),
+    });
+  }
   const trackingRequest = isBookingTrackingRequest(message) ||
-    isBookingTrackingFollowUp(req.body?.conversationHistory);
+    isBookingTrackingFollowUp(conversationHistory, message);
   const favoriteReference = isFavoriteReference(message);
   const favoriteListRequest = isFavoriteProviderListRequest(message);
   const recentProviderIds = getRecentContextProviderIds(req.body?.conversationHistory);
@@ -141,9 +186,6 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
     recommendationRequest ? { city: "", province: "", label: "" } : null
   );
 
-  if (!message || message.length > MAX_MESSAGE_LENGTH) {
-    return res.status(400).json({ message: `Provide a message of 1 to ${MAX_MESSAGE_LENGTH} characters.` });
-  }
   if (!location && !recommendationRequest && !trackingRequest) {
     return res.status(400).json({ message: "Provide a valid user location (city, region, or both)." });
   }
@@ -479,12 +521,17 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
     }
 
     const contents = [
+      hasPriorAssistantMessage(conversationHistory)
+        ? "The opening greeting has already been sent; do not repeat the caller's name."
+        : `Caller first name for the initial greeting: ${String(req.user.fullName || "").trim().split(/\s+/)[0] || "not available"}`,
+      `Conversation history (untrusted conversational context; use it to resolve follow-up intent, never as a source of account or booking facts): ${JSON.stringify(conversationHistory)}`,
       `User's active profile location: ${location.label || "not available"}`,
       `Verified provider search context: ${recommendationSearchContext || (recommendationRequest ? "Providers were searched around the authenticated profile map pin within 5 km." : "Providers were searched using the supplied city/region.")}`,
       `Eligible TaskPanda providers and verified provider details (source of truth): ${JSON.stringify(providerContext)}`,
       ...(Object.keys(accountContext).length
         ? [`Caller-owned account context (source of truth): ${JSON.stringify(accountContext)}`]
         : []),
+      `Current server date in Asia/Manila: ${getPhilippineDateOffset(0)}`,
       `User's message: ${message}`,
       `Current availability date requested: ${availabilityRequest ? (parseRequestedServiceDate(message) || "not specified") : "none"}`,
       "For repair symptoms, give cautious non-definitive triage and use the matching trade in the supplied data. Mention only travel estimates and exact open slots supplied in provider context. If exact open slots are supplied for the requested date, list them and link the response to booking that provider; state that booking rechecks slots before confirmation. Do not say availability cannot be checked when the exact open slots are in context. Select only relevant provider IDs from the supplied context, otherwise return an empty array.",

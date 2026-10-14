@@ -3,17 +3,58 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { apiFetch } from "../services/api.js";
 
-const quickActions = [
+const clientQuickActions = [
   "Find top pros near me",
   "How do bamboo stamps work?",
   "Track my booking",
 ];
+const providerQuickActions = [
+  "Show my pending requests",
+  "What jobs do I have today?",
+  "Show my earnings this week",
+  "What’s my rating and verification status?",
+];
 
-const welcomeMessage = {
-  id: "pandabot-welcome",
-  role: "assistant",
-  text: "Hi, I’m PandaBot. I can help with bookings, stamp rewards, and finding the right service for your area. What can I help you with?",
-};
+function createWelcomeMessage(role, user) {
+  const firstName = String(user?.fullName || "").trim().split(/\s+/)[0];
+  const greeting = firstName ? `Hey, ${firstName}!` : "Hey!";
+  return {
+    id: role === "provider" ? "pandabot-provider-welcome" : "pandabot-welcome",
+    role: "assistant",
+    contextIntroduction: true,
+    text: role === "provider"
+      ? `${greeting} I can help you keep tabs on incoming jobs, your schedule, or earnings. What do you need a hand with?`
+      : `${greeting} I can help with your bookings, rewards, or finding a local pro. What do you need a hand with?`,
+  };
+}
+
+function renderInlineMarkdown(line, keyPrefix) {
+  return line.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, index) => {
+    const key = `${keyPrefix}-${index}`;
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={key}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return <code key={key} className="rounded bg-slate-100 px-1 py-0.5 text-xs">{part.slice(1, -1)}</code>;
+    }
+    return part;
+  });
+}
+
+function renderAssistantMessage(text) {
+  return text.split(/\r?\n/).map((line, index) => {
+    const key = `assistant-line-${index}`;
+    if (!line.trim()) return <div key={key} className="h-2" />;
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      return <p key={key} className="font-bold">{renderInlineMarkdown(heading[2], key)}</p>;
+    }
+    if (line.startsWith("- ")) {
+      return <p key={key} className="pl-2">{renderInlineMarkdown(line.slice(2), key)}</p>;
+    }
+    return <p key={key}>{renderInlineMarkdown(line, key)}</p>;
+  });
+}
 
 function getProfileLocation(user) {
   return {
@@ -115,14 +156,15 @@ function RecommendationCard({ provider, onBook }) {
 }
 
 export default function PandaBotWidget() {
-  const { isLoggedIn, isAuthLoading, user, token } = useAuth();
+  const { isLoggedIn, isAuthLoading, role, user, token } = useAuth();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [hasUnreadAssistantMessage, setHasUnreadAssistantMessage] = useState(false);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [quickActionScroll, setQuickActionScroll] = useState({ left: false, right: false });
-  const [messages, setMessages] = useState([welcomeMessage]);
+  const [messages, setMessages] = useState(() => [createWelcomeMessage(role, user)]);
+  const quickActions = role === "provider" ? providerQuickActions : clientQuickActions;
   const messageListRef = useRef(null);
   const quickActionsRef = useRef(null);
   const inputRef = useRef(null);
@@ -161,6 +203,10 @@ export default function PandaBotWidget() {
     if (isOpen) inputRef.current?.focus();
   }, [isOpen]);
 
+  useEffect(() => {
+    setMessages([createWelcomeMessage(role, user)]);
+  }, [role, user?.fullName]);
+
   if (isAuthLoading || !isLoggedIn) return null;
 
   async function sendMessage(rawMessage) {
@@ -173,7 +219,8 @@ export default function PandaBotWidget() {
     setIsSending(true);
 
     try {
-      const response = await apiFetch("/api/ai/support", {
+      const supportEndpoint = role === "provider" ? "/api/ai/provider-support" : "/api/ai/support";
+      const response = await apiFetch(supportEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -183,15 +230,12 @@ export default function PandaBotWidget() {
           message,
           location: getProfileLocation(user),
           conversationHistory: messages
-            .filter((item) => (
-              item.role === "assistant" &&
-              (Array.isArray(item.recommendations) ||
-                Array.isArray(item.providerContextIds) ||
-                item.contextBookingTracking === true)
-            ))
-            .slice(-12)
+            .filter((item) => item.role === "assistant" || item.role === "user")
             .map((item) => ({
-              role: "assistant",
+              role: item.role,
+              text: item.text,
+              contextIntroduction: item.contextIntroduction === true,
+              contextIntent: typeof item.contextIntent === "string" ? item.contextIntent : "",
               providerIds: Array.isArray(item.recommendations)
                 ? item.recommendations
                   .map((provider) => provider.providerId || provider.id)
@@ -227,6 +271,8 @@ export default function PandaBotWidget() {
         providerContextIds: Array.isArray(data.contextProviderIds) ? data.contextProviderIds : [],
         contextRequestedDate: typeof data.contextRequestedDate === "string" ? data.contextRequestedDate : "",
         contextBookingTracking: data.contextBookingTracking === true,
+        contextIntroduction: data.contextIntroduction === true,
+        contextIntent: typeof data.contextIntent === "string" ? data.contextIntent : "",
       }]);
       if (!isOpenRef.current) setHasUnreadAssistantMessage(true);
     } catch (error) {
@@ -301,7 +347,7 @@ export default function PandaBotWidget() {
                       ? "rounded-bl-md border border-rose-200 bg-rose-50 text-rose-800"
                       : "rounded-bl-md border border-slate-200 bg-white text-slate-800 shadow-sm"
                   }`}>
-                    {item.text}
+                    {item.role === "assistant" ? renderAssistantMessage(item.text) : item.text}
                   </div>
                   {item.role === "assistant" && item.recommendations?.length > 0 && (
                     <div className="mt-2.5 space-y-2">
@@ -375,7 +421,7 @@ export default function PandaBotWidget() {
               id="pandabot-message"
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Ask about a booking or service..."
+              placeholder={role === "provider" ? "Ask about your jobs, earnings, or profile..." : "Ask about a booking or service..."}
               rows={1}
               maxLength={4000}
               disabled={isSending}
