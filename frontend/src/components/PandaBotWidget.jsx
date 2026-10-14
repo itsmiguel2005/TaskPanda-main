@@ -185,7 +185,9 @@ export default function PandaBotWidget() {
           conversationHistory: messages
             .filter((item) => (
               item.role === "assistant" &&
-              (Array.isArray(item.recommendations) || Array.isArray(item.providerContextIds))
+              (Array.isArray(item.recommendations) ||
+                Array.isArray(item.providerContextIds) ||
+                item.contextBookingTracking === true)
             ))
             .slice(-12)
             .map((item) => ({
@@ -199,6 +201,7 @@ export default function PandaBotWidget() {
                 ? item.providerContextIds.filter((providerId) => typeof providerId === "string")
                 : [],
               contextRequestedDate: item.contextRequestedDate || "",
+              contextBookingTracking: item.contextBookingTracking === true,
             })),
         }),
       });
@@ -223,6 +226,7 @@ export default function PandaBotWidget() {
         recommendations,
         providerContextIds: Array.isArray(data.contextProviderIds) ? data.contextProviderIds : [],
         contextRequestedDate: typeof data.contextRequestedDate === "string" ? data.contextRequestedDate : "",
+        contextBookingTracking: data.contextBookingTracking === true,
       }]);
       if (!isOpenRef.current) setHasUnreadAssistantMessage(true);
     } catch (error) {

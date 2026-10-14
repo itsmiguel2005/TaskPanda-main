@@ -4,6 +4,11 @@ const mongoose = require("mongoose");
 const { createRateLimiter } = require("../middleware/rateLimits");
 const { requireAuth } = require("../middleware/requireAuth");
 const Booking = require("../models/Booking");
+const {
+  handleBookingTrackingRequest,
+  isBookingTrackingFollowUp,
+  isBookingTrackingRequest,
+} = require("../controllers/pandaBotController");
 const Favorite = require("../models/Favorite");
 const User = require("../models/User");
 const { calculateDistanceKm } = require("../services/bookingPricing");
@@ -117,6 +122,8 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
     });
   };
   const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+  const trackingRequest = isBookingTrackingRequest(message) ||
+    isBookingTrackingFollowUp(req.body?.conversationHistory);
   const favoriteReference = isFavoriteReference(message);
   const favoriteListRequest = isFavoriteProviderListRequest(message);
   const recentProviderIds = getRecentContextProviderIds(req.body?.conversationHistory);
@@ -127,7 +134,9 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
   const availabilityRequest = isProviderAvailabilityRequest(message) ||
     dateFollowUp ||
     (providerChoiceFollowUp && Boolean(recentRequestedDate));
-  const recommendationRequest = isProviderRecommendationRequest(message) || favoriteListRequest || availabilityRequest;
+  const recommendationRequest = !trackingRequest && (
+    isProviderRecommendationRequest(message) || favoriteListRequest || availabilityRequest
+  );
   const location = normalizeUserLocation(req.body?.location) || (
     recommendationRequest ? { city: "", province: "", label: "" } : null
   );
@@ -135,7 +144,7 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
   if (!message || message.length > MAX_MESSAGE_LENGTH) {
     return res.status(400).json({ message: `Provide a message of 1 to ${MAX_MESSAGE_LENGTH} characters.` });
   }
-  if (!location && !recommendationRequest) {
+  if (!location && !recommendationRequest && !trackingRequest) {
     return res.status(400).json({ message: "Provide a valid user location (city, region, or both)." });
   }
 
@@ -145,6 +154,11 @@ router.post("/support", limitAiSupport, requireAuth, async (req, res) => {
   let recommendationSearchUnavailable = "";
   let recommendationSearchContext = "";
   try {
+    if (trackingRequest) {
+      failedOperation = "booking lookup";
+      return await handleBookingTrackingRequest(req, res, message);
+    }
+
     if (favoriteListRequest && !availabilityRequest) {
       const favoriteRows = await Favorite.find({ clientId: req.user._id })
         .select("providerId createdAt")
