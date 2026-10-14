@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { adminRequest } from "../services/adminApi.js";
+import AdminAccountsManagement from "./AdminAccountsManagement.jsx";
 
 const DEFAULT_SETTINGS = {
   maxTravelDistanceKm: 50,
@@ -232,6 +233,8 @@ function AdminSystemSettings() {
           <button type="submit" disabled={isLoading || isSaving || !hasChanges} className="dashboard-focus inline-flex h-10 items-center justify-center rounded-xl bg-blue-800 px-4 text-sm font-semibold text-white transition hover:bg-blue-900 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-900">{isSaving ? "Saving…" : "Save settings"}</button>
         </div>
       </form>
+
+      <AdminAccountsManagement />
 
       <form onSubmit={sendBroadcast} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="border-b border-slate-200 px-4 py-4 sm:px-5">

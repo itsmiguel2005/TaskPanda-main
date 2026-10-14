@@ -18,7 +18,11 @@ const {
   handleAdminBroadcast,
 } = require("../controllers/adminOperationsController");
 const { handleGetAdminBookings, handleOverrideAdminBooking } = require("../controllers/adminBookingController");
-const { handleListAdminRefunds, handleResolveAdminRefund } = require("../controllers/refundController");
+const {
+  handleListAdminRefunds,
+  handleResolveAdminRefund,
+  handleResolveRefundRepayment,
+} = require("../controllers/refundController");
 const {
   handleGetAdminSupportReports,
   handleGetAdminSupportReportDetails,
@@ -35,9 +39,10 @@ const {
   handleReviewTesdaCertificate,
   handleReviewVerification,
 } = require("../controllers/verificationController");
-const { requireAdmin } = require("../middleware/requireAdmin");
+const { requireAdmin, requirePrimaryAdmin } = require("../middleware/requireAdmin");
 const { validateRequest } = require("../middleware/validateRequest");
 const { handleGetAdminAuditLogs } = require("../controllers/auditLogController");
+const { handleGetAdminAccounts, handleCreateAdminAccount } = require("../controllers/adminAccountsController");
 
 const router = express.Router();
 
@@ -150,7 +155,7 @@ router.get(
   [
     query("q").optional().isString().isLength({ max: 100 }),
     query("page").optional().isInt({ min: 1, max: 10000 }),
-    query("status").optional().isIn(["pending", "approved", "in_progress", "complete", "settled", "canceled", "declined", "expired", "refund_pending", "refunded", "partially_refunded"]),
+    query("status").optional().isIn(["pending", "approved", "in_progress", "complete", "settled", "canceled", "declined", "expired", "refund_pending", "refund_repayment_pending", "refund_repayment_reported", "refund_repayment_overdue", "refunded", "partially_refunded"]),
   ],
   validateRequest,
   handleGetAdminBookings
@@ -189,6 +194,17 @@ router.post(
   validateRequest,
   handleResolveAdminRefund
 );
+router.post(
+  "/refunds/:id/repayment-review",
+  requireAdmin,
+  [
+    param("id").isMongoId(),
+    body("action").isIn(["CONFIRM_RECEIVED", "REOPEN_WINDOW", "LIFT_SUSPENSION"]),
+    body("notes").isString().trim().isLength({ min: 5, max: 2000 }),
+  ],
+  validateRequest,
+  handleResolveRefundRepayment
+);
 router.get(
   "/transactions",
   requireAdmin,
@@ -203,6 +219,18 @@ router.get(
   handleGetAdminTransactions
 );
 router.get("/rewards/analytics", requireAdmin, handleGetAdminRewardAnalytics);
+router.get("/admin-accounts", requireAdmin, handleGetAdminAccounts);
+router.post(
+  "/admin-accounts",
+  requireAdmin,
+  requirePrimaryAdmin,
+  [
+    body("fullName").isString().trim().isLength({ min: 2, max: 100 }),
+    body("email").isEmail().customSanitizer((value) => value.trim().toLowerCase()).isLength({ max: 254 }),
+  ],
+  validateRequest,
+  handleCreateAdminAccount
+);
 router.get("/settings", requireAdmin, handleGetAdminSystemSettings);
 router.patch(
   "/settings",

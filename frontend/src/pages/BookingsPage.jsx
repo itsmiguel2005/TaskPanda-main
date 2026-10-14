@@ -76,7 +76,23 @@ export default function BookingsPage() {
   const { token, user } = useAuth();
   const dashboardDensity = user?.dashboardDensityPreference === "compact" ? "compact" : "comfortable";
   const requestHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
-  const { bookings, isLoading, error, requestCancellation, requestRevision, requestRefund, submitReview, respondToProviderUpdate, respondToLateNotice, reportProviderNoShow, refreshBookings, confirmCashSettlement, createBooking } = useBookings();
+  const {
+    bookings,
+    isLoading,
+    error,
+    requestCancellation,
+    requestRevision,
+    requestRefund,
+    confirmRefundRepayment,
+    reportRefundRepaymentMissing,
+    submitReview,
+    respondToProviderUpdate,
+    respondToLateNotice,
+    reportProviderNoShow,
+    refreshBookings,
+    confirmCashSettlement,
+    createBooking,
+  } = useBookings();
   const isInitialLoading = isLoading && bookings.length === 0;
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("activityAt");
@@ -96,11 +112,15 @@ export default function BookingsPage() {
   const [lateNoticeError, setLateNoticeError] = useState(null);
   const [noShowBookingId, setNoShowBookingId] = useState("");
   const [bookingClock, setBookingClock] = useState(Date.now());
+  const [refundRepaymentActionId, setRefundRepaymentActionId] = useState("");
+  const [refundReportBookingId, setRefundReportBookingId] = useState("");
+  const [refundReportNote, setRefundReportNote] = useState("");
+  const [refundRepaymentError, setRefundRepaymentError] = useState("");
 
   const stats = useMemo(() => {
     const total = bookings.length;
     const pending = bookings.filter((b) => b.status === "Pending Request").length;
-    const active = bookings.filter((b) => ["Confirmed", "On the Way", "In Progress", "Refund Under Review"].includes(b.status)).length;
+    const active = bookings.filter((b) => ["Confirmed", "On the Way", "In Progress", "Refund Under Review", "Repayment Pending", "Repayment Reported", "Repayment Overdue"].includes(b.status)).length;
     const completed = bookings.filter((b) => isCompletedLikeStatus(b.status)).length;
     const cancelled = bookings.filter((b) => ["Cancelled", "Cancelled - Provider No-Show"].includes(b.status)).length;
     const declined = bookings.filter((b) => ["Declined", "Declined by Provider"].includes(b.status)).length;
@@ -115,7 +135,7 @@ export default function BookingsPage() {
         .some((value) => String(value || "").toLowerCase().includes(query));
       const matchesTab = activeTab === "All"
         || (activeTab === "Pending" && booking.status === "Pending Request")
-        || (activeTab === "Active" && ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed", "Refund Under Review"].includes(booking.status))
+        || (activeTab === "Active" && ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed", "Refund Under Review", "Repayment Pending", "Repayment Reported", "Repayment Overdue"].includes(booking.status))
         || (activeTab === "Completed" && isCompletedLikeStatus(booking.status))
         || (activeTab === "Cancelled" && ["Cancelled", "Cancelled - Provider No-Show"].includes(booking.status))
         || (activeTab === "Declined" && booking.status === "Declined by Provider")
@@ -160,6 +180,33 @@ export default function BookingsPage() {
     if (!refundingId) throw new Error("Choose a booking before requesting a refund.");
     await requestRefund(refundingId, reason, requestedAmount, description, photos);
     setRefundingId(null);
+  };
+
+  const handleConfirmRefundReceived = async (booking) => {
+    setRefundRepaymentActionId(booking.id);
+    setRefundRepaymentError("");
+    try {
+      await confirmRefundRepayment(booking.refundRequestId);
+    } catch (requestError) {
+      setRefundRepaymentError(requestError.message || "Could not confirm receipt of the refund.");
+    } finally {
+      setRefundRepaymentActionId("");
+    }
+  };
+
+  const handleReportRefundNotReceived = async (event, booking) => {
+    event.preventDefault();
+    setRefundRepaymentActionId(booking.id);
+    setRefundRepaymentError("");
+    try {
+      await reportRefundRepaymentMissing(booking.refundRequestId, refundReportNote);
+      setRefundReportBookingId("");
+      setRefundReportNote("");
+    } catch (requestError) {
+      setRefundRepaymentError(requestError.message || "Could not submit the non-receipt report.");
+    } finally {
+      setRefundRepaymentActionId("");
+    }
   };
 
   const detailBooking = bookings.find((b) => b.id === detailId) || null;
@@ -413,10 +460,87 @@ export default function BookingsPage() {
                           {booking.refundStatus === "rejected" && (
                             <p className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">The refund request was declined. You can submit another request while the 48-hour window remains open.</p>
                           )}
-                          {booking.isRefunded && (
+                          {booking.isRefunded && ["not_required", "confirmed_received", "auto_confirmed"].includes(booking.cashRepaymentStatus) && (
                             <p className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-900">
-                              Refund resolved{booking.refundAmount > 0 ? ` · ₱${Number(booking.refundAmount).toLocaleString("en-PH", { maximumFractionDigits: 2 })} cash repayment agreed for direct provider-to-client return` : " · voucher restoration; no cash transfer"}.
+                              {booking.cashRepaymentStatus === "auto_confirmed"
+                                ? `This repayment was automatically closed after 48 hours without a response${booking.refundAmount > 0 ? ` · ₱${Number(booking.refundAmount).toLocaleString("en-PH", { maximumFractionDigits: 2 })}` : ""}. Contact TaskPanda support if it was not received.`
+                                : booking.cashRepaymentStatus === "confirmed_received"
+                                  ? `You confirmed receipt of the ₱${Number(booking.refundAmount).toLocaleString("en-PH", { maximumFractionDigits: 2 })} direct cash repayment.`
+                                  : "Refund approved · any eligible travel-fee voucher was restored immediately; no cash repayment is due."}
                             </p>
+                          )}
+                          {booking.isRefunded && ["due_provider_to_client", "provider_marked_sent", "repayment_sent", "repayment_overdue", "client_reported_missing"].includes(booking.cashRepaymentStatus) && (
+                            <section className={`mt-3 rounded-lg border p-3 text-xs leading-5 ${booking.cashRepaymentStatus === "client_reported_missing" || booking.cashRepaymentStatus === "repayment_overdue" ? "border-rose-200 bg-rose-50 text-rose-950" : "border-amber-200 bg-amber-50 text-amber-950"}`} aria-label="Cash repayment status">
+                              <p className="font-semibold">
+                                {booking.cashRepaymentStatus === "client_reported_missing"
+                                  ? "Your non-receipt report is with TaskPanda for review."
+                                  : booking.cashRepaymentStatus === "repayment_overdue"
+                                    ? "The provider missed the 48-hour deadline. Their account is suspended pending admin review."
+                                    : ["provider_marked_sent", "repayment_sent"].includes(booking.cashRepaymentStatus)
+                                      ? "The provider marked your cash repayment as sent."
+                                      : "Your provider must return this cash directly to you."}
+                              </p>
+                              <p className="mt-1">
+                                Approved direct repayment: <strong className="tabular-nums">₱{Number(booking.refundAmount).toLocaleString("en-PH", { maximumFractionDigits: 2 })}</strong>.
+                                {["provider_marked_sent", "repayment_sent"].includes(booking.cashRepaymentStatus)
+                                  ? ` Please confirm receipt or report a problem by ${booking.clientResponseDueAt ? new Date(booking.clientResponseDueAt).toLocaleString("en-PH", { timeZone: "Asia/Manila" }) : "48 hours after it was marked sent"}.`
+                                  : booking.providerRepaymentDueAt
+                                    ? ` Provider deadline: ${new Date(booking.providerRepaymentDueAt).toLocaleString("en-PH", { timeZone: "Asia/Manila" })}.`
+                                    : ""}
+                              </p>
+                              {booking.cashRepaymentStatus === "client_reported_missing" && booking.clientReportNote && (
+                                <p className="mt-2 whitespace-pre-wrap">Your report: {booking.clientReportNote}</p>
+                              )}
+                              {["due_provider_to_client", "provider_marked_sent", "repayment_sent", "repayment_overdue"].includes(booking.cashRepaymentStatus) && (
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {["due_provider_to_client", "provider_marked_sent", "repayment_sent", "repayment_overdue"].includes(booking.cashRepaymentStatus) && (
+                                    <button
+                                      type="button"
+                                      disabled={refundRepaymentActionId === booking.id}
+                                      onClick={() => handleConfirmRefundReceived(booking)}
+                                      className="dashboard-focus rounded-lg bg-emerald-700 px-3 py-2 font-semibold text-white hover:bg-emerald-800 disabled:cursor-wait disabled:opacity-60"
+                                    >
+                                      {refundRepaymentActionId === booking.id ? "Saving…" : "Confirm refund received"}
+                                    </button>
+                                  )}
+                                  {refundReportBookingId !== booking.id ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setRefundReportBookingId(booking.id);
+                                        setRefundRepaymentError("");
+                                      }}
+                                      className="dashboard-focus rounded-lg border border-rose-300 bg-white px-3 py-2 font-semibold text-rose-900 hover:bg-rose-100"
+                                    >
+                                      I haven’t received it
+                                    </button>
+                                  ) : (
+                                    <form onSubmit={(event) => handleReportRefundNotReceived(event, booking)} className="w-full space-y-2">
+                                      <label htmlFor={`repayment-report-${booking.id}`} className="block font-semibold">Tell us what happened</label>
+                                      <textarea
+                                        id={`repayment-report-${booking.id}`}
+                                        value={refundReportNote}
+                                        onChange={(event) => setRefundReportNote(event.target.value)}
+                                        minLength={5}
+                                        maxLength={1000}
+                                        required
+                                        rows={3}
+                                        className="dashboard-focus w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-slate-900"
+                                        placeholder="For example, when and how the provider said they sent it."
+                                      />
+                                      <div className="flex flex-wrap gap-2">
+                                        <button type="submit" disabled={refundRepaymentActionId === booking.id || refundReportNote.trim().length < 5} className="dashboard-focus rounded-lg bg-rose-800 px-3 py-2 font-semibold text-white hover:bg-rose-900 disabled:cursor-not-allowed disabled:opacity-50">
+                                          {refundRepaymentActionId === booking.id ? "Submitting…" : "Submit report"}
+                                        </button>
+                                        <button type="button" onClick={() => { setRefundReportBookingId(""); setRefundReportNote(""); }} className="dashboard-focus rounded-lg border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                                      </div>
+                                    </form>
+                                  )}
+                                </div>
+                              )}
+                              {refundRepaymentError && <p role="alert" className="mt-2 font-semibold text-rose-800">{refundRepaymentError}</p>}
+                              {booking.travelFeeDiscount > 0 && <p className="mt-2">Your eligible ₱{Number(booking.travelFeeDiscount).toLocaleString("en-PH", { maximumFractionDigits: 2 })} travel-fee voucher restoration is handled separately by TaskPanda.</p>}
+                            </section>
                           )}
                           {canRequestRefund(booking) && (
                             <button type="button" onClick={() => setRefundingId(booking.id)} className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-950 hover:bg-amber-100">

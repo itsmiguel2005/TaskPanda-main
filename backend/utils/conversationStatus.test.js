@@ -11,6 +11,9 @@ test("all active booking statuses remain in the active conversation folder", () 
     "in_revision",
     "disputed",
     "refund_pending",
+    "refund_repayment_pending",
+    "refund_repayment_reported",
+    "refund_repayment_overdue",
     "cancel_requested",
   ]) {
     assert.equal(getConversationStatusGroup(status), "active", status);

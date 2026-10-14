@@ -25,6 +25,9 @@ const statusFilters = [
   { id: "complete", label: "Completed" },
   { id: "settled", label: "Settled" },
   { id: "refund_pending", label: "Refund Under Review" },
+  { id: "refund_repayment_pending", label: "Repayment Pending" },
+  { id: "refund_repayment_reported", label: "Repayment Reported" },
+  { id: "refund_repayment_overdue", label: "Repayment Overdue" },
   { id: "refunded", label: "Refunded" },
   { id: "partially_refunded", label: "Partially Refunded" },
   { id: "canceled", label: "Cancelled" },
@@ -59,6 +62,9 @@ function normalizedStatus(status) {
   if (["complete", "closed", "completed"].includes(value)) return "complete";
   if (["settled"].includes(value)) return "settled";
   if (["refund_pending", "refund under review"].includes(value)) return "refund_pending";
+  if (["refund_repayment_pending", "repayment pending"].includes(value)) return "refund_repayment_pending";
+  if (["refund_repayment_reported", "repayment reported"].includes(value)) return "refund_repayment_reported";
+  if (["refund_repayment_overdue", "repayment overdue"].includes(value)) return "refund_repayment_overdue";
   if (["refunded"].includes(value)) return "refunded";
   if (["partially_refunded", "partially refunded"].includes(value)) return "partially_refunded";
   if (["canceled", "cancelled"].includes(value)) return "canceled";
@@ -71,7 +77,7 @@ function statusRank(status) {
   if (normalized === "pending") return 0;
   if (normalized === "approved") return 1;
   if (normalized === "in_progress") return 2;
-  if (["complete", "settled", "refund_pending", "refunded", "partially_refunded"].includes(normalized)) return 3;
+  if (["complete", "settled", "refund_pending", "refund_repayment_pending", "refund_repayment_reported", "refund_repayment_overdue", "refunded", "partially_refunded"].includes(normalized)) return 3;
   return -1;
 }
 
@@ -86,6 +92,9 @@ function StatusBadge({ status }) {
     declined: "border-rose-200 bg-rose-50 text-rose-800",
     expired: "border-slate-300 bg-slate-100 text-slate-700",
     refund_pending: "border-amber-200 bg-amber-50 text-amber-800",
+    refund_repayment_pending: "border-amber-200 bg-amber-50 text-amber-900",
+    refund_repayment_reported: "border-rose-200 bg-rose-50 text-rose-800",
+    refund_repayment_overdue: "border-rose-200 bg-rose-50 text-rose-800",
     refunded: "border-emerald-200 bg-emerald-50 text-emerald-800",
     partially_refunded: "border-teal-200 bg-teal-50 text-teal-800",
   };
@@ -157,7 +166,7 @@ function BookingTimeline({ booking }) {
 
 function BookingDrawer({ booking, onClose, onOverride }) {
   const status = normalizedStatus(booking.status);
-  const isException = ["canceled", "declined", "expired", "refund_pending", "refunded", "partially_refunded"].includes(status);
+  const isException = ["canceled", "declined", "expired", "refund_pending", "refund_repayment_reported", "refund_repayment_overdue", "refunded", "partially_refunded"].includes(status);
   return createPortal(
     <div className="fixed inset-0 z-50">
       <button type="button" aria-label="Close booking details" onClick={onClose} className="absolute inset-0 h-full w-full cursor-default bg-slate-950/40" />

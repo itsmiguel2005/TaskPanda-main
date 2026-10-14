@@ -19,6 +19,7 @@ const AUDIT_ACTIONS = [
   "REPORT_RESOLVED",
   "REVIEW_REMOVED",
   "SYSTEM_SETTING_TOGGLED",
+  "ADMIN_ACCOUNT_CREATED",
 ];
 
 const auditLogSchema = new mongoose.Schema({

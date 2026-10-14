@@ -1,5 +1,5 @@
 const express = require("express");
-const { body, query } = require("express-validator");
+const { body, param, query } = require("express-validator");
 const { requireAuth, requireRole } = require("../middleware/requireAuth");
 const upload = require("../storage/upload");
 const { sanitizeMongoInput } = require("../middleware/sanitizeMongoInput");
@@ -30,7 +30,12 @@ const {
   handleCreateRevisionRequest,
   handleRespondToRevision,
 } = require("../controllers/bookingController");
-const { handleRequestRefund } = require("../controllers/refundController");
+const {
+  handleRequestRefund,
+  handleMarkProviderRepaymentSent,
+  handleConfirmRefundReceived,
+  handleReportRefundNotReceived,
+} = require("../controllers/refundController");
 const { handleProviderCashConfirmationByBooking } = require("../controllers/messageController");
 
 const router = express.Router();
@@ -147,6 +152,9 @@ router.post("/", (req, _res, next) => {
   next();
 }, limitBookingCreation, checkBookingMaintenance, upload.array("photos", 5), sanitizeMongoInput, validateBookingCreation, validateRequest, handleCreateBooking);
 router.post("/:id/confirm-cash-received", requireRole("provider"), handleProviderCashConfirmationByBooking);
+router.post("/refunds/:refundId/repayment-sent", param("refundId").isMongoId(), validateRequest, requireRole("provider"), handleMarkProviderRepaymentSent);
+router.post("/refunds/:refundId/confirm-received", param("refundId").isMongoId(), validateRequest, requireRole("client"), handleConfirmRefundReceived);
+router.post("/refunds/:refundId/report-not-received", param("refundId").isMongoId(), body("reportNote").isString().trim().isLength({ min: 5, max: 1000 }), validateRequest, requireRole("client"), handleReportRefundNotReceived);
 router.patch("/:id/status", validateBookingStatus, validateRequest, handleUpdateBookingStatus);
 router.post("/:id/running-late", body("delayMinutes").isInt({ min: 1, max: 720 }), validateRequest, handleReportRunningLate);
 router.post("/:id/provider-no-show", handleReportProviderNoShow);

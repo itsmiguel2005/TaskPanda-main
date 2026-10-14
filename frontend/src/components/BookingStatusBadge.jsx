@@ -15,6 +15,9 @@ const STATUS_STYLES = {
   "In Revision": "border-amber-200 bg-amber-50 text-amber-800",
   Disputed: "border-rose-200 bg-rose-50 text-rose-800",
   "Refund Under Review": "border-amber-200 bg-amber-50 text-amber-800",
+  "Repayment Pending": "border-amber-200 bg-amber-50 text-amber-900",
+  "Repayment Reported": "border-rose-200 bg-rose-50 text-rose-800",
+  "Repayment Overdue": "border-rose-200 bg-rose-50 text-rose-800",
   Refunded: "border-emerald-200 bg-emerald-50 text-emerald-800",
   "Partially Refunded": "border-teal-200 bg-teal-50 text-teal-800",
 };
@@ -36,6 +39,9 @@ const STATUS_DOTS = {
   "In Revision": "bg-amber-500",
   Disputed: "bg-rose-500",
   "Refund Under Review": "bg-amber-500",
+  "Repayment Pending": "bg-amber-500",
+  "Repayment Reported": "bg-rose-500",
+  "Repayment Overdue": "bg-rose-500",
   Refunded: "bg-emerald-500",
   "Partially Refunded": "bg-teal-500",
 };

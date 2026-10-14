@@ -16,6 +16,7 @@ const ADMINISTRABLE_ROLES = ["client", "provider"];
 const USER_PAGE_SIZE = 25;
 const ACTIVE_BOOKING_STATUSES = [
   "pending", "approved", "en_route", "in_progress", "in_revision", "disputed", "cancel_requested",
+  "refund_repayment_pending", "refund_repayment_reported", "refund_repayment_overdue",
   "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested",
 ];
 
@@ -408,7 +409,7 @@ async function handleSetAdminUserSuspension(req, res) {
     const suspended = req.body.suspended === true;
     const update = {
       $set: suspended ? { isSuspended: true, suspendedAt: new Date(), accountTokens: [] } : { isSuspended: false },
-      ...(suspended ? {} : { $unset: { suspendedAt: 1 } }),
+      ...(suspended ? {} : { $unset: { suspendedAt: 1, refundSuspensionId: 1 } }),
       ...adminActivity(suspended ? "suspended" : "unsuspended", req.adminEmail),
     };
     const user = await User.findOneAndUpdate(

@@ -81,7 +81,7 @@ const bookingSchema = new mongoose.Schema(
     }],
     status: {
       type: String,
-      enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "refund_pending", "refunded", "partially_refunded", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Cancelled", "Completed", "Settled"],
+      enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "refund_pending", "refund_repayment_pending", "refund_repayment_reported", "refund_repayment_overdue", "refunded", "partially_refunded", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Cancelled", "Completed", "Settled"],
       default: "pending",
       index: true,
     },
@@ -89,7 +89,7 @@ const bookingSchema = new mongoose.Schema(
     previousRefundableStatus: { type: String, enum: ["complete", "closed", "settled", "disputed"] },
     isRefunded: { type: Boolean, default: false },
     refundAmount: { type: Number, min: 0, default: 0 },
-    refundStatus: { type: String, enum: ["none", "pending", "refunded", "partially_refunded", "rejected"], default: "none" },
+    refundStatus: { type: String, enum: ["none", "pending", "due_provider_to_client", "repayment_sent", "client_reported_missing", "repayment_overdue", "refunded", "partially_refunded", "rejected"], default: "none" },
     requestExpiresAt: { type: Date, default: undefined, index: true },
     cancellationReason: { type: String, default: "", trim: true, maxlength: 500 },
     cancellationRequestedBy: { type: String, enum: ["client", "provider"], default: undefined },
@@ -103,7 +103,7 @@ const bookingSchema = new mongoose.Schema(
     clientReviewPhotos: { type: [String], default: [] },
     reviewedAt: { type: Date },
     statusHistory: [{
-      status: { type: String, enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "refund_pending", "refunded", "partially_refunded"] },
+      status: { type: String, enum: ["pending", "approved", "en_route", "in_progress", "complete", "in_revision", "disputed", "closed", "settled", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "refund_pending", "refund_repayment_pending", "refund_repayment_reported", "refund_repayment_overdue", "refunded", "partially_refunded"] },
       at: { type: Date, default: Date.now },
     }],
     adminOverrideHistory: [{

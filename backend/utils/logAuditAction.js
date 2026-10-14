@@ -34,12 +34,13 @@ async function logAuditAction(req, { category, action, targetResource, targetId,
     const adminName = getAdminName(req);
     const ipAddress = String(req.ip || req.socket?.remoteAddress || "").slice(0, 100);
     const userAgent = String(req.get?.("user-agent") || "").slice(0, 1000);
-    const adminRecord = req.user?._id
-      ? null
-      : await User.findOne({
+    let adminRecord = req.adminId ? { _id: req.adminId } : null;
+    if (!adminRecord && !req.user?._id) {
+      adminRecord = await User.findOne({
         email: String(req.adminEmail || process.env.ADMIN_EMAIL || "").trim().toLowerCase(),
         role: "admin",
       }).select("_id").lean();
+    }
     await new AuditLog({
       adminId: adminRecord?._id || getAdminId(req, adminName),
       adminName,

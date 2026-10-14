@@ -48,6 +48,9 @@ const STATUS_ALIASES = {
   completed: "complete",
   settled: "settled",
   "refund under review": "refund_pending",
+  "repayment pending": "refund_repayment_pending",
+  "repayment reported": "refund_repayment_reported",
+  "repayment overdue": "refund_repayment_overdue",
   refunded: "refunded",
   "partially refunded": "partially_refunded",
   "cancelled - provider no-show": "provider_no_show",
@@ -61,6 +64,9 @@ const STATUS_LABELS = {
   cancel_requested: "Cancellation Requested",
   canceled: "Cancelled",
   refund_pending: "Refund Under Review",
+  refund_repayment_pending: "Repayment Pending",
+  refund_repayment_reported: "Repayment Reported",
+  refund_repayment_overdue: "Repayment Overdue",
   refunded: "Refunded",
   partially_refunded: "Partially Refunded",
   provider_no_show: "Cancelled - Provider No-Show",
@@ -216,7 +222,14 @@ function serializeBooking(booking, viewerRole = "") {
     isRefunded: booking.isRefunded === true,
     refundAmount: Number(booking.refundAmount || 0),
     refundStatus: booking.refundStatus || "none",
-    refundRequestId: booking.refundRequestId ? String(booking.refundRequestId) : null,
+    refundRequestId: booking.refundRequestId
+      ? String(booking.refundRequestId._id || booking.refundRequestId)
+      : null,
+    cashRepaymentStatus: booking.refundRequestId?.cashRepaymentStatus || "not_required",
+    providerRepaymentDueAt: booking.refundRequestId?.providerRepaymentDueAt || null,
+    providerMarkedSentAt: booking.refundRequestId?.providerMarkedSentAt || null,
+    clientResponseDueAt: booking.refundRequestId?.clientResponseDueAt || null,
+    clientReportNote: booking.refundRequestId?.clientReportNote || "",
     completionNote: booking.completionNote || "",
     completionPhotos: booking.completionPhotos || [],
     completionSubmittedAt: booking.completionSubmittedAt || null,
@@ -327,6 +340,7 @@ function normalizeServiceGeoLocation(value) {
 const populatePaths = [
   { path: "clientId", select: "fullName username email profileImage" },
   { path: "providerId", select: "fullName username email professions profileImage" },
+  { path: "refundRequestId", select: "cashRepaymentStatus providerRepaymentDueAt providerMarkedSentAt clientResponseDueAt clientReportNote" },
 ];
 
 async function recalculateProviderRatingSummary(providerId) {
@@ -371,13 +385,13 @@ async function handleListBookings(req, res) {
     if (requestedClientId && !mongoose.isValidObjectId(requestedClientId)) return res.status(400).json({ message: "Invalid clientId filter." });
     if (requestedProviderId && !mongoose.isValidObjectId(requestedProviderId)) return res.status(400).json({ message: "Invalid providerId filter." });
     const normalizedStatus = normalizeBookingStatus(requestedStatus);
-    if (requestedStatus && !["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "complete", "in_revision", "disputed", "closed", "settled", "refund_pending", "refunded", "partially_refunded"].includes(normalizedStatus)) return res.status(400).json({ message: "Invalid status filter." });
+    if (requestedStatus && !["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "complete", "in_revision", "disputed", "closed", "settled", "refund_pending", "refund_repayment_pending", "refund_repayment_reported", "refund_repayment_overdue", "refunded", "partially_refunded"].includes(normalizedStatus)) return res.status(400).json({ message: "Invalid status filter." });
 
     const filter = {};
     if (normalizedStatus) {
       filter.status = normalizedStatus;
     } else {
-      filter.status = mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "complete", "in_revision", "disputed", "closed", "settled", "refund_pending", "refunded", "partially_refunded", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Declined by Provider", "Cancelled", "Cancelled - Provider No-Show", "Completed", "Settled", "Expired"] });
+      filter.status = mongoose.trusted({ $in: ["pending", "approved", "en_route", "in_progress", "cancel_requested", "canceled", "provider_no_show", "declined", "expired", "complete", "in_revision", "disputed", "closed", "settled", "refund_pending", "refund_repayment_pending", "refund_repayment_reported", "refund_repayment_overdue", "refunded", "partially_refunded", "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested", "Declined", "Declined by Provider", "Cancelled", "Cancelled - Provider No-Show", "Completed", "Settled", "Expired"] });
     }
     if (req.user.role === "provider") {
       filter.providerId = req.user._id;

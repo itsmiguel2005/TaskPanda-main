@@ -18,6 +18,8 @@ const {
 
 const REFUND_PAGE_SIZE = 25;
 const RESOLUTION_LOCK_MS = 5 * 60 * 1000;
+const CASH_REPAYMENT_WINDOW_MS = 48 * 60 * 60 * 1000;
+let isProcessingRefundRepaymentDeadlines = false;
 const BOOKING_STATUS_ALIASES = {
   completed: "complete",
   settled: "settled",
@@ -75,6 +77,17 @@ function serializeRefund(refund) {
     bookingStatusBeforeRequest: refund.bookingStatusBeforeRequest,
     voucherRestored: refund.voucherRestored === true,
     cashRepaymentStatus: refund.cashRepaymentStatus || "not_required",
+    providerRepaymentDueAt: refund.providerRepaymentDueAt || null,
+    providerMarkedSentAt: refund.providerMarkedSentAt || null,
+    clientResponseDueAt: refund.clientResponseDueAt || null,
+    clientConfirmedAt: refund.clientConfirmedAt || null,
+    clientAutoConfirmedAt: refund.clientAutoConfirmedAt || null,
+    clientReportedAt: refund.clientReportedAt || null,
+    clientReportNote: refund.clientReportNote || "",
+    providerSuspensionAppliedAt: refund.providerSuspensionAppliedAt || null,
+    repaymentReviewedAt: refund.repaymentReviewedAt || null,
+    repaymentReviewedBy: refund.repaymentReviewedBy || "",
+    repaymentReviewNotes: refund.repaymentReviewNotes || "",
     resolutionAction: refund.resolutionAction || "",
     status: refund.status,
     adminNotes: refund.adminNotes || "",
@@ -299,28 +312,57 @@ async function rollbackBookingResolution(booking, refund, finalStatus, resolvedA
 
 async function notifyRefundResolution({ booking, refundId, action, approvedCashAmount, voucherRestored, adminNotes }) {
   const bookingId = String(booking._id);
+  if (action !== "REJECT") {
+    try {
+      const amountMessage = approvedCashAmount > 0
+        ? `An admin approved a ₱${approvedCashAmount.toLocaleString("en-PH", { maximumFractionDigits: 2 })} direct cash repayment. The provider has 48 hours to return it; TaskPanda does not transfer cash.`
+        : "An admin approved your voucher-only refund. No cash repayment is due.";
+      await User.updateOne(
+        {
+          _id: booking.clientId,
+          "refundNotifications.refundId": { $ne: String(refundId) },
+        },
+        {
+          $push: {
+            refundNotifications: {
+              $each: [{
+                refundId: String(refundId),
+                title: approvedCashAmount > 0 ? "Refund approved — repayment due" : "Refund request approved",
+                message: amountMessage,
+                href: `/bookings?bookingId=${encodeURIComponent(bookingId)}`,
+                createdAt: new Date(),
+              }],
+              $slice: -25,
+            },
+          },
+        }
+      );
+    } catch (notificationError) {
+      console.error("Refund approval in-app notification could not be saved:", notificationError);
+    }
+  }
   await Promise.all([
     sendRefundNotification({
       userIds: [String(booking.clientId)],
-      title: action === "REJECT" ? "Refund request declined" : "Refund request resolved",
+      title: action === "REJECT" ? "Refund request declined" : approvedCashAmount > 0 ? "Refund approved — repayment due" : "Refund request approved",
       body: action === "REJECT"
         ? "An admin reviewed and declined the refund request. Open the booking for the admin's note."
         : approvedCashAmount > 0
-          ? `An admin agreed to a cash repayment of ₱${approvedCashAmount.toLocaleString("en-PH", { maximumFractionDigits: 2 })} from the provider directly to you.`
+          ? `An admin approved a direct cash repayment of ₱${approvedCashAmount.toLocaleString("en-PH", { maximumFractionDigits: 2 })}. Your provider has 48 hours to return it.`
           : "An admin approved the voucher-only refund. No physical cash repayment is due.",
       url: `/bookings?bookingId=${encodeURIComponent(bookingId)}`,
-      data: { event: "refund.resolved", refundId: String(refundId), bookingId, outcome: action },
+      data: { event: action === "REJECT" ? "refund.resolved" : "refund.approved", refundId: String(refundId), bookingId, outcome: action },
     }),
     sendRefundNotification({
       userIds: [String(booking.providerId)],
-      title: action === "REJECT" ? "Refund request declined" : "Refund request resolved",
+      title: action === "REJECT" ? "Refund request declined" : approvedCashAmount > 0 ? "Cash repayment due within 48 hours" : "Refund request approved",
       body: action === "REJECT"
         ? "An admin reviewed and declined the refund request."
         : approvedCashAmount > 0
-          ? `An admin recorded a ₱${approvedCashAmount.toLocaleString("en-PH", { maximumFractionDigits: 2 })} cash repayment obligation for you to return directly to the client.`
+          ? `An admin approved a ₱${approvedCashAmount.toLocaleString("en-PH", { maximumFractionDigits: 2 })} direct repayment to the client. Mark it as sent within 48 hours; TaskPanda does not transfer cash.`
           : "An admin approved the voucher-only refund. No physical cash repayment is due.",
       url: `/provider-bookings?bookingId=${encodeURIComponent(bookingId)}`,
-      data: { event: "refund.resolved", refundId: String(refundId), bookingId, outcome: action },
+      data: { event: action === "REJECT" ? "refund.resolved" : "refund.approved", refundId: String(refundId), bookingId, outcome: action },
     }),
   ]);
   try {
@@ -329,7 +371,7 @@ async function notifyRefundResolution({ booking, refundId, action, approvedCashA
       action === "REJECT"
         ? `An admin declined the refund request. Admin note: ${adminNotes}`
         : approvedCashAmount > 0
-          ? `An admin agreed that the provider must return ₱${approvedCashAmount.toLocaleString("en-PH", { maximumFractionDigits: 2 })} directly to the client. This is a recorded obligation; TaskPanda does not transfer or reverse cash.`
+          ? `An admin approved a ₱${approvedCashAmount.toLocaleString("en-PH", { maximumFractionDigits: 2 })} direct repayment to the client. Mark it as sent within 48 hours; TaskPanda does not transfer or reverse cash.`
           : voucherRestored
             ? "An admin approved the refund by restoring the used travel-fee voucher. No physical cash repayment is due."
             : "An admin approved the refund. No physical cash repayment is due.",
@@ -339,6 +381,525 @@ async function notifyRefundResolution({ booking, refundId, action, approvedCashA
     );
   } catch (messageError) {
     console.error("Refund resolution booking message error:", messageError);
+  }
+}
+
+async function handleGetRefundNotifications(req, res) {
+  try {
+    const user = await User.findById(req.user._id).select("refundNotifications").lean();
+    if (!user) return res.status(404).json({ message: "Account not found." });
+    const notifications = (user.refundNotifications || [])
+      .filter((notification) => !notification.readAt)
+      .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt))
+      .map((notification) => ({
+        id: String(notification._id),
+        title: notification.title,
+        message: notification.message,
+        href: notification.href,
+        createdAt: notification.createdAt,
+      }));
+    return res.json({ notifications });
+  } catch (error) {
+    console.error("Get refund notifications error:", error);
+    return res.status(500).json({ message: "Could not load refund notifications." });
+  }
+}
+
+async function handleMarkRefundNotificationRead(req, res) {
+  if (!mongoose.isValidObjectId(req.params.notificationId)) {
+    return res.status(400).json({ message: "Choose a valid refund notification." });
+  }
+  try {
+    const result = await User.updateOne(
+      mongoose.trusted({
+        _id: req.user._id,
+        refundNotifications: mongoose.trusted({
+          $elemMatch: { _id: new mongoose.Types.ObjectId(req.params.notificationId) },
+        }),
+      }),
+      { $set: { "refundNotifications.$.readAt": new Date() } }
+    );
+    if (!result.matchedCount) return res.status(404).json({ message: "Refund notification not found." });
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("Mark refund notification read error:", error);
+    return res.status(500).json({ message: "Could not update this refund notification." });
+  }
+}
+
+function getApprovedBookingStatus(refund) {
+  return refund.resolutionAction === "APPROVE_PARTIAL" ? "partially_refunded" : "refunded";
+}
+
+async function notifyRepaymentUpdate(refund, { title, body, event, admin = false }) {
+  const bookingId = String(refund.bookingId);
+  const targets = [
+    sendRefundNotification({
+      userIds: [String(refund.clientId)],
+      title,
+      body,
+      url: `/bookings?bookingId=${encodeURIComponent(bookingId)}`,
+      data: { event, refundId: String(refund._id), bookingId },
+    }),
+    sendRefundNotification({
+      userIds: [String(refund.providerId)],
+      title,
+      body,
+      url: `/provider-bookings?bookingId=${encodeURIComponent(bookingId)}`,
+      data: { event, refundId: String(refund._id), bookingId },
+    }),
+  ];
+  if (admin) {
+    targets.push(sendRefundNotification({
+      roles: ["admin"],
+      title,
+      body,
+      url: `/admin?section=refunds&refundId=${encodeURIComponent(String(refund._id))}`,
+      data: { event, refundId: String(refund._id), bookingId },
+    }));
+  }
+  await Promise.all(targets);
+}
+
+async function getAuthorizedApprovedCashRefund(req, allowedRoles) {
+  const refundId = String(req.params.refundId || "");
+  if (!mongoose.isValidObjectId(refundId)) {
+    return { response: { status: 400, body: { message: "Choose a valid refund request." } } };
+  }
+  if (!allowedRoles.includes(req.user?.role)) {
+    return { response: { status: 403, body: { message: "You do not have permission to update this repayment." } } };
+  }
+  const refund = await RefundRequest.findById(refundId);
+  if (!refund || refund.status !== "APPROVED") {
+    return { response: { status: 404, body: { message: "Approved refund request not found." } } };
+  }
+  if (refund.cashRepaymentStatus === "not_required" || Number(refund.approvedCashAmount) <= 0) {
+    return { response: { status: 409, body: { message: "This refund has no cash repayment due." } } };
+  }
+  const ownerId = req.user.role === "provider" ? refund.providerId : refund.clientId;
+  if (String(ownerId) !== String(req.user._id)) {
+    return { response: { status: 404, body: { message: "Approved refund request not found." } } };
+  }
+  return { refund };
+}
+
+async function handleMarkProviderRepaymentSent(req, res) {
+  try {
+    const authorized = await getAuthorizedApprovedCashRefund(req, ["provider"]);
+    if (authorized.response) return res.status(authorized.response.status).json(authorized.response.body);
+    const { refund } = authorized;
+    if (refund.cashRepaymentStatus !== "due_provider_to_client") {
+      return res.status(409).json({ message: "This repayment is no longer awaiting the provider's sent confirmation." });
+    }
+    const now = new Date();
+    if (refund.providerRepaymentDueAt && refund.providerRepaymentDueAt <= now) {
+      return res.status(409).json({ message: "The 48-hour repayment deadline has passed. Contact TaskPanda support to resolve the case." });
+    }
+    const clientResponseDueAt = new Date(now.getTime() + CASH_REPAYMENT_WINDOW_MS);
+    const updatedRefund = await RefundRequest.findOneAndUpdate(
+      {
+        _id: refund._id,
+        status: "APPROVED",
+        cashRepaymentStatus: "due_provider_to_client",
+        providerRepaymentDueAt: mongoose.trusted({ $gt: now }),
+      },
+      {
+        $set: {
+          cashRepaymentStatus: "provider_marked_sent",
+          providerMarkedSentAt: now,
+          clientResponseDueAt,
+        },
+      },
+      { new: true }
+    );
+    if (!updatedRefund) return res.status(409).json({ message: "The repayment deadline passed or its status changed. Refresh and try again." });
+    await Booking.updateOne(
+      { _id: refund.bookingId, refundRequestId: refund._id, status: "refund_repayment_pending" },
+      { $set: { refundStatus: "repayment_sent" } }
+    );
+    await notifyRepaymentUpdate(updatedRefund, {
+      title: "Provider marked repayment sent",
+      body: "Please confirm that you received the approved cash repayment or report that it has not arrived within 48 hours.",
+      event: "refund.repayment_sent",
+    });
+    return res.json({ refund: serializeRefund(updatedRefund.toObject()) });
+  } catch (error) {
+    console.error("Provider repayment confirmation error:", error);
+    return res.status(500).json({ message: "Could not record that the repayment was sent." });
+  }
+}
+
+async function handleConfirmRefundReceived(req, res) {
+  try {
+    const authorized = await getAuthorizedApprovedCashRefund(req, ["client"]);
+    if (authorized.response) return res.status(authorized.response.status).json(authorized.response.body);
+    const { refund } = authorized;
+    if (!["due_provider_to_client", "provider_marked_sent", "repayment_overdue"].includes(refund.cashRepaymentStatus)) {
+      return res.status(409).json({ message: "This repayment is already under review or resolved." });
+    }
+    const now = new Date();
+    const finalStatus = getApprovedBookingStatus(refund);
+    const updatedRefund = await RefundRequest.findOneAndUpdate(
+      {
+        _id: refund._id,
+        status: "APPROVED",
+        cashRepaymentStatus: refund.cashRepaymentStatus,
+      },
+      { $set: { cashRepaymentStatus: "confirmed_received", clientConfirmedAt: now } },
+      { new: true }
+    );
+    if (!updatedRefund) return res.status(409).json({ message: "The repayment status changed. Refresh and try again." });
+    await Booking.updateOne(
+      { _id: refund.bookingId, refundRequestId: refund._id, status: mongoose.trusted({ $in: ["refund_repayment_pending", "refund_repayment_overdue"] }) },
+      {
+        $set: { status: finalStatus, refundStatus: finalStatus },
+        $push: { statusHistory: { status: finalStatus, at: now } },
+      }
+    );
+    await notifyRepaymentUpdate(updatedRefund, {
+      title: "Client confirmed repayment received",
+      body: "The client confirmed receipt of the approved repayment. The refund case is closed.",
+      event: "refund.repayment_confirmed",
+      admin: true,
+    });
+    return res.json({ refund: serializeRefund(updatedRefund.toObject()) });
+  } catch (error) {
+    console.error("Refund receipt confirmation error:", error);
+    return res.status(500).json({ message: "Could not confirm receipt of the repayment." });
+  }
+}
+
+async function handleReportRefundNotReceived(req, res) {
+  const reportNote = String(req.body.reportNote || "").trim();
+  if (reportNote.length < 5 || reportNote.length > 1000) {
+    return res.status(400).json({ message: "Describe what happened in 5 to 1,000 characters." });
+  }
+  try {
+    const authorized = await getAuthorizedApprovedCashRefund(req, ["client"]);
+    if (authorized.response) return res.status(authorized.response.status).json(authorized.response.body);
+    const { refund } = authorized;
+    if (!["due_provider_to_client", "provider_marked_sent", "repayment_overdue"].includes(refund.cashRepaymentStatus)) {
+      return res.status(409).json({ message: "This repayment is already under review or resolved." });
+    }
+    const now = new Date();
+    const updatedRefund = await RefundRequest.findOneAndUpdate(
+      {
+        _id: refund._id,
+        status: "APPROVED",
+        cashRepaymentStatus: refund.cashRepaymentStatus,
+      },
+      {
+        $set: {
+          cashRepaymentStatus: "client_reported_missing",
+          clientReportedAt: now,
+          clientReportNote: reportNote,
+        },
+      },
+      { new: true }
+    );
+    if (!updatedRefund) return res.status(409).json({ message: "The repayment status changed. Refresh and try again." });
+    await Booking.updateOne(
+      { _id: refund.bookingId, refundRequestId: refund._id, status: mongoose.trusted({ $in: ["refund_repayment_pending", "refund_repayment_overdue"] }) },
+      {
+        $set: { status: "refund_repayment_reported", refundStatus: "client_reported_missing" },
+        $push: { statusHistory: { status: "refund_repayment_reported", at: now } },
+      }
+    );
+    await notifyRepaymentUpdate(updatedRefund, {
+      title: "Client reports repayment not received",
+      body: "The client reported that the approved cash repayment has not arrived. An admin needs to review this case.",
+      event: "refund.repayment_reported",
+      admin: true,
+    });
+    try {
+      const booking = await Booking.findById(refund.bookingId);
+      if (booking) {
+        await appendBookingSystemMessage(
+          booking,
+          "The client reported that the approved direct cash repayment has not been received. The case is waiting for admin review.",
+          req.user._id,
+          "refund_repayment_reported",
+          { refundId: String(refund._id), reportNote }
+        );
+      }
+    } catch (messageError) {
+      console.error("Refund repayment report chat update failed:", messageError);
+    }
+    return res.json({ refund: serializeRefund(updatedRefund.toObject()) });
+  } catch (error) {
+    console.error("Refund non-receipt report error:", error);
+    return res.status(500).json({ message: "Could not submit the non-receipt report." });
+  }
+}
+
+async function handleResolveRefundRepayment(req, res) {
+  const action = String(req.body.action || "");
+  const notes = String(req.body.notes || "").trim();
+  if (!["CONFIRM_RECEIVED", "REOPEN_WINDOW", "LIFT_SUSPENSION"].includes(action)) {
+    return res.status(400).json({ message: "Choose a valid repayment review action." });
+  }
+  if (notes.length < 5 || notes.length > 2000) {
+    return res.status(400).json({ message: "Enter review notes between 5 and 2,000 characters." });
+  }
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: "Choose a valid refund request." });
+    const refund = await RefundRequest.findById(req.params.id);
+    if (!refund || refund.status !== "APPROVED") return res.status(404).json({ message: "Approved refund request not found." });
+    const isSuspensionRelease = action === "LIFT_SUSPENSION"
+      && refund.cashRepaymentStatus === "confirmed_received"
+      && refund.providerSuspensionAppliedAt;
+    if (!isSuspensionRelease && !["client_reported_missing", "repayment_overdue"].includes(refund.cashRepaymentStatus)) {
+      return res.status(409).json({ message: "This repayment is not awaiting admin review." });
+    }
+    const now = new Date();
+    const reviewedBy = String(req.adminEmail || "").trim().toLowerCase();
+    const finalStatus = getApprovedBookingStatus(refund);
+    const updates = action === "CONFIRM_RECEIVED"
+      ? {
+        cashRepaymentStatus: "confirmed_received",
+        clientConfirmedAt: now,
+        repaymentReviewedAt: now,
+        repaymentReviewedBy: reviewedBy,
+        repaymentReviewNotes: notes,
+      }
+      : action === "REOPEN_WINDOW" ? {
+        cashRepaymentStatus: "due_provider_to_client",
+        providerRepaymentDueAt: new Date(now.getTime() + CASH_REPAYMENT_WINDOW_MS),
+        providerMarkedSentAt: null,
+        clientResponseDueAt: null,
+        clientReportedAt: null,
+        clientReportNote: "",
+        repaymentReviewedAt: now,
+        repaymentReviewedBy: reviewedBy,
+        repaymentReviewNotes: notes,
+      } : {
+        repaymentReviewedAt: now,
+        repaymentReviewedBy: reviewedBy,
+        repaymentReviewNotes: notes,
+      };
+    const updatedRefund = await RefundRequest.findOneAndUpdate(
+      { _id: refund._id, status: "APPROVED", cashRepaymentStatus: refund.cashRepaymentStatus },
+      { $set: updates },
+      { new: true }
+    );
+    if (!updatedRefund) return res.status(409).json({ message: "The repayment case changed. Refresh and try again." });
+    if (action !== "LIFT_SUSPENSION") {
+      const bookingStatus = action === "CONFIRM_RECEIVED" ? finalStatus : "refund_repayment_pending";
+      const bookingRefundStatus = action === "CONFIRM_RECEIVED" ? finalStatus : "due_provider_to_client";
+      await Booking.updateOne(
+        { _id: refund.bookingId, refundRequestId: refund._id },
+        {
+          $set: { status: bookingStatus, refundStatus: bookingRefundStatus },
+          $push: { statusHistory: { status: bookingStatus, at: now } },
+        }
+      );
+    }
+    const shouldLiftRefundSuspension = Boolean(refund.providerSuspensionAppliedAt)
+      && ["CONFIRM_RECEIVED", "REOPEN_WINDOW", "LIFT_SUSPENSION"].includes(action);
+    if (shouldLiftRefundSuspension) {
+      await User.updateOne(
+        { _id: refund.providerId, refundSuspensionId: refund._id, isSuspended: true },
+        {
+          $set: { isSuspended: false },
+          $unset: { suspendedAt: 1, refundSuspensionId: 1 },
+          $push: {
+            adminActivity: {
+              $each: [{ action: "unsuspended", actorEmail: reviewedBy, reason: `Refund repayment case ${refund._id} reviewed by admin.`, createdAt: now }],
+              $slice: -50,
+            },
+          },
+        }
+      );
+      await RefundRequest.updateOne(
+        { _id: refund._id, cashRepaymentStatus: updatedRefund.cashRepaymentStatus },
+        { $unset: { providerSuspensionAppliedAt: 1 } }
+      );
+    }
+    await notifyRepaymentUpdate(updatedRefund, {
+      title: action === "CONFIRM_RECEIVED" ? "Refund repayment case resolved" : action === "LIFT_SUSPENSION" ? "Provider suspension lifted" : "48-hour repayment window reopened",
+      body: action === "CONFIRM_RECEIVED"
+        ? "An admin reviewed the repayment case and marked it resolved."
+        : action === "LIFT_SUSPENSION"
+          ? "An admin reviewed the repayment and lifted the related provider suspension."
+          : "An admin reviewed the report and reopened the provider repayment window for 48 hours.",
+      event: "refund.repayment_reviewed",
+      admin: false,
+    });
+    void logAuditAction(req, {
+      category: "FINANCIAL",
+      action: action === "CONFIRM_RECEIVED" ? "REFUND_REPAYMENT_CONFIRMED"
+        : action === "LIFT_SUSPENSION" ? "REFUND_REPAYMENT_SUSPENSION_LIFTED"
+          : "REFUND_REPAYMENT_REOPENED",
+      targetResource: "Booking",
+      targetId: refund.bookingId,
+      details: `Admin ${action.toLowerCase().replaceAll("_", " ")} for refund ${refund._id}. ${notes}`,
+    });
+    return res.json({ refund: serializeRefund(updatedRefund.toObject()) });
+  } catch (error) {
+    console.error("Admin repayment review error:", error);
+    return res.status(500).json({ message: "Could not resolve the repayment case." });
+  }
+}
+
+async function processRefundRepaymentDeadlines(now = new Date()) {
+  if (isProcessingRefundRepaymentDeadlines) return;
+  isProcessingRefundRepaymentDeadlines = true;
+  try {
+    const expiredProviderDeadlines = await RefundRequest.find({
+      status: "APPROVED",
+      cashRepaymentStatus: "due_provider_to_client",
+      providerRepaymentDueAt: mongoose.trusted({ $lte: now }),
+    }).select("_id bookingId clientId providerId approvedCashAmount").limit(100).lean();
+
+    for (const refund of expiredProviderDeadlines) {
+      const claimed = await RefundRequest.findOneAndUpdate(
+        {
+          _id: refund._id,
+          status: "APPROVED",
+          cashRepaymentStatus: "due_provider_to_client",
+          providerRepaymentDueAt: mongoose.trusted({ $lte: now }),
+        },
+        { $set: { cashRepaymentStatus: "repayment_overdue" } },
+        { new: true }
+      );
+      if (!claimed) continue;
+    }
+
+    const overdueRepayments = await RefundRequest.find({
+      status: "APPROVED",
+      cashRepaymentStatus: mongoose.trusted({ $in: ["repayment_overdue", "client_reported_missing"] }),
+      providerRepaymentDueAt: mongoose.trusted({ $lte: now }),
+      providerSuspensionAppliedAt: mongoose.trusted({ $exists: false }),
+    }).select("_id bookingId clientId providerId approvedCashAmount").limit(100).lean();
+    for (const refund of overdueRepayments) {
+      const suspendedAt = new Date(now);
+      const marked = await RefundRequest.updateOne(
+        {
+          _id: refund._id,
+          cashRepaymentStatus: mongoose.trusted({ $in: ["repayment_overdue", "client_reported_missing"] }),
+          providerRepaymentDueAt: mongoose.trusted({ $lte: now }),
+          providerSuspensionAppliedAt: mongoose.trusted({ $exists: false }),
+        },
+        { $set: { providerSuspensionAppliedAt: suspendedAt } }
+      );
+      if (!marked.modifiedCount) continue;
+
+      try {
+        if (refund.cashRepaymentStatus !== "client_reported_missing") {
+          const bookingUpdate = await Booking.updateOne(
+            {
+              _id: refund.bookingId,
+              refundRequestId: refund._id,
+              status: mongoose.trusted({ $in: ["refund_repayment_pending", "refund_repayment_overdue"] }),
+            },
+            {
+              $set: { status: "refund_repayment_overdue", refundStatus: "repayment_overdue" },
+              $push: { statusHistory: { status: "refund_repayment_overdue", at: now } },
+            }
+          );
+          if (!bookingUpdate.matchedCount) {
+            console.warn(`Refund repayment ${refund._id} could not update its booking to overdue.`);
+          }
+        }
+        const suspension = await User.updateOne(
+          { _id: refund.providerId, role: "provider", isSuspended: mongoose.trusted({ $ne: true }) },
+          {
+            $set: { isSuspended: true, suspendedAt, refundSuspensionId: refund._id, accountTokens: [] },
+            $push: {
+              adminActivity: {
+                $each: [{
+                  action: "suspended",
+                  actorEmail: "system",
+                  reason: `Automatic suspension: provider did not mark refund repayment ${refund._id} as sent within 48 hours.`,
+                  createdAt: suspendedAt,
+                }],
+                $slice: -50,
+              },
+            },
+          }
+        );
+        if (!suspension.modifiedCount) {
+          console.warn(`Refund repayment ${refund._id} is overdue; provider was already suspended or is unavailable.`);
+        }
+      } catch (error) {
+        await RefundRequest.updateOne(
+          { _id: refund._id, providerSuspensionAppliedAt: suspendedAt },
+          { $unset: { providerSuspensionAppliedAt: 1 } }
+        );
+        throw error;
+      }
+      await notifyRepaymentUpdate(refund, {
+        title: "Refund repayment overdue",
+        body: "The provider did not mark the repayment as sent within 48 hours. The provider account has been suspended pending admin review.",
+        event: "refund.repayment_overdue",
+        admin: true,
+      });
+    }
+
+    const expiredClientResponseDeadlines = await RefundRequest.find({
+      status: "APPROVED",
+      cashRepaymentStatus: "provider_marked_sent",
+      clientResponseDueAt: mongoose.trusted({ $lte: now }),
+    }).select("_id bookingId clientId providerId resolutionAction").limit(100).lean();
+
+    for (const refund of expiredClientResponseDeadlines) {
+      const finalStatus = getApprovedBookingStatus(refund);
+      const claimed = await RefundRequest.findOneAndUpdate(
+        {
+          _id: refund._id,
+          status: "APPROVED",
+          cashRepaymentStatus: "provider_marked_sent",
+          clientResponseDueAt: mongoose.trusted({ $lte: now }),
+        },
+        {
+          $set: {
+            cashRepaymentStatus: "auto_confirmed",
+            clientAutoConfirmedAt: now,
+          },
+        },
+        { new: true }
+      );
+      if (!claimed) continue;
+    }
+
+    const autoConfirmedRefunds = await RefundRequest.find({
+      status: "APPROVED",
+      cashRepaymentStatus: "auto_confirmed",
+      bookingClosureAppliedAt: mongoose.trusted({ $exists: false }),
+    }).select("_id bookingId clientId providerId resolutionAction").limit(100).lean();
+    for (const refund of autoConfirmedRefunds) {
+      const finalStatus = getApprovedBookingStatus(refund);
+      const bookingUpdate = await Booking.updateOne(
+        {
+          _id: refund.bookingId,
+          refundRequestId: refund._id,
+          status: mongoose.trusted({ $in: ["refund_repayment_pending", finalStatus] }),
+        },
+        {
+          $set: { status: finalStatus, refundStatus: finalStatus },
+          $push: { statusHistory: { status: finalStatus, at: now } },
+        }
+      );
+      if (!bookingUpdate.matchedCount) {
+        console.error(`Refund repayment ${refund._id} could not close its booking; it will be retried.`);
+        continue;
+      }
+      await RefundRequest.updateOne(
+        { _id: refund._id, cashRepaymentStatus: "auto_confirmed" },
+        { $set: { bookingClosureAppliedAt: now } }
+      );
+      await notifyRepaymentUpdate(refund, {
+        title: "Refund repayment auto-closed",
+        body: "No response was received within 48 hours after the provider marked the repayment sent. The refund case has been closed.",
+        event: "refund.repayment_auto_confirmed",
+        admin: true,
+      });
+    }
+  } catch (error) {
+    console.error("Refund repayment deadline processing failed:", error);
+    throw error;
+  } finally {
+    isProcessingRefundRepaymentDeadlines = false;
   }
 }
 
@@ -416,8 +977,12 @@ async function handleResolveAdminRefund(req, res) {
     const cashPaid = refund.cashPaidConfirmedAtRequest === true;
     const approvedAmount = action === "REJECT" ? 0 : Number(approvedCashAmount);
     const hasVoucherToRestore = Boolean(booking.voucherId && Number(booking.travelFeeDiscount || 0) > 0);
-    const nextBookingStatus = action === "REJECT" ? refund.bookingStatusBeforeRequest : decision.outcome;
-    const nextRefundStatus = action === "REJECT" ? "rejected" : decision.outcome;
+    const nextBookingStatus = action === "REJECT"
+      ? refund.bookingStatusBeforeRequest
+      : approvedAmount > 0 ? "refund_repayment_pending" : decision.outcome;
+    const nextRefundStatus = action === "REJECT"
+      ? "rejected"
+      : approvedAmount > 0 ? "due_provider_to_client" : decision.outcome;
     if (action !== "REJECT" && approvedAmount > 0 && !cashPaid) {
       await releaseResolutionLock(refund._id, adminEmail);
       return res.status(409).json({ message: "Cash was not confirmed as paid. This request can only restore an eligible travel-fee voucher." });
@@ -444,6 +1009,9 @@ async function handleResolveAdminRefund(req, res) {
             approvedCashAmount: approvedAmount,
             voucherRestored,
             cashRepaymentStatus: approvedAmount > 0 ? "due_provider_to_client" : "not_required",
+            ...(approvedAmount > 0 ? {
+              providerRepaymentDueAt: new Date((booking.updatedAt || new Date()).getTime() + CASH_REPAYMENT_WINDOW_MS),
+            } : {}),
             resolutionAction: action,
             adminNotes,
             resolvedBy: adminEmail,
@@ -515,6 +1083,9 @@ async function handleResolveAdminRefund(req, res) {
             approvedCashAmount: approvedAmount,
             voucherRestored,
             cashRepaymentStatus: approvedAmount > 0 ? "due_provider_to_client" : "not_required",
+            ...(approvedAmount > 0 ? {
+              providerRepaymentDueAt: new Date(updateAt.getTime() + CASH_REPAYMENT_WINDOW_MS),
+            } : {}),
             resolutionAction: action,
             adminNotes,
             resolvedBy: adminEmail,
@@ -570,5 +1141,12 @@ module.exports = {
   serializeRefund,
   handleRequestRefund,
   handleListAdminRefunds,
+  handleGetRefundNotifications,
+  handleMarkRefundNotificationRead,
+  handleMarkProviderRepaymentSent,
+  handleConfirmRefundReceived,
+  handleReportRefundNotReceived,
+  handleResolveRefundRepayment,
+  processRefundRepaymentDeadlines,
   handleResolveAdminRefund,
 };

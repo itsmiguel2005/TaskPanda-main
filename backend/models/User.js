@@ -82,6 +82,17 @@ const userSchema = new mongoose.Schema(
       }],
       default: [],
     },
+    refundNotifications: {
+      type: [{
+        refundId: { type: String, required: true, trim: true, maxlength: 50 },
+        title: { type: String, required: true, trim: true, maxlength: 100 },
+        message: { type: String, required: true, trim: true, maxlength: 500 },
+        href: { type: String, required: true, trim: true, maxlength: 200 },
+        createdAt: { type: Date, default: Date.now },
+        readAt: { type: Date },
+      }],
+      default: [],
+    },
     firstName: {
       type: String,
       default: "",
@@ -232,6 +243,11 @@ const userSchema = new mongoose.Schema(
     isSuspended: {
       type: Boolean,
       default: false,
+    },
+    refundSuspensionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RefundRequest",
+      select: false,
     },
     suspendedAt: {
       type: Date,

@@ -23,6 +23,7 @@ export default function LoginPage() {
   const [resendSeconds, setResendSeconds] = useState(0);
   const loginOtpInputs = useRef([]);
   const [adminChallengeToken, setAdminChallengeToken] = useState("");
+  const [adminOtpDestination, setAdminOtpDestination] = useState("");
   const [adminOtp, setAdminOtp] = useState("");
   const adminOtpInputs = useRef([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -172,6 +173,7 @@ export default function LoginPage() {
       }
       if (response.ok && data.requiresAdminOtp) {
         setAdminChallengeToken(data.challengeToken || "");
+        setAdminOtpDestination(data.otpDestination || "");
         setAdminOtp("");
         setServerError("");
         return;
@@ -483,7 +485,7 @@ export default function LoginPage() {
                   </div>
                   <h2 className="font-bold text-2xl text-slate-900">Verify your admin sign-in</h2>
                   <p className="text-sm leading-6 text-slate-600">
-                    Enter the 6-digit code sent to the configured admin email. The code expires in 5 minutes.
+                    Enter the 6-digit code sent to {adminOtpDestination || "your admin email"}. The code expires in 5 minutes.
                   </p>
                 </div>
 
@@ -542,6 +544,7 @@ export default function LoginPage() {
                   type="button"
                   onClick={() => {
                     setAdminChallengeToken("");
+                    setAdminOtpDestination("");
                     setAdminOtp("");
                     setServerError("");
                   }}

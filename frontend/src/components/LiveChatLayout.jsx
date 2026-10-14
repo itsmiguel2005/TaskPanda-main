@@ -79,6 +79,9 @@ const STATUS_LABELS = {
   settled: "Settled",
   expired: "Expired",
   refund_pending: "Refund Under Review",
+  refund_repayment_pending: "Repayment Pending",
+  refund_repayment_reported: "Repayment Reported",
+  refund_repayment_overdue: "Repayment Overdue",
   refunded: "Refunded",
   partially_refunded: "Partially Refunded",
 };
@@ -99,6 +102,9 @@ const STATUS_BADGE_STYLES = {
   closed: "border-slate-200 bg-slate-100 text-slate-700",
   settled: "border-slate-200 bg-slate-100 text-slate-700",
   refund_pending: "border-amber-200 bg-amber-50 text-amber-800",
+  refund_repayment_pending: "border-amber-200 bg-amber-50 text-amber-900",
+  refund_repayment_reported: "border-rose-200 bg-rose-50 text-rose-800",
+  refund_repayment_overdue: "border-rose-200 bg-rose-50 text-rose-800",
   refunded: "border-slate-200 bg-slate-100 text-slate-700",
   partially_refunded: "border-slate-200 bg-slate-100 text-slate-700",
 };
@@ -132,12 +138,18 @@ function normalizeBookingStatus(status) {
     in_revision: "in_revision",
     disputed: "disputed",
     "refund under review": "refund_pending",
+    refund_repayment_pending: "refund_repayment_pending",
+    refund_repayment_reported: "refund_repayment_reported",
+    refund_repayment_overdue: "refund_repayment_overdue",
+    "repayment pending": "refund_repayment_pending",
+    "repayment reported": "refund_repayment_reported",
+    "repayment overdue": "refund_repayment_overdue",
   }[normalized] || normalized || "pending";
 }
 
 function getConversationStatusGroup(status) {
   const normalizedStatus = normalizeBookingStatus(status);
-  if (["pending", "approved", "en_route", "in_progress", "in_revision", "disputed", "refund_pending", "cancel_requested"].includes(normalizedStatus)) {
+  if (["pending", "approved", "en_route", "in_progress", "in_revision", "disputed", "refund_pending", "refund_repayment_pending", "refund_repayment_reported", "refund_repayment_overdue", "cancel_requested"].includes(normalizedStatus)) {
     return "active";
   }
   if (["settled", "complete", "closed", "canceled", "provider_no_show", "declined", "expired", "refunded", "partially_refunded"].includes(normalizedStatus)) {

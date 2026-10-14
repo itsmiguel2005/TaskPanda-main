@@ -103,7 +103,19 @@ export default function ProviderBookingsPage() {
   const dashboardDensity = user?.dashboardDensityPreference === "compact" ? "compact" : "comfortable";
   const requestHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
   const [searchQuery, setSearchQuery] = useState("");
-  const { bookings, isLoading, error, updateBookingStatus, submitCompletionProof, requestCancellation, sendProviderUpdate, reportRunningLate, confirmCashSettlement, refreshBookings } = useBookings();
+  const {
+    bookings,
+    isLoading,
+    error,
+    updateBookingStatus,
+    submitCompletionProof,
+    requestCancellation,
+    sendProviderUpdate,
+    reportRunningLate,
+    confirmCashSettlement,
+    sendRefundRepayment,
+    refreshBookings,
+  } = useBookings();
   const [sortBy, setSortBy] = useState("activityAt");
   const [acceptingId, setAcceptingId] = useState(null);
   const [statusChange, setStatusChange] = useState(null);
@@ -125,6 +137,8 @@ export default function ProviderBookingsPage() {
   const [runningLateError, setRunningLateError] = useState("");
   const [runningLateSuccess, setRunningLateSuccess] = useState("");
   const [isReportingLate, setIsReportingLate] = useState(false);
+  const [repaymentActionId, setRepaymentActionId] = useState("");
+  const [repaymentError, setRepaymentError] = useState("");
 
   useLayoutEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
@@ -139,7 +153,7 @@ export default function ProviderBookingsPage() {
   const managedBookings = safeBookings.filter((booking) => booking.status !== "Pending Request" && matchesSearch(booking));
   const filteredManagedBookings = managedBookings.filter((booking) => {
     if (activeTab === "All") return true;
-    if (activeTab === "Active") return ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed", "Refund Under Review"].includes(booking.status);
+    if (activeTab === "Active") return ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed", "Refund Under Review", "Repayment Pending", "Repayment Reported", "Repayment Overdue"].includes(booking.status);
     if (activeTab === "Completed") return ["Completed", "Settled", "Refunded", "Partially Refunded"].includes(booking.status);
     if (activeTab === "Cancelled") return ["Cancelled", "Cancelled - Provider No-Show"].includes(booking.status);
     if (activeTab === "Declined") return booking.status === "Declined by Provider";
@@ -170,7 +184,7 @@ export default function ProviderBookingsPage() {
   const stats = useMemo(() => ({
     total: requests.length + managedBookings.length,
     incoming: requests.length,
-    active: managedBookings.filter((b) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed", "Refund Under Review"].includes(b.status)).length,
+    active: managedBookings.filter((b) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed", "Refund Under Review", "Repayment Pending", "Repayment Reported", "Repayment Overdue"].includes(b.status)).length,
     completed: managedBookings.filter((b) => ["Completed", "Settled", "Refunded", "Partially Refunded"].includes(b.status)).length,
     cancelled: managedBookings.filter((b) => ["Cancelled", "Cancelled - Provider No-Show"].includes(b.status)).length,
     declined: managedBookings.filter((b) => b.status === "Declined by Provider").length,
@@ -278,6 +292,18 @@ export default function ProviderBookingsPage() {
     }
   };
 
+  const handleMarkRefundRepaymentSent = async (booking) => {
+    setRepaymentActionId(booking.id);
+    setRepaymentError("");
+    try {
+      await sendRefundRepayment(booking.refundRequestId);
+    } catch (requestError) {
+      setRepaymentError(requestError.message || "Could not update the repayment status.");
+    } finally {
+      setRepaymentActionId("");
+    }
+  };
+
   return (
     <>
     <OnboardingTour />
@@ -318,7 +344,7 @@ export default function ProviderBookingsPage() {
                 : tab.key === "Incoming Requests"
                 ? requests.length
                 : tab.key === "Active"
-                ? managedBookings.filter((booking) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed"].includes(booking.status)).length
+                ? managedBookings.filter((booking) => ["Confirmed", "On the Way", "In Progress", "Cancellation Requested", "In Revision", "Disputed", "Refund Under Review", "Repayment Pending", "Repayment Reported", "Repayment Overdue"].includes(booking.status)).length
                 : tab.key === "Completed"
                 ? managedBookings.filter((booking) => ["Completed", "Settled", "Refunded", "Partially Refunded"].includes(booking.status)).length
                 : tab.key === "Declined"
@@ -709,14 +735,38 @@ export default function ProviderBookingsPage() {
                                 Send Update
                               </button>
                             )}
-                            {(booking.refundStatus === "pending" || booking.refundStatus === "refunded" || booking.refundStatus === "partially_refunded") && (
-                              <p className="w-full rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">
-                                {booking.refundStatus === "pending"
-                                  ? "A client refund request is awaiting admin review. Do not send cash until a resolution is recorded."
-                                  : booking.refundAmount > 0
-                                    ? `Admin recorded ₱${Number(booking.refundAmount).toLocaleString("en-PH", { maximumFractionDigits: 2 })} for you to return directly to the client. TaskPanda does not deduct or transfer cash.`
-                                    : "The refund was resolved through travel-voucher restoration. No cash repayment is due."}
-                              </p>
+                            {["pending", "due_provider_to_client", "repayment_sent", "client_reported_missing", "repayment_overdue", "refunded", "partially_refunded"].includes(booking.refundStatus) && (
+                              <section className={`w-full rounded-lg border p-3 text-xs leading-5 ${booking.refundStatus === "client_reported_missing" || booking.refundStatus === "repayment_overdue" ? "border-rose-200 bg-rose-50 text-rose-950" : "border-amber-200 bg-amber-50 text-amber-950"}`}>
+                                <p className="font-semibold">
+                                  {booking.refundStatus === "pending"
+                                    ? "A client refund request is awaiting admin review. Do not return cash until a resolution is recorded."
+                                    : booking.refundStatus === "due_provider_to_client"
+                                      ? `Return ₱${Number(booking.refundAmount).toLocaleString("en-PH", { maximumFractionDigits: 2 })} directly to the client within 48 hours. TaskPanda does not deduct or transfer cash.`
+                                      : booking.refundStatus === "repayment_sent"
+                                        ? "You marked the repayment as sent. The client has 48 hours to confirm receipt or report a problem."
+                                        : booking.refundStatus === "client_reported_missing"
+                                          ? `The client reported the repayment was not received. An admin is reviewing the case${booking.clientReportNote ? `: ${booking.clientReportNote}` : "."}`
+                                          : booking.refundStatus === "repayment_overdue"
+                                            ? "The repayment deadline passed. This account is suspended pending admin review."
+                                            : booking.refundAmount > 0
+                                              ? `Repayment status: ${booking.cashRepaymentStatus === "confirmed_received" ? "client confirmed receipt" : "automatically closed after the client response window"}.`
+                                              : "The refund was resolved through travel-voucher restoration. No cash repayment is due."}
+                                </p>
+                                {booking.refundStatus === "due_provider_to_client" && booking.providerRepaymentDueAt && (
+                                  <p className="mt-1">Deadline: {new Date(booking.providerRepaymentDueAt).toLocaleString("en-PH", { timeZone: "Asia/Manila" })}.</p>
+                                )}
+                                {booking.refundStatus === "due_provider_to_client" && (
+                                  <button
+                                    type="button"
+                                    disabled={repaymentActionId === booking.id}
+                                    onClick={() => handleMarkRefundRepaymentSent(booking)}
+                                    className="dashboard-focus mt-3 rounded-lg bg-emerald-700 px-3 py-2 font-semibold text-white hover:bg-emerald-800 disabled:cursor-wait disabled:opacity-60"
+                                  >
+                                    {repaymentActionId === booking.id ? "Saving…" : "Mark repayment as sent"}
+                                  </button>
+                                )}
+                                {repaymentError && repaymentActionId === "" && <p role="alert" className="mt-2 font-semibold text-rose-800">{repaymentError}</p>}
+                              </section>
                             )}
                             {booking.paymentMethod === "cash" && ["Completed", "Settled"].includes(booking.status) && (
                               <button

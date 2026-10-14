@@ -29,5 +29,6 @@ test("audit log schema requires an admin identity and limits supported categorie
     "REPORT_RESOLVED",
     "REVIEW_REMOVED",
     "SYSTEM_SETTING_TOGGLED",
+    "ADMIN_ACCOUNT_CREATED",
   ]);
 });

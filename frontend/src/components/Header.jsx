@@ -35,6 +35,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   const [notificationItems, setNotificationItems] = useState([]);
   const [broadcastNotificationItems, setBroadcastNotificationItems] = useState([]);
   const [verificationNotificationItems, setVerificationNotificationItems] = useState([]);
+  const [refundNotificationItems, setRefundNotificationItems] = useState([]);
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState([]);
   const [notificationError, setNotificationError] = useState("");
   const [pushPromptStatus, setPushPromptStatus] = useState("");
@@ -77,6 +78,22 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     }
   };
 
+  const markRefundNotificationRead = async (notification) => {
+    try {
+      const response = await apiFetch(`/api/v1/users/refund-notifications/${notification.notificationId}/read`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.message || `Could not update notification (HTTP ${response.status}).`);
+      }
+      setRefundNotificationItems((current) => current.filter((item) => item.id !== notification.id));
+    } catch (error) {
+      console.warn("Refund notification update failed:", error.message);
+    }
+  };
+
   const dismissNotification = async (item) => {
     if (item.isSystemAnnouncement) {
       try {
@@ -111,6 +128,9 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     });
     if (item.isVerificationNotice && item.notificationId) {
       void markVerificationNotificationRead(item);
+    }
+    if (item.isRefundNotice && item.notificationId) {
+      void markRefundNotificationRead(item);
     }
   };
 
@@ -327,6 +347,53 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   ]);
 
   useEffect(() => {
+    if (!showNav || !isLoggedIn || !token || authRole !== "client") {
+      setRefundNotificationItems([]);
+      return undefined;
+    }
+
+    let active = true;
+    const loadRefundNotifications = async () => {
+      try {
+        const response = await apiFetch("/api/v1/users/refund-notifications", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          throw new Error(`Refund notification request failed (HTTP ${response.status}).`);
+        }
+        const result = await response.json();
+        if (!active) return;
+        setRefundNotificationItems((Array.isArray(result.notifications) ? result.notifications : []).map((notification) => ({
+          id: `refund:${notification.id}`,
+          notificationId: notification.id,
+          title: notification.title,
+          detail: notification.message,
+          from: "TaskPanda",
+          unreadCount: 1,
+          href: notification.href,
+          createdAt: notification.createdAt,
+          isRefundNotice: true,
+        })));
+      } catch (error) {
+        if (active) console.warn("Refund notifications refresh failed:", error.message);
+      }
+    };
+
+    void loadRefundNotifications();
+    const refreshWhileVisible = () => {
+      if (!document.hidden) void loadRefundNotifications();
+    };
+    const intervalId = window.setInterval(refreshWhileVisible, 30_000);
+    document.addEventListener("visibilitychange", refreshWhileVisible);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshWhileVisible);
+    };
+  }, [authRole, isLoggedIn, showNav, token]);
+
+  useEffect(() => {
     if (!showNav || !isLoggedIn || !token || !["client", "provider"].includes(authRole)) {
       setBroadcastNotificationItems([]);
       return undefined;
@@ -535,7 +602,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   const accountRoleLabel = authRole === "provider" ? "Provider" : authRole === "admin" ? "Admin" : "Client";
   const dashboardPath = authRole === "provider" ? "/provider-dashboard" : authRole === "admin" ? "/admin?section=dashboard" : "/dashboard";
   const profilePath = authRole === "provider" ? "/provider-profile" : "/profile";
-  const notificationList = [...verificationNotificationItems, ...broadcastNotificationItems, ...notificationItems];
+  const notificationList = [...verificationNotificationItems, ...refundNotificationItems, ...broadcastNotificationItems, ...notificationItems];
   const visibleNotificationList = notificationList.filter((item) => !dismissedNotificationIds.includes(item.id));
   const unreadNotificationCount = visibleNotificationList.reduce((total, item) => total + Math.max(0, Number(item.unreadCount) || 0), 0);
   const totalNotificationCount = unreadNotificationCount;
@@ -692,6 +759,9 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                                 if (item.notificationId) void markVerificationNotificationRead(item);
                                 else dismissNotification(item);
                               }
+                              if (item.isRefundNotice && item.notificationId) {
+                                void markRefundNotificationRead(item);
+                              }
                             }}
                             className="flex min-w-0 flex-1 gap-3 rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
                           >
@@ -717,10 +787,12 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                                   <span className="mt-1 block wrap-break-word text-sm font-semibold leading-5 text-slate-950">{item.title}</span>
                                   <span className="mt-0.5 block wrap-break-word text-xs leading-5 text-slate-700">{item.detail}</span>
                                 </>
-                              ) : item.isVerificationNotice ? (
+                              ) : item.isVerificationNotice || item.isRefundNotice ? (
                                 <>
                                   <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                    <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-rose-800">Verification update</span>
+                                    <span className={`text-[10px] font-bold uppercase tracking-[0.12em] ${item.isRefundNotice ? "text-emerald-800" : "text-rose-800"}`}>
+                                      {item.isRefundNotice ? "Refund update" : "Verification update"}
+                                    </span>
                                     {item.createdAt && (
                                       <time dateTime={item.createdAt} className="text-[10px] font-medium text-slate-500">
                                         {new Date(item.createdAt).toLocaleDateString()}

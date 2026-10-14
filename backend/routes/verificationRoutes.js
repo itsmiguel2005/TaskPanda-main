@@ -4,6 +4,10 @@ const { limitTesdaCertificateUploads, limitVerificationUploads } = require("../m
 const { sanitizeMongoInput } = require("../middleware/sanitizeMongoInput");
 const { uploadTesdaCertificate, uploadVerificationImages } = require("../storage/verificationUpload");
 const {
+  handleGetRefundNotifications,
+  handleMarkRefundNotificationRead,
+} = require("../controllers/refundController");
+const {
   handleGetVerificationNotifications,
   handleMarkVerificationNotificationRead,
   handleSubmitVerification,
@@ -16,5 +20,7 @@ router.post("/verify", requireAuth, requireRole("client", "provider"), limitVeri
 router.post("/tesda-certificates", requireAuth, requireRole("client", "provider"), limitTesdaCertificateUploads, uploadTesdaCertificate, sanitizeMongoInput, handleSubmitTesdaCertificate);
 router.get("/verification-notifications", requireAuth, requireRole("client", "provider"), handleGetVerificationNotifications);
 router.post("/verification-notifications/:notificationId/read", requireAuth, requireRole("client", "provider"), handleMarkVerificationNotificationRead);
+router.get("/refund-notifications", requireAuth, requireRole("client"), handleGetRefundNotifications);
+router.post("/refund-notifications/:notificationId/read", requireAuth, requireRole("client"), handleMarkRefundNotificationRead);
 
 module.exports = router;

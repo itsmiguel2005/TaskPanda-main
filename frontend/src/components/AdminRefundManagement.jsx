@@ -27,6 +27,7 @@ function RefundReviewCard({ refund, token, onResolved, density, isExpanded, onTo
   const [adminNotes, setAdminNotes] = useState("");
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
+  const [repaymentReviewNotes, setRepaymentReviewNotes] = useState("");
   const requestedAmount = Number(refund.requestedCashAmount || 0);
   const amount = Number(cashAmount);
   const booking = refund.booking || {};
@@ -48,6 +49,23 @@ function RefundReviewCard({ refund, token, onResolved, density, isExpanded, onTo
       onResolved();
     } catch (requestError) {
       setError(requestError.message || "Could not resolve this refund.");
+      setBusyAction("");
+    }
+  }
+
+  async function resolveRepayment(action) {
+    setBusyAction(action);
+    setError("");
+    try {
+      await adminRequest(`/api/admin/refunds/${refund.id}/repayment-review`, token, {
+        method: "POST",
+        body: JSON.stringify({ action, notes: repaymentReviewNotes.trim() }),
+      });
+      await onResolved();
+      setRepaymentReviewNotes("");
+      setBusyAction("");
+    } catch (requestError) {
+      setError(requestError.message || "Could not resolve the repayment review.");
       setBusyAction("");
     }
   }
@@ -119,8 +137,71 @@ function RefundReviewCard({ refund, token, onResolved, density, isExpanded, onTo
           </p>
           <p className="mt-1 text-slate-600">
             {refund.voucherRestored ? "Travel-fee voucher restored." : "No voucher restoration recorded."}
-            {refund.cashRepaymentStatus === "due_provider_to_client" ? " Provider must return this cash directly to the client; no platform transfer is made." : " No physical cash repayment due."}
+            {refund.cashRepaymentStatus === "due_provider_to_client"
+              ? ` Provider owes direct cash repayment by ${dateTime(refund.providerRepaymentDueAt)}.`
+              : refund.cashRepaymentStatus === "provider_marked_sent"
+                ? ` Provider marked the repayment sent. Client response due ${dateTime(refund.clientResponseDueAt)}.`
+                : refund.cashRepaymentStatus === "client_reported_missing"
+                  ? " Client reports that the repayment was not received; admin review is required."
+                  : refund.cashRepaymentStatus === "repayment_overdue"
+                    ? " Provider missed the repayment deadline and was suspended pending admin review."
+                    : refund.cashRepaymentStatus === "confirmed_received"
+                      ? " Client confirmed receipt of the direct repayment."
+                      : refund.cashRepaymentStatus === "auto_confirmed"
+                        ? " Automatically closed after the client response window expired."
+                        : " No physical cash repayment is due."}
           </p>
+          {refund.clientReportNote && (
+            <p className="mt-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-950">
+              <strong>Client report ({dateTime(refund.clientReportedAt)}):</strong> {refund.clientReportNote}
+            </p>
+          )}
+          {(["client_reported_missing", "repayment_overdue"].includes(refund.cashRepaymentStatus)
+            || (refund.cashRepaymentStatus === "confirmed_received" && refund.providerSuspensionAppliedAt)) && (
+            <div className="mt-4 border-t border-slate-200 pt-4">
+              <p className="text-sm font-semibold text-slate-900">
+                {refund.cashRepaymentStatus === "confirmed_received" ? "Provider suspension review" : "Review the repayment case"}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">
+                {refund.cashRepaymentStatus === "confirmed_received"
+                  ? "The client confirmed receipt after the provider missed the repayment deadline. Review the account and lift the refund-related suspension if appropriate."
+                  : "Confirm receipt only after checking with both parties. Reopening gives the provider a fresh 48-hour window and lifts any suspension applied by this repayment case."}
+              </p>
+              <label htmlFor={`repayment-review-notes-${refund.id}`} className="mt-3 block text-sm font-semibold text-slate-800">Admin review notes</label>
+              <textarea
+                id={`repayment-review-notes-${refund.id}`}
+                value={repaymentReviewNotes}
+                onChange={(event) => setRepaymentReviewNotes(event.target.value)}
+                minLength={5}
+                maxLength={2000}
+                rows={3}
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                placeholder="Record who you contacted and the outcome."
+              />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={Boolean(busyAction) || repaymentReviewNotes.trim().length < 5}
+                  onClick={() => resolveRepayment(refund.cashRepaymentStatus === "confirmed_received" ? "LIFT_SUSPENSION" : "CONFIRM_RECEIVED")}
+                  className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  {busyAction === "CONFIRM_RECEIVED" || busyAction === "LIFT_SUSPENSION"
+                    ? "Saving…"
+                    : refund.cashRepaymentStatus === "confirmed_received" ? "Lift provider suspension" : "Confirm repayment resolved"}
+                </button>
+                {refund.cashRepaymentStatus !== "confirmed_received" && <button
+                  type="button"
+                  disabled={Boolean(busyAction) || repaymentReviewNotes.trim().length < 5}
+                  onClick={() => resolveRepayment("REOPEN_WINDOW")}
+                  className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-950 hover:bg-amber-50 disabled:opacity-50"
+                >
+                  {busyAction === "REOPEN_WINDOW" ? "Saving…" : "Reopen 48-hour window"}
+                </button>}
+              </div>
+              {error && <p role="alert" className="mt-3 text-sm font-medium text-red-700">{error}</p>}
+              {refund.repaymentReviewNotes && <p className="mt-3 text-xs text-slate-700">Previous review: {refund.repaymentReviewNotes}</p>}
+            </div>
+          )}
           {refund.adminNotes && <p className="mt-2 whitespace-pre-wrap text-slate-700">Admin note: {refund.adminNotes}</p>}
           <p className="mt-1 text-xs text-slate-500">Resolved {dateTime(refund.resolvedAt)} by {refund.resolvedBy || "admin"}</p>
         </section>

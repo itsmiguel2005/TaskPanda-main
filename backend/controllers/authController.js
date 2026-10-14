@@ -196,14 +196,14 @@ function sendLoginOtpEmailInBackground(user, otpCode, context) {
   }
 }
 
-function sendAdminLoginOtpEmailInBackground(adminEmail, code, challengeTokenHash) {
+function sendAdminLoginOtpEmailInBackground(destinationEmail, code, challengeTokenHash, challengeEmail = destinationEmail) {
   const deliverEmail = async () => {
     try {
-      await sendAdminLoginOtpEmail(adminEmail, code);
+      await sendAdminLoginOtpEmail(destinationEmail, code);
     } catch (error) {
       console.error("Admin sign-in email could not be sent:", error.message);
       try {
-        await AdminLoginChallenge.deleteOne({ adminEmail, challengeTokenHash });
+        await AdminLoginChallenge.deleteOne({ adminEmail: challengeEmail, challengeTokenHash });
       } catch (cleanupError) {
         console.error("Failed to clean up admin sign-in challenge after email delivery failed:", cleanupError.message);
       }
@@ -217,6 +217,57 @@ function sendAdminLoginOtpEmailInBackground(adminEmail, code, challengeTokenHash
       void deliverEmail();
     });
   }
+}
+
+async function startAdminLogin(req, res, adminEmail, destinationEmail) {
+  req.adminEmail = adminEmail;
+  const ipAddress = req.ip || req.socket?.remoteAddress || "unknown";
+  if (!destinationEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destinationEmail)) {
+    return res.status(503).json({ message: "Admin email verification is not configured." });
+  }
+  if (config.adminOtpSecret.length < 32 || !hasValidSmtpCredentials) {
+    return res.status(503).json({ message: "Admin email verification is not configured." });
+  }
+
+  const [sendIpLimit, sendEmailLimit] = await Promise.all([
+    consumeAdminRateLimit("otp-send-ip", ipAddress, 3, 15 * 60 * 1000),
+    consumeAdminRateLimit("otp-send-email", destinationEmail, 3, 15 * 60 * 1000),
+  ]);
+  if (!sendIpLimit.allowed) return rejectAdminRateLimit(res, sendIpLimit.retryAfterSeconds);
+  if (!sendEmailLimit.allowed) return rejectAdminRateLimit(res, sendEmailLimit.retryAfterSeconds);
+
+  const code = generateAdminLoginCode();
+  const challengeToken = randomBytes(32).toString("hex");
+  const challengeTokenHash = hashAdminChallengeToken(challengeToken);
+  await AdminLoginChallenge.findOneAndUpdate(
+    { adminEmail },
+    {
+      $set: {
+        challengeTokenHash,
+        codeHash: hashAdminLoginCode(code, config.adminOtpSecret),
+        expiresAt: new Date(Date.now() + ADMIN_LOGIN_CHALLENGE_TTL_MS),
+        attempts: 0,
+        consumedAt: null,
+      },
+      $setOnInsert: { adminEmail },
+    },
+    { returnDocument: "after", upsert: true }
+  );
+  sendAdminLoginOtpEmailInBackground(destinationEmail, code, challengeTokenHash, adminEmail);
+  sendAdminPushAlertInBackground({
+    roles: ["admin"],
+    title: "Admin sign-in requested",
+    body: "A new administrator verification code was requested. The code is not included in this alert.",
+    url: "/admin?section=dashboard",
+    data: { event: "admin.otp_requested" },
+  }, "OneSignal admin OTP alert failed:");
+  clearLoginAttempts(adminEmail);
+  return res.json({
+    message: "A verification code is on its way to the admin email.",
+    requiresAdminOtp: true,
+    challengeToken,
+    otpDestination: destinationEmail,
+  });
 }
 
 function sendPasswordResetEmailInBackground(userId, email, code, tokenHash) {
@@ -1054,9 +1105,9 @@ async function handleLogin(req, res) {
     const adminEmail = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
     const adminPassword = String(process.env.ADMIN_PASSWORD || "");
     if (adminEmail && adminPassword && identifier.toLowerCase() === adminEmail) {
-      const ipAddress = req.ip || req.socket?.remoteAddress || "unknown";
+      req.adminEmail = adminEmail;
       const [credentialIpLimit, credentialAccountLimit] = await Promise.all([
-        consumeAdminRateLimit("credential-ip", ipAddress, 10, 15 * 60 * 1000),
+        consumeAdminRateLimit("credential-ip", req.ip || req.socket?.remoteAddress || "unknown", 10, 15 * 60 * 1000),
         consumeAdminRateLimit("credential-account", adminEmail, 10, 15 * 60 * 1000),
       ]);
       if (!credentialIpLimit.allowed) return rejectAdminRateLimit(res, credentialIpLimit.retryAfterSeconds);
@@ -1074,53 +1125,7 @@ async function handleLogin(req, res) {
         if (attempt.lockedUntil) return loginLockResponse(res, attempt);
         return res.status(401).json({ message: "Invalid admin credentials. Please try again." });
       }
-
-      if (!config.adminOtpEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.adminOtpEmail)) {
-        return res.status(503).json({ message: "Admin email verification is not configured." });
-      }
-      if (config.adminOtpSecret.length < 32 || !hasValidSmtpCredentials) {
-        return res.status(503).json({ message: "Admin email verification is not configured." });
-      }
-
-      const [sendIpLimit, sendEmailLimit] = await Promise.all([
-        consumeAdminRateLimit("otp-send-ip", ipAddress, 3, 15 * 60 * 1000),
-        consumeAdminRateLimit("otp-send-email", config.adminOtpEmail, 3, 15 * 60 * 1000),
-      ]);
-      if (!sendIpLimit.allowed) return rejectAdminRateLimit(res, sendIpLimit.retryAfterSeconds);
-      if (!sendEmailLimit.allowed) return rejectAdminRateLimit(res, sendEmailLimit.retryAfterSeconds);
-
-      const code = generateAdminLoginCode();
-      const challengeToken = randomBytes(32).toString("hex");
-      const challengeTokenHash = hashAdminChallengeToken(challengeToken);
-      await AdminLoginChallenge.findOneAndUpdate(
-        { adminEmail },
-        {
-          $set: {
-            challengeTokenHash,
-            codeHash: hashAdminLoginCode(code, config.adminOtpSecret),
-            expiresAt: new Date(Date.now() + ADMIN_LOGIN_CHALLENGE_TTL_MS),
-            attempts: 0,
-            consumedAt: null,
-          },
-          $setOnInsert: { adminEmail },
-        },
-        { returnDocument: "after", upsert: true }
-      );
-      sendAdminLoginOtpEmailInBackground(config.adminOtpEmail, code, challengeTokenHash);
-      sendAdminPushAlertInBackground({
-        roles: ["admin"],
-        title: "Admin sign-in requested",
-        body: "A new administrator verification code was requested. The code is not included in this alert.",
-        url: "/admin?section=dashboard",
-        data: { event: "admin.otp_requested" },
-      }, "OneSignal admin OTP alert failed:");
-
-      clearLoginAttempts(normalizedIdentifier);
-      return res.json({
-        message: "A verification code is on its way to the configured admin email.",
-        requiresAdminOtp: true,
-        challengeToken,
-      });
+      return await startAdminLogin(req, res, adminEmail, config.adminOtpEmail);
     }
 
     const user = await User.findOne({ $or: [{ email: normalizedIdentifier }, { username: identifier }] })
@@ -1130,7 +1135,21 @@ async function handleLogin(req, res) {
       if (attempt.lockedUntil) return loginLockResponse(res, attempt);
       return res.status(404).json({ message: "No account found with that email or username." });
     }
+    if (user.role === "admin") {
+      req.adminEmail = user.email;
+      req.adminId = user._id;
+      req.adminName = user.fullName || user.username || user.email;
+    }
     if (!(await bcrypt.compare(password, user.passwordHash))) {
+      if (user.role === "admin") {
+        void logAuditAction(req, {
+          category: "SECURITY",
+          action: "FAILED_LOGIN_ATTEMPT",
+          targetResource: "AdminAccount",
+          targetId: user.email,
+          details: "Administrator password verification failed.",
+        });
+      }
       const attempt = recordFailedLogin(normalizedIdentifier);
       if (attempt.lockedUntil) return loginLockResponse(res, attempt);
       return res.status(401).json({ message: "Incorrect password. Please try again." });
@@ -1138,6 +1157,7 @@ async function handleLogin(req, res) {
     if (user.isSuspended || user.archivedAt) {
       return res.status(403).json({ message: "This account is unavailable. Contact TaskPanda support for assistance." });
     }
+    if (user.role === "admin") return await startAdminLogin(req, res, user.email, user.email);
 
     if (user.emailVerified === false) {
       return res.status(403).json({
@@ -1505,10 +1525,10 @@ async function handleVerifyAdminLogin(req, res) {
   try {
     const challengeToken = String(req.body.challengeToken || "").trim();
     const code = String(req.body.code || "").trim();
-    const adminEmail = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+    const primaryAdminEmail = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
     const ipAddress = req.ip || req.socket?.remoteAddress || "unknown";
 
-    if (!adminEmail || config.adminOtpSecret.length < 32) {
+    if (!primaryAdminEmail || config.adminOtpSecret.length < 32) {
       return res.status(503).json({ message: "Admin email verification is not configured." });
     }
 
@@ -1517,21 +1537,43 @@ async function handleVerifyAdminLogin(req, res) {
 
     const now = new Date();
     const challenge = await AdminLoginChallenge.findOne({
-      adminEmail,
       challengeTokenHash: hashAdminChallengeToken(challengeToken),
       expiresAt: mongoose.trusted({ $gt: now }),
       consumedAt: null,
       attempts: mongoose.trusted({ $lt: 5 }),
     }).select("+codeHash");
+    const adminEmail = challenge?.adminEmail;
+    if (adminEmail) req.adminEmail = adminEmail;
     if (!challenge || !/^\d{6}$/.test(code)) {
       void logAuditAction(req, {
         category: "SECURITY",
         action: "FAILED_LOGIN_ATTEMPT",
         targetResource: "AdminAccount",
-        targetId: adminEmail,
+        ...(adminEmail ? { targetId: adminEmail } : {}),
         details: "Administrator verification code was invalid or expired.",
       });
       return res.status(400).json({ message: "The verification code is invalid or expired. Sign in again to request a new one." });
+    }
+
+    let adminAccount = null;
+    let otpDestination = config.adminOtpEmail;
+    if (adminEmail !== primaryAdminEmail) {
+      adminAccount = await User.findOne({
+        email: adminEmail,
+        role: "admin",
+        isSuspended: mongoose.trusted({ $ne: true }),
+        archivedAt: mongoose.trusted({ $exists: false }),
+      }).select("_id email fullName username");
+      if (!adminAccount) {
+        await AdminLoginChallenge.deleteOne({ _id: challenge._id });
+        return res.status(401).json({ message: "This admin account is unavailable. Sign in again or contact the primary admin." });
+      }
+      req.adminId = adminAccount._id;
+      req.adminName = adminAccount.fullName || adminAccount.username || adminAccount.email;
+      otpDestination = adminAccount.email;
+    }
+    if (!otpDestination || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(otpDestination)) {
+      return res.status(503).json({ message: "Admin email verification is not configured." });
     }
 
     const submittedCodeHash = hashAdminLoginCode(code, config.adminOtpSecret);
@@ -1606,7 +1648,12 @@ async function handleVerifyAdminLogin(req, res) {
       message: "Login successful.",
       token: adminToken,
       role: "admin",
-      user: { email: adminEmail, role: "admin" },
+      user: {
+        ...(adminAccount?._id ? { id: String(adminAccount._id) } : {}),
+        email: adminEmail,
+        fullName: adminAccount?.fullName || adminAccount?.username || adminEmail,
+        role: "admin",
+      },
     });
   } catch (error) {
     console.error("Admin verification error:", error);

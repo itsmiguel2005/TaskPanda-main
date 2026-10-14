@@ -2,11 +2,13 @@ const app = require("./app");
 const connectDB = require("./db");
 const { port } = require("./config/env");
 const { processCashSettlementFallbacks, processExpiredBookingRequests, processBookingNoShowCheckIns } = require("./controllers/bookingController");
+const { processRefundRepaymentDeadlines } = require("./controllers/refundController");
 const { resumePendingVerificationOCR } = require("./controllers/verificationController");
 
 const CASH_SETTLEMENT_INTERVAL_MS = 60 * 1000;
 const BOOKING_EXPIRATION_INTERVAL_MS = 10 * 1000;
 const BOOKING_NO_SHOW_CHECK_IN_INTERVAL_MS = 10 * 1000;
+const REFUND_REPAYMENT_INTERVAL_MS = 60 * 1000;
 
 if (require.main === module) {
   connectDB()
@@ -14,6 +16,7 @@ if (require.main === module) {
       processCashSettlementFallbacks().catch((error) => console.error("Initial cash settlement pass failed:", error));
       processExpiredBookingRequests().catch((error) => console.error("Initial booking expiry pass failed:", error));
       processBookingNoShowCheckIns().catch((error) => console.error("Initial PandaBot no-show check-in pass failed:", error));
+      processRefundRepaymentDeadlines().catch((error) => console.error("Initial refund repayment deadline pass failed:", error));
       resumePendingVerificationOCR()
         .then((count) => {
           if (count) console.log(`Resumed ${count} pending identity OCR submission(s).`);
@@ -28,6 +31,9 @@ if (require.main === module) {
       setInterval(() => {
         processBookingNoShowCheckIns().catch((error) => console.error("PandaBot no-show check-in pass failed:", error));
       }, BOOKING_NO_SHOW_CHECK_IN_INTERVAL_MS);
+      setInterval(() => {
+        processRefundRepaymentDeadlines().catch((error) => console.error("Refund repayment deadline pass failed:", error));
+      }, REFUND_REPAYMENT_INTERVAL_MS);
       app.listen(port, () => console.log(`TaskPanda server running at http://localhost:${port}`));
     })
     .catch((error) => {

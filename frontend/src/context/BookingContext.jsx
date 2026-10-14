@@ -325,6 +325,43 @@ export function BookingProvider({ children }) {
     return data.refund;
   }, [fetchBookings, notifySync, token]);
 
+  const sendRefundRepayment = useCallback(async (refundId) => {
+    const response = await apiFetch(`/api/bookings/refunds/${refundId}/repayment-sent`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Could not record the repayment.");
+    await fetchBookings(undefined, true);
+    notifySync({ type: "booking-updated" });
+    return data.refund;
+  }, [fetchBookings, notifySync, token]);
+
+  const confirmRefundRepayment = useCallback(async (refundId) => {
+    const response = await apiFetch(`/api/bookings/refunds/${refundId}/confirm-received`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Could not confirm the repayment.");
+    await fetchBookings(undefined, true);
+    notifySync({ type: "booking-updated" });
+    return data.refund;
+  }, [fetchBookings, notifySync, token]);
+
+  const reportRefundRepaymentMissing = useCallback(async (refundId, reportNote) => {
+    const response = await apiFetch(`/api/bookings/refunds/${refundId}/report-not-received`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ reportNote }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Could not submit the non-receipt report.");
+    await fetchBookings(undefined, true);
+    notifySync({ type: "booking-updated" });
+    return data.refund;
+  }, [fetchBookings, notifySync, token]);
+
   const requestCancellation = useCallback(async (id, action = "request", reason = "") => {
     const response = await apiFetch(`/api/bookings/${id}/cancel`, {
       method: "PATCH",
@@ -552,6 +589,9 @@ export function BookingProvider({ children }) {
     submitCompletionProof,
     requestRevision,
     requestRefund,
+    sendRefundRepayment,
+    confirmRefundRepayment,
+    reportRefundRepaymentMissing,
     requestCancellation,
     submitReview,
     sendProviderUpdate,
@@ -565,7 +605,7 @@ export function BookingProvider({ children }) {
     dismissDashboardBooking,
     restoreDashboardBookings,
     refreshBookings: fetchBookings,
-  }), [bookings, dismissedBookingIds, bookingReviewStats, providerBookingStats, isLoading, error, createBooking, updateBookingStatus, submitCompletionProof, requestRevision, requestRefund, requestCancellation, submitReview, sendProviderUpdate, reportRunningLate, respondToLateNotice, reportProviderNoShow, respondToProviderNoShow, respondToProviderUpdate, respondToRevision, confirmCashSettlement, dismissDashboardBooking, restoreDashboardBookings, fetchBookings]);
+  }), [bookings, dismissedBookingIds, bookingReviewStats, providerBookingStats, isLoading, error, createBooking, updateBookingStatus, submitCompletionProof, requestRevision, requestRefund, sendRefundRepayment, confirmRefundRepayment, reportRefundRepaymentMissing, requestCancellation, submitReview, sendProviderUpdate, reportRunningLate, respondToLateNotice, reportProviderNoShow, respondToProviderNoShow, respondToProviderUpdate, respondToRevision, confirmCashSettlement, dismissDashboardBooking, restoreDashboardBookings, fetchBookings]);
 
   return <BookingContext.Provider value={value}>{children}</BookingContext.Provider>;
 }

@@ -6,6 +6,9 @@ const ACTIVE_BOOKING_STATUSES = new Set([
   "in_revision",
   "disputed",
   "refund_pending",
+  "refund_repayment_pending",
+  "refund_repayment_reported",
+  "refund_repayment_overdue",
   "cancel_requested",
 ]);
 
@@ -35,6 +38,9 @@ const BOOKING_STATUS_ALIASES = Object.freeze({
   "declined by provider": "declined",
   completed: "complete",
   "refund under review": "refund_pending",
+  "repayment pending": "refund_repayment_pending",
+  "repayment reported": "refund_repayment_reported",
+  "repayment overdue": "refund_repayment_overdue",
 });
 
 function normalizeBookingStatus(value) {
