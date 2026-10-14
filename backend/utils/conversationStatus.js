@@ -4,6 +4,7 @@ const ACTIVE_BOOKING_STATUSES = new Set([
   "en_route",
   "in_progress",
   "in_revision",
+  "complete",
   "disputed",
   "refund_pending",
   "refund_repayment_pending",
@@ -14,14 +15,10 @@ const ACTIVE_BOOKING_STATUSES = new Set([
 
 const ARCHIVED_BOOKING_STATUSES = new Set([
   "settled",
-  "complete",
-  "closed",
   "canceled",
   "provider_no_show",
   "declined",
-  "expired",
   "refunded",
-  "partially_refunded",
 ]);
 
 const BOOKING_STATUS_ALIASES = Object.freeze({
@@ -55,9 +52,21 @@ function getConversationStatusGroup(value) {
   return null;
 }
 
+function isConversationArchivedForRole(conversation, role) {
+  const archiveField = role === "client" ? "isArchivedByClient" : "isArchivedByProvider";
+  const restoredField = role === "client" ? "isRestoredByClient" : "isRestoredByProvider";
+  const booking = conversation?.bookingId && typeof conversation.bookingId === "object"
+    ? conversation.bookingId
+    : null;
+  const isAutoArchived = getConversationStatusGroup(booking?.status) === "archived"
+    && !Boolean(conversation[restoredField]);
+  return isAutoArchived || Boolean(conversation?.[archiveField]);
+}
+
 module.exports = {
   ACTIVE_BOOKING_STATUSES,
   ARCHIVED_BOOKING_STATUSES,
   normalizeBookingStatus,
   getConversationStatusGroup,
+  isConversationArchivedForRole,
 };

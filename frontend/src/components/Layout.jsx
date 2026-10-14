@@ -3,7 +3,7 @@ import Mascot from "./Mascot.jsx";
 
 const accentClasses = {
   primary: {
-    body: "bg-linear-to-br from-sky-50 via-cyan-50/60 to-white",
+    body: "relative isolate overflow-hidden bg-sky-50/60 bg-[radial-gradient(circle_at_top_left,rgba(186,230,253,0.56),transparent_32%),radial-gradient(circle_at_bottom_right,rgba(207,250,254,0.35),transparent_24%)]",
     button: "from-primary-600 to-primary-700",
     buttonHover: "focus:ring-primary-500/40",
     border: "border-slate-200",
@@ -14,7 +14,7 @@ const accentClasses = {
     divider: "bg-gray-200",
   },
   green: {
-    body: "bg-linear-to-br from-emerald-50 via-teal-50/50 to-white",
+    body: "relative isolate overflow-hidden bg-emerald-50/60 bg-[radial-gradient(circle_at_top_left,rgba(167,243,208,0.42),transparent_32%),radial-gradient(circle_at_bottom_right,rgba(204,251,241,0.34),transparent_24%)]",
     button: "from-green-600 to-green-700",
     buttonHover: "focus:ring-green-500/40",
     border: "border-slate-200",

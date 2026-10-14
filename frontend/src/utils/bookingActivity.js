@@ -21,6 +21,9 @@ const terminalStatuses = new Set([
   "declined by provider",
   "expired",
   "provider_no_show",
+  "refunded",
+  "partially refunded",
+  "partially_refunded",
   "settled",
 ]);
 

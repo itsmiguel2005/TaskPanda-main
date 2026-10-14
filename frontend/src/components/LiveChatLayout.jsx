@@ -92,21 +92,21 @@ const STATUS_BADGE_STYLES = {
   en_route: "border-cyan-200 bg-cyan-50 text-cyan-800",
   in_progress: "border-green-200 bg-green-50 text-green-800",
   cancel_requested: "border-amber-200 bg-amber-50 text-amber-800",
-  canceled: "border-slate-200 bg-slate-100 text-slate-700",
-  provider_no_show: "border-slate-200 bg-slate-100 text-slate-700",
-  declined: "border-slate-200 bg-slate-100 text-slate-700",
+  canceled: "border-rose-200 bg-rose-50 text-rose-800",
+  provider_no_show: "border-blue-200 bg-blue-50 text-blue-800",
+  declined: "border-rose-200 bg-rose-50 text-rose-800",
   expired: "border-slate-200 bg-slate-100 text-slate-700",
-  complete: "border-slate-200 bg-slate-100 text-slate-700",
+  complete: "border-emerald-200 bg-emerald-50 text-emerald-800",
   in_revision: "border-amber-200 bg-amber-50 text-amber-800",
   disputed: "border-red-200 bg-red-50 text-red-800",
-  closed: "border-slate-200 bg-slate-100 text-slate-700",
-  settled: "border-slate-200 bg-slate-100 text-slate-700",
+  closed: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  settled: "border-emerald-200 bg-emerald-50 text-emerald-800",
   refund_pending: "border-amber-200 bg-amber-50 text-amber-800",
   refund_repayment_pending: "border-amber-200 bg-amber-50 text-amber-900",
   refund_repayment_reported: "border-rose-200 bg-rose-50 text-rose-800",
   refund_repayment_overdue: "border-rose-200 bg-rose-50 text-rose-800",
-  refunded: "border-slate-200 bg-slate-100 text-slate-700",
-  partially_refunded: "border-slate-200 bg-slate-100 text-slate-700",
+  refunded: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  partially_refunded: "border-teal-200 bg-teal-50 text-teal-800",
 };
 
 function normalizeBookingStatus(status) {
@@ -149,10 +149,10 @@ function normalizeBookingStatus(status) {
 
 function getConversationStatusGroup(status) {
   const normalizedStatus = normalizeBookingStatus(status);
-  if (["pending", "approved", "en_route", "in_progress", "in_revision", "disputed", "refund_pending", "refund_repayment_pending", "refund_repayment_reported", "refund_repayment_overdue", "cancel_requested"].includes(normalizedStatus)) {
+  if (["pending", "approved", "en_route", "in_progress", "in_revision", "complete", "disputed", "refund_pending", "refund_repayment_pending", "refund_repayment_reported", "refund_repayment_overdue", "cancel_requested"].includes(normalizedStatus)) {
     return "active";
   }
-  if (["settled", "complete", "closed", "canceled", "provider_no_show", "declined", "expired", "refunded", "partially_refunded"].includes(normalizedStatus)) {
+  if (["settled", "canceled", "provider_no_show", "declined", "refunded"].includes(normalizedStatus)) {
     return "archived";
   }
   return null;
@@ -228,15 +228,12 @@ function isConversationArchivedForRole(conversation, role) {
   const isManuallyArchived = typeof conversation[archiveField] === "boolean"
     ? conversation[archiveField]
     : Boolean(conversation.isArchived);
-  return isManuallyArchived || getConversationStatusGroup(conversation.bookingStatus) === "archived";
-}
-
-function isManuallyArchivedForRole(conversation, role) {
-  if (!conversation) return false;
-  const archiveField = role === "client" ? "isArchivedByClient" : "isArchivedByProvider";
-  return typeof conversation[archiveField] === "boolean"
-    ? conversation[archiveField]
-    : Boolean(conversation.isArchived);
+  const isAutoArchived = typeof conversation.isAutoArchived === "boolean"
+    ? conversation.isAutoArchived
+    : getConversationStatusGroup(conversation.bookingStatus) === "archived";
+  const restoredField = role === "client" ? "isRestoredByClient" : "isRestoredByProvider";
+  const isRestored = conversation[restoredField] === true;
+  return isManuallyArchived || (isAutoArchived && !isRestored);
 }
 
 function mergeMessages(current, incoming) {
@@ -728,11 +725,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     const sorted = conversations
       .filter((conversation) => {
         if (!conversation) return false;
-        const statusGroup = getConversationStatusGroup(conversation.bookingStatus);
-        const isManuallyArchived = isManuallyArchivedForRole(conversation, role);
-        return showArchived
-          ? statusGroup === "archived" || isManuallyArchived
-          : statusGroup === "active" && !isManuallyArchived;
+        return isConversationArchivedForRole(conversation, role) === showArchived;
       })
       .sort((a, b) => new Date(b.lastMessageAt || b.updatedAt || 0) - new Date(a.lastMessageAt || a.updatedAt || 0));
     if (!query) return sorted;
@@ -1219,7 +1212,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
 
   const handleArchiveConversation = async (conversation) => {
     if (archivingConversationIdsRef.current.has(conversation.id)) return;
-    const currentArchiveState = isManuallyArchivedForRole(conversation, role);
+    const currentArchiveState = isConversationArchivedForRole(conversation, role);
     const requestedArchiveState = !currentArchiveState;
     const archiveField = role === "client" ? "isArchivedByClient" : "isArchivedByProvider";
     archivingConversationIdsRef.current.add(conversation.id);
@@ -1228,7 +1221,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
       const response = await apiFetch(`/api/conversations/${conversation.id}/archive`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...requestHeaders },
-        body: JSON.stringify({ action: "toggle", archived: requestedArchiveState }),
+        body: JSON.stringify({ archived: requestedArchiveState }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -1275,7 +1268,9 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
         setSupportReportDetails("");
         setRevisionRequestOpen(false);
         setActionModalView("DETAILS");
-        setSearchParams({ tab: showArchived ? "archived" : "active" }, { replace: true });
+        setSearchParams({ tab: requestedArchiveState ? "archived" : "active" }, { replace: true });
+      } else if (!requestedArchiveState && showArchived) {
+        setSearchParams({ tab: "active" }, { replace: true });
       }
       setError("");
     } catch (requestError) {
@@ -1460,11 +1455,26 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                     <span className={`block truncate pt-0.5 text-xs ${conversation.unreadCount > 0 ? "font-semibold text-slate-800" : "text-slate-500"}`}>{previewIsMine ? "You: " : ""}{previewText}</span>
                   </span>
                 </button>
-                {!conversation.isAutoArchived && <button type="button" onClick={() => handleArchiveConversation(conversation)} disabled={archivingConversationIds.has(conversation.id)} aria-busy={archivingConversationIds.has(conversation.id)} aria-label={isManuallyArchivedForRole(conversation, role) ? "Restore conversation" : "Archive conversation"} title={archivingConversationIds.has(conversation.id) ? "Updating archive…" : isManuallyArchivedForRole(conversation, role) ? "Restore conversation" : "Archive conversation"} className="dashboard-focus shrink-0 rounded-lg p-2 text-slate-500 hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-4 w-4" aria-hidden="true">
-                    {isManuallyArchivedForRole(conversation, role) ? <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5h18M5 7.5v11h14v-11M9 11h6m-3-7v9m-3-3 3 3 3-3" /> : <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5h18M5 7.5v11h14v-11M9 11h6M4 4h16v3.5H4z" />}
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleArchiveConversation(conversation);
+                  }}
+                  disabled={archivingConversationIds.has(conversation.id)}
+                  aria-busy={archivingConversationIds.has(conversation.id)}
+                  aria-label={isConversationArchivedForRole(conversation, role) ? "Restore conversation" : "Archive conversation"}
+                  title={archivingConversationIds.has(conversation.id) ? "Updating archive…" : isConversationArchivedForRole(conversation, role) ? "Restore conversation" : "Archive conversation"}
+                  className="dashboard-focus ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4" aria-hidden="true">
+                    {isConversationArchivedForRole(conversation, role) ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5h18M5 7.5v11h14v-11M9 11h6m-3-7v9m-3-3 3 3 3-3" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5h18M5 7.5v11h14v-11M9 11h6M4 4h16v3.5H4z" />
+                    )}
                   </svg>
-                </button>}
+                </button>
               </div>
               );
             }) : (
@@ -1692,7 +1702,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                 <div ref={messagesEndRef} className="h-1" />
               </div>
               {showScrollButton && <button onClick={scrollToBottom} className="dashboard-focus absolute bottom-20 right-6 z-10 rounded-full border border-sky-100 bg-white p-2.5 text-sky-900 shadow-[0_6px_18px_rgba(15,23,42,0.12)] transition hover:bg-sky-50" aria-label="Scroll to latest message"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4"><path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" /></svg></button>}
-              {isManuallyArchivedForRole(selectedConversation, role) ? (
+              {isConversationArchivedForRole(selectedConversation, role) ? (
                 <div className="border-t border-gray-100 bg-gray-50 px-4 py-4 text-center text-xs text-gray-500">Restore this conversation from Archived to send messages. The digital receipt remains in the conversation history.</div>
               ) : (
                 <div className="border-t border-slate-200 bg-white px-4 py-3 sm:px-5">

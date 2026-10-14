@@ -1,10 +1,24 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function CompletionProofModal({ bookingName, onSubmit, onClose }) {
   const [completionNote, setCompletionNote] = useState("");
   const [photos, setPhotos] = useState([]);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [photoPreviews, setPhotoPreviews] = useState([]);
+
+  useEffect(() => {
+    const previews = photos.map((file) => ({
+      file,
+      url: URL.createObjectURL(file),
+    }));
+    setPhotoPreviews(previews);
+    return () => previews.forEach(({ url }) => URL.revokeObjectURL(url));
+  }, [photos]);
+
+  const removePhoto = (photoToRemove) => {
+    setPhotos((current) => current.filter((photo) => photo !== photoToRemove));
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -32,7 +46,30 @@ export default function CompletionProofModal({ bookingName, onSubmit, onClose })
           <label htmlFor="completion-proof-photos" className="mt-4 block text-sm font-medium text-gray-700">Finished-work photos (optional)</label>
           <input id="completion-proof-photos" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onChange={(event) => { setPhotos(Array.from(event.target.files || []).slice(0, 5)); setError(""); }} className="mt-1 block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-xs file:font-semibold" />
           <p className="mt-1 text-xs text-gray-500">Up to five photos. Each image may be up to 5 MB.</p>
-          {photos.length > 0 && <p className="mt-1 text-xs text-gray-600">{photos.length} photo{photos.length === 1 ? "" : "s"} selected.</p>}
+          {photos.length > 0 && (
+            <>
+              <p className="mt-1 text-xs text-gray-600">{photos.length} photo{photos.length === 1 ? "" : "s"} selected.</p>
+              <ul className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5" aria-label="Selected photo previews">
+                {photoPreviews.map(({ file, url }, index) => (
+                  <li key={`${file.name}-${file.lastModified}-${file.size}-${index}`} className="relative aspect-square overflow-hidden rounded-md border border-gray-200 bg-gray-50">
+                    <img src={url} alt={`Preview of ${file.name}`} className="h-full w-full object-cover" />
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => removePhoto(file)}
+                      aria-label={`Remove ${file.name}`}
+                      className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-slate-950/80 text-sm font-semibold leading-none text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" className="h-3 w-3" aria-hidden="true">
+                        <path strokeLinecap="round" d="m5 5 10 10M15 5 5 15" />
+                      </svg>
+                    </button>
+                    <p title={file.name} className="absolute inset-x-0 bottom-0 truncate bg-slate-950/70 px-1.5 py-1 text-[10px] text-white">{file.name}</p>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
           <div className="mt-6 flex justify-end gap-2">
             <button type="button" disabled={isSubmitting} onClick={onClose} className="rounded-md border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 disabled:opacity-50">Cancel</button>

@@ -10,6 +10,8 @@ const conversationSchema = new mongoose.Schema(
     archivedAt: { type: Date },
     isArchivedByClient: { type: Boolean, default: false },
     isArchivedByProvider: { type: Boolean, default: false },
+    isRestoredByClient: { type: Boolean, default: false },
+    isRestoredByProvider: { type: Boolean, default: false },
     lastReadAtClient: { type: Date },
     lastReadAtProvider: { type: Date },
     clientTypingUntil: { type: Date },

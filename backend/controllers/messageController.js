@@ -11,7 +11,7 @@ const {
   isBookingTransactionWithinLimit,
 } = require("../services/bookingPricing");
 const { DEFAULT_ESTIMATED_DURATION_MINUTES } = require("../services/bookingLifecycle");
-const { getConversationStatusGroup } = require("../utils/conversationStatus");
+const { getConversationStatusGroup, isConversationArchivedForRole } = require("../utils/conversationStatus");
 const { awardSettledBookingStamp } = require("../services/rewards");
 const {
   deleteChatPhoto,
@@ -33,7 +33,9 @@ function serializeConversation(conversation, role) {
   const provider = conversation.providerId && typeof conversation.providerId === "object" ? conversation.providerId : null;
   const booking = conversation.bookingId && typeof conversation.bookingId === "object" ? conversation.bookingId : null;
   const other = role === "client" ? provider : client;
-  const isAutoArchived = getConversationStatusGroup(booking?.status) === "archived";
+  const restoredField = role === "client" ? "isRestoredByClient" : "isRestoredByProvider";
+  const isAutoArchived = getConversationStatusGroup(booking?.status) === "archived"
+    && !Boolean(conversation[restoredField]);
   const isManuallyArchived = role === "client"
     ? Boolean(conversation.isArchivedByClient)
     : Boolean(conversation.isArchivedByProvider);
@@ -95,6 +97,8 @@ function serializeConversation(conversation, role) {
     } : null,
     isArchivedByClient: Boolean(conversation.isArchivedByClient),
     isArchivedByProvider: Boolean(conversation.isArchivedByProvider),
+    isRestoredByClient: Boolean(conversation.isRestoredByClient),
+    isRestoredByProvider: Boolean(conversation.isRestoredByProvider),
     isAutoArchived,
     isArchived: isManuallyArchived || isAutoArchived,
     unreadCount: role === "client" ? Number(conversation.unreadCountClient || 0) : Number(conversation.unreadCountProvider || 0),
@@ -157,16 +161,9 @@ async function handleListConversations(req, res) {
       .populate(conversationPopulate);
     const tabConversations = tab === undefined
       ? conversations
-      : conversations.filter((conversation) => {
-        const booking = conversation.bookingId && typeof conversation.bookingId === "object"
-          ? conversation.bookingId
-          : null;
-        const statusGroup = getConversationStatusGroup(booking?.status);
-        const isManuallyArchived = Boolean(conversation[archiveField]);
-        return tab === "archived"
-          ? statusGroup === "archived" || isManuallyArchived
-          : statusGroup === "active" && !isManuallyArchived;
-      });
+      : conversations.filter((conversation) => (
+        isConversationArchivedForRole(conversation, req.user.role) === (tab === "archived")
+      ));
     const latestMessageSenders = tabConversations.length
       ? await Message.aggregate([
         { $match: { conversationId: { $in: tabConversations.map((conversation) => conversation._id) } } },
@@ -307,13 +304,15 @@ async function handleConversationTyping(req, res) {
   if (typeof req.body?.typing !== "boolean") return res.status(400).json({ message: "Typing state must be true or false." });
 
   const typingField = req.user.role === "client" ? "clientTypingUntil" : "providerTypingUntil";
-  const archivedField = req.user.role === "client" ? "isArchivedByClient" : "isArchivedByProvider";
   const filter = participantFilter(req.user);
   try {
     const conversation = await Conversation.findOne({ _id: conversationId, ...filter })
-      .select("_id isArchivedByClient isArchivedByProvider");
+      .select("_id bookingId isArchivedByClient isArchivedByProvider isRestoredByClient isRestoredByProvider")
+      .populate({ path: "bookingId", select: "status" });
     if (!conversation) return res.status(403).json({ message: "You are not a participant in this conversation." });
-    if (conversation[archivedField]) return res.status(409).json({ message: "Restore this conversation before updating typing status." });
+    if (isConversationArchivedForRole(conversation, req.user.role)) {
+      return res.status(409).json({ message: "Restore this conversation before updating typing status." });
+    }
     if (req.body.typing) {
       await Conversation.updateOne(
         { _id: conversation._id },
@@ -337,9 +336,11 @@ async function handleUploadChatPhoto(req, res) {
   if (!filter) return res.status(403).json({ message: "Messaging is only available to clients and providers." });
 
   try {
-    const conversation = await Conversation.findOne({ _id: conversationId, ...filter }).select("_id isArchivedByClient isArchivedByProvider");
+    const conversation = await Conversation.findOne({ _id: conversationId, ...filter })
+      .select("_id bookingId isArchivedByClient isArchivedByProvider isRestoredByClient isRestoredByProvider")
+      .populate({ path: "bookingId", select: "status" });
     if (!conversation) return res.status(403).json({ message: "You are not a participant in this conversation." });
-    if (req.user.role === "client" ? conversation.isArchivedByClient : conversation.isArchivedByProvider) {
+    if (isConversationArchivedForRole(conversation, req.user.role)) {
       return res.status(409).json({ message: "Restore this conversation before sending a message." });
     }
     const photo = await uploadChatPhoto(req.file.buffer, conversationId, String(req.user._id));
@@ -418,9 +419,10 @@ async function handleSendMessage(req, res) {
   if (!filter) return res.status(403).json({ message: "Messaging is only available to clients and providers." });
 
   try {
-    const conversation = await Conversation.findOne({ _id: conversationId, ...filter });
+    const conversation = await Conversation.findOne({ _id: conversationId, ...filter })
+      .populate({ path: "bookingId", select: "status" });
     if (!conversation) return res.status(403).json({ message: "You are not a participant in this conversation." });
-    if (req.user.role === "client" ? conversation.isArchivedByClient : conversation.isArchivedByProvider) {
+    if (isConversationArchivedForRole(conversation, req.user.role)) {
       return res.status(409).json({ message: "Restore this conversation before sending a message." });
     }
     const verifiedPhotos = await verifyChatPhotoUploads(photos, conversationId, String(req.user._id));
@@ -453,13 +455,15 @@ async function handleArchiveConversation(req, res) {
   const filter = participantFilter(req.user);
   if (!filter) return res.status(403).json({ message: "Messaging is only available to clients and providers." });
   const archiveField = req.user.role === "client" ? "isArchivedByClient" : "isArchivedByProvider";
+  const restoredField = req.user.role === "client" ? "isRestoredByClient" : "isRestoredByProvider";
 
   try {
     const conversation = await Conversation.findOne({ _id: conversationId, ...filter });
     if (!conversation) return res.status(403).json({ message: "You are not a participant in this conversation." });
     conversation[archiveField] = action === "toggle"
-      ? !Boolean(conversation[archiveField])
+      ? !isConversationArchivedForRole(conversation, req.user.role)
       : requestedArchiveState;
+    conversation[restoredField] = !conversation[archiveField];
     await conversation.save();
     await conversation.populate(conversationPopulate);
     const updatedConversation = serializeConversation(conversation, req.user.role);

@@ -1,6 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { getConversationStatusGroup, normalizeBookingStatus } = require("./conversationStatus");
+const {
+  getConversationStatusGroup,
+  isConversationArchivedForRole,
+  normalizeBookingStatus,
+} = require("./conversationStatus");
 
 test("all active booking statuses remain in the active conversation folder", () => {
   for (const status of [
@@ -9,6 +13,8 @@ test("all active booking statuses remain in the active conversation folder", () 
     "en_route",
     "in_progress",
     "in_revision",
+    "complete",
+    "Completed",
     "disputed",
     "refund_pending",
     "refund_repayment_pending",
@@ -20,20 +26,40 @@ test("all active booking statuses remain in the active conversation folder", () 
   }
 });
 
-test("all terminal booking statuses are automatically archived", () => {
+test("only requested booking statuses are automatically archived", () => {
   for (const status of [
     "settled",
-    "complete",
-    "closed",
     "canceled",
     "provider_no_show",
     "declined",
-    "expired",
     "refunded",
-    "partially_refunded",
   ]) {
     assert.equal(getConversationStatusGroup(status), "archived", status);
   }
+});
+
+test("completed and other non-requested terminal statuses stay active", () => {
+  for (const status of ["closed", "expired", "partially_refunded"]) {
+    assert.equal(getConversationStatusGroup(status), null, status);
+  }
+});
+
+test("auto-archived conversations are locked until restored for that participant", () => {
+  const conversation = { bookingId: { status: "settled" } };
+  assert.equal(isConversationArchivedForRole(conversation, "client"), true);
+  assert.equal(isConversationArchivedForRole(conversation, "provider"), true);
+  conversation.isRestoredByClient = true;
+  assert.equal(isConversationArchivedForRole(conversation, "client"), false);
+  assert.equal(isConversationArchivedForRole(conversation, "provider"), true);
+});
+
+test("manual archives remain locked even when the booking status is not auto-archived", () => {
+  const conversation = {
+    bookingId: { status: "complete" },
+    isArchivedByClient: true,
+  };
+  assert.equal(isConversationArchivedForRole(conversation, "client"), true);
+  assert.equal(isConversationArchivedForRole(conversation, "provider"), false);
 });
 
 test("legacy display labels normalize to their internal booking status", () => {
