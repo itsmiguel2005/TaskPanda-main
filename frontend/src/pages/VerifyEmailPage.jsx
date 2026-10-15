@@ -168,7 +168,18 @@ export default function VerifyEmailPage() {
                 : message || (email ? `We sent a verification link to ${email}.` : "Enter the email used for registration to request a new verification link.")}
             </p>
             {status === "waiting" && (
-              <p className="text-xs text-gray-500">Keep this registration page open. After you verify your email, it will continue automatically—even if you verify from another device.</p>
+              <>
+                <aside className="flex items-start gap-3 rounded-lg border border-primary-200 bg-primary-50 p-3 text-left" role="note">
+                  <svg className="mt-0.5 h-5 w-5 shrink-0 text-primary-700" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M3.75 6.75A2.25 2.25 0 0 1 6 4.5h12a2.25 2.25 0 0 1 2.25 2.25v10.5A2.25 2.25 0 0 1 18 19.5H6a2.25 2.25 0 0 1-2.25-2.25V6.75Z" stroke="currentColor" strokeWidth="1.7" />
+                    <path d="m4.5 6 7.5 6 7.5-6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <p className="text-sm leading-5 text-primary-900">
+                    If you don&apos;t see the email in your inbox, check your spam or junk folder.
+                  </p>
+                </aside>
+                <p className="text-xs text-gray-500">Keep this registration page open. After you verify your email, it will continue automatically—even if you verify from another device.</p>
+              </>
             )}
 
             {status !== "verified" && (

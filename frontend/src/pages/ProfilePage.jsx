@@ -321,7 +321,7 @@ export default function ProfilePage() {
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <h3 className="text-sm font-bold text-slate-900">Give a friend ₱50</h3>
-                          <p className="mt-1 text-xs leading-5 text-slate-600">They get a travel-fee voucher; you get one too.</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-600">You and your friend each get a ₱50 travel-fee voucher after they complete and settle their first cash booking.</p>
                         </div>
                         <button
                           type="button"

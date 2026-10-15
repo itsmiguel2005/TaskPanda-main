@@ -18,7 +18,11 @@ const {
   areBookingAmountsWithinLimits,
   isBookingTransactionWithinLimit,
 } = require("../services/bookingPricing");
-const { awardSettledBookingStamp, restoreVoucherForBooking } = require("../services/rewards");
+const {
+  awardPendingReferralRewards,
+  awardSettledBookingStamp,
+  restoreVoucherForBooking,
+} = require("../services/rewards");
 const { getGlobalSettings } = require("../services/systemSettings");
 const { searchServiceLocations, reverseGeocodeServiceLocation } = require("../services/geocoder");
 const {
@@ -1864,6 +1868,11 @@ async function processCashSettlementFallbacks() {
         await awardSettledBookingStamp(booking._id);
       } catch (stampError) {
         console.error("Auto-settled booking loyalty stamp error:", stampError);
+      }
+      try {
+        await awardPendingReferralRewards(booking.clientId);
+      } catch (referralError) {
+        console.error("Auto-settled booking referral reward error:", referralError);
       }
       try {
         await appendBookingSystemMessage(

@@ -12,7 +12,10 @@ const {
 } = require("../services/bookingPricing");
 const { DEFAULT_ESTIMATED_DURATION_MINUTES } = require("../services/bookingLifecycle");
 const { getConversationStatusGroup, isConversationArchivedForRole } = require("../utils/conversationStatus");
-const { awardSettledBookingStamp } = require("../services/rewards");
+const {
+  awardPendingReferralRewards,
+  awardSettledBookingStamp,
+} = require("../services/rewards");
 const {
   deleteChatPhoto,
   fetchAuthenticatedChatPhoto,
@@ -586,6 +589,11 @@ async function handleCashConfirmation(req, res) {
         await awardSettledBookingStamp(booking._id);
       } catch (stampError) {
         console.error("Booking loyalty stamp error:", stampError);
+      }
+      try {
+        await awardPendingReferralRewards(booking.clientId);
+      } catch (referralError) {
+        console.error("Booking referral reward error:", referralError);
       }
     }
     if (receiptGenerated) {

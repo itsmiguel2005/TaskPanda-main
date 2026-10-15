@@ -10,7 +10,12 @@ const { logAuditAction } = require("../utils/logAuditAction");
 const config = require("../config/env");
 const { geocodeAddress } = require("../services/geocoder");
 const { getAgeFromDateOfBirth } = require("../utils/providerAge");
-const { createReferralCode, creditReferralRewards } = require("../services/rewards");
+const {
+  awardPendingReferralRewards,
+  createReferralCode,
+  recordReferralSignal,
+  retryPendingReferralRewardsForReferrer,
+} = require("../services/rewards");
 const {
   hasValidSmtpCredentials,
   sendAdminLoginOtpEmail,
@@ -65,6 +70,18 @@ function getDeviceName(req) {
     .replace(/\s+/g, " ")
     .trim();
   return userAgent.slice(0, 120) || "Unknown device";
+}
+
+async function recordReferralSignalSafely(user, req) {
+  try {
+    await recordReferralSignal(user._id, req, user.referredBy);
+    if (user.role === "client") {
+      await awardPendingReferralRewards(user._id);
+      await retryPendingReferralRewardsForReferrer(user._id);
+    }
+  } catch (error) {
+    console.error("Referral signal logging error:", error);
+  }
 }
 
 function getPreAuthToken(req) {
@@ -573,16 +590,35 @@ async function handleRegister(req, res) {
     if (existingEmailUser) {
       let canResumeRegistration = false;
       if (existingEmailUser.emailVerified === false && existingEmailUser.registrationComplete === false) {
-        if (
-          referralOwner &&
-          existingEmailUser.referredBy &&
-          String(existingEmailUser.referredBy) !== String(referralOwner._id)
-        ) {
-          return res.status(409).json({ message: "A different referral code is already attached to this registration." });
+        if (referralOwner) {
+          if (
+            existingEmailUser.referredBy &&
+            String(existingEmailUser.referredBy) !== String(referralOwner._id)
+          ) {
+            return res.status(409).json({ message: "A different referral code is already attached to this registration." });
+          }
+          let referralChanged = false;
+          if (!existingEmailUser.referredBy) {
+            existingEmailUser.referredBy = referralOwner._id;
+            referralChanged = true;
+          }
+          if (existingEmailUser.referralRewardStatus !== "REWARDED") {
+            existingEmailUser.referralRewardStatus = "PENDING_FIRST_BOOKING";
+            referralChanged = true;
+          }
+          if (referralChanged) await existingEmailUser.save();
         }
-        if (referralOwner && !existingEmailUser.referredBy) {
-          existingEmailUser.referredBy = referralOwner._id;
-          await existingEmailUser.save();
+        try {
+          await recordReferralSignal(
+            existingEmailUser._id,
+            req,
+            existingEmailUser.referredBy || null
+          );
+        } catch (signalError) {
+          console.error("Referral registration signal could not be saved:", signalError);
+          return res.status(503).json({
+            message: "Your registration is saved, but referral details could not be recorded. Please retry.",
+          });
         }
         try {
           canResumeRegistration = await bcrypt.compare(password, existingEmailUser.passwordHash);
@@ -612,7 +648,12 @@ async function handleRegister(req, res) {
       role,
       username,
       ...(role === "client" ? { referralCode: createReferralCode(userId) } : {}),
-      ...(referralOwner ? { referredBy: referralOwner._id } : {}),
+      ...(referralOwner
+        ? {
+            referredBy: referralOwner._id,
+            referralRewardStatus: "PENDING_FIRST_BOOKING",
+          }
+        : {}),
       email,
       passwordHash: await bcrypt.hash(password, 10),
       professions: role === "provider" ? professions : [],
@@ -620,6 +661,15 @@ async function handleRegister(req, res) {
       registrationComplete: false,
       registrationExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     });
+
+    try {
+      await recordReferralSignal(user._id, req, user.referredBy || null);
+    } catch (signalError) {
+      console.error("Referral registration signal could not be saved:", signalError);
+      return res.status(503).json({
+        message: "Your registration is saved, but referral details could not be recorded. Please retry.",
+      });
+    }
 
     try {
       await createRegistrationSession(user, res);
@@ -987,8 +1037,9 @@ async function handleCompleteRegistration(req, res) {
   }
 
   user.referralCode ||= user.role === "client" ? createReferralCode(user._id) : undefined;
-  await creditReferralRewards(user);
-
+  const referralRewardStatus = user.referredBy && user.referralRewardStatus !== "REWARDED"
+    ? "PENDING_FIRST_BOOKING"
+    : user.referralRewardStatus;
   const updatedUser = await User.findOneAndUpdate(
     mongoose.trusted({
       _id: user._id,
@@ -1012,6 +1063,7 @@ async function handleCompleteRegistration(req, res) {
         ...(geoLocation ? { geoLocation } : {}),
         registrationComplete: true,
         ...(user.role === "client" ? { referralCode: user.referralCode } : {}),
+        ...(referralRewardStatus ? { referralRewardStatus } : {}),
         ...(user.role === "provider" ? { dateOfBirth: parsedDateOfBirth } : {}),
       },
       $unset: {
@@ -1260,6 +1312,7 @@ async function handleLogin(req, res) {
 
     if (trustedDevice) sendTrustedDeviceCookie(res, presentedDeviceToken);
     clearLoginAttempts(normalizedIdentifier);
+    await recordReferralSignalSafely(user, req);
     const accountToken = await issueAccountToken(user._id);
     return res.json({
       message: "Login successful.", token: accountToken, role: user.role,
@@ -1339,6 +1392,7 @@ async function handleVerifyLoginOtp(req, res) {
     }
     if (rememberDevice) sendTrustedDeviceCookie(res, deviceToken);
 
+    await recordReferralSignalSafely(consumedOtp, req);
     const accountToken = await issueAccountToken(consumedOtp._id);
     return res.json({
       message: "Login successful.",

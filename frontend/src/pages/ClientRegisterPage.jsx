@@ -288,7 +288,7 @@ export default function ClientRegisterPage() {
                   />
                 </div>
                 <p className="text-xs leading-5 text-gray-500">
-                  Got a code from a friend? Enter it here to unlock travel fee vouchers!
+                  Enter a friend&apos;s code to get a ₱50 travel-fee voucher after you complete and settle your first cash booking.
                 </p>
               </div>
 

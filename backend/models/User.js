@@ -24,6 +24,10 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    referralRewardStatus: {
+      type: String,
+      enum: ["PENDING_FIRST_BOOKING", "REWARDED"],
+    },
     referralVoucherAwarded: {
       type: Boolean,
       default: false,
@@ -42,6 +46,10 @@ const userSchema = new mongoose.Schema(
       type: Number,
       min: 0,
       default: 0,
+    },
+    firstSettledBookingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Booking",
     },
     vouchers: {
       type: [{

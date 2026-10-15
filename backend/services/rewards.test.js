@@ -1,12 +1,18 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+const Booking = require("../models/Booking");
 const User = require("../models/User");
 const {
+  awardPendingReferralRewards,
+  awardSettledBookingStamp,
   awardVerificationVoucher,
+  getReferralSignals,
   restoreVoucherForBooking,
   restoreVoucherForRefund,
+  sharesReferralSignal,
 } = require("./rewards");
+const ReferralLog = require("../models/ReferralLog");
 
 test("verification reward awards one active voucher and notification to a verified client", async () => {
   const clientId = new mongoose.Types.ObjectId();
@@ -41,6 +47,207 @@ test("verification reward awards one active voucher and notification to a verifi
     assert.equal(updateCalls, 2);
   } finally {
     User.updateOne = originalUpdateOne;
+  }
+});
+
+test("referral request signals are hashed and detect shared IP or device fingerprints", async () => {
+  const signals = getReferralSignals({
+    ip: "::ffff:192.0.2.4",
+    headers: {
+      "user-agent": "TaskPanda Test Browser",
+      "sec-ch-ua-platform": '"Windows"',
+    },
+  });
+  assert.match(signals.ipHash, /^[a-f\d]{64}$/);
+  assert.match(signals.deviceHash, /^[a-f\d]{64}$/);
+  assert.notEqual(signals.ipHash, "192.0.2.4");
+
+  const originalFind = ReferralLog.find;
+  const makeQuery = (rows) => ({
+    select() { return this; },
+    sort() { return this; },
+    limit() { return this; },
+    lean: async () => rows,
+  });
+  let calls = 0;
+  ReferralLog.find = () => {
+    calls += 1;
+    return makeQuery(calls === 1
+      ? [{ ipHash: "same-ip", deviceHash: "client-device" }]
+      : [{ ipHash: "same-ip", deviceHash: "referrer-device" }]);
+  };
+
+  try {
+    assert.equal(
+      await sharesReferralSignal(new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId()),
+      true
+    );
+    calls = 0;
+    ReferralLog.find = () => {
+      calls += 1;
+      return makeQuery(calls === 1
+        ? [{ ipHash: "client-ip", deviceHash: "same-device" }]
+        : [{ ipHash: "referrer-ip", deviceHash: "same-device" }]);
+    };
+    assert.equal(
+      await sharesReferralSignal(new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId()),
+      true
+    );
+  } finally {
+    ReferralLog.find = originalFind;
+  }
+});
+
+test("referral rewards remain pending until the client's first settled booking", async () => {
+  const originalFindById = User.findById;
+  User.findById = () => ({
+    select: async () => ({
+      _id: new mongoose.Types.ObjectId(),
+      role: "client",
+      referredBy: new mongoose.Types.ObjectId(),
+      referralRewardStatus: "PENDING_FIRST_BOOKING",
+      completedBookings: 0,
+    }),
+  });
+  const originalFindOne = User.findOne;
+  User.findOne = () => {
+    throw new Error("The referrer should not be queried before a completed booking.");
+  };
+
+  try {
+    assert.equal(await awardPendingReferralRewards(new mongoose.Types.ObjectId()), false);
+  } finally {
+    User.findById = originalFindById;
+    User.findOne = originalFindOne;
+  }
+});
+
+test("concurrent settlements atomically retain one first-settled booking", async () => {
+  const clientId = new mongoose.Types.ObjectId();
+  const bookingIds = [new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId()];
+  const originalBookingFindOneAndUpdate = Booking.findOneAndUpdate;
+  const originalBookingUpdateOne = Booking.updateOne;
+  const originalUserUpdateOne = User.updateOne;
+  const originalUserFindOneAndUpdate = User.findOneAndUpdate;
+  const awardedBookingIds = new Set();
+  const user = { completedBookings: 0, stampProgress: 0 };
+  const query = (value) => ({
+    select() { return Promise.resolve(value); },
+  });
+
+  Booking.findOneAndUpdate = (filter) => {
+    const key = String(filter._id);
+    if (awardedBookingIds.has(key)) return query(null);
+    awardedBookingIds.add(key);
+    return query({ _id: filter._id, clientId });
+  };
+  Booking.updateOne = async () => ({ modifiedCount: 1 });
+  User.updateOne = async (filter, update) => {
+    if (filter.firstSettledBookingId?.$exists === false && user.completedBookings === 0 && !user.firstSettledBookingId) {
+      user.firstSettledBookingId = update.$set.firstSettledBookingId;
+      return { modifiedCount: 1 };
+    }
+    return { modifiedCount: 0 };
+  };
+  User.findOneAndUpdate = (_filter, update) => {
+    user.completedBookings += update.$inc.completedBookings;
+    user.stampProgress += update.$inc.stampProgress;
+    return query({ _id: clientId });
+  };
+
+  try {
+    const results = await Promise.all(bookingIds.map((bookingId) => awardSettledBookingStamp(bookingId)));
+    assert.deepEqual(results, [true, true]);
+    assert.equal(user.completedBookings, 2);
+    assert.ok(bookingIds.some((bookingId) => String(bookingId) === String(user.firstSettledBookingId)));
+  } finally {
+    Booking.findOneAndUpdate = originalBookingFindOneAndUpdate;
+    Booking.updateOne = originalBookingUpdateOne;
+    User.updateOne = originalUserUpdateOne;
+    User.findOneAndUpdate = originalUserFindOneAndUpdate;
+  }
+});
+
+test("referral vouchers are issued transactionally after the first settled booking", async () => {
+  const clientId = new mongoose.Types.ObjectId();
+  const referrerId = new mongoose.Types.ObjectId();
+  const client = {
+    _id: clientId,
+    role: "client",
+    referredBy: referrerId,
+    referralRewardStatus: "PENDING_FIRST_BOOKING",
+    completedBookings: 1,
+    firstSettledBookingId: new mongoose.Types.ObjectId(),
+    referralVoucherAwarded: false,
+    phoneVerified: true,
+    registrationComplete: true,
+  };
+  const referrer = { _id: referrerId, referralRewardedClientIds: [] };
+  const originalBookingFindOne = Booking.findOne;
+  const originalFindById = User.findById;
+  const originalFindOne = User.findOne;
+  const originalUpdateOne = User.updateOne;
+  const originalReferralFind = ReferralLog.find;
+  const originalStartSession = mongoose.startSession;
+  const updates = [];
+  let referralFindCount = 0;
+  const makeQuery = (rows) => ({
+    select() { return this; },
+    sort() { return this; },
+    limit() { return this; },
+    lean: async () => rows,
+  });
+  Booking.findOne = (filter) => ({
+    select: async () => {
+      assert.equal(String(filter._id), String(client.firstSettledBookingId));
+      assert.equal(String(filter.clientId), String(clientId));
+      assert.equal(filter.status, "settled");
+      return { _id: client.firstSettledBookingId };
+    },
+  });
+  User.findById = () => ({ select: async () => client });
+  User.findOne = () => ({
+    select() {
+      return {
+        session: async () => referrer,
+        then(resolve, reject) {
+          return Promise.resolve(referrer).then(resolve, reject);
+        },
+      };
+    },
+  });
+  User.updateOne = async (filter, update, options) => {
+    updates.push({ filter, update, options });
+    return { modifiedCount: 1 };
+  };
+  ReferralLog.find = () => {
+    referralFindCount += 1;
+    return makeQuery(referralFindCount === 1
+      ? [{ ipHash: "client-ip", deviceHash: "client-device" }]
+      : [{ ipHash: "referrer-ip", deviceHash: "referrer-device" }]);
+  };
+  mongoose.startSession = async () => ({
+    withTransaction: async (callback) => callback(),
+    endSession: async () => {},
+  });
+
+  try {
+    assert.equal(await awardPendingReferralRewards(clientId), true);
+    assert.equal(updates.length, 2);
+    assert.equal(updates[0].filter.referralRewardStatus, "PENDING_FIRST_BOOKING");
+    assert.equal(String(updates[0].filter.firstSettledBookingId), String(client.firstSettledBookingId));
+    assert.equal(updates[0].update.$set.referralRewardStatus, "REWARDED");
+    assert.equal(updates[0].update.$push.vouchers.amount, 50);
+    assert.equal(updates[1].update.$addToSet.referralRewardedClientIds, clientId);
+    assert.equal(updates[1].update.$push.vouchers.amount, 50);
+    assert.ok(updates.every(({ options }) => options.session));
+  } finally {
+    Booking.findOne = originalBookingFindOne;
+    User.findById = originalFindById;
+    User.findOne = originalFindOne;
+    User.updateOne = originalUpdateOne;
+    ReferralLog.find = originalReferralFind;
+    mongoose.startSession = originalStartSession;
   }
 });
 

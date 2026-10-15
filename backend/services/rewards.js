@@ -1,5 +1,7 @@
 const mongoose = require("mongoose");
+const { createHash } = require("crypto");
 const Booking = require("../models/Booking");
+const ReferralLog = require("../models/ReferralLog");
 const User = require("../models/User");
 
 const REFERRAL_VOUCHER_AMOUNT = 50;
@@ -84,15 +86,105 @@ async function awardVerificationVoucher(userId) {
   return result.modifiedCount === 1;
 }
 
-async function creditReferralRewards(user) {
-  if (user.role !== "client" || !user.referredBy) return;
+function hashReferralSignal(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized ? createHash("sha256").update(normalized).digest("hex") : "";
+}
+
+function getReferralSignals(req) {
+  const ipAddress = String(req.ip || req.socket?.remoteAddress || "")
+    .replace(/^::ffff:/i, "")
+    .trim();
+  const getHeader = (name) => String(req.get?.(name) || req.headers?.[name] || "").trim();
+  const deviceDetails = [
+    getHeader("user-agent"),
+    getHeader("sec-ch-ua"),
+    getHeader("sec-ch-ua-platform"),
+    getHeader("sec-ch-ua-mobile"),
+  ].filter(Boolean).join("|");
+
+  return {
+    ipHash: hashReferralSignal(ipAddress),
+    deviceHash: hashReferralSignal(deviceDetails),
+  };
+}
+
+async function recordReferralSignal(userId, req, referredBy = null) {
+  const { ipHash, deviceHash } = getReferralSignals(req);
+  const filter = mongoose.trusted({
+    userId,
+    referredBy: referredBy || null,
+    ipHash,
+    deviceHash,
+  });
+  await ReferralLog.updateOne(
+    filter,
+    {
+      $setOnInsert: {
+        userId,
+        ...(referredBy ? { referredBy } : {}),
+        ipHash,
+        deviceHash,
+      },
+    },
+    { upsert: true }
+  );
+}
+
+async function sharesReferralSignal(clientId, referrerId) {
+  const [clientSignals, referrerSignals] = await Promise.all([
+    ReferralLog.find({ userId: clientId, referredBy: referrerId })
+      .select("ipHash deviceHash")
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean(),
+    ReferralLog.find({ userId: referrerId })
+      .select("ipHash deviceHash")
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean(),
+  ]);
+  const completeClientSignals = clientSignals.filter((signal) => signal.ipHash && signal.deviceHash);
+  const completeReferrerSignals = referrerSignals.filter((signal) => signal.ipHash && signal.deviceHash);
+  if (!completeClientSignals.length || !completeReferrerSignals.length) return true;
+
+  const clientIpHashes = new Set(completeClientSignals.map((signal) => signal.ipHash));
+  const clientDeviceHashes = new Set(completeClientSignals.map((signal) => signal.deviceHash));
+  return completeReferrerSignals.some((signal) =>
+    clientIpHashes.has(signal.ipHash) || clientDeviceHashes.has(signal.deviceHash)
+  );
+}
+
+async function awardPendingReferralRewards(clientId) {
+  const client = await User.findById(clientId)
+    .select("_id role referredBy referralRewardStatus completedBookings firstSettledBookingId referralVoucherAwarded phoneVerified registrationComplete");
+  if (
+    !client ||
+    client.role !== "client" ||
+    client.registrationComplete !== true ||
+    client.phoneVerified !== true ||
+    !client.referredBy ||
+    client.referralRewardStatus !== "PENDING_FIRST_BOOKING" ||
+    !client.firstSettledBookingId ||
+    client.referralVoucherAwarded === true
+  ) {
+    return false;
+  }
+
+  const qualifyingBooking = await Booking.findOne({
+    _id: client.firstSettledBookingId,
+    clientId: client._id,
+    status: "settled",
+    paymentMethod: "cash",
+  }).select("_id");
+  if (!qualifyingBooking) return false;
 
   const referrer = await User.findOne({
-    _id: user.referredBy,
+    _id: client.referredBy,
     role: "client",
     registrationComplete: true,
-  }).select("_id");
-  if (!referrer) return;
+  }).select("_id referralRewardedClientIds");
+  if (!referrer || await sharesReferralSignal(client._id, referrer._id)) return false;
 
   const clientVoucher = makeVoucher({
     kind: "referral",
@@ -101,48 +193,94 @@ async function creditReferralRewards(user) {
   });
   const referrerVoucher = makeVoucher({
     kind: "referral",
-    title: "A friend joined TaskPanda",
+    title: "A friend completed their first booking",
     origin: "referral",
   });
   const clientNotification = makeRewardNotification({
     title: "Your first travel voucher is here",
-    message: "A friend welcomed you with a ₱50 travel-fee voucher.",
+    message: "Your first completed booking unlocked a ₱50 travel-fee voucher.",
   });
   const referrerNotification = makeRewardNotification({
     title: "Your referral reward is here",
-    message: "A friend joined TaskPanda. A ₱50 travel-fee voucher is now in your wallet.",
+    message: "Your friend completed their first booking. A ₱50 travel-fee voucher is now in your wallet.",
   });
 
-  await User.updateOne(
-    {
-      _id: user._id,
-      referralVoucherAwarded: mongoose.trusted({ $ne: true }),
-    },
-    {
-      $set: {
-        referralVoucherAwarded: true,
-        referralCode: user.referralCode || createReferralCode(user._id),
-      },
-      $push: {
-        vouchers: clientVoucher,
-        rewardNotifications: { $each: [clientNotification], $slice: -50 },
-      },
-    }
-  );
+  const session = await mongoose.startSession();
+  let rewarded = false;
+  try {
+    await session.withTransaction(async () => {
+      const currentReferrer = await User.findOne({
+        _id: referrer._id,
+        role: "client",
+        registrationComplete: true,
+      }).select("_id referralRewardedClientIds").session(session);
+      if (!currentReferrer) throw new Error("The referral owner is no longer an active client.");
 
-  await User.updateOne(
-    {
-      _id: referrer._id,
-      referralRewardedClientIds: mongoose.trusted({ $ne: user._id }),
-    },
-    {
-      $addToSet: { referralRewardedClientIds: user._id },
-      $push: {
-        vouchers: referrerVoucher,
-        rewardNotifications: { $each: [referrerNotification], $slice: -50 },
-      },
-    }
-  );
+      const clientResult = await User.updateOne(
+        mongoose.trusted({
+          _id: client._id,
+          role: "client",
+          referredBy: referrer._id,
+          referralRewardStatus: "PENDING_FIRST_BOOKING",
+          firstSettledBookingId: client.firstSettledBookingId,
+        }),
+        {
+          $set: {
+            referralRewardStatus: "REWARDED",
+            referralVoucherAwarded: true,
+          },
+          $push: {
+            vouchers: clientVoucher,
+            rewardNotifications: { $each: [clientNotification], $slice: -50 },
+          },
+        },
+        { session }
+      );
+      if (clientResult.modifiedCount !== 1) return;
+
+      const alreadyRewarded = (currentReferrer.referralRewardedClientIds || [])
+        .some((rewardedClientId) => String(rewardedClientId) === String(client._id));
+      if (!alreadyRewarded) {
+        const referrerResult = await User.updateOne(
+          mongoose.trusted({
+            _id: referrer._id,
+            role: "client",
+            referralRewardedClientIds: mongoose.trusted({ $ne: client._id }),
+          }),
+          {
+            $addToSet: { referralRewardedClientIds: client._id },
+            $push: {
+              vouchers: referrerVoucher,
+              rewardNotifications: { $each: [referrerNotification], $slice: -50 },
+            },
+          },
+          { session }
+        );
+        if (referrerResult.modifiedCount !== 1) {
+          throw new Error("Could not save the referral owner's reward.");
+        }
+      }
+      rewarded = true;
+    });
+    return rewarded;
+  } finally {
+    await session.endSession();
+  }
+}
+
+async function retryPendingReferralRewardsForReferrer(referrerId) {
+  const pendingClients = await User.find({
+    role: "client",
+    referredBy: referrerId,
+    referralRewardStatus: "PENDING_FIRST_BOOKING",
+    firstSettledBookingId: mongoose.trusted({ $exists: true }),
+  }).select("_id").limit(100).lean();
+
+  let rewardedCount = 0;
+  for (const client of pendingClients) {
+    if (await awardPendingReferralRewards(client._id)) rewardedCount += 1;
+  }
+  return rewardedCount;
 }
 
 async function recoverExpiredVoucherReservations(userId) {
@@ -273,7 +411,22 @@ async function awardSettledBookingStamp(bookingId) {
   ).select("clientId");
   if (!booking) return false;
 
+  let claimedFirstSettledBooking = false;
   try {
+    const firstBookingClaim = await User.updateOne(
+      mongoose.trusted({
+        _id: booking.clientId,
+        role: "client",
+        $or: [
+          { completedBookings: 0 },
+          { completedBookings: mongoose.trusted({ $exists: false }) },
+        ],
+        firstSettledBookingId: mongoose.trusted({ $exists: false }),
+      }),
+      { $set: { firstSettledBookingId: booking._id } }
+    );
+    claimedFirstSettledBooking = firstBookingClaim.modifiedCount === 1;
+
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const ordinaryStamp = await User.findOneAndUpdate(
         mongoose.trusted({
@@ -335,6 +488,15 @@ async function awardSettledBookingStamp(bookingId) {
     }
     throw new Error("Could not record a loyalty stamp after repeated concurrent updates.");
   } catch (error) {
+    if (claimedFirstSettledBooking) {
+      await User.updateOne(
+        mongoose.trusted({
+          _id: booking.clientId,
+          firstSettledBookingId: booking._id,
+        }),
+        { $unset: { firstSettledBookingId: 1 } }
+      );
+    }
     await Booking.updateOne(
       { _id: booking._id, stampAwardedAt },
       { $unset: { stampAwardedAt: 1 } }
@@ -351,7 +513,11 @@ module.exports = {
   awardVerificationVoucher,
   createReferralCode,
   ensureReferralCode,
-  creditReferralRewards,
+  getReferralSignals,
+  recordReferralSignal,
+  sharesReferralSignal,
+  awardPendingReferralRewards,
+  retryPendingReferralRewardsForReferrer,
   recoverExpiredVoucherReservations,
   restoreVoucherForBooking,
   restoreVoucherForRefund,
