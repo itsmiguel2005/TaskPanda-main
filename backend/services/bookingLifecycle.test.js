@@ -89,8 +89,10 @@ test("duration limits and backwards-compatible default are applied", () => {
   assert.equal(DEFAULT_ESTIMATED_DURATION_MINUTES, 60);
   assert.equal(isValidEstimatedDurationMinutes(15), true);
   assert.equal(isValidEstimatedDurationMinutes(720), true);
+  assert.equal(isValidEstimatedDurationMinutes(80), true);
+  assert.equal(isValidEstimatedDurationMinutes(91), true);
   assert.equal(isValidEstimatedDurationMinutes(0), false);
-  assert.equal(isValidEstimatedDurationMinutes(100), false);
+  assert.equal(isValidEstimatedDurationMinutes(721), false);
 });
 
 test("occupied windows include estimated duration and a 30-minute turnover buffer", () => {

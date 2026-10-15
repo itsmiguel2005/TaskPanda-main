@@ -56,8 +56,7 @@ function isValidEstimatedDurationMinutes(value) {
   const duration = Number(value);
   return Number.isInteger(duration)
     && duration >= MIN_ESTIMATED_DURATION_MINUTES
-    && duration <= MAX_ESTIMATED_DURATION_MINUTES
-    && duration % MIN_ESTIMATED_DURATION_MINUTES === 0;
+    && duration <= MAX_ESTIMATED_DURATION_MINUTES;
 }
 
 function getEstimatedDurationMinutes(value) {

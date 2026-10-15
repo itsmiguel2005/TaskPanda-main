@@ -19,7 +19,7 @@ const TIP_PRESETS = [0, 20, 50, 100];
 const MAX_TASK_OFFER_PHP = bookingLimits.maxTaskOfferPhp;
 const MAX_TIP_PHP = bookingLimits.maxTipPhp;
 const MAX_BOOKING_TRANSACTION_PHP = bookingLimits.maxBookingTransactionPhp;
-const MIN_ESTIMATED_DURATION_MINUTES = 15;
+const MIN_ESTIMATED_DURATION_MINUTES = bookingLimits.minEstimatedDurationMinutes;
 const MAX_ESTIMATED_DURATION_MINUTES = 720;
 
 function formatPhpAmount(amount) {
@@ -441,8 +441,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const estimatedDurationMinutes = Number(duration);
   const durationIsValid = Number.isInteger(estimatedDurationMinutes)
     && estimatedDurationMinutes >= MIN_ESTIMATED_DURATION_MINUTES
-    && estimatedDurationMinutes <= MAX_ESTIMATED_DURATION_MINUTES
-    && estimatedDurationMinutes % MIN_ESTIMATED_DURATION_MINUTES === 0;
+    && estimatedDurationMinutes <= MAX_ESTIMATED_DURATION_MINUTES;
   const serviceLocationKey = getServiceLocationKey(serviceLocation.geoLocation);
   const isTimeSlotBooked = (date, time, requestedDuration = estimatedDurationMinutes) => hasScheduleConflict({
     serviceDate: date ? `${date}T00:00:00.000Z` : "",
@@ -630,7 +629,8 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
 
   useEffect(() => {
     if (availabilityStatus !== "loaded" || !selectedDate || !selectedTime) return;
-    if (!durationIsValid || isTimeSlotBooked(selectedDate, selectedTime, estimatedDurationMinutes)) {
+    if (!durationIsValid) return;
+    if (isTimeSlotBooked(selectedDate, selectedTime, estimatedDurationMinutes)) {
       setSelectedTime("");
       setFormError("That slot does not leave enough time for the task, travel between client locations, and the 30-minute safety buffer.");
     }
@@ -693,7 +693,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
     if (!selectedDate) return setFormError("Please select a service date."), false;
     if (sameDayUnavailable) return setFormError("This provider is offline / busy and cannot accept same-day requests. Choose a future date."), false;
     if (!selectedTime) return setFormError("Please select an available time."), false;
-    if (!durationIsValid) return setFormError("Enter a duration from 15 minutes to 12 hours in 15-minute increments."), false;
+    if (!durationIsValid) return setFormError(`Enter a whole-minute duration from ${MIN_ESTIMATED_DURATION_MINUTES} minutes to 12 hours.`), false;
     if (isPastTimeSlot(selectedDate, selectedTime, new Date())) {
       setSelectedTime("");
       return setFormError("That time has passed. Please choose another time."), false;
@@ -1011,12 +1011,12 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                       type="number"
                       min={MIN_ESTIMATED_DURATION_MINUTES}
                       max={MAX_ESTIMATED_DURATION_MINUTES}
-                      step={MIN_ESTIMATED_DURATION_MINUTES}
+                      step="15"
                       value={duration}
                       onChange={(event) => { setDuration(event.target.value); setFormError(""); }}
                       className="w-32 rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-800 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
                     />
-                    <span className="text-xs text-gray-500">minutes · 15-minute increments</span>
+                    <span className="text-xs text-gray-500">minutes · arrows change by 15</span>
                   </div>
                   <p className="mt-1 text-xs text-gray-600" aria-live="polite">
                     Selected duration: {formatEstimatedDuration(estimatedDurationMinutes)}

@@ -1937,14 +1937,14 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                         <label className="text-xs font-semibold text-slate-700">Proposed duration (minutes)
                           <input
                             type="number"
-                            min="15"
+                            min={bookingLimits.minEstimatedDurationMinutes}
                             max="720"
                             step="15"
                             value={counterOfferDurationMinutes}
                             onChange={(event) => { setCounterOfferDurationMinutes(event.target.value); updateCounterOfferTyping(Boolean(counterOfferPrice.trim() || counterOfferNote.trim() || event.target.value.trim())); }}
                             className="dashboard-focus mt-1 block min-h-11 w-full rounded-xl border border-sky-100 bg-white px-3 py-2 text-sm text-slate-900"
                           />
-                          <span className="mt-1 block font-normal text-slate-500">15-minute increments, up to 12 hours. Schedule conflicts are checked before the offer is sent and again when accepted.</span>
+                          <span className="mt-1 block font-normal text-slate-500">Minimum 60 minutes; arrow controls change by 15. Schedule conflicts are checked before the offer is sent and again when accepted.</span>
                         </label>
                       )}
                     </div>

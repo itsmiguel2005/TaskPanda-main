@@ -6,7 +6,11 @@ const { sanitizeMongoInput } = require("../middleware/sanitizeMongoInput");
 const { limitBookingCreation } = require("../middleware/rateLimits");
 const { validateRequest } = require("../middleware/validateRequest");
 const { getGlobalSettings } = require("../services/systemSettings");
-const { maxTaskOfferPhp: MAX_TASK_OFFER_PHP, maxTipPhp: MAX_TIP_PHP } = require("../../shared/bookingLimits.json");
+const {
+  minEstimatedDurationMinutes: MIN_ESTIMATED_DURATION_MINUTES,
+  maxTaskOfferPhp: MAX_TASK_OFFER_PHP,
+  maxTipPhp: MAX_TIP_PHP,
+} = require("../../shared/bookingLimits.json");
 const {
   handleListBookings,
   handleDismissDashboardBookings,
@@ -81,7 +85,7 @@ const validateBookingCreation = [
   body("offerPrice").optional().isFloat({ min: 100, max: MAX_TASK_OFFER_PHP * 4 }),
   body("offer").optional().isFloat({ min: 100, max: MAX_TASK_OFFER_PHP * 4 }),
   body("price").optional().isFloat({ min: 100, max: MAX_TASK_OFFER_PHP * 4 }),
-  body("estimatedDurationMinutes").optional().isInt({ min: 15, max: 720 }).custom((value) => Number(value) % 15 === 0),
+  body("estimatedDurationMinutes").optional().isInt({ min: MIN_ESTIMATED_DURATION_MINUTES, max: 720 }),
   body("tipAmount").optional().isFloat({ min: 0, max: MAX_TIP_PHP }),
   body("voucherId").optional({ values: "falsy" }).isMongoId(),
   body("urgency").optional().isIn(["Emergency", "Flexible"]),
@@ -118,7 +122,7 @@ const validateProviderUpdateResponse = [
 const validateCounterOffer = [
   body("counterOfferId").optional({ values: "falsy" }).isMongoId(),
   body("proposedPrice").optional({ values: "falsy" }).isFloat({ min: 100, max: MAX_TASK_OFFER_PHP }),
-  body("counterOfferDurationMinutes").optional({ values: "falsy" }).isInt({ min: 15, max: 720 }).custom((value) => Number(value) % 15 === 0),
+  body("counterOfferDurationMinutes").optional({ values: "falsy" }).isInt({ min: MIN_ESTIMATED_DURATION_MINUTES, max: 720 }),
   body("proposedServiceDate").optional({ values: "falsy" }).isISO8601(),
   body("proposedTimeSlot").optional({ values: "falsy" }).isString().isLength({ max: 24 }),
   body("proposedRepairDescription").optional({ values: "falsy" }).isString().isLength({ max: 2000 }),

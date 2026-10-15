@@ -37,6 +37,7 @@ const {
   isValidEstimatedDurationMinutes,
 } = require("../services/bookingLifecycle");
 const { wasCashPaidManuallyConfirmed } = require("../services/refundPolicy");
+const { minEstimatedDurationMinutes: MIN_ESTIMATED_DURATION_MINUTES } = require("../../shared/bookingLimits.json");
 
 const TIME_SLOTS = new Set(["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"]);
 const PH_TIMEZONE_OFFSET_HOURS = 8;
@@ -1066,7 +1067,7 @@ async function handleCreateBooking(req, res) {
   if (!serviceDate) return res.status(400).json({ message: "Choose a valid service date." });
   if (!TIME_SLOTS.has(timeSlot)) return res.status(400).json({ message: "Choose an available time slot." });
   if (!Number.isFinite(offeredPrice) || offeredPrice < 100) return res.status(400).json({ message: "Your offer must be at least PHP 100." });
-  if (!isValidEstimatedDurationMinutes(estimatedDurationMinutes)) return res.status(400).json({ message: "Choose a task duration from 15 minutes to 12 hours in 15-minute increments." });
+  if (!isValidEstimatedDurationMinutes(estimatedDurationMinutes) || estimatedDurationMinutes < MIN_ESTIMATED_DURATION_MINUTES) return res.status(400).json({ message: `Choose a whole-minute task duration from ${MIN_ESTIMATED_DURATION_MINUTES} minutes to 12 hours.` });
   const adjustedTaskOffer = calculateDurationAdjustedTaskOffer(offeredPrice, estimatedDurationMinutes);
   if (adjustedTaskOffer < 100) return res.status(400).json({ message: "The duration-adjusted task offer must be at least PHP 100." });
   if (adjustedTaskOffer > MAX_TASK_OFFER_PHP) return res.status(400).json({ message: `The task offer cannot exceed PHP ${MAX_TASK_OFFER_PHP.toLocaleString("en-PH")} for the selected duration.` });
@@ -2084,8 +2085,8 @@ async function handleCreateCounterOffer(req, res) {
     const counterOfferDurationMinutes = req.user.role === "provider"
       ? Number(requestedDuration ?? currentDuration)
       : undefined;
-    if (counterOfferDurationMinutes != null && !isValidEstimatedDurationMinutes(counterOfferDurationMinutes)) {
-      return res.status(400).json({ message: "Choose a counter-offer duration from 15 minutes to 12 hours in 15-minute increments." });
+    if (counterOfferDurationMinutes != null && (!isValidEstimatedDurationMinutes(counterOfferDurationMinutes) || counterOfferDurationMinutes < MIN_ESTIMATED_DURATION_MINUTES)) {
+      return res.status(400).json({ message: `Choose a whole-minute counter-offer duration from ${MIN_ESTIMATED_DURATION_MINUTES} minutes to 12 hours.` });
     }
     const candidateDuration = counterOfferDurationMinutes ?? currentDuration;
     if (proposedPrice > MAX_TASK_OFFER_PHP) {
