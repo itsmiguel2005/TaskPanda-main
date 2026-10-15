@@ -2,7 +2,7 @@ import { apiFetch } from "../services/api.js";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
-import TermsModal from "../components/TermsModal.jsx";
+import TermsPrivacyModal from "../components/TermsPrivacyModal.jsx";
 import PasswordStrengthMeter from "../components/PasswordStrengthMeter.jsx";
 import RecaptchaDisclosure from "../components/RecaptchaDisclosure.jsx";
 import { getPasswordStrength, getUsernameError } from "../utils/registrationValidation.js";
@@ -19,8 +19,9 @@ export default function ClientRegisterPage() {
     confirmPassword: "",
   });
   const [error, setError] = useState("");
-  const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [showTerms, setShowTerms] = useState(false);
+  const [isAgreed, setIsAgreed] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("terms");
   const [touched, setTouched] = useState({});
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -113,7 +114,7 @@ export default function ClientRegisterPage() {
     });
     if (Object.values(errors).some((err) => err)) return;
 
-    if (!agreedToTerms) {
+    if (!isAgreed) {
       setError("You must agree to the Terms of Service and Privacy Policy");
       return;
     }
@@ -423,15 +424,15 @@ export default function ClientRegisterPage() {
                 <input
                   type="checkbox"
                   id="agreeTerms"
-                  checked={agreedToTerms}
-                  onChange={(e) => setAgreedToTerms(e.target.checked)}
+                  checked={isAgreed}
+                  onChange={(e) => setIsAgreed(e.target.checked)}
                   className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                 />
                 <label htmlFor="agreeTerms" className="text-sm text-gray-600">
                   I agree to the{" "}
                   <button
                     type="button"
-                    onClick={() => setShowTerms(true)}
+                    onClick={() => { setActiveTab("terms"); setIsModalOpen(true); }}
                     className="font-medium text-primary-600 hover:text-primary-800 underline"
                   >
                     Terms of Service
@@ -439,7 +440,7 @@ export default function ClientRegisterPage() {
                   and{" "}
                   <button
                     type="button"
-                    onClick={() => setShowTerms(true)}
+                    onClick={() => { setActiveTab("privacy"); setIsModalOpen(true); }}
                     className="font-medium text-primary-600 hover:text-primary-800 underline"
                   >
                     Privacy Policy
@@ -449,7 +450,7 @@ export default function ClientRegisterPage() {
 
               <button
                 type="submit"
-                disabled={!agreedToTerms || isChecking}
+                disabled={!isAgreed || isChecking}
                 className={`w-full rounded-lg bg-linear-to-r ${a.button} px-4 py-2.5 font-semibold text-white transition-opacity hover:brightness-110 focus:outline-none focus:ring-2 ${a.buttonHover} focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 lg:col-span-2`}
               >
                 {isChecking ? "Checking..." : "Next"}
@@ -465,7 +466,15 @@ export default function ClientRegisterPage() {
             </div>
           </div>
         </section>
-        <TermsModal open={showTerms} onClose={() => setShowTerms(false)} />
+        <TermsPrivacyModal
+          open={isModalOpen}
+          initialTab={activeTab}
+          onClose={() => setIsModalOpen(false)}
+          onAgree={() => {
+            setIsAgreed(true);
+            setIsModalOpen(false);
+          }}
+        />
       </>
       )}
     </Layout>

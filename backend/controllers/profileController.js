@@ -406,10 +406,17 @@ async function handleUpdateProfile(req, res) {
       return res.status(409).json({ message: "This username is already taken.", field: "username" });
     }
 
+    const submittedProfessions = Array.isArray(req.body.professions) ? req.body.professions : [];
+    if (user.role === "provider" && submittedProfessions.length > 3) {
+      return res.status(400).json({
+        message: "Choose no more than 3 professions or trades.",
+        field: "professions",
+      });
+    }
     const professions = user.role === "provider"
-      ? [...new Set((Array.isArray(req.body.professions) ? req.body.professions : [])
+      ? [...new Set(submittedProfessions
           .map((profession) => String(profession).trim())
-          .filter(Boolean))].slice(0, 10)
+          .filter(Boolean))]
       : user.professions;
     if (user.role === "provider" && !professions.length) {
       return res.status(400).json({ message: "Add at least one service you offer.", field: "professions" });

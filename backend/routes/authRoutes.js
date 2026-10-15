@@ -52,7 +52,7 @@ const registrationValidation = [
   body("referralCode").optional({ values: "falsy" }).isString().trim().isLength({ max: 32 }).matches(/^[A-Z0-9-]+$/i),
   body("password").isString().bail().isLength({ min: 8, max: 72 }).bail().custom(registrationPasswordIsGood).withMessage("Password must be at least 8 characters and meet at least two other strength requirements."),
   body("professions").custom((value, { req }) => req.body.role !== "provider" || (Array.isArray(value) && value.length > 0)),
-  body("professions").optional().isArray({ max: 20 }),
+  body("professions").optional().isArray({ max: 3 }).withMessage("Choose no more than 3 professions or trades."),
   body("professions.*").optional().isString().trim().isLength({ min: 1, max: 80 }),
 ];
 

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import ProfessionSelector from "../components/ProfessionSelector.jsx";
-import TermsModal from "../components/TermsModal.jsx";
+import TermsPrivacyModal from "../components/TermsPrivacyModal.jsx";
 import PasswordStrengthMeter from "../components/PasswordStrengthMeter.jsx";
 import RecaptchaDisclosure from "../components/RecaptchaDisclosure.jsx";
 import { getPasswordStrength, getUsernameError } from "../utils/registrationValidation.js";
@@ -23,8 +23,9 @@ export default function WorkerRegisterPage() {
   const [touched, setTouched] = useState({});
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [showTerms, setShowTerms] = useState(false);
+  const [isAgreed, setIsAgreed] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("terms");
   const [isChecking, setIsChecking] = useState(false);
   const [availability, setAvailability] = useState({ field: "", message: "", checking: false });
 
@@ -117,7 +118,7 @@ export default function WorkerRegisterPage() {
       "confirm-password": true,
     });
     if (Object.values(errors).some((err) => err)) return;
-    if (!agreedToTerms) {
+    if (!isAgreed) {
       setError("You must agree to the Terms of Service and Privacy Policy.");
       return;
     }
@@ -302,6 +303,9 @@ export default function WorkerRegisterPage() {
                 {showFieldError("professions") && (
                   <p className="text-xs text-red-600">{errors.professions}</p>
                 )}
+                <p className="text-xs text-gray-500">
+                  Choose up to 3 professions or trades.
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -409,17 +413,17 @@ export default function WorkerRegisterPage() {
                 <input
                   type="checkbox"
                   id="agreeTermsWorker"
-                  checked={agreedToTerms}
-                  onChange={(e) => setAgreedToTerms(e.target.checked)}
+                  checked={isAgreed}
+                  onChange={(e) => setIsAgreed(e.target.checked)}
                   className="mt-1 h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
                 />
                 <label htmlFor="agreeTermsWorker" className="text-sm text-gray-600">
                   I agree to the{" "}
-                  <button type="button" onClick={() => setShowTerms(true)} className="font-medium text-green-600 underline">
+                  <button type="button" onClick={() => { setActiveTab("terms"); setIsModalOpen(true); }} className="font-medium text-green-600 underline">
                     Terms of Service
                   </button>{" "}
                   and{" "}
-                  <button type="button" onClick={() => setShowTerms(true)} className="font-medium text-green-600 underline">
+                  <button type="button" onClick={() => { setActiveTab("privacy"); setIsModalOpen(true); }} className="font-medium text-green-600 underline">
                     Privacy Policy
                   </button>
                 </label>
@@ -427,7 +431,7 @@ export default function WorkerRegisterPage() {
 
               <button
                 type="submit"
-                disabled={!agreedToTerms || isChecking}
+                disabled={!isAgreed || isChecking}
                 className={`w-full rounded-lg bg-linear-to-r ${a.button} py-2.5 px-4 font-semibold text-white transition-opacity hover:brightness-110 focus:outline-none focus:ring-2 ${a.buttonHover} focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50`}
               >
             {isChecking ? "Checking..." : "Sign up"}
@@ -443,7 +447,15 @@ export default function WorkerRegisterPage() {
             </div>
           </div>
         </section>
-        <TermsModal open={showTerms} onClose={() => setShowTerms(false)} />
+        <TermsPrivacyModal
+          open={isModalOpen}
+          initialTab={activeTab}
+          onClose={() => setIsModalOpen(false)}
+          onAgree={() => {
+            setIsAgreed(true);
+            setIsModalOpen(false);
+          }}
+        />
       </>
       )}
     </Layout>

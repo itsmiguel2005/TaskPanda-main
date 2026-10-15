@@ -43,7 +43,7 @@ router.put("/", [
 	body("geoLocation.type").optional().equals("Point"),
 	body("geoLocation.coordinates").optional().isArray({ min: 2, max: 2 }),
 	body("geoLocation.coordinates.*").optional().isFloat(),
-	body("professions").optional().isArray({ max: 20 }),
+	body("professions").optional().isArray({ max: 3 }).withMessage("Choose no more than 3 professions or trades."),
 	body("professions.*").optional().isString().trim().isLength({ min: 1, max: 80 }),
 	body("bio").optional().isString().isLength({ max: 500 }),
 ], validateRequest, handleUpdateProfile);

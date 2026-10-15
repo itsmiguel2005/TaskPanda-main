@@ -8,6 +8,7 @@ export default function ProfessionSelector({
   id = "professions",
   invalid = false,
   tone = "green",
+  maxSelections = 3,
 }) {
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
@@ -16,16 +17,18 @@ export default function ProfessionSelector({
   const inputRef = useRef(null);
   const listId = `${id}-suggestions`;
   const normalizedValue = value.map((profession) => profession.toLowerCase());
+  const isAtLimit = value.length >= maxSelections;
 
   const suggestions = useMemo(() => {
     const q = query.trim().toLowerCase();
+    if (isAtLimit) return [];
     return PROFESSIONS.filter((profession) => (
       (!q || profession.toLowerCase().includes(q))
       && !value.some((selected) => selected.toLowerCase() === profession.toLowerCase())
     ));
-  }, [query, value]);
+  }, [isAtLimit, query, value]);
   const exactMatch = PROFESSIONS.find((profession) => profession.toLowerCase() === query.trim().toLowerCase());
-  const canAddCustom = Boolean(query.trim()) && !normalizedValue.includes(query.trim().toLowerCase()) && !exactMatch;
+  const canAddCustom = !isAtLimit && Boolean(query.trim()) && !normalizedValue.includes(query.trim().toLowerCase()) && !exactMatch;
   const optionCount = suggestions.length + (canAddCustom ? 1 : 0);
   const accents = tone === "blue"
     ? {
@@ -47,12 +50,13 @@ export default function ProfessionSelector({
 
   const addProfession = (profession) => {
     const trimmed = profession.trim().replace(/\s+/g, " ");
-    if (!trimmed || normalizedValue.includes(trimmed.toLowerCase())) return;
-    onChange([...value, trimmed]);
+    if (!trimmed || isAtLimit || normalizedValue.includes(trimmed.toLowerCase())) return;
+    const nextValue = [...value, trimmed];
+    onChange(nextValue);
     setQuery("");
     setActiveIndex(-1);
-    setIsOpen(true);
-    inputRef.current?.focus();
+    setIsOpen(nextValue.length < maxSelections);
+    if (nextValue.length < maxSelections) inputRef.current?.focus();
   };
 
   const removeProfession = (profession) => {
@@ -123,8 +127,10 @@ export default function ProfessionSelector({
               : "border-slate-300 hover:border-slate-400"
         }`}
         onClick={() => {
-          inputRef.current?.focus();
-          setIsOpen(true);
+          if (!isAtLimit) {
+            inputRef.current?.focus();
+            setIsOpen(true);
+          }
         }}
       >
         {value.map((profession) => (
@@ -156,8 +162,9 @@ export default function ProfessionSelector({
           }}
           onFocus={() => setIsOpen(true)}
           onKeyDown={handleKeyDown}
+          disabled={isAtLimit}
           placeholder={value.length === 0 ? placeholder : ""}
-          className="auth-inline-field min-w-32 flex-1 bg-transparent px-1 py-1 text-sm text-slate-900 outline-none placeholder:text-slate-500"
+          className="auth-inline-field min-w-32 flex-1 bg-transparent px-1 py-1 text-sm text-slate-900 outline-none placeholder:text-slate-500 disabled:cursor-not-allowed"
           role="combobox"
           aria-autocomplete="list"
           aria-expanded={isOpen}
@@ -166,6 +173,12 @@ export default function ProfessionSelector({
           aria-invalid={invalid || undefined}
         />
       </div>
+
+      {isAtLimit && (
+        <p className="mt-1.5 text-xs text-slate-600">
+          Maximum of {maxSelections} professions selected. Remove one to choose another.
+        </p>
+      )}
 
       {isOpen && optionCount > 0 && (
         <ul

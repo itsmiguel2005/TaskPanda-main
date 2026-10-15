@@ -457,7 +457,7 @@ export default function EditProfilePage() {
               </div>
               {errors.professions
                 ? <p className="mt-1 text-xs font-medium text-red-700">{errors.professions}</p>
-                : <p className="mt-1 text-xs text-slate-600">Choose from the list or type a custom trade. Press Enter to add.</p>}
+                : <p className="mt-1 text-xs text-slate-600">Choose up to 3 professions or trades from the list, or type a custom trade. Press Enter to add.</p>}
             </div>
           )}
 
