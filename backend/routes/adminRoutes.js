@@ -43,9 +43,29 @@ const { requireAdmin, requirePrimaryAdmin } = require("../middleware/requireAdmi
 const { validateRequest } = require("../middleware/validateRequest");
 const { handleGetAdminAuditLogs } = require("../controllers/auditLogController");
 const { handleGetAdminAccounts, handleCreateAdminAccount } = require("../controllers/adminAccountsController");
+const {
+  handleGetAdminNotifications,
+  handleMarkAdminNotificationRead,
+  handleMarkAllAdminNotificationsRead,
+} = require("../controllers/adminNotificationsController");
 
 const router = express.Router();
 
+router.get(
+  "/notifications",
+  requireAdmin,
+  [query("limit").optional().isInt({ min: 1, max: 25 })],
+  validateRequest,
+  handleGetAdminNotifications
+);
+router.post("/notifications/read-all", requireAdmin, handleMarkAllAdminNotificationsRead);
+router.post(
+  "/notifications/:notificationId/read",
+  requireAdmin,
+  [param("notificationId").isMongoId()],
+  validateRequest,
+  handleMarkAdminNotificationRead
+);
 router.get(
   "/audit-logs",
   requireAdmin,

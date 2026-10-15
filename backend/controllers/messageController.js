@@ -3,6 +3,7 @@ const Booking = require("../models/Booking");
 const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
 const { ensureBookingConversation, appendBookingSystemMessage, formatAmount } = require("../services/bookingMessaging");
+const { notifyAdminEvent } = require("../services/adminNotifications");
 const {
   calculateTotalPrice,
   MAX_TASK_OFFER_PHP,
@@ -490,6 +491,21 @@ async function handleReportConversation(req, res) {
     if (!conversation) return res.status(403).json({ message: "You are not a participant in this conversation." });
     conversation.supportReports.push({ reportedBy: req.user._id, reporterRole: req.user.role, details, createdAt: new Date(), status: "open" });
     await conversation.save();
+    const report = conversation.supportReports[conversation.supportReports.length - 1];
+    try {
+      await notifyAdminEvent({
+        title: "New support report",
+        body: `A ${req.user.role} submitted a conversation report for review.`,
+        url: "/admin?section=reports",
+        data: {
+          event: "support.report_submitted",
+          conversationId: String(conversation._id),
+          reportId: String(report._id),
+        },
+      });
+    } catch (notificationError) {
+      console.error("Support report admin notification failed:", notificationError.message);
+    }
     return res.status(201).json({ message: "Support report submitted." });
   } catch (error) {
     console.error("Report conversation error:", error);

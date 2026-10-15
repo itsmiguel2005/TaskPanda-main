@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { apiFetch } from "../services/api.js";
+import { adminRequest } from "../services/adminApi.js";
 import { promptForPushPermission } from "../services/oneSignal.js";
 
 function HeaderIcon({ name, className = "h-5 w-5" }) {
@@ -35,6 +36,12 @@ function readNotificationPermission() {
   return window.Notification.permission;
 }
 
+function formatNotificationDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
 export default function AdminHeaderActions() {
   const { user, token, role, logout } = useAuth();
   const location = useLocation();
@@ -44,6 +51,10 @@ export default function AdminHeaderActions() {
   const [notificationPermission, setNotificationPermission] = useState(readNotificationPermission);
   const [pushPromptStatus, setPushPromptStatus] = useState("");
   const [isPrompting, setIsPrompting] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
+  const [notificationError, setNotificationError] = useState("");
 
   const displayName = user?.fullName || user?.username || "Administrator";
   const firstName = displayName.split(/\s+/)[0] || "Administrator";
@@ -58,6 +69,29 @@ export default function AdminHeaderActions() {
   useEffect(() => {
     setOpenMenu(null);
   }, [location.pathname, location.search]);
+
+  const loadNotifications = useCallback(async () => {
+    if (role !== "admin" || !token) return;
+    setIsLoadingNotifications(true);
+    setNotificationError("");
+    try {
+      const payload = await adminRequest("/api/admin/notifications?limit=10", token);
+      setNotifications(Array.isArray(payload.notifications) ? payload.notifications : []);
+      setUnreadCount(Number.isFinite(payload.unreadCount) ? payload.unreadCount : 0);
+    } catch (error) {
+      setNotificationError(error.message || "Could not load admin notifications.");
+    } finally {
+      setIsLoadingNotifications(false);
+    }
+  }, [role, token]);
+
+  useEffect(() => {
+    void loadNotifications();
+  }, [loadNotifications]);
+
+  useEffect(() => {
+    if (openMenu === "notifications") void loadNotifications();
+  }, [loadNotifications, openMenu]);
 
   useEffect(() => {
     if (!openMenu) return undefined;
@@ -110,6 +144,37 @@ export default function AdminHeaderActions() {
     }
   };
 
+  const handleNotificationOpen = async (notification) => {
+    if (!notification.isRead) {
+      setNotificationError("");
+      try {
+        await adminRequest(`/api/admin/notifications/${encodeURIComponent(notification.id)}/read`, token, {
+          method: "POST",
+        });
+      } catch (error) {
+        setNotificationError(error.message || "Could not mark this notification as read.");
+        return;
+      }
+      setNotifications((current) => current.map((item) => (
+        item.id === notification.id ? { ...item, isRead: true } : item
+      )));
+      setUnreadCount((current) => Math.max(0, current - 1));
+    }
+    setOpenMenu(null);
+    navigate(notification.targetUrl);
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    setNotificationError("");
+    try {
+      await adminRequest("/api/admin/notifications/read-all", token, { method: "POST" });
+      setNotifications((current) => current.map((notification) => ({ ...notification, isRead: true })));
+      setUnreadCount(0);
+    } catch (error) {
+      setNotificationError(error.message || "Could not mark notifications as read.");
+    }
+  };
+
   const notificationStatus = {
     granted: {
       label: "Enabled",
@@ -158,22 +223,86 @@ export default function AdminHeaderActions() {
         <button
           type="button"
           onClick={() => setOpenMenu((current) => current === "notifications" ? null : "notifications")}
-          aria-label="Notifications"
+          aria-label={unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"}
           aria-expanded={openMenu === "notifications"}
           className="relative inline-flex h-11 w-11 items-center justify-center rounded-xl text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <HeaderIcon name="bell" />
+          {unreadCount > 0 && (
+            <span aria-hidden="true" className="absolute right-1 top-1 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold leading-none text-white">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
         </button>
         {openMenu === "notifications" && (
           <section
             aria-label="Notifications"
-            className="absolute right-0 top-full z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.16)]"
+            className="absolute right-0 top-full z-50 mt-2 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.16)]"
           >
-            <div className="border-b border-slate-100 px-4 py-3">
-              <h2 className="text-sm font-semibold text-slate-900">Notifications</h2>
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900">Notifications</h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {unreadCount ? `${unreadCount} unread` : "Action items for your admin queues"}
+                </p>
+              </div>
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleMarkAllNotificationsRead}
+                  className="min-h-9 shrink-0 rounded-lg px-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50 hover:text-indigo-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                >
+                  Mark all read
+                </button>
+              )}
             </div>
-            <div className="px-4 py-5 text-center text-sm text-slate-500">
-              No new notifications.
+            <div aria-busy={isLoadingNotifications} className="max-h-[min(22rem,55vh)] overflow-y-auto">
+              {notificationError && (
+                <p role="alert" className="mx-3 mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-800">
+                  {notificationError}
+                </p>
+              )}
+              {isLoadingNotifications ? (
+                <div role="status" aria-label="Loading notifications" className="space-y-3 px-4 py-4">
+                  <span className="sr-only">Loading notifications</span>
+                  {[0, 1, 2].map((item) => (
+                    <div key={item} className="animate-pulse space-y-2">
+                      <div className="h-3 w-2/3 rounded bg-slate-200" />
+                      <div className="h-3 w-full rounded bg-slate-100" />
+                      <div className="h-2.5 w-1/3 rounded bg-slate-100" />
+                    </div>
+                  ))}
+                </div>
+              ) : notifications.length ? (
+                <ul aria-label="Recent admin notifications" className="divide-y divide-slate-100">
+                  {notifications.map((notification) => (
+                    <li key={notification.id}>
+                      <button
+                        type="button"
+                        onClick={() => void handleNotificationOpen(notification)}
+                        aria-label={`Open notification: ${notification.title}`}
+                        className={`flex min-h-[76px] w-full gap-3 px-4 py-3 text-left transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${notification.isRead ? "bg-white" : "bg-indigo-50/50"}`}
+                      >
+                        <span aria-hidden="true" className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${notification.isRead ? "bg-transparent" : "bg-indigo-600"}`} />
+                        <span className="min-w-0 flex-1">
+                          <span className={`block text-sm leading-5 ${notification.isRead ? "font-medium text-slate-800" : "font-semibold text-slate-950"}`}>
+                            {notification.title}
+                          </span>
+                          <span className="mt-1 block text-xs leading-5 text-slate-600">{notification.message}</span>
+                          <span className="mt-1 block text-[11px] text-slate-500">
+                            {formatNotificationDate(notification.updatedAt || notification.createdAt)}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : !notificationError ? (
+                <div className="px-4 py-6 text-center">
+                  <p className="text-sm font-semibold text-slate-800">You’re all caught up.</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">New reports and review requests will appear here.</p>
+                </div>
+              ) : null}
             </div>
             <div className="border-t border-slate-100 px-4 py-3">
               <div className="flex items-center justify-between gap-3">

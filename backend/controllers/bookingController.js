@@ -7,6 +7,7 @@ const User = require("../models/User");
 const UserDashboardDismissal = require("../models/UserDashboardDismissal");
 const { ensureBookingConversation, appendBookingSystemMessage } = require("../services/bookingMessaging");
 const { sendPushNotification } = require("../services/oneSignal");
+const { notifyAdminEvent } = require("../services/adminNotifications");
 const {
   calculateDistanceKm,
   calculateDurationAdjustedTaskOffer,
@@ -94,6 +95,15 @@ const ACTIVE_BOOKING_STATUSES = [
 ];
 
 async function notifyBooking(options) {
+  if (options.roles?.includes("admin")) {
+    try {
+      await notifyAdminEvent(options);
+    } catch (error) {
+      console.error("Could not save admin booking notification:", error.message);
+    }
+    return;
+  }
+
   try {
     await sendPushNotification(options);
   } catch (error) {

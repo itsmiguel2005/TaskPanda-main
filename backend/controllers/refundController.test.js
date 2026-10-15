@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const Booking = require("../models/Booking");
 const RefundRequest = require("../models/Refund");
 const User = require("../models/User");
+const AdminNotification = require("../models/AdminNotification");
 const oneSignal = require("../services/oneSignal");
 const bookingMessaging = require("../services/bookingMessaging");
 const auditLog = require("../utils/logAuditAction");
@@ -20,12 +21,18 @@ const originals = {
   refundUpdateOne: RefundRequest.updateOne,
   userUpdateOne: User.updateOne,
   userExists: User.exists,
+  adminNotificationFindOneAndUpdate: AdminNotification.findOneAndUpdate,
   sendPushNotification: oneSignal.sendPushNotification,
   appendBookingSystemMessage: bookingMessaging.appendBookingSystemMessage,
   logAuditAction: auditLog.logAuditAction,
 };
+let adminNotificationWrites = [];
 
 oneSignal.sendPushNotification = async () => null;
+AdminNotification.findOneAndUpdate = async (filter, update) => {
+  adminNotificationWrites.push({ filter, update });
+  return { _id: "notification-123" };
+};
 bookingMessaging.appendBookingSystemMessage = async () => null;
 auditLog.logAuditAction = async () => null;
 const {
@@ -34,6 +41,7 @@ const {
   handleRequestRefund,
   handleResolveAdminRefund,
   handleResolveRefundRepayment,
+  notifyRepaymentUpdate,
   processRefundRepaymentDeadlines,
 } = require("./refundController");
 
@@ -57,9 +65,15 @@ test.afterEach(() => {
   RefundRequest.updateOne = originals.refundUpdateOne;
   User.updateOne = originals.userUpdateOne;
   User.exists = originals.userExists;
+  adminNotificationWrites = [];
+  AdminNotification.findOneAndUpdate = async (filter, update) => {
+    adminNotificationWrites.push({ filter, update });
+    return { _id: "notification-123" };
+  };
 });
 
 test.after(() => {
+  AdminNotification.findOneAndUpdate = originals.adminNotificationFindOneAndUpdate;
   oneSignal.sendPushNotification = originals.sendPushNotification;
   bookingMessaging.appendBookingSystemMessage = originals.appendBookingSystemMessage;
   auditLog.logAuditAction = originals.logAuditAction;
@@ -315,6 +329,30 @@ test("client confirmation closes an overdue refund repayment after confirming re
   assert.equal(res.statusCode, 200);
   assert.equal(refund.cashRepaymentStatus, "confirmed_received");
   assert.equal(bookingUpdate.$set.status, "partially_refunded");
+});
+
+test("admin repayment alerts are limited to missing and overdue repayments", async () => {
+  const refund = {
+    _id: new mongoose.Types.ObjectId(),
+    bookingId: new mongoose.Types.ObjectId(),
+    clientId: new mongoose.Types.ObjectId(),
+    providerId: new mongoose.Types.ObjectId(),
+  };
+
+  await notifyRepaymentUpdate(refund, {
+    title: "Client confirmed repayment received",
+    body: "The refund case is closed.",
+    event: "refund.repayment_confirmed",
+  });
+  assert.equal(adminNotificationWrites.length, 0);
+
+  await notifyRepaymentUpdate(refund, {
+    title: "Client reports repayment not received",
+    body: "An admin needs to review this case.",
+    event: "refund.repayment_reported",
+  });
+  assert.equal(adminNotificationWrites.length, 1);
+  assert.equal(adminNotificationWrites[0].filter.eventKey, `refund.repayment_reported:${refund._id}`);
 });
 
 test("admin can lift only the suspension attributed to a resolved repayment", async () => {

@@ -4,6 +4,7 @@ const RefundRequest = require("../models/Refund");
 const User = require("../models/User");
 const { appendBookingSystemMessage } = require("../services/bookingMessaging");
 const { sendPushNotification } = require("../services/oneSignal");
+const { notifyAdminEvent } = require("../services/adminNotifications");
 const { restoreVoucherForRefund } = require("../services/rewards");
 const { calculateTotalPrice } = require("../services/bookingPricing");
 const { logAuditAction } = require("../utils/logAuditAction");
@@ -99,6 +100,15 @@ function serializeRefund(refund) {
 }
 
 async function sendRefundNotification(options) {
+  if (options.roles?.includes("admin")) {
+    try {
+      await notifyAdminEvent(options);
+    } catch (error) {
+      console.error("Could not save admin refund notification:", error.message);
+    }
+    return;
+  }
+
   try {
     await sendPushNotification(options);
   } catch (error) {
@@ -431,7 +441,7 @@ function getApprovedBookingStatus(refund) {
   return refund.resolutionAction === "APPROVE_PARTIAL" ? "partially_refunded" : "refunded";
 }
 
-async function notifyRepaymentUpdate(refund, { title, body, event, admin = false }) {
+async function notifyRepaymentUpdate(refund, { title, body, event }) {
   const bookingId = String(refund.bookingId);
   const targets = [
     sendRefundNotification({
@@ -449,7 +459,7 @@ async function notifyRepaymentUpdate(refund, { title, body, event, admin = false
       data: { event, refundId: String(refund._id), bookingId },
     }),
   ];
-  if (admin) {
+  if (["refund.repayment_reported", "refund.repayment_overdue"].includes(event)) {
     targets.push(sendRefundNotification({
       roles: ["admin"],
       title,
@@ -560,7 +570,6 @@ async function handleConfirmRefundReceived(req, res) {
       title: "Client confirmed repayment received",
       body: "The client confirmed receipt of the approved repayment. The refund case is closed.",
       event: "refund.repayment_confirmed",
-      admin: true,
     });
     return res.json({ refund: serializeRefund(updatedRefund.toObject()) });
   } catch (error) {
@@ -609,7 +618,6 @@ async function handleReportRefundNotReceived(req, res) {
       title: "Client reports repayment not received",
       body: "The client reported that the approved cash repayment has not arrived. An admin needs to review this case.",
       event: "refund.repayment_reported",
-      admin: true,
     });
     try {
       const booking = await Booking.findById(refund.bookingId);
@@ -832,7 +840,6 @@ async function processRefundRepaymentDeadlines(now = new Date()) {
         title: "Refund repayment overdue",
         body: "The provider did not mark the repayment as sent within 48 hours. The provider account has been suspended pending admin review.",
         event: "refund.repayment_overdue",
-        admin: true,
       });
     }
 
@@ -892,7 +899,6 @@ async function processRefundRepaymentDeadlines(now = new Date()) {
         title: "Refund repayment auto-closed",
         body: "No response was received within 48 hours after the provider marked the repayment sent. The refund case has been closed.",
         event: "refund.repayment_auto_confirmed",
-        admin: true,
       });
     }
   } catch (error) {
@@ -1146,6 +1152,7 @@ module.exports = {
   handleMarkProviderRepaymentSent,
   handleConfirmRefundReceived,
   handleReportRefundNotReceived,
+  notifyRepaymentUpdate,
   handleResolveRefundRepayment,
   processRefundRepaymentDeadlines,
   handleResolveAdminRefund,

@@ -1702,13 +1702,6 @@ async function handleVerifyAdminLogin(req, res) {
       targetResource: "AdminSession",
       details: "Administrator completed multi-factor sign-in.",
     });
-    sendAdminPushAlertInBackground({
-      roles: ["admin"],
-      title: "Admin sign-in completed",
-      body: "A new administrator session was started.",
-      url: "/admin?section=dashboard",
-      data: { event: "admin.sign_in" },
-    }, "OneSignal admin security alert failed:");
     return res.json({
       message: "Login successful.",
       token: adminToken,

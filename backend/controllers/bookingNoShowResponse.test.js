@@ -1,15 +1,19 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const Booking = require("../models/Booking");
+const AdminNotification = require("../models/AdminNotification");
 const oneSignal = require("../services/oneSignal");
 
 const originalFindOneAndUpdate = Booking.findOneAndUpdate;
+const originalNotificationFindOneAndUpdate = AdminNotification.findOneAndUpdate;
 const originalSendPushNotification = oneSignal.sendPushNotification;
+AdminNotification.findOneAndUpdate = async () => ({ _id: "notification-123" });
 oneSignal.sendPushNotification = async () => null;
 const { handleRespondToProviderNoShow } = require("./bookingController");
 
 test.afterEach(() => {
   Booking.findOneAndUpdate = originalFindOneAndUpdate;
+  AdminNotification.findOneAndUpdate = originalNotificationFindOneAndUpdate;
 });
 
 test.after(() => {

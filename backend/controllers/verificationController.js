@@ -2,6 +2,7 @@ const fs = require("fs/promises");
 const mongoose = require("mongoose");
 const { logAuditAction } = require("../utils/logAuditAction");
 const { waitUntil } = require("@vercel/functions");
+const { notifyAdminEvent } = require("../services/adminNotifications");
 const User = require("../models/User");
 const tesdaSectors = require("../../shared/tesdaQualifications.json");
 const TESDA_QUALIFICATIONS = new Set(tesdaSectors.flatMap(({ qualifications }) => qualifications));
@@ -259,6 +260,8 @@ async function processIdentityVerificationOCR({
     });
     if (!updatedUser) return;
 
+    if (!updatedUser.isVerified) await notifyIdentityVerificationReview(userId, role, submittedAt);
+
     if (autoVerified && role === "client") {
       try {
         await awardVerificationVoucher(updatedUser._id);
@@ -268,11 +271,31 @@ async function processIdentityVerificationOCR({
     }
   } catch (error) {
     console.error("Background identity OCR processing failed; leaving the submission for manual review:", error);
+    let shouldNotifyAdmins = true;
     try {
-      await markVerificationOCRUnavailable(User, userId, submittedAt, securityFlags);
+      const pendingUser = await markVerificationOCRUnavailable(User, userId, submittedAt, securityFlags);
+      shouldNotifyAdmins = Boolean(pendingUser);
     } catch (saveError) {
       console.error("Could not mark failed identity OCR for manual review:", saveError);
     }
+    if (shouldNotifyAdmins) await notifyIdentityVerificationReview(userId, role, submittedAt);
+  }
+}
+
+async function notifyIdentityVerificationReview(userId, role, submittedAt) {
+  try {
+    await notifyAdminEvent({
+      title: "Identity verification needs review",
+      body: `A ${role} submitted identity documents for manual review.`,
+      url: "/admin?section=verifications",
+      eventKey: `verification.identity:${userId}:${new Date(submittedAt).getTime()}`,
+      data: {
+        event: "verification.identity_submitted",
+        userId: String(userId),
+      },
+    });
+  } catch (notificationError) {
+    console.error("Identity verification admin notification failed:", notificationError.message);
   }
 }
 
@@ -421,6 +444,20 @@ async function handleSubmitTesdaCertificate(req, res) {
       await deleteVerificationImage(previousImagePublicId).catch((deleteError) => {
         console.error("Could not remove the replaced TESDA certificate image:", deleteError.message);
       });
+    }
+    try {
+      await notifyAdminEvent({
+        title: "TESDA certificate submitted",
+        body: `A ${req.user.role} submitted a TESDA certificate for ${trade}.`,
+        url: "/admin?section=verifications",
+        eventKey: `verification.tesda:${req.user._id}:${certificateId}:${submittedAt.getTime()}`,
+        data: {
+          event: "verification.tesda_submitted",
+          userId: String(req.user._id),
+        },
+      });
+    } catch (notificationError) {
+      console.error("TESDA verification admin notification failed:", notificationError.message);
     }
 
     return res.status(201).json({
