@@ -16,6 +16,7 @@ const RegisterPage = lazy(() => import("./pages/RegisterPage.jsx"));
 const WorkerRegisterPage = lazy(() => import("./pages/WorkerRegisterPage.jsx"));
 const WorkerRegisterLocation = lazy(() => import("./pages/WorkerRegisterLocation.jsx"));
 const WorkerRegisterName = lazy(() => import("./pages/WorkerRegisterName.jsx"));
+const WorkerRegisterProfession = lazy(() => import("./pages/WorkerRegisterProfession.jsx"));
 const WorkerRegisterDob = lazy(() => import("./pages/WorkerRegisterDob.jsx"));
 const WorkerRegisterPhone = lazy(() => import("./pages/WorkerRegisterPhone.jsx"));
 const ClientRegisterPage = lazy(() => import("./pages/ClientRegisterPage.jsx"));
@@ -76,7 +77,7 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-const authRoutes = ["/login", "/forgot-password", "/verify-email", "/register", "/worker-register", "/worker-register/name", "/worker-register/location", "/worker-register/dob", "/worker-register/phone", "/client-register", "/client-register/name", "/client-register/location", "/client-register/phone", "/admin"];
+const authRoutes = ["/login", "/forgot-password", "/verify-email", "/register", "/worker-register", "/worker-register/name", "/worker-register/profession", "/worker-register/location", "/worker-register/dob", "/worker-register/phone", "/client-register", "/client-register/name", "/client-register/location", "/client-register/phone", "/admin"];
 const footerlessRoutes = ["/messages", "/client/messages", "/provider-messages", "/provider/messages"];
 
 function ProtectedRoute({ children, roles }) {
@@ -164,6 +165,7 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/worker-register" element={<WorkerRegisterPage />} />
         <Route path="/worker-register/name" element={<WorkerRegisterName />} />
+        <Route path="/worker-register/profession" element={<WorkerRegisterProfession />} />
         <Route path="/worker-register/location" element={<WorkerRegisterLocation />} />
         <Route path="/worker-register/dob" element={<WorkerRegisterDob />} />
         <Route path="/worker-register/phone" element={<WorkerRegisterPhone />} />

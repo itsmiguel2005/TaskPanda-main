@@ -56,12 +56,12 @@ export default function WorkerRegisterPhone() {
     if (verifiedPhone !== normalizedMobileNumber && !/^\d{6}$/.test(otpCode)) return setError("Enter the 6-digit SMS verification code.");
     const onboardingToken = sessionStorage.getItem("taskpanda_onboarding_token");
     if (!onboardingToken) return setError("Your registration session expired. Sign in again to continue.");
-    const keys = ["workerStep1", "workerNameStep", "workerLocationStep", "workerDobStep"];
+    const keys = ["workerStep1", "workerNameStep", "workerProfessionStep", "workerLocationStep", "workerDobStep"];
     const stored = keys.map((key) => sessionStorage.getItem(key) || localStorage.getItem(key));
     if (stored.some((value) => !value)) return setError("Registration data is missing. Please start again.");
 
     try {
-      const [step1, name, location, dob] = stored.map((value) => JSON.parse(value));
+      const [step1, name, profession, location, dob] = stored.map((value) => JSON.parse(value));
       setIsSubmitting(true);
       if (verifiedPhone !== normalizedMobileNumber) {
         const verificationResponse = await apiFetch("/api/auth/verify-phone-otp", {
@@ -86,7 +86,7 @@ export default function WorkerRegisterPhone() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${onboardingToken}`,
         },
-        body: JSON.stringify({ ...accountData, ...name, ...location, ...dob, mobileNumber: normalizedMobileNumber, role: "provider" }),
+        body: JSON.stringify({ ...accountData, ...name, ...profession, ...location, ...dob, mobileNumber: normalizedMobileNumber, role: "provider" }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -114,7 +114,7 @@ export default function WorkerRegisterPhone() {
             <div className="w-full max-w-sm space-y-6">
               <div className="flex items-center"><Link to="/worker-register/dob" className="auth-back-link group inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-500" aria-label="Back to date of birth"><svg className="h-4 w-4 shrink-0 transition-transform group-hover:-translate-x-1" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15.75 19.5L8.25 12l7.5-7.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>Back to date of birth</Link></div>
               <div className="space-y-1 text-center"><h2 className="text-2xl font-bold text-green-800">What&apos;s your mobile number?</h2><p className="text-sm text-gray-500">We will use this for bookings and coordination.</p></div>
-              <div className="flex justify-center gap-1.5" aria-label="Registration progress">{[1, 2, 3, 4, 5].map((step) => <span key={step} className={`h-1.5 w-5 rounded-full ${step === 5 ? "bg-green-600" : "bg-gray-200"}`} />)}</div>
+              <div className="flex justify-center gap-1.5" aria-label="Registration progress">{[1, 2, 3, 4, 5, 6].map((step) => <span key={step} className={`h-1.5 w-5 rounded-full ${step === 6 ? "bg-green-600" : "bg-gray-200"}`} />)}</div>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <PhilippineMobileInput
                   id="workerMobileNumber"

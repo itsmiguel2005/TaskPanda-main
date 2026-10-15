@@ -9,6 +9,7 @@ export default function ProfessionSelector({
   invalid = false,
   tone = "green",
   maxSelections = 3,
+  closeOnSelect = false,
 }) {
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
@@ -55,7 +56,7 @@ export default function ProfessionSelector({
     onChange(nextValue);
     setQuery("");
     setActiveIndex(-1);
-    setIsOpen(nextValue.length < maxSelections);
+    setIsOpen(!closeOnSelect && nextValue.length < maxSelections);
     if (nextValue.length < maxSelections) inputRef.current?.focus();
   };
 

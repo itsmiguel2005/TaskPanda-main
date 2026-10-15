@@ -25,6 +25,7 @@ export default function ClientRegisterPage() {
   const [touched, setTouched] = useState({});
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isReferralOpen, setIsReferralOpen] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [availability, setAvailability] = useState({ field: "", message: "", checking: false });
 
@@ -264,32 +265,52 @@ export default function ClientRegisterPage() {
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="referralCode" className="block text-sm font-medium text-gray-700">
-                  Referral Code (Optional)
-                </label>
-                <div className="relative">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary-600" aria-hidden="true">
-                    <path d="M20.5 13.5 13 21H4v-9l7.5-7.5a2.12 2.12 0 0 1 3 0l6 6a2.12 2.12 0 0 1 0 3Z" />
-                    <circle cx="15.5" cy="8.5" r="1" />
-                  </svg>
-                  <input
-                    id="referralCode"
-                    name="referralCode"
-                    type="text"
-                    autoComplete="off"
-                    maxLength={32}
-                    placeholder="e.g. TP..."
-                    value={formData.referralCode}
-                    onChange={(event) => setFormData((current) => ({
-                      ...current,
-                      referralCode: event.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ""),
-                    }))}
-                    className="block w-full rounded-lg border border-primary-200 bg-primary-50/50 py-2.5 pl-10 pr-4 text-sm uppercase tracking-wider text-gray-800 placeholder-normal-case placeholder:tracking-normal placeholder:text-gray-400/70 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
-                  />
+                <button
+                  type="button"
+                  onClick={() => setIsReferralOpen((open) => !open)}
+                  aria-expanded={isReferralOpen}
+                  aria-controls="clientReferralField"
+                  className="text-left text-xs font-medium text-primary-700 underline-offset-2 transition-colors hover:text-primary-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+                >
+                  {isReferralOpen ? "− Hide referral code" : "+ Have a referral code?"}
+                </button>
+                <div
+                  id="clientReferralField"
+                  aria-hidden={!isReferralOpen}
+                  className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-out motion-reduce:transition-none ${
+                    isReferralOpen ? "max-h-36 opacity-100" : "max-h-0 opacity-0"
+                  }`}
+                >
+                  <div className="space-y-2 pt-1">
+                    <label htmlFor="referralCode" className="block text-sm font-medium text-gray-700">
+                      Referral code (optional)
+                    </label>
+                    <div className="relative">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary-600" aria-hidden="true">
+                        <path d="M20.5 13.5 13 21H4v-9l7.5-7.5a2.12 2.12 0 0 1 3 0l6 6a2.12 2.12 0 0 1 0 3Z" />
+                        <circle cx="15.5" cy="8.5" r="1" />
+                      </svg>
+                      <input
+                        id="referralCode"
+                        name="referralCode"
+                        type="text"
+                        autoComplete="off"
+                        maxLength={32}
+                        placeholder="e.g. TP..."
+                        value={formData.referralCode}
+                        tabIndex={isReferralOpen ? 0 : -1}
+                        onChange={(event) => setFormData((current) => ({
+                          ...current,
+                          referralCode: event.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ""),
+                        }))}
+                        className="block w-full rounded-lg border border-primary-200 bg-primary-50/50 py-2.5 pl-10 pr-4 text-sm uppercase tracking-wider text-gray-800 placeholder-normal-case placeholder:tracking-normal placeholder:text-gray-400/70 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
+                      />
+                    </div>
+                    <p className="text-xs leading-5 text-gray-600">
+                      Enter a friend&apos;s code to get a ₱50 travel-fee voucher after you complete and settle your first cash booking.
+                    </p>
+                  </div>
                 </div>
-                <p className="text-xs leading-5 text-gray-500">
-                  Enter a friend&apos;s code to get a ₱50 travel-fee voucher after you complete and settle your first cash booking.
-                </p>
               </div>
 
               <div className="space-y-2">

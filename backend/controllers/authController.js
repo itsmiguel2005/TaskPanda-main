@@ -1022,6 +1022,7 @@ async function handleCompleteRegistration(req, res) {
   const dateOfBirth = String(req.body.dateOfBirth || "").trim();
 
   let parsedDateOfBirth;
+  let professions;
   if (user.role === "provider") {
     if (!geoLocation || !Array.isArray(geoLocation.coordinates) || geoLocation.coordinates.length !== 2) {
       return res.status(400).json({ message: "Use your current location so nearby clients can find your profile." });
@@ -1031,9 +1032,19 @@ async function handleCompleteRegistration(req, res) {
       return res.status(400).json({ message: "Providers must be between 18 and 120 years old and enter a valid date of birth." });
     }
     parsedDateOfBirth = new Date(`${dateOfBirth}T00:00:00.000Z`);
-    if (!user.professions.length) {
+    const submittedProfessions = req.body.professions ?? user.professions;
+    if (!Array.isArray(submittedProfessions) || submittedProfessions.length === 0) {
       return res.status(400).json({ message: "Select at least one profession to continue." });
     }
+    if (submittedProfessions.length > 3) {
+      return res.status(400).json({ message: "Choose no more than 3 professions or trades." });
+    }
+    if (submittedProfessions.some((profession) => typeof profession !== "string" || !profession.trim())) {
+      return res.status(400).json({ message: "Choose valid professions or trades to continue." });
+    }
+    professions = [...new Map(
+      submittedProfessions.map((profession) => [profession.trim().toLowerCase(), profession.trim()])
+    ).values()];
   }
 
   user.referralCode ||= user.role === "client" ? createReferralCode(user._id) : undefined;
@@ -1064,7 +1075,7 @@ async function handleCompleteRegistration(req, res) {
         registrationComplete: true,
         ...(user.role === "client" ? { referralCode: user.referralCode } : {}),
         ...(referralRewardStatus ? { referralRewardStatus } : {}),
-        ...(user.role === "provider" ? { dateOfBirth: parsedDateOfBirth } : {}),
+        ...(user.role === "provider" ? { dateOfBirth: parsedDateOfBirth, professions } : {}),
       },
       $unset: {
         phoneOtpHash: 1,

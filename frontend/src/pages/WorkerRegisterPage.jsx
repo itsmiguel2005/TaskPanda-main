@@ -2,7 +2,6 @@ import { apiFetch } from "../services/api.js";
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
-import ProfessionSelector from "../components/ProfessionSelector.jsx";
 import TermsPrivacyModal from "../components/TermsPrivacyModal.jsx";
 import PasswordStrengthMeter from "../components/PasswordStrengthMeter.jsx";
 import RecaptchaDisclosure from "../components/RecaptchaDisclosure.jsx";
@@ -15,7 +14,6 @@ export default function WorkerRegisterPage() {
   const [formData, setFormData] = useState({
     username: "",
     email: "",
-    professions: [],
     password: "",
     "confirm-password": "",
   });
@@ -44,9 +42,6 @@ export default function WorkerRegisterPage() {
       ? "Email is required"
       : !emailValid(formData.email.trim())
       ? "Please enter a valid email address"
-      : "",
-    professions: formData.professions.length === 0
-      ? "Select at least one profession"
       : "",
     password: passwordError(formData.password),
     "confirm-password": !formData["confirm-password"]
@@ -113,7 +108,6 @@ export default function WorkerRegisterPage() {
     setTouched({
       username: true,
       email: true,
-      professions: true,
       password: true,
       "confirm-password": true,
     });
@@ -159,7 +153,6 @@ export default function WorkerRegisterPage() {
           recaptchaToken,
           username: formData.username.trim(),
           email: formData.email.trim().toLowerCase(),
-          professions: formData.professions,
           password: formData.password,
         }),
       });
@@ -169,7 +162,7 @@ export default function WorkerRegisterPage() {
         return;
       }
 
-      const step1 = { username: formData.username.trim(), email: formData.email.trim().toLowerCase(), professions: formData.professions };
+      const step1 = { username: formData.username.trim(), email: formData.email.trim().toLowerCase() };
       sessionStorage.setItem("workerStep1", JSON.stringify(step1));
       localStorage.removeItem("workerStep1");
       navigate(`/verify-email?email=${encodeURIComponent(formData.email.trim().toLowerCase())}`);
@@ -223,7 +216,7 @@ export default function WorkerRegisterPage() {
             </div>
 
             <div className="flex justify-center gap-1.5" aria-label="Registration progress">
-              {[1, 2, 3, 4, 5].map((step) => (
+              {[1, 2, 3, 4, 5, 6].map((step) => (
                 <span
                   key={step}
                   className={`h-1.5 w-5 rounded-full ${step === 1 ? "bg-green-600" : "bg-gray-200"}`}
@@ -286,26 +279,6 @@ export default function WorkerRegisterPage() {
                 {availability.field === "email" && !showFieldError("email") && (
                   <p className="text-xs text-red-600" role="alert">{availability.message}</p>
                 )}
-              </div>
-
-              <div className="space-y-2">
-                <label htmlFor="professions" className="block text-sm font-medium text-gray-700">
-                  Profession / Trade
-                </label>
-                <ProfessionSelector
-                  value={formData.professions}
-                  onChange={(professions) => {
-                    setFormData((prev) => ({ ...prev, professions }));
-                    setTouched((prev) => ({ ...prev, professions: true }));
-                  }}
-                  placeholder="e.g. Carpenter, Electrician, Plumber"
-                />
-                {showFieldError("professions") && (
-                  <p className="text-xs text-red-600">{errors.professions}</p>
-                )}
-                <p className="text-xs text-gray-500">
-                  Choose up to 3 professions or trades.
-                </p>
               </div>
 
               <div className="space-y-2">

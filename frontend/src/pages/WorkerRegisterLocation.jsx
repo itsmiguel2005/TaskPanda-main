@@ -60,11 +60,11 @@ export default function WorkerRegisterLocation() {
         <section className="flex items-center justify-center bg-white px-6 pt-16 pb-6 lg:h-full sm:px-8 md:pt-20">
           <div className="w-full max-w-sm space-y-6">
             <div className="flex items-center">
-              <Link to="/worker-register/name" className="auth-back-link group inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-500" aria-label="Back to name">
+              <Link to="/worker-register/profession" className="auth-back-link group inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-500" aria-label="Back to profession">
                 <svg className="h-4 w-4 shrink-0 transition-transform group-hover:-translate-x-1" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M15.75 19.5L8.25 12l7.5-7.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                Back to name
+                Back to profession
               </Link>
             </div>
 
@@ -78,10 +78,10 @@ export default function WorkerRegisterLocation() {
             </div>
 
             <div className="flex justify-center gap-1.5" aria-label="Registration progress">
-              {[1, 2, 3, 4, 5].map((step) => (
+              {[1, 2, 3, 4, 5, 6].map((step) => (
                 <span
                   key={step}
-                  className={`h-1.5 w-5 rounded-full ${step === 3 ? "bg-green-600" : "bg-gray-200"}`}
+                  className={`h-1.5 w-5 rounded-full ${step === 4 ? "bg-green-600" : "bg-gray-200"}`}
                 />
               ))}
             </div>
