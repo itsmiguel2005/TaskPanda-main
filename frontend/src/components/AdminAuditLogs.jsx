@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { adminRequest } from "../services/adminApi.js";
@@ -183,8 +183,23 @@ function CategoryFilter({ value, onChange }) {
 }
 
 function actionTone(action, category) {
-  if (["USER_SUSPENDED", "PROVIDER_SUSPENDED", "FAILED_LOGIN_ATTEMPT"].includes(action)) {
+  if (action === "ADMIN_LOGOUT") {
+    return "border-slate-200 bg-slate-100 text-slate-700";
+  }
+  if (action === "ADMIN_LOGIN") {
+    return "border-blue-200 bg-blue-50 text-blue-800";
+  }
+  if (
+    ["USER_SUSPENDED", "PROVIDER_SUSPENDED", "FAILED_LOGIN_ATTEMPT", "REVIEW_REMOVED"].includes(action)
+    || /(?:DELETE|SUSPEND|REMOVE)/.test(action)
+  ) {
     return "border-rose-200 bg-rose-50 text-rose-800";
+  }
+  if (
+    ["ROLE_MODIFIED", "SYSTEM_SETTING_TOGGLED", "PLATFORM_FEE_MODIFIED", "USER_UNSUSPENDED", "REFUND_ISSUED"].includes(action)
+    || /(?:OVERRIDE|MODIFIED|TOGGLED|UNSUSPEND)/.test(action)
+  ) {
+    return "border-amber-200 bg-amber-50 text-amber-800";
   }
   if (action === "VERIFICATION_APPROVED") return "border-emerald-200 bg-emerald-50 text-emerald-800";
   if (action === "VERIFICATION_REJECTED") return "border-amber-200 bg-amber-50 text-amber-800";
@@ -205,26 +220,123 @@ function formatTimestamp(value) {
   }).format(timestamp);
 }
 
-function AuditEntry({ log }) {
-  const target = [log.targetResource, log.targetId].filter(Boolean).join(" · ");
-  const userAgent = log.userAgent || "Unknown client";
+function formatExactTimestamp(value) {
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? String(value || "Unknown time") : timestamp.toISOString();
+}
+
+function formatTarget(log) {
+  if (!log.targetResource && !log.targetId) return "";
+  const resource = log.targetResource || "Target";
+  if (!log.targetId) return resource;
+  const id = String(log.targetId);
+  const shortId = id.length > 10 ? `${id.slice(0, 4)}...${id.slice(-3)}` : id;
+  return `${resource} #${shortId}`;
+}
+
+function fullTarget(log) {
+  return [log.targetResource, log.targetId].filter(Boolean).join(" · ");
+}
+
+function formatUserAgent(value) {
+  if (!value) return "Unknown client";
+  const browser = /(?:Edg|Edge|EdgiOS|EdgA)\//i.test(value)
+    ? "Edge"
+    : /OPR\//i.test(value)
+      ? "Opera"
+      : /(?:Firefox|FxiOS)\//i.test(value)
+        ? "Firefox"
+        : /(?:Chrome|CriOS)\//i.test(value)
+          ? "Chrome"
+          : /Safari\//i.test(value)
+            ? "Safari"
+            : /(?:MSIE|Trident\/)/i.test(value)
+              ? "Internet Explorer"
+              : "Unknown browser";
+  const os = /Android/i.test(value)
+    ? "Android"
+    : /(?:iPhone|iPad|iPod|CPU iPhone)/i.test(value)
+      ? "iOS"
+      : /Windows NT/i.test(value)
+        ? "Windows"
+        : /Mac OS X/i.test(value)
+          ? "macOS"
+          : /CrOS/i.test(value)
+            ? "ChromeOS"
+            : /Linux/i.test(value)
+              ? "Linux"
+              : "Unknown OS";
+  return `${browser} on ${os}`;
+}
+
+function formatIpAddress(value) {
+  if (value === "::1" || value === "::ffff:127.0.0.1") return "127.0.0.1 (Localhost)";
+  return value || "—";
+}
+
+function AuditDetail({ log, id }) {
+  const timestamp = new Date(log.createdAt);
+  const validTimestamp = !Number.isNaN(timestamp.getTime());
   return (
-    <article className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 md:hidden">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${actionTone(log.action, log.category)}`}>
-          {formatAction(log.action)}
-        </span>
-        <time className="text-xs text-slate-500">{formatTimestamp(log.createdAt)}</time>
+    <section id={id} aria-label="Audit log details" className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
+      <div className="grid gap-3 text-sm sm:grid-cols-2">
+        <div className="min-w-0">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Target</h3>
+          <p className="mt-1 break-words font-medium text-slate-900">{fullTarget(log) || "No target recorded"}</p>
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Exact timestamp (UTC)</h3>
+          {validTimestamp
+            ? <time dateTime={timestamp.toISOString()} className="mt-1 block break-all font-mono text-xs text-slate-800">{timestamp.toISOString()}</time>
+            : <p className="mt-1 break-all font-mono text-xs text-slate-800">{formatExactTimestamp(log.createdAt)}</p>}
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Full user agent</h3>
+          <p className="mt-1 break-all text-xs leading-5 text-slate-700">{log.userAgent || "Unknown client"}</p>
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">IP address</h3>
+          <p className="mt-1 break-all text-xs text-slate-700">{log.ipAddress || "Unknown"}</p>
+        </div>
       </div>
-      <p className="text-sm leading-6 text-slate-800">{log.details}</p>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-        <span className={`font-semibold ${CATEGORY_TONES[log.category] || ""}`}>{log.category}</span>
-        <span>{log.adminName}</span>
-        {target && <span className="break-all">{target}</span>}
+      <div>
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Full log payload</h3>
+        <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-white p-3 text-xs leading-5 text-slate-800">{JSON.stringify(log, null, 2)}</pre>
       </div>
-      <p className="break-all text-xs text-slate-500">
-        IP {log.ipAddress || "Unknown"} <span aria-hidden="true">·</span> {userAgent}
-      </p>
+    </section>
+  );
+}
+
+function AuditEntry({ log, isOpen, onToggle }) {
+  const detailId = `audit-detail-${log._id}`;
+  const target = formatTarget(log);
+  return (
+    <article className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        aria-controls={detailId}
+        onClick={onToggle}
+        className="dashboard-focus block w-full space-y-3 p-4 text-left"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${actionTone(log.action, log.category)}`}>
+            {formatAction(log.action)}
+          </span>
+          <time className="text-xs tabular-nums text-slate-500">{formatTimestamp(log.createdAt)}</time>
+        </div>
+        <p className="line-clamp-2 text-sm leading-6 text-slate-800">{log.details}</p>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+          <span className={`font-semibold ${CATEGORY_TONES[log.category] || ""}`}>{log.category}</span>
+          <span className="max-w-full truncate">{log.adminName}</span>
+          {target && <span className="max-w-full truncate" title={fullTarget(log)}>{target}</span>}
+        </div>
+        <div className="flex min-w-0 items-center justify-between gap-3 text-xs text-slate-500">
+          <span className="min-w-0 truncate">{formatIpAddress(log.ipAddress)} <span aria-hidden="true">·</span> {formatUserAgent(log.userAgent)}</span>
+          <span className="shrink-0 font-semibold text-indigo-700">{isOpen ? "Hide details" : "View details"}</span>
+        </div>
+      </button>
+      {isOpen && <div className="border-t border-slate-200 p-3"><AuditDetail log={log} id={detailId} /></div>}
     </article>
   );
 }
@@ -239,6 +351,7 @@ export default function AdminAuditLogs() {
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [expandedLogId, setExpandedLogId] = useState(null);
 
   useEffect(() => {
     if (!token) {
@@ -326,10 +439,27 @@ export default function AdminAuditLogs() {
       ) : (
         <>
           <div className="min-h-[20rem] space-y-3 p-4 md:hidden">
-            {logs.map((log) => <AuditEntry key={log._id} log={log} />)}
+            {logs.map((log) => (
+              <AuditEntry
+                key={log._id}
+                log={log}
+                isOpen={expandedLogId === log._id}
+                onToggle={() => setExpandedLogId((current) => current === log._id ? null : log._id)}
+              />
+            ))}
           </div>
           <div className="hidden min-h-[20rem] overflow-x-auto md:block">
-            <table className="w-full min-w-[1200px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[1420px] table-fixed border-collapse text-left text-sm">
+              <colgroup>
+                <col className="w-[170px]" />
+                <col className="w-[180px]" />
+                <col className="w-[130px]" />
+                <col className="w-[200px]" />
+                <col className="w-[180px]" />
+                <col className="w-[165px]" />
+                <col className="w-[175px]" />
+                <col className="w-[220px]" />
+              </colgroup>
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
                 <tr>
                   <th scope="col" className="px-5 py-3 font-semibold">Time</th>
@@ -343,10 +473,18 @@ export default function AdminAuditLogs() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {logs.map((log) => (
-                  <tr key={log._id} className="align-top hover:bg-slate-50/70">
+                {logs.map((log) => {
+                  const isOpen = expandedLogId === log._id;
+                  const detailId = `audit-detail-${log._id}`;
+                  const target = formatTarget(log);
+                  return (
+                  <Fragment key={log._id}>
+                  <tr
+                    onClick={() => setExpandedLogId((current) => current === log._id ? null : log._id)}
+                    className={`cursor-pointer align-top transition-colors hover:bg-slate-50/70 ${isOpen ? "bg-slate-50" : ""}`}
+                  >
                     <td className="whitespace-nowrap px-5 py-4 text-slate-600">{formatTimestamp(log.createdAt)}</td>
-                    <td className="px-4 py-4">
+                    <td className="overflow-hidden px-4 py-4">
                       <span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${actionTone(log.action, log.category)}`}>
                         {formatAction(log.action)}
                       </span>
@@ -356,17 +494,45 @@ export default function AdminAuditLogs() {
                         {log.category}
                       </span>
                     </td>
-                    <td className="max-w-48 break-words px-4 py-4 font-medium text-slate-800">{log.adminName}</td>
-                    <td className="max-w-52 break-all px-4 py-4 text-slate-600">
-                      {[log.targetResource, log.targetId].filter(Boolean).join(" · ") || "—"}
+                    <td className="overflow-hidden px-4 py-4 font-medium text-slate-800">
+                      <span className="block truncate whitespace-nowrap" title={log.adminName}>{log.adminName}</span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-4 text-slate-600">{log.ipAddress || "—"}</td>
-                    <td className="max-w-48 truncate px-4 py-4 text-slate-600" title={log.userAgent || "Unknown client"}>
-                      {log.userAgent || "Unknown client"}
+                    <td className="overflow-hidden px-4 py-4 text-slate-600">
+                      <span className="block truncate whitespace-nowrap" title={fullTarget(log) || undefined}>{target || "—"}</span>
                     </td>
-                    <td className="max-w-md px-5 py-4 leading-6 text-slate-700">{log.details}</td>
+                    <td className="overflow-hidden whitespace-nowrap px-4 py-4 text-slate-600">
+                      <span className="block truncate" title={log.ipAddress || "Unknown"}>{formatIpAddress(log.ipAddress)}</span>
+                    </td>
+                    <td className="overflow-hidden px-4 py-4 text-slate-600" title={log.userAgent || "Unknown client"}>
+                      <span className="block truncate whitespace-nowrap">{formatUserAgent(log.userAgent)}</span>
+                    </td>
+                    <td className="overflow-hidden px-5 py-4 leading-6 text-slate-700">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="line-clamp-2 min-w-0">{log.details}</p>
+                        <button
+                          type="button"
+                          aria-expanded={isOpen}
+                          aria-controls={detailId}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setExpandedLogId((current) => current === log._id ? null : log._id);
+                          }}
+                          className="dashboard-focus shrink-0 rounded px-1 py-0.5 text-xs font-semibold text-indigo-700 hover:text-indigo-900"
+                        >
+                          {isOpen ? "Hide" : "View"}
+                        </button>
+                      </div>
+                    </td>
                   </tr>
-                ))}
+                  {isOpen && (
+                    <tr key={`${log._id}-details`}>
+                      <td colSpan={8} className="px-4 py-4">
+                        <AuditDetail log={log} id={detailId} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                );})}
               </tbody>
             </table>
           </div>
