@@ -661,7 +661,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const maximumTipAmount = MAX_TIP_PHP;
   const maximumBaselineOffer = durationIsValid
     ? Math.floor((MAX_TASK_OFFER_PHP * DEFAULT_ESTIMATED_DURATION_MINUTES / estimatedDurationMinutes + Number.EPSILON) * 100) / 100
-    : 0;
+    : undefined;
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files);
@@ -928,11 +928,12 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
             value={serviceLocation}
             onChange={setServiceLocation}
             token={token}
+            description=""
           />
 
           {/* Schedule */}
           <section className="relative rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <div className="grid gap-5">
+            <div className="space-y-4">
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-gray-700">Select Date</label>
                 <button
@@ -975,7 +976,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                 {!selectedDate && <p className="mb-2 text-xs text-gray-500">Choose a date to see available times.</p>}
                 {availabilityStatus === "loading" && <p className="mb-2 text-xs text-gray-500">Checking provider availability…</p>}
                 {availabilityStatus === "error" && <p role="alert" className="mb-2 text-xs text-red-600">Could not check availability. <button type="button" onClick={() => setAvailabilityRetry((retry) => retry + 1)} className="font-semibold underline">Try again</button></p>}
-                <p className="mb-2 text-xs leading-5 text-gray-500">Times include the previous task duration, straight-line travel between pinned client locations estimated at 30 km/h, and a 30-minute safety buffer. Same-day slots also need enough notice for the provider's trip plus a 15-minute arrival buffer. Actual road travel may vary.</p>
+                <p className="mb-2 text-xs leading-5 text-gray-500">Slots automatically account for the provider&apos;s travel time, prior jobs, and scheduling buffers.</p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {TIME_SLOTS.map((time) => {
                     const isPast = selectedDate && isPastTimeSlot(selectedDate, time, currentTime);
@@ -1037,11 +1038,17 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                 step="0.01"
                 value={offer}
                 onChange={(e) => setOffer(e.target.value)}
-                placeholder="Enter baseline offer (Min. ₱100)"
-                aria-describedby="booking-offer-limit"
+                placeholder="Enter your proposed price"
+                aria-describedby={`booking-offer-limit${durationIsValid && offerAmount > 0 ? " duration-adjusted-offer" : ""}`}
                 className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
               />
-              <p id="booking-offer-limit" className="mt-1 text-xs text-gray-500">For {durationIsValid ? estimatedDurationMinutes : "your selected"} minutes, the task offer is {formatPhpAmount(adjustedTaskOffer)}. The task offer is capped at {formatPhpAmount(MAX_TASK_OFFER_PHP)}; the maximum baseline offer is {formatPhpAmount(maximumBaselineOffer)}.</p>
+              <p id="booking-offer-limit" className="mt-1 text-xs text-gray-500">Enter your proposed price for this task (Min. ₱100 · Max. {formatPhpAmount(MAX_TASK_OFFER_PHP)} after duration adjustment)</p>
+              {durationIsValid && offerAmount > 0 && (
+                <div id="duration-adjusted-offer" role="status" aria-live="polite" className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2.5">
+                  <span className="text-xs font-medium text-primary-900">Duration-adjusted task offer</span>
+                  <span className="shrink-0 text-sm font-bold tabular-nums text-primary-900">{formatPhpAmount(adjustedTaskOffer)}</span>
+                </div>
+              )}
             </div>
           </div>
 

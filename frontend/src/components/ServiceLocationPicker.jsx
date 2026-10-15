@@ -421,7 +421,7 @@ export default function ServiceLocationPicker({
     <section aria-labelledby="service-location-heading" className="relative z-0 isolate space-y-3 rounded-xl border border-gray-200 bg-white p-4">
       <div>
         <h3 id="service-location-heading" className="text-sm font-semibold text-gray-900">{heading}</h3>
-        <p className="mt-1 text-xs leading-5 text-gray-600">{description}</p>
+        {description && <p className="mt-1 text-xs leading-5 text-gray-600">{description}</p>}
       </div>
 
       <div role="search" className="flex gap-2">
@@ -483,12 +483,11 @@ export default function ServiceLocationPicker({
           className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-500 focus:border-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-600/20"
         />
         <p className="mt-1 text-xs text-gray-600" aria-live="polite">
-          {isLookingUp ? "Finding the address for the pin…" : getCoordinates(value.geoLocation) ? "Pin selected. Drag it or click another point to adjust." : "A map pin is required to calculate travel distance."}
+          {isLookingUp ? "Finding the address for the pin…" : getCoordinates(value.geoLocation) ? "Location pin selected." : "Select a map pin to calculate travel distance."}
         </p>
       </div>
 
       {error && <p role="alert" className="text-xs leading-5 text-red-700">{error}</p>}
-      <p className="text-[11px] leading-4 text-gray-600">Map data © OpenStreetMap contributors. The map and address search require an internet connection.</p>
     </section>
   );
 }
