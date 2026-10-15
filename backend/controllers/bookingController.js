@@ -1345,7 +1345,10 @@ async function handleUpdateBookingStatus(req, res) {
         },
         { new: true }
       );
-      if (expiredBooking) return res.status(409).json({ message: "This booking request has expired." });
+      if (expiredBooking) {
+        await restoreExpiredBookingVoucher(expiredBooking);
+        return res.status(409).json({ message: "This booking request has expired." });
+      }
     }
     if (status === "en_route") {
       const pendingReschedule = await Booking.exists({
@@ -1376,7 +1379,7 @@ async function handleUpdateBookingStatus(req, res) {
       if (!pendingBooking) return res.status(404).json({ message: "Booking not found or it has already been updated." });
       now = new Date();
       if (pendingBooking.requestExpiresAt && pendingBooking.requestExpiresAt <= now) {
-        await Booking.findOneAndUpdate(
+        const expiredBooking = await Booking.findOneAndUpdate(
           {
             _id: bookingId,
             providerId: req.user._id,
@@ -1388,6 +1391,7 @@ async function handleUpdateBookingStatus(req, res) {
             $push: { statusHistory: { status: "expired", at: now } },
           }
         );
+        if (expiredBooking) await restoreExpiredBookingVoucher(expiredBooking);
         return res.status(409).json({ message: "This booking request has expired." });
       }
       if (!canArriveForSameDayBooking(
@@ -1426,6 +1430,7 @@ async function handleUpdateBookingStatus(req, res) {
       }
       return res.status(404).json({ message: "Booking not found or it has already been updated." });
     }
+    if (status === "declined") await restoreVoucherForBooking(booking);
     const systemMessages = {
       approved: "Booking approved. The provider is preparing for the task.",
       en_route: "Provider is on the way to your location.",
@@ -2333,19 +2338,71 @@ async function handleRespondToCounterOffer(req, res) {
   }
 }
 
+async function restoreExpiredBookingVoucher(booking) {
+  if (!booking?.voucherId || !booking?._id || !booking?.clientId) return false;
+
+  const restored = await restoreVoucherForBooking(booking);
+  if (!restored) {
+    const voucherIsActive = await User.exists(
+      mongoose.trusted({
+        _id: booking.clientId._id || booking.clientId,
+        vouchers: mongoose.trusted({
+          $elemMatch: { _id: booking.voucherId, status: "active" },
+        }),
+      })
+    );
+    if (!voucherIsActive) throw new Error(`Could not restore voucher for expired booking ${booking._id}.`);
+  }
+  await Booking.updateOne(
+    mongoose.trusted({
+      _id: booking._id,
+      status: "expired",
+      voucherRestoredAt: mongoose.trusted({ $exists: false }),
+    }),
+    { $set: { voucherRestoredAt: new Date() } }
+  );
+  return restored;
+}
+
 async function processExpiredBookingRequests() {
   const now = new Date();
-  const result = await Booking.updateMany(
+  const expiredCandidates = await Booking.find(
     {
-      status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
-      requestExpiresAt: mongoose.trusted({ $lte: now }),
-    },
-    {
-      $set: { status: "expired" },
-      $push: { statusHistory: { status: "expired", at: now } },
+      $or: [
+        {
+          status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
+          requestExpiresAt: mongoose.trusted({ $lte: now }),
+        },
+        {
+          status: "expired",
+          voucherId: mongoose.trusted({ $exists: true }),
+          voucherRestoredAt: mongoose.trusted({ $exists: false }),
+        },
+      ],
     }
-  );
-  return result.modifiedCount;
+  ).select("_id clientId voucherId status");
+  let expiredCount = 0;
+  for (const candidate of expiredCandidates) {
+    let expiredBooking = candidate;
+    if (candidate.status !== "expired") {
+      expiredBooking = await Booking.findOneAndUpdate(
+        {
+          _id: candidate._id,
+          status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
+          requestExpiresAt: mongoose.trusted({ $lte: now }),
+        },
+        {
+          $set: { status: "expired" },
+          $push: { statusHistory: { status: "expired", at: now } },
+        },
+        { new: true }
+      );
+      if (!expiredBooking) continue;
+      expiredCount += 1;
+    }
+    await restoreExpiredBookingVoucher(expiredBooking);
+  }
+  return expiredCount;
 }
 
 async function processBookingNoShowCheckIns() {

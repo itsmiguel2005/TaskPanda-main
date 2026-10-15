@@ -803,8 +803,8 @@ export default function Explore() {
                           className="h-full w-full object-cover"
                         />
                       ) : (
-                        <div className="flex h-full items-end justify-center bg-gradient-to-br from-accent-600 via-accent-700 to-accent-800 text-white" role="img" aria-label="No profile photo">
-                          <svg viewBox="0 0 120 120" role="img" aria-hidden="true" className="h-36 w-36 text-white">
+                        <div className="flex h-full items-end justify-center bg-slate-300 text-slate-700" role="img" aria-label="No profile photo">
+                          <svg viewBox="0 0 120 120" role="img" aria-hidden="true" className="h-36 w-36 text-slate-700">
                             <circle cx="60" cy="35" r="23" fill="currentColor" />
                             <path d="M18 116c2-30 19-48 42-48s40 18 42 48" fill="currentColor" />
                           </svg>

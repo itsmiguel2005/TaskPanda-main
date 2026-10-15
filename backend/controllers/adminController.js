@@ -32,10 +32,6 @@ function getAdminUserStatus(user) {
   if (user.archivedAt) return "Archived";
   if (user.isSuspended) return "Suspended";
   if (user.emailVerified === false || user.registrationComplete === false) return "Pending";
-  if (user.verificationStatus === "pending" ||
-    (user.role === "provider" && user.isVerified !== true && user.verificationStatus === "unverified")) {
-    return "Pending";
-  }
   return "Active";
 }
 
@@ -542,6 +538,7 @@ async function handleRequestAdminPasswordReset(req, res) {
 }
 
 module.exports = {
+  getAdminUserStatus,
   handleGetAdminAnalytics,
   handleGetAdminPandaBotHealth,
   handleGetAdminUsers,

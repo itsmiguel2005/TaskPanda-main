@@ -45,6 +45,7 @@ const bookingSchema = new mongoose.Schema(
     travelFeeDiscount: { type: Number, min: 0, default: 0 },
     voucherId: { type: mongoose.Schema.Types.ObjectId },
     voucherReservationId: { type: String },
+    voucherRestoredAt: { type: Date },
     stampAwardedAt: { type: Date },
     tipAmount: { type: Number, min: 0, max: MAX_TIP_PHP, default: 0 },
     paymentMethod: { type: String, enum: ["cash"], default: "cash", required: true },
