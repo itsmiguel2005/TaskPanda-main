@@ -10,6 +10,7 @@ const allowedTypes = new Map([
   ["image/jpeg", ".jpg"],
   ["image/png", ".png"],
   ["image/webp", ".webp"],
+  ["application/pdf", ".pdf"],
 ]);
 
 const storage = multer.diskStorage({
@@ -29,10 +30,10 @@ function removeUploadedFiles(files) {
 
 const upload = multer({
   storage,
-  limits: { fileSize: MAX_VERIFICATION_IMAGE_SIZE, files: 2, fields: 2, fieldSize: 200, parts: 4 },
+  limits: { fileSize: MAX_VERIFICATION_IMAGE_SIZE, files: 1, fields: 2, fieldSize: 200, parts: 3 },
   fileFilter: (_req, file, callback) => {
     const accepted = allowedTypes.has(file.mimetype);
-    const error = accepted ? null : new Error("Choose a JPEG, PNG, or WebP image.");
+    const error = accepted ? null : new Error("Choose a JPEG, PNG, WebP, or single-page PDF file.");
     if (error) error.statusCode = 400;
     callback(error, accepted);
   },
@@ -40,7 +41,6 @@ const upload = multer({
 
 const uploadFields = upload.fields([
   { name: "idFront", maxCount: 1 },
-  { name: "idBack", maxCount: 1 },
 ]);
 
 const uploadCertificateFile = upload.single("certificate");
@@ -72,7 +72,7 @@ function uploadVerificationImages(req, res, next) {
     if (error instanceof multer.MulterError) {
       const tooLarge = error.code === "LIMIT_FILE_SIZE" || error.code === "LIMIT_FIELD_VALUE";
       return res.status(tooLarge ? 413 : 400).json({
-        message: tooLarge ? "Each ID image must be 8 MB or smaller." : error.message,
+        message: tooLarge ? "The PhilSys ID front image or PDF must be 8 MB or smaller." : error.message,
       });
     }
     console.error("Verification image upload error:", error);

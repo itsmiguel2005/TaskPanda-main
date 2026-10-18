@@ -1,5 +1,6 @@
 import { apiFetch } from "../services/api.js";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -7,6 +8,7 @@ import { analyzeImageQuality, checkImageSharpness } from "../utils/imageCheck.js
 import { prepareVerificationImage } from "../utils/verificationImage.js";
 
 const MAX_ID_IMAGE_SIZE = 8 * 1024 * 1024;
+const PHILSYS_RETAKE_MESSAGE = "Incorrect ID or blurry photo detected. TaskPanda only accepts the Philippine National ID (PhilSys). Please ensure a clear photo of your PhilSys ID is provided and retake it.";
 const MAX_LIVE_ANALYSIS_DIMENSION = 320;
 const LIVE_ANALYSIS_INTERVAL_MS = 750;
 
@@ -14,6 +16,7 @@ function ImageUpload({
   label,
   name,
   accept,
+  required = false,
   file,
   preview,
   onSelect,
@@ -28,11 +31,15 @@ function ImageUpload({
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700">
-        {label} <span className="text-red-500">*</span>
+        {label} {required && <span className="text-red-500">*</span>}
       </label>
       <div className="mt-2 flex w-full items-center gap-4 rounded-2xl border border-dashed border-sky-300 bg-sky-50/55 p-4">
         {preview ? (
-          <img src={preview} alt={`${label} preview`} className="h-16 w-24 rounded-lg object-cover ring-1 ring-slate-200" />
+          file?.type === "application/pdf" ? (
+            <span className="flex h-16 w-24 items-center justify-center rounded-lg border border-sky-100 bg-white text-xs font-bold text-sky-900">PDF</span>
+          ) : (
+            <img src={preview} alt={`${label} preview`} className="h-16 w-24 rounded-lg object-cover ring-1 ring-slate-200" />
+          )
         ) : (
           <div className="flex h-16 w-24 shrink-0 items-center justify-center rounded-lg border border-sky-100 bg-white/80 text-sky-700">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="h-8 w-8" aria-hidden="true">
@@ -43,7 +50,7 @@ function ImageUpload({
         )}
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-slate-800">{file ? "Replace image" : "Choose image"}</p>
-          <p className="mt-1 text-xs text-slate-600">JPEG, PNG, or WebP · up to 8 MB</p>
+          <p className="mt-1 text-xs text-slate-600">JPEG, PNG, WebP, or one-page PDF · up to 8 MB</p>
           <div className="mt-3 flex flex-nowrap gap-1.5">
             <button
               type="button"
@@ -107,7 +114,11 @@ function ImageUpload({
             <p className="min-w-0 truncate text-xs text-gray-500">{file.name}</p>
             <button type="button" onClick={onRemove} disabled={disabled} className="dashboard-focus shrink-0 rounded text-xs font-semibold text-rose-700 underline underline-offset-2 hover:text-rose-900 disabled:cursor-not-allowed disabled:opacity-60">Remove</button>
           </div>
-          <img src={preview} alt={`${label} full photo preview`} className="max-h-56 w-full rounded-xl bg-slate-950/5 object-contain ring-1 ring-slate-200" />
+          {file.type === "application/pdf" ? (
+            <iframe title={`${label} PDF preview`} src={preview} className="h-56 w-full rounded-xl bg-slate-950/5 ring-1 ring-slate-200" />
+          ) : (
+            <img src={preview} alt={`${label} full photo preview`} className="max-h-56 w-full rounded-xl bg-slate-950/5 object-contain ring-1 ring-slate-200" />
+          )}
           <p className="text-xs leading-5 text-slate-700">
             Check the preview: the ID should fill most of the photo, all four corners should show, and the printed details should be readable.
           </p>
@@ -233,7 +244,7 @@ function GuidedCamera({ side, onCancel, onCapture }) {
     <section className="mt-4 rounded-2xl border border-sky-200 bg-slate-950 p-4 text-white" aria-label={`Guided camera for ${side} of ID`}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-sm font-bold">Capture the {side} of your ID</h3>
+          <h3 className="text-sm font-bold">Capture the {side} of your PhilSys ID</h3>
           <p className="mt-1 text-xs leading-5 text-slate-200">
             Use even light, avoid flash reflections, and keep every edge visible.
           </p>
@@ -294,14 +305,13 @@ export default function VerificationPage() {
   const [verificationStatusError, setVerificationStatusError] = useState("");
   const [statusRefreshKey, setStatusRefreshKey] = useState(0);
   const [idFrontFile, setIdFrontFile] = useState(null);
-  const [idBackFile, setIdBackFile] = useState(null);
   const [idFrontPreview, setIdFrontPreview] = useState("");
-  const [idBackPreview, setIdBackPreview] = useState("");
-  const [checkingImages, setCheckingImages] = useState({ front: false, back: false });
-  const [imageErrors, setImageErrors] = useState({ front: "", back: "" });
-  const [imageWarnings, setImageWarnings] = useState({ front: [], back: [] });
-  const [captureMethods, setCaptureMethods] = useState({ front: "upload", back: "upload" });
+  const [checkingImages, setCheckingImages] = useState({ front: false });
+  const [imageErrors, setImageErrors] = useState({ front: "" });
+  const [imageWarnings, setImageWarnings] = useState({ front: [] });
   const [cameraSide, setCameraSide] = useState("");
+  const [pendingPhoto, setPendingPhoto] = useState(null);
+  const pendingPhotoUrlRef = useRef("");
   const [ocrProcessing, setOcrProcessing] = useState(false);
   const [voucherAwarded, setVoucherAwarded] = useState(false);
   const [voucherAwardError, setVoucherAwardError] = useState(false);
@@ -310,8 +320,15 @@ export default function VerificationPage() {
 
   useEffect(() => () => {
     if (idFrontPreview) URL.revokeObjectURL(idFrontPreview);
-    if (idBackPreview) URL.revokeObjectURL(idBackPreview);
-  }, [idFrontPreview, idBackPreview]);
+  }, [idFrontPreview]);
+
+  useEffect(() => {
+    pendingPhotoUrlRef.current = pendingPhoto?.preview || "";
+  }, [pendingPhoto]);
+
+  useEffect(() => () => {
+    if (pendingPhotoUrlRef.current) URL.revokeObjectURL(pendingPhotoUrlRef.current);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -358,22 +375,14 @@ export default function VerificationPage() {
     };
   }, [token, updateUser, statusRefreshKey]);
 
-  const processSelectedImage = async (side, file, captureMethod = "upload") => {
+  const processSelectedImage = async (side, file) => {
     if (!file) return;
-    const setter = side === "front" ? setIdFrontFile : setIdBackFile;
-    const setPreview = side === "front" ? setIdFrontPreview : setIdBackPreview;
-    const clearImage = () => {
-      setPreview((currentPreview) => {
-        if (currentPreview) URL.revokeObjectURL(currentPreview);
-        return "";
-      });
-      setter(null);
-      setCaptureMethods((current) => ({ ...current, [side]: "upload" }));
-      setImageWarnings((current) => ({ ...current, [side]: [] }));
-    };
-
     if (file.size > MAX_ID_IMAGE_SIZE) {
-      setError("Each ID image must be 8 MB or smaller. Choose a smaller image and try again.");
+      setError("The PhilSys ID front image must be 8 MB or smaller. Choose a smaller image and try again.");
+      return;
+    }
+    if (file.type !== "application/pdf" && !["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setImageErrors((current) => ({ ...current, [side]: "Choose a JPEG, PNG, WebP, or single-page PDF of your PhilSys ID." }));
       return;
     }
     setError("");
@@ -381,39 +390,34 @@ export default function VerificationPage() {
     setImageWarnings((current) => ({ ...current, [side]: [] }));
     setCheckingImages((current) => ({ ...current, [side]: true }));
     try {
-      const quality = await checkImageSharpness(file);
-      if (quality.isBlurry || quality.isTooSmall) {
-        clearImage();
-        setImageErrors((current) => ({
-          ...current,
-          [side]: quality.isBlurry
-            ? "This photo is too blurry to read. Hold the camera steady, tap to focus, and retake it."
-            : "This photo has too few pixels to read the ID. Retake it closer or choose a higher-resolution image.",
-        }));
-        return;
-      }
-
+      let preparedFile = file;
       const warnings = [];
-      if (quality.isLowResolution) {
-        warnings.push("This image may not have enough detail. Retake it closer to the ID if the printed text looks small.");
+      if (file.type !== "application/pdf") {
+        const quality = await checkImageSharpness(file);
+        if (quality.isBlurry || quality.isTooDark) {
+          setImageErrors((current) => ({ ...current, [side]: PHILSYS_RETAKE_MESSAGE }));
+          return;
+        }
+        if (quality.isTooSmall) {
+          setImageErrors((current) => ({
+            ...current,
+            [side]: "This image is too small to read. Retake it closer to your PhilSys ID.",
+          }));
+          return;
+        }
+        if (quality.isLowResolution) {
+          warnings.push("This image may not have enough detail. Retake it closer if the printed text looks small.");
+        }
+        if (quality.isOverexposed) {
+          warnings.push("Bright areas may hide ID details. Avoid direct light and reflections.");
+        }
+        preparedFile = await prepareVerificationImage(file);
       }
-      if (quality.isTooDark) {
-        warnings.push("The photo looks dark. Add even light and keep your shadow off the ID.");
-      }
-      if (quality.isOverexposed) {
-        warnings.push("Bright areas may hide ID details. Avoid direct light and reflections.");
-      }
-
-      const preparedFile = await prepareVerificationImage(file);
-      setImageWarnings((current) => ({ ...current, [side]: warnings }));
-      setPreview((currentPreview) => {
-        if (currentPreview) URL.revokeObjectURL(currentPreview);
-        return URL.createObjectURL(preparedFile);
-      });
-      setter(preparedFile);
-      setCaptureMethods((current) => ({ ...current, [side]: captureMethod }));
+      if (pendingPhotoUrlRef.current) URL.revokeObjectURL(pendingPhotoUrlRef.current);
+      const preview = URL.createObjectURL(preparedFile);
+      pendingPhotoUrlRef.current = preview;
+      setPendingPhoto({ side, file: preparedFile, preview, warnings });
     } catch (imageError) {
-      clearImage();
       setImageErrors((current) => ({
         ...current,
         [side]: imageError.message || "Could not check this image. Please choose another.",
@@ -423,10 +427,28 @@ export default function VerificationPage() {
     }
   };
 
+  const discardPendingPhoto = () => {
+    if (pendingPhoto?.preview) URL.revokeObjectURL(pendingPhoto.preview);
+    pendingPhotoUrlRef.current = "";
+    setPendingPhoto(null);
+  };
+
+  const confirmPendingPhoto = () => {
+    if (!pendingPhoto) return;
+    const committedPreview = URL.createObjectURL(pendingPhoto.file);
+    setIdFrontPreview((currentPreview) => {
+      if (currentPreview) URL.revokeObjectURL(currentPreview);
+      return committedPreview;
+    });
+    setIdFrontFile(pendingPhoto.file);
+    setImageWarnings((current) => ({ ...current, front: pendingPhoto.warnings }));
+    discardPendingPhoto();
+  };
+
   const handleFileSelect = (side) => (e) => {
     const file = e.target.files[0];
     e.target.value = "";
-    void processSelectedImage(side, file, "upload");
+    void processSelectedImage(side, file);
   };
 
   const handleRemove = (side, setter, setPreview) => () => {
@@ -435,7 +457,6 @@ export default function VerificationPage() {
       return "";
     });
     setter(null);
-    setCaptureMethods((current) => ({ ...current, [side]: "upload" }));
     setImageErrors((current) => ({ ...current, [side]: "" }));
     setImageWarnings((current) => ({ ...current, [side]: [] }));
   };
@@ -448,27 +469,27 @@ export default function VerificationPage() {
       setError("Finish or close the live camera before submitting your ID.");
       return;
     }
+    if (pendingPhoto) {
+      setError("Confirm the photo preview or retake it before submitting.");
+      return;
+    }
 
-    if (checkingImages.front || checkingImages.back) {
+    if (checkingImages.front) {
       setError("Please wait for the image clarity check to finish.");
       return;
     }
 
-    if (!idFrontFile || !idBackFile) {
-      setError("Please upload both ID front and ID back images");
+    if (!idFrontFile) {
+      setError("Upload the front of your PhilSys National ID before submitting.");
       return;
     }
 
     setUploading(true);
     const formData = new FormData();
     formData.append("idFront", idFrontFile);
-    formData.append("idBack", idBackFile);
-    formData.append("idFrontCaptureMethod", captureMethods.front);
-    formData.append("idBackCaptureMethod", captureMethods.back);
-
     try {
-      if (idFrontFile.size + idBackFile.size > 3_400_000) {
-        throw new Error("The two ID photos are still too large to submit. Please retake them closer to the ID or choose smaller photos.");
+      if (idFrontFile.size > 3_400_000) {
+        throw new Error("Your PhilSys ID front image is too large. Choose a smaller photo or a compressed single-page PDF.");
       }
       const res = await apiFetch("/api/v1/users/verify", {
         method: "POST",
@@ -481,7 +502,7 @@ export default function VerificationPage() {
         : {};
       if (!res.ok) {
         setError(res.status === 413
-          ? "The upload service rejected the photos because they are too large. Please retake each side closer to the ID and try again."
+          ? "The upload service rejected the photo because it is too large. Choose a smaller image and try again."
           : data.message || data.error || `Verification failed (HTTP ${res.status}). Please try again.`);
         setUploading(false);
         return;
@@ -506,7 +527,7 @@ export default function VerificationPage() {
     }
   };
 
-  const imagesBusy = uploading || checkingImages.front || checkingImages.back;
+  const imagesBusy = uploading || checkingImages.front;
 
   return (
     <div>
@@ -545,7 +566,7 @@ export default function VerificationPage() {
               ? "Your documents are with our team. You can continue using TaskPanda while we review them."
               : verificationState === "verified"
                 ? "Your identity is confirmed. You can continue using all available TaskPanda features."
-                : "Capture or upload both sides of a valid photo ID. Use a flat surface, even light, and keep all four ID corners visible so the text can be read."}
+                  : "Upload only the front of your Philippine National ID (PhilSys). Keep all four corners visible and make sure the number and printed details are clear."}
           </p>
         </div>
 
@@ -670,13 +691,14 @@ export default function VerificationPage() {
               <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-900" role="status">
                 <p className="font-bold">Your previous verification was not approved.</p>
                 <p className="mt-1">{user.verificationRejectionReason}</p>
-                <p className="mt-1">Upload clear images of both sides to submit again.</p>
+                <p className="mt-1">Upload a clear photo or single-page PDF of your PhilSys ID front to submit again.</p>
               </div>
             )}
           <ImageUpload
-            label="ID Front"
+            label="PhilSys National ID front"
             name="idFront"
-            accept="image/jpeg,image/png,image/webp"
+            accept="image/jpeg,image/png,image/webp,application/pdf,.pdf"
+            required
             file={idFrontFile}
             preview={idFrontPreview}
             onSelect={handleFileSelect("front")}
@@ -693,32 +715,7 @@ export default function VerificationPage() {
               onCancel={() => setCameraSide("")}
               onCapture={(file) => {
                 setCameraSide("");
-                void processSelectedImage("front", file, "guided-camera");
-              }}
-            />
-          )}
-
-          <ImageUpload
-            label="ID Back"
-            name="idBack"
-            accept="image/jpeg,image/png,image/webp"
-            file={idBackFile}
-            preview={idBackPreview}
-            onSelect={handleFileSelect("back")}
-            onTakePhoto={() => setCameraSide("back")}
-            onRemove={handleRemove("back", setIdBackFile, setIdBackPreview)}
-            disabled={imagesBusy}
-            isChecking={checkingImages.back}
-            imageError={imageErrors.back}
-            imageWarnings={imageWarnings.back}
-          />
-          {cameraSide === "back" && (
-            <GuidedCamera
-              side="back"
-              onCancel={() => setCameraSide("")}
-              onCapture={(file) => {
-                setCameraSide("");
-                void processSelectedImage("back", file, "guided-camera");
+                void processSelectedImage("front", file);
               }}
             />
           )}
@@ -733,7 +730,7 @@ export default function VerificationPage() {
                 <div>
                   <p className="text-sm font-semibold text-slate-900">Submitting your ID securely</p>
                   <p className="mt-1 text-xs leading-5 text-slate-700">
-                    We’re uploading both images and saving your submission. Once they’re saved, you can leave while the ID check continues in the background.
+                    We’re checking your PhilSys ID and securely saving the result. Keep this page open until the check finishes.
                   </p>
                 </div>
               </div>
@@ -751,7 +748,7 @@ export default function VerificationPage() {
             <button
               type="button"
               onClick={() => navigate(profilePath)}
-              disabled={uploading || checkingImages.front || checkingImages.back}
+              disabled={uploading || checkingImages.front}
               className="dashboard-focus flex-1 rounded-xl border border-slate-300 bg-white/80 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-white"
             >
               Cancel
@@ -761,13 +758,66 @@ export default function VerificationPage() {
               disabled={imagesBusy || Boolean(cameraSide)}
               className="dashboard-focus flex-1 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white shadow-[0_8px_20px_rgba(15,23,42,0.15)] transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {uploading ? "Uploading..." : "Submit Verification"}
+              {uploading ? "Checking PhilSys ID…" : "Submit PhilSys ID"}
             </button>
           </div>
           </form>
         )}
         </div>
       </main>
+      {pendingPhoto && createPortal(
+        <div
+          className="fixed inset-0 z-[130] flex items-center justify-center overflow-y-auto bg-slate-950/75 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) discardPendingPhoto();
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="philsys-photo-review-title"
+            className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_24px_80px_rgba(2,6,23,0.35)] sm:p-7"
+          >
+            <h2 id="philsys-photo-review-title" className="text-xl font-extrabold tracking-tight text-slate-950">
+              Review your PhilSys ID photo
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Check that the full ID is visible and its printed details are sharp before confirming.
+            </p>
+            {pendingPhoto.file.type === "application/pdf" ? (
+              <iframe
+                title="PhilSys ID PDF preview"
+                src={pendingPhoto.preview}
+                className="mt-4 h-[55vh] min-h-72 w-full rounded-2xl border border-slate-200 bg-slate-50"
+              />
+            ) : (
+              <img
+                src={pendingPhoto.preview}
+                alt={`Preview of the PhilSys ID ${pendingPhoto.side}`}
+                className="mt-4 max-h-[55vh] min-h-40 w-full rounded-2xl border border-slate-200 bg-slate-50 object-contain"
+              />
+            )}
+            <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                autoFocus
+                onClick={discardPendingPhoto}
+                className="dashboard-focus min-h-11 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+              >
+                Retake Photo
+              </button>
+              <button
+                type="button"
+                onClick={confirmPendingPhoto}
+                className="dashboard-focus min-h-11 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition hover:bg-sky-800"
+              >
+                Confirm Upload
+              </button>
+            </div>
+          </section>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

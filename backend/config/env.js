@@ -46,6 +46,8 @@ module.exports = {
   adminOtpEmail: String(process.env.ADMIN_OTP_EMAIL || "").trim().toLowerCase(),
   adminOtpSecret: String(process.env.ADMIN_OTP_SECRET || "").trim(),
   authOtpSecret: String(process.env.AUTH_OTP_SECRET || process.env.ADMIN_OTP_SECRET || "").trim(),
+  identityPsnEncryptionKey: String(process.env.IDENTITY_PSN_ENCRYPTION_KEY || "").trim(),
+  identityPsnHmacKey: String(process.env.IDENTITY_PSN_HMAC_KEY || "").trim(),
   recaptchaSecretKey: String(process.env.RECAPTCHA_SECRET_KEY || "").trim(),
   appUrl: String(
     process.env.APP_URL ||

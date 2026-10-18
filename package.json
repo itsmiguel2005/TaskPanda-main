@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "",
   "main": "backend/server.js",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "concurrently --kill-others \"npm:start\" \"vite\"",
@@ -20,6 +23,7 @@
   "type": "commonjs",
   "dependencies": {
     "@google/genai": "^2.27.0",
+    "@napi-rs/canvas": "^1.0.11",
     "@vercel/functions": "^3.9.11",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.11.0",
@@ -36,13 +40,14 @@
     "mongoose": "^9.9.4",
     "multer": "^2.4.0",
     "nodemailer": "^10.0.10",
+    "pdfjs-dist": "^6.4.299",
     "ph-addresses-locations": "^1.0.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-onesignal": "^3.5.6",
     "react-router-dom": "^7.18.0",
     "recharts": "^3.10.1",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.5",
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {

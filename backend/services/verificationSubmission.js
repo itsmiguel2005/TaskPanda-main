@@ -42,6 +42,7 @@ async function persistVerificationOCRResult(userModel, userId, submittedAt, resu
     $set: {
       "verificationDetails.ocrProcessing": false,
       "verificationDetails.ocrConfidence": result.ocrConfidence,
+      "verificationDetails.verificationScore": result.verificationScore ?? 0,
       "verificationDetails.nameMatchAccuracy": result.nameMatchAccuracy,
       "verificationDetails.autoVerified": result.autoVerified,
       "verificationDetails.status": result.autoVerified ? "Active" : "Pending",
@@ -60,6 +61,7 @@ async function persistVerificationOCRResult(userModel, userId, submittedAt, resu
 async function markVerificationOCRUnavailable(userModel, userId, submittedAt, securityFlags) {
   return persistVerificationOCRResult(userModel, userId, submittedAt, {
     ocrConfidence: 0,
+    verificationScore: 0,
     nameMatchAccuracy: 0,
     autoVerified: false,
     securityFlags,
@@ -77,6 +79,7 @@ async function releaseStaleVerificationOCR(userModel, staleBefore) {
     $set: {
       "verificationDetails.ocrProcessing": false,
       "verificationDetails.ocrConfidence": 0,
+      "verificationDetails.verificationScore": 0,
       "verificationDetails.nameMatchAccuracy": 0,
       "verificationDetails.autoVerified": false,
     },

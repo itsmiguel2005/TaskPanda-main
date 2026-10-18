@@ -20,15 +20,21 @@ function verificationKey(applicant) {
   return `${applicant.type || "identity"}:${applicant.userId}:${applicant.certificateId || applicant.submittedAt || ""}`;
 }
 
-function ConfidenceBadge({ confidence, autoVerified, ocrProcessing }) {
-  const needsReview = ocrProcessing || !autoVerified || confidence === null || confidence < 60;
+function ConfidenceBadge({ verificationScore, ocrConfidence, autoVerified, ocrProcessing }) {
+  const legacyScore = verificationScore === null || verificationScore === undefined;
+  const displayedScore = legacyScore ? ocrConfidence : verificationScore;
+  const needsReview = ocrProcessing || !autoVerified || displayedScore === null || displayedScore < 60;
   return (
     <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold tabular-nums ${
       needsReview
         ? "border-amber-200 bg-amber-50 text-amber-900"
         : "border-emerald-200 bg-emerald-50 text-emerald-900"
     }`}>
-      {ocrProcessing ? "OCR processing" : confidence === null ? "OCR unavailable" : `${Math.round(confidence)}% confidence`}
+      {ocrProcessing
+        ? "OCR processing"
+        : displayedScore === null
+          ? "Score unavailable"
+          : `${Math.round(displayedScore)}% ${legacyScore ? "legacy OCR" : "verification score"}`}
     {needsReview && (
       <span className="ml-1.5 font-semibold">
         · {ocrProcessing ? "Review now" : "Needs review"}
@@ -110,7 +116,10 @@ export default function VerificationsAdmin() {
       try {
         const documentFields = viewing.type === "tesda"
           ? [["certificate", viewing.certificateUrl]]
-          : [["front", viewing.idFrontUrl], ["back", viewing.idBackUrl]];
+          : [
+            ["front", viewing.idFrontUrl],
+            ...(viewing.idBackUrl ? [["back", viewing.idBackUrl]] : []),
+          ];
         const sides = await Promise.all(documentFields.map(async ([side, url]) => {
           const response = await apiFetch(url, {
             headers: { Authorization: `Bearer ${token}` },
@@ -176,7 +185,9 @@ export default function VerificationsAdmin() {
           action,
           ...(action === "reject" ? { rejectionReason: reason } : {}),
           ...(action === "approve" && applicant.type === "tesda" ? { certificateInspected: confirmedNameMatch } : {}),
-          ...(action === "approve" ? { nameMatchConfirmed: confirmedNameMatch } : {}),
+          ...(action === "approve" && applicant.type === "identity"
+            ? { nameMatchConfirmed: confirmedNameMatch, dobMatchConfirmed: confirmedNameMatch }
+            : {}),
         }),
       });
       setVerifications((current) => current.filter((item) => verificationKey(item) !== verificationKey(applicant)));
@@ -322,10 +333,37 @@ export default function VerificationsAdmin() {
                         <span className="inline-flex w-max shrink-0 whitespace-nowrap rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-900">TESDA certificate</span>
                       ) : (
                         <>
-                          <ConfidenceBadge confidence={applicant.ocrConfidence} autoVerified={applicant.autoVerified} ocrProcessing={applicant.ocrProcessing} />
+                          <ConfidenceBadge
+                            verificationScore={applicant.verificationScore}
+                            ocrConfidence={applicant.ocrConfidence}
+                            autoVerified={applicant.autoVerified}
+                            ocrProcessing={applicant.ocrProcessing}
+                          />
+                          {applicant.verificationScore !== null && applicant.verificationScore !== undefined && applicant.ocrConfidence !== null && (
+                            <p className="mt-1 text-xs text-slate-600">
+                              Text OCR: {Math.round(applicant.ocrConfidence)}%
+                            </p>
+                          )}
                           <p className="mt-2 text-xs text-slate-600">
                             Name match: {applicant.ocrProcessing ? "Processing" : applicant.nameMatchAccuracy === null ? "Unavailable" : `${Math.round(applicant.nameMatchAccuracy)}%`}
                           </p>
+                          {applicant.maskedIdentifier && (
+                            <p className="mt-1 text-xs font-semibold text-slate-700">
+                              {applicant.identifierType}: {applicant.maskedIdentifier}
+                            </p>
+                          )}
+                          {applicant.type === "identity" && applicant.role === "provider" && (
+                            <p className="mt-1 text-xs text-slate-600">
+                              Account DOB: {applicant.dateOfBirth
+                                ? new Date(applicant.dateOfBirth).toLocaleDateString("en-PH", { dateStyle: "medium", timeZone: "UTC" })
+                                : "Not provided"}
+                            </p>
+                          )}
+                          {applicant.type === "identity" && applicant.role === "provider" && (
+                            <p className="mt-1 text-xs text-slate-600">
+                              Date of birth match: {applicant.dateOfBirthMatched ? "Confirmed by OCR" : "Needs manual confirmation"}
+                            </p>
+                          )}
                           {applicant.securityFlags?.length > 0 && (
                             <ul className="mt-2 space-y-1">
                               {applicant.securityFlags.map((flag) => (
@@ -370,7 +408,7 @@ export default function VerificationsAdmin() {
                             if (viewedVerificationKey !== verificationKey(applicant)) {
                               setActionError(applicant.type === "tesda"
                                 ? "Open and inspect the TESDA certificate before approving."
-                                : "Open and inspect both sides of this ID before approving.");
+                                : "Open and inspect the PhilSys ID image before approving.");
                               return;
                             }
                             setApproving(applicant);
@@ -416,8 +454,17 @@ export default function VerificationsAdmin() {
                 <p className="mt-1 text-xs leading-5 text-slate-600">
                   {viewing.type === "tesda"
                     ? `Review the certificate evidence for the ${viewing.trade} trade before approving.`
-                    : "Compare the full name on the ID front with this account name before approving."}
+                    : viewing.role === "provider"
+                      ? "Compare the name and date of birth on the PhilSys ID front with this provider account before approving."
+                      : "Compare the name on the PhilSys ID front with this account before approving."}
                 </p>
+                {viewing.type === "identity" && viewing.role === "provider" && (
+                  <p className="mt-1 text-xs font-semibold text-slate-700">
+                    Account date of birth: {viewing.dateOfBirth
+                      ? new Date(viewing.dateOfBirth).toLocaleDateString("en-PH", { dateStyle: "long", timeZone: "UTC" })
+                      : "Not provided"}
+                  </p>
+                )}
               </div>
               <button type="button" aria-label="Close document viewer" onClick={() => setViewing(null)} className="dashboard-focus shrink-0 rounded-xl p-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950">
                 <Icon name="close" className="h-5 w-5" />
@@ -426,7 +473,7 @@ export default function VerificationsAdmin() {
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
               {documentsLoading && (
                 <div role="status" aria-label="Loading secure documents" aria-busy="true" className={`grid gap-4 ${viewing.type === "tesda" ? "" : "sm:grid-cols-2"}`}>
-                  {Array.from({ length: viewing.type === "tesda" ? 1 : 2 }, (_, index) => (
+                  {Array.from({ length: viewing.type === "tesda" || !viewing.idBackUrl ? 1 : 2 }, (_, index) => (
                     <SkeletonBlock key={index} className="h-64 w-full rounded-xl sm:h-80" />
                   ))}
                 </div>
@@ -442,7 +489,7 @@ export default function VerificationsAdmin() {
                   </figure>
                 ) : (
                   <div className="grid gap-4 md:grid-cols-2">
-                    {[["Front", documents.front], ["Back", documents.back]].map(([side, url]) => (
+                    {[["Front", documents.front], ...(documents.back ? [["Back", documents.back]] : [])].map(([side, url]) => (
                       <figure key={side} className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80">
                         <figcaption className="shrink-0 border-b border-slate-200 px-4 py-3 text-sm font-bold text-slate-800">ID {side}</figcaption>
                         <div className="flex min-h-64 items-center justify-center p-3 sm:min-h-80">
@@ -475,7 +522,7 @@ export default function VerificationsAdmin() {
             <p className="mt-2 text-sm leading-6 text-slate-600">
               {approving.type === "tesda"
                 ? <>Approving will mark the <span className="font-bold text-slate-900">{approving.trade}</span> certificate for <span className="font-bold text-slate-900">{approving.name}</span> as verified.</>
-                : <>Approving will verify <span className="font-bold text-slate-900">{approving.name}</span> and activate this account. Check the ID images against the account name before continuing.</>}
+                : <>Approving will verify <span className="font-bold text-slate-900">{approving.name}</span> and activate this account. Check the PhilSys ID name{approving.role === "provider" ? " and date of birth" : ""} against the account before continuing.</>}
             </p>
             {actionError && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">{actionError}</p>}
             <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-xl border border-sky-200 bg-sky-50/80 p-4 text-sm leading-6 text-sky-950">
@@ -488,7 +535,9 @@ export default function VerificationsAdmin() {
               <span>
                 {approving.type === "tesda"
                   ? "I inspected the certificate and confirmed it supports the TESDA trade listed above."
-                  : "I inspected both ID images and confirmed the full name on the ID matches this account holder."}
+                  : approving.role === "provider"
+                    ? "I inspected the PhilSys ID and confirmed that its name and date of birth match this provider."
+                    : "I inspected the PhilSys ID and confirmed that its name matches this account holder."}
               </span>
             </label>
             <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
@@ -498,7 +547,7 @@ export default function VerificationsAdmin() {
               <button type="submit" disabled={!nameMatchConfirmed || Boolean(processingUserId) || viewedVerificationKey !== verificationKey(approving)} className="dashboard-focus min-h-11 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-55">
                 {processingUserId === approving.userId
                   ? "Saving…"
-                  : approving.type === "tesda" ? "Confirm and approve" : "Confirm name and approve"}
+                  : approving.type === "tesda" ? "Confirm and approve" : "Confirm identity and approve"}
               </button>
             </div>
           </form>

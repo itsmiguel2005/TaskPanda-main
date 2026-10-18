@@ -198,13 +198,16 @@ const userSchema = new mongoose.Schema(
       idBackUrl: { type: String, default: "" },
       tradeCertificate: { type: String, trim: true, maxlength: 200, default: "" },
       ocrConfidence: { type: Number, min: 0, max: 100, default: null },
+      verificationScore: { type: Number, min: 0, max: 100, default: null },
       nameMatchAccuracy: { type: Number, min: 0, max: 100, default: null },
+      dateOfBirthMatched: { type: Boolean, default: false },
+      ageEligible: { type: Boolean, default: false },
       ocrProcessing: { type: Boolean, default: false },
       autoVerified: { type: Boolean, default: false },
       securityFlags: {
         type: [{
           type: String,
-          enum: ["AI_OR_EDITED_METADATA_DETECTED", "CAMERA_METADATA_MISSING", "METADATA_INSPECTION_FAILED"],
+          enum: ["AI_OR_EDITED_METADATA_DETECTED", "METADATA_INSPECTION_FAILED"],
         }],
         default: [],
       },
@@ -216,6 +219,13 @@ const userSchema = new mongoose.Schema(
       idBackPublicId: { type: String, select: false },
       idFrontFormat: { type: String, select: false },
       idBackFormat: { type: String, select: false },
+      identifierType: { type: String, enum: ["PSN", "PCN"], select: false },
+      identifierCiphertext: { type: String, select: false },
+      identifierIv: { type: String, select: false },
+      identifierTag: { type: String, select: false },
+      identifierKeyVersion: { type: String, select: false },
+      identifierHash: { type: String, select: false },
+      identifierLastFour: { type: String, select: false },
     },
     registrationComplete: {
       type: Boolean,
@@ -425,8 +435,24 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+userSchema.pre("validate", function removeRetiredCameraMetadataFlag() {
+  const securityFlags = this.verificationDetails?.securityFlags;
+  if (Array.isArray(securityFlags) && securityFlags.includes("CAMERA_METADATA_MISSING")) {
+    this.verificationDetails.securityFlags = securityFlags.filter(
+      (flag) => flag !== "CAMERA_METADATA_MISSING",
+    );
+  }
+});
+
 userSchema.index({ geoLocation: "2dsphere" });
 userSchema.index({ username: 1 });
 userSchema.index({ referralCode: 1 }, { unique: true, sparse: true });
+userSchema.index(
+  { "verificationDetails.identifierHash": 1 },
+  {
+    unique: true,
+    partialFilterExpression: { "verificationDetails.identifierHash": { $type: "string" } },
+  }
+);
 
 module.exports = mongoose.model("User", userSchema);

@@ -141,6 +141,7 @@ test("background OCR updates only the exact still-processing submission", async 
 
   await persistVerificationOCRResult(userModel, "user-123", submittedAt, {
     ocrConfidence: 86,
+    verificationScore: 92,
     nameMatchAccuracy: 100,
     autoVerified: true,
     securityFlags: [],
@@ -152,6 +153,7 @@ test("background OCR updates only the exact still-processing submission", async 
   assert.equal(updates[0].filter["verificationDetails.ocrProcessing"], true);
   assert.equal(updates[0].update.$set["verificationDetails.status"], "Active");
   assert.equal(updates[0].update.$set["verificationDetails.ocrProcessing"], false);
+  assert.equal(updates[0].update.$set["verificationDetails.verificationScore"], 92);
   assert.equal(updates[0].update.$set.verificationStatus, "verified");
   assert.equal(updates[0].options.new, true);
 });
@@ -170,6 +172,7 @@ test("OCR-unavailable fallback keeps a submission pending for manual review", as
 
   assert.equal(result, null);
   assert.equal(updates[0].update.$set["verificationDetails.ocrConfidence"], 0);
+  assert.equal(updates[0].update.$set["verificationDetails.verificationScore"], 0);
   assert.equal(updates[0].update.$set["verificationDetails.nameMatchAccuracy"], 0);
   assert.equal(updates[0].update.$set["verificationDetails.ocrProcessing"], false);
   assert.equal(updates[0].update.$set["verificationDetails.status"], "Pending");
@@ -194,6 +197,7 @@ test("stale OCR runs are released for manual review without changing the submiss
   assert.ok(submittedAtFilter[Object.getOwnPropertySymbols(submittedAtFilter)[0]]);
   assert.equal(submittedAtFilter.$lt, staleBefore);
   assert.equal(updates[0].update.$set["verificationDetails.ocrProcessing"], false);
+  assert.equal(updates[0].update.$set["verificationDetails.verificationScore"], 0);
   assert.equal(updates[0].update.$set["verificationDetails.nameMatchAccuracy"], 0);
   assert.equal(updates[0].update.$set["verificationDetails.autoVerified"], false);
   assert.equal(updates[0].update.$set["verificationDetails.status"], undefined);

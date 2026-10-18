@@ -1,11 +1,17 @@
 const fs = require("fs/promises");
 const mongoose = require("mongoose");
 const { logAuditAction } = require("../utils/logAuditAction");
-const { waitUntil } = require("@vercel/functions");
 const { notifyAdminEvent } = require("../services/adminNotifications");
 const User = require("../models/User");
+const { encryptIdentifier, getIdentityKeys, maskIdentifier } = require("../utils/identityCrypto");
+const { recordIdentityVerificationAttempt } = require("../utils/identityVerificationAudit");
+const { prepareVerificationDocument } = require("../utils/verificationDocument");
+const { getAgeFromDateOfBirth } = require("../utils/providerAge");
 const tesdaSectors = require("../../shared/tesdaQualifications.json");
 const TESDA_QUALIFICATIONS = new Set(tesdaSectors.flatMap(({ qualifications }) => qualifications));
+const PHILSYS_RETAKE_MESSAGE = "Incorrect ID or blurry photo detected. TaskPanda only accepts the Philippine National ID (PhilSys). Please ensure a clear photo of your PhilSys ID is provided and retake it.";
+const PHILSYS_HEADER_RETAKE_MESSAGE = "We couldn't read the PhilSys heading. Make sure the top of the front of your Philippine National ID is fully visible, then retake the photo.";
+const PHILSYS_NUMBER_RETAKE_MESSAGE = "We recognized the PhilSys ID, but couldn't read its number. Retake the front photo closer, with the number below the heading fully visible.";
 
 function tesdaCertificateResponse(certificate) {
   return {
@@ -17,15 +23,9 @@ function tesdaCertificateResponse(certificate) {
     rejectionReason: certificate.rejectionReason || "",
   };
 }
-const {
-  classifyIdSide,
-  performOCRVerification,
-  warmOCRWorker,
-} = require("../utils/ocrHelper");
+const { performOCRVerification, shouldUseManualReview } = require("../utils/ocrHelper");
 const { SECURITY_FLAGS, inspectVerificationMetadata } = require("../utils/verificationMetadata");
 const {
-  markVerificationOCRUnavailable,
-  persistVerificationOCRResult,
   persistVerificationSubmission,
   releaseStaleVerificationOCR,
 } = require("../services/verificationSubmission");
@@ -42,285 +42,234 @@ function getProfileName(user) {
   return String(user.fullName || [user.firstName, user.middleName, user.lastName].filter(Boolean).join(" ")).trim();
 }
 
-function getProfileNameParts(user) {
-  if (user.firstName && user.lastName) {
-    return {
-      firstName: user.firstName,
-      middleName: user.middleName || "",
-      lastName: user.lastName,
-    };
-  }
-  return getProfileName(user);
-}
-
 async function handleSubmitVerification(req, res) {
   const front = req.files?.idFront?.[0];
-  const back = req.files?.idBack?.[0];
-  const uploadedFiles = [front, back].filter(Boolean);
-  if (!front || !back) {
-    await removeUploadedFiles(uploadedFiles);
-    return res.status(400).json({ message: "Both the front and back of your ID are required." });
-  }
-
+  const uploadedFiles = front ? [front] : [];
   const uploadedCloudImages = [];
-  let cloudUploadsPromise;
-  let submissionSaved = false;
-  try {
-    const previousUser = await User.findById(req.user._id)
-      .select("+verificationDetails.idFrontPublicId +verificationDetails.idBackPublicId");
-    if (!previousUser) {
-      await removeUploadedFiles(uploadedFiles);
-      return res.status(404).json({ message: "Your account could not be found." });
-    }
-    if (previousUser.isVerified === true && previousUser.verificationDetails?.status === "Active") {
-      const error = new Error("Your identity is already verified. This submission was not saved.");
-      error.statusCode = 409;
-      throw error;
-    }
+  let uploadedDocuments = [];
+  let auditRecorded = false;
+  let savedSubmission = false;
+  let identifierHash = '';
 
-    const tradeCertificate = String(req.body.tradeCertificate || req.body.certificate || "").trim();
-    if (tradeCertificate.length > 200) {
-      await removeUploadedFiles(uploadedFiles);
-      return res.status(400).json({ message: "Trade certificates must be 200 characters or fewer." });
-    }
-
-    void warmOCRWorker().catch((error) => {
-      console.warn("Verification OCR worker preloading failed; it will retry during processing:", error.message);
+  const recordAttempt = async (status, reason) => {
+    await recordIdentityVerificationAttempt(req, {
+      identifierHash,
+      reason,
+      status,
+      userId: req.user?._id,
     });
-    const [frontBuffer, backBuffer] = await Promise.all([
-      fs.readFile(front.path),
-      fs.readFile(back.path),
-    ]);
-    cloudUploadsPromise = Promise.allSettled([
-      uploadVerificationImage(frontBuffer, String(req.user._id), "front"),
-      uploadVerificationImage(backBuffer, String(req.user._id), "back"),
-    ]);
-    const captureMethods = {
-      front: req.body.idFrontCaptureMethod === "guided-camera" ? "guided-camera" : "upload",
-      back: req.body.idBackCaptureMethod === "guided-camera" ? "guided-camera" : "upload",
-    };
+    auditRecorded = true;
+  };
+
+  try {
+    if (!front) {
+      await recordAttempt('FAILURE', 'invalid_document');
+      return res.status(400).json({ message: 'Upload the front of your PhilSys National ID.' });
+    }
+
+    const previousUser = await User.findById(req.user._id)
+      .select('+verificationDetails.idFrontPublicId +verificationDetails.idBackPublicId');
+    if (!previousUser) {
+      await recordAttempt('FAILURE', 'processing_error');
+      return res.status(404).json({ message: 'Your account could not be found.' });
+    }
+    if (previousUser.isVerified === true && previousUser.verificationDetails?.status === 'Active') {
+      await recordAttempt('FAILURE', 'processing_error');
+      return res.status(409).json({ message: 'Your identity is already verified.' });
+    }
+
+    const tradeCertificate = String(req.body.tradeCertificate || req.body.certificate || '').trim();
+    if (tradeCertificate.length > 200) {
+      await recordAttempt('FAILURE', 'processing_error');
+      return res.status(400).json({ message: 'Trade certificates must be 200 characters or fewer.' });
+    }
+
+    const keys = getIdentityKeys();
+    const frontBuffer = await fs.readFile(front.path);
+    const frontDocument = await prepareVerificationDocument(frontBuffer, front.mimetype);
+
+    if (frontDocument.quality.isBlurry || frontDocument.quality.isTooDark) {
+      await recordAttempt('FAILURE', 'image_quality');
+      return res.status(422).json({ message: PHILSYS_RETAKE_MESSAGE });
+    }
+
+    const ocrResult = await performOCRVerification(frontDocument.buffer, {
+      firstName: previousUser.firstName,
+      middleName: previousUser.middleName,
+      lastName: previousUser.lastName,
+      fullName: getProfileName(previousUser),
+      dateOfBirth: previousUser.dateOfBirth,
+      role: previousUser.role,
+    });
+    if (!ocrResult.headerMatched) {
+      await recordAttempt('FAILURE', 'invalid_document');
+      return res.status(422).json({ message: PHILSYS_HEADER_RETAKE_MESSAGE });
+    }
+    if (!ocrResult.identifier) {
+      await recordAttempt('FAILURE', 'invalid_document');
+      return res.status(422).json({ message: PHILSYS_NUMBER_RETAKE_MESSAGE });
+    }
+
+    const protectedIdentifier = encryptIdentifier(
+      ocrResult.identifier.digits,
+      ocrResult.identifier.type,
+      keys,
+    );
+    identifierHash = protectedIdentifier.hash;
+
+    if (previousUser.role === 'provider' && ocrResult.providerAge !== null && ocrResult.providerAge < 18) {
+      await recordAttempt('FAILURE', 'underage');
+      return res.status(422).json({ message: 'Providers must be at least 18 years old to verify their identity.' });
+    }
+
     const metadataInspections = await Promise.all([
-      inspectVerificationMetadata(frontBuffer, { cameraCaptured: captureMethods.front === "guided-camera" }),
-      inspectVerificationMetadata(backBuffer, { cameraCaptured: captureMethods.back === "guided-camera" }),
+      ...(frontDocument.isPdf ? [] : [
+        inspectVerificationMetadata(frontBuffer),
+      ]),
     ]);
     const securityFlags = [...new Set(metadataInspections.flatMap(({ flags }) => flags))];
-    metadataInspections.forEach((metadataInspection) => {
-      if (metadataInspection.error) {
-        console.warn("Verification metadata inspection failed; routing submission for manual review:", metadataInspection.error.message);
-      }
+    metadataInspections.forEach(({ error }) => {
+      if (error) console.warn('Verification metadata inspection failed.');
     });
-    if (securityFlags.includes(SECURITY_FLAGS.AI_OR_EDITED_METADATA_DETECTED)) {
-      console.warn("Verification metadata indicates possible AI-generated or edited ID; routing for manual review.", String(req.user._id));
-    }
-    if (securityFlags.includes(SECURITY_FLAGS.CAMERA_METADATA_MISSING)) {
-      console.warn("Verification ID has no camera Make/Model metadata; flagging for admin inspection.", String(req.user._id));
+
+    const autoVerified = ocrResult.autoVerified;
+    const manualReview = !autoVerified && shouldUseManualReview(ocrResult);
+    if (!autoVerified && !manualReview) {
+      await recordAttempt('FAILURE', 'identity_mismatch');
+      return res.status(422).json({
+        message: 'The name on your PhilSys ID does not match your TaskPanda account. Check your profile details or contact support.',
+      });
     }
 
-    const [frontUpload, backUpload] = await cloudUploadsPromise;
-    for (const upload of [frontUpload, backUpload]) {
-      if (upload.status === "fulfilled") uploadedCloudImages.push(upload.value.publicId);
+    if (manualReview) {
+      const frontImage = await uploadVerificationImage(
+        frontDocument.buffer,
+        String(req.user._id),
+        'front',
+      );
+      uploadedDocuments = [frontImage];
+      uploadedCloudImages.push(frontImage.publicId);
     }
-    const failedOperation = [frontUpload, backUpload].find((result) => result.status === "rejected");
-    if (failedOperation) throw failedOperation.reason;
 
-    const frontImage = frontUpload.value;
-    const backImage = backUpload.value;
+    const frontImage = uploadedDocuments[0] || null;
     const submittedAt = new Date();
     const verificationDetails = {
-      idFrontUrl: `/api/v1/admin/verifications/${req.user._id}/documents/front`,
-      idBackUrl: `/api/v1/admin/verifications/${req.user._id}/documents/back`,
+      idFrontUrl: frontImage ? `/api/v1/admin/verifications/${req.user._id}/documents/front` : '',
+      idBackUrl: '',
+      idBackPublicId: '',
+      idBackFormat: '',
       tradeCertificate,
-      ocrConfidence: null,
-      nameMatchAccuracy: null,
-      ocrProcessing: true,
-      autoVerified: false,
+      ocrConfidence: ocrResult.ocrConfidence,
+      verificationScore: ocrResult.verificationScore,
+      nameMatchAccuracy: ocrResult.nameMatchAccuracy,
+      dateOfBirthMatched: ocrResult.dateOfBirthMatched,
+      ageEligible: previousUser.role !== 'provider' ||
+        ocrResult.providerAge !== null && ocrResult.providerAge >= 18,
+      ocrProcessing: false,
+      autoVerified,
       securityFlags,
-      rejectionReason: "",
-      status: "Pending",
+      rejectionReason: '',
+      status: autoVerified ? 'Active' : 'Pending',
       submittedAt,
       reviewedAt: null,
-      idFrontPublicId: frontImage.publicId,
-      idBackPublicId: backImage.publicId,
-      idFrontFormat: frontImage.format,
-      idBackFormat: backImage.format,
+      ...(frontImage ? {
+        idFrontPublicId: frontImage.publicId,
+        idFrontFormat: frontImage.format,
+      } : {}),
+      identifierType: ocrResult.identifier.type,
+      identifierCiphertext: protectedIdentifier.ciphertext,
+      identifierIv: protectedIdentifier.iv,
+      identifierTag: protectedIdentifier.tag,
+      identifierKeyVersion: protectedIdentifier.keyVersion,
+      identifierHash: protectedIdentifier.hash,
+      identifierLastFour: protectedIdentifier.lastFour,
     };
 
-    const savedUser = await persistVerificationSubmission(
-      User,
-      previousUser,
-      verificationDetails,
-      false,
-    );
-    submissionSaved = true;
-
+    const savedUser = await persistVerificationSubmission(User, previousUser, verificationDetails, autoVerified);
+    savedSubmission = true;
     const previousPublicIds = [
       previousUser.verificationDetails?.idFrontPublicId,
       previousUser.verificationDetails?.idBackPublicId,
     ].filter((publicId) => publicId && !uploadedCloudImages.includes(publicId));
-    const runBackgroundTasks = async () => {
-      await processIdentityVerificationOCR({
-        userId: savedUser._id,
-        role: savedUser.role,
-        submittedAt,
-        profileName: getProfileNameParts(savedUser),
-        securityFlags,
-        frontBuffer,
-      });
-      await Promise.all(previousPublicIds.map((publicId) => deleteVerificationImage(publicId).catch((error) => {
-        console.error("Could not remove replaced verification image:", error.message);
-      })));
-    };
-    if (process.env.VERCEL) {
-      waitUntil(Promise.resolve().then(runBackgroundTasks));
-    } else {
-      setImmediate(() => {
-        void runBackgroundTasks().catch((error) => {
-          console.error("Background verification tasks failed:", error);
-        });
-      });
+    await Promise.all(previousPublicIds.map((publicId) => deleteVerificationImage(publicId).catch((error) => {
+      console.error('Could not remove replaced verification image:', error.message);
+    })));
+
+    await recordAttempt(
+      autoVerified ? 'SUCCESS' : 'PENDING_MANUAL_REVIEW',
+      autoVerified ? 'verified' : 'manual_review',
+    );
+
+    if (!autoVerified) await notifyIdentityVerificationReview(savedUser._id, savedUser.role, submittedAt);
+    if (autoVerified && savedUser.role === 'client') {
+      try {
+        await awardVerificationVoucher(savedUser._id);
+      } catch (error) {
+        console.error('Could not award client identity verification voucher:', error.message);
+      }
     }
 
-    res.status(202).json({
+    return res.status(autoVerified ? 200 : 202).json({
       success: true,
-      autoVerified: false,
-      ocrProcessing: true,
-      isVerified: false,
-      status: "Pending",
+      autoVerified,
+      ocrProcessing: false,
+      isVerified: autoVerified,
+      status: autoVerified ? 'Active' : 'Pending',
       verificationStatus: savedUser.verificationStatus,
-      ocrConfidence: null,
-      nameMatchAccuracy: null,
+      ocrConfidence: ocrResult.ocrConfidence,
+      verificationScore: ocrResult.verificationScore,
+      nameMatchAccuracy: ocrResult.nameMatchAccuracy,
       securityFlags,
-      message: "Your documents are saved. We are checking your ID in the background; you can continue using TaskPanda.",
+      message: autoVerified
+        ? 'Your PhilSys ID is verified.'
+        : 'Your PhilSys ID is in the secure admin queue for manual review.',
       user: {
-        isVerified: false,
-        status: "Pending",
+        isVerified: autoVerified,
+        status: autoVerified ? 'Active' : 'Pending',
         verificationStatus: savedUser.verificationStatus,
       },
     });
   } catch (error) {
-    await removeUploadedFiles(uploadedFiles);
-    if (!submissionSaved) {
-      if (cloudUploadsPromise) {
-        const completedUploads = await cloudUploadsPromise;
-        for (const upload of completedUploads) {
-          if (upload.status === "fulfilled") uploadedCloudImages.push(upload.value.publicId);
-        }
+    if (!auditRecorded) {
+      try {
+        await recordAttempt('FAILURE', error.code === 11000 ? 'duplicate_identifier' : 'processing_error');
+      } catch (auditError) {
+        console.error('Identity verification audit write failed:', auditError.message);
       }
-      await Promise.all([...new Set(uploadedCloudImages)].map((publicId) => deleteVerificationImage(publicId).catch((deleteError) => {
-        console.error("Could not remove unsaved verification image:", deleteError.message);
+    }
+    if (!savedSubmission) {
+      await Promise.all(uploadedCloudImages.map((publicId) => deleteVerificationImage(publicId).catch((deleteError) => {
+        console.error('Could not remove unsaved verification image:', deleteError.message);
       })));
     }
-    console.error("Submit identity verification error:", error);
+    console.error('PhilSys verification submission failed:', error.code || error.statusCode || 'unexpected error');
+    if (error.code === 11000) {
+      return res.status(409).json({ message: 'This PhilSys ID is already linked to another TaskPanda account.' });
+    }
     if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
-    return res.status(500).json({ message: "We could not save your verification. Please try again." });
+    return res.status(500).json({ message: 'We could not securely process your PhilSys ID. Please try again.' });
   } finally {
     await removeUploadedFiles(uploadedFiles);
-  }
-}
-
-async function processIdentityVerificationOCR({
-  userId,
-  role,
-  submittedAt,
-  profileName,
-  securityFlags,
-  frontBuffer,
-  frontPublicId,
-  frontFormat,
-}) {
-  try {
-    let frontImageBuffer = frontBuffer;
-    if (!frontImageBuffer) {
-      const frontImage = await fetchAuthenticatedVerificationImage(frontPublicId, frontFormat);
-      frontImageBuffer = frontImage.body;
-    }
-
-    const ocrResult = await performOCRVerification(frontImageBuffer, profileName);
-    const frontSideCheck = classifyIdSide({
-      extractedText: ocrResult.extractedText,
-      ocrConfidence: ocrResult.ocrConfidence,
-      nameMatch: {
-        firstNameMatched: ocrResult.firstNameMatched,
-        lastNameMatched: ocrResult.lastNameMatched,
-      },
-      detectedIdType: ocrResult.detectedIdType,
-    });
-    const autoVerified = ocrResult.autoVerified &&
-      securityFlags.length === 0 &&
-      frontSideCheck !== "back";
-    if (frontSideCheck === "back") {
-      console.warn("Verification OCR found possible back-side evidence on the submitted front image; keeping the submission pending for manual review.", String(userId));
-    }
-
-    const updatedUser = await persistVerificationOCRResult(User, userId, submittedAt, {
-      ocrConfidence: ocrResult.ocrConfidence,
-      nameMatchAccuracy: ocrResult.nameMatchAccuracy,
-      autoVerified,
-      securityFlags,
-    });
-    if (!updatedUser) return;
-
-    if (!updatedUser.isVerified) await notifyIdentityVerificationReview(userId, role, submittedAt);
-
-    if (autoVerified && role === "client") {
-      try {
-        await awardVerificationVoucher(updatedUser._id);
-      } catch (error) {
-        console.error("Could not award client identity verification voucher:", error);
-      }
-    }
-  } catch (error) {
-    console.error("Background identity OCR processing failed; leaving the submission for manual review:", error);
-    let shouldNotifyAdmins = true;
-    try {
-      const pendingUser = await markVerificationOCRUnavailable(User, userId, submittedAt, securityFlags);
-      shouldNotifyAdmins = Boolean(pendingUser);
-    } catch (saveError) {
-      console.error("Could not mark failed identity OCR for manual review:", saveError);
-    }
-    if (shouldNotifyAdmins) await notifyIdentityVerificationReview(userId, role, submittedAt);
   }
 }
 
 async function notifyIdentityVerificationReview(userId, role, submittedAt) {
   try {
     await notifyAdminEvent({
-      title: "Identity verification needs review",
-      body: `A ${role} submitted identity documents for manual review.`,
-      url: "/admin?section=verifications",
+      title: 'PhilSys identity verification needs review',
+      body: `A ${role} submitted a PhilSys ID for manual review.`,
+      url: '/admin?section=verifications',
       eventKey: `verification.identity:${userId}:${new Date(submittedAt).getTime()}`,
-      data: {
-        event: "verification.identity_submitted",
-        userId: String(userId),
-      },
+      data: { event: 'verification.identity_submitted', userId: String(userId) },
     });
-  } catch (notificationError) {
-    console.error("Identity verification admin notification failed:", notificationError.message);
+  } catch (error) {
+    console.error('PhilSys verification admin notification failed:', error.message);
   }
 }
 
 async function resumePendingVerificationOCR() {
-  const pendingUsers = await User.find({
-    "verificationDetails.status": "Pending",
-    "verificationDetails.ocrProcessing": true,
-  })
-    .select("role firstName middleName lastName fullName +verificationDetails.idFrontPublicId +verificationDetails.idFrontFormat")
-    .lean();
-
-  for (const user of pendingUsers) {
-    void processIdentityVerificationOCR({
-      userId: user._id,
-      role: user.role,
-      submittedAt: user.verificationDetails.submittedAt,
-      profileName: getProfileNameParts(user),
-      securityFlags: user.verificationDetails.securityFlags || [],
-      frontPublicId: user.verificationDetails.idFrontPublicId,
-      frontFormat: user.verificationDetails.idFrontFormat,
-    });
-  }
-  return pendingUsers.length;
+  return releaseStaleVerificationOCR(User, new Date());
 }
-
 async function handleSubmitTesdaCertificate(req, res) {
   const file = req.file;
   if (!file) return res.status(400).json({ message: "Upload a photo of your TESDA certificate." });
@@ -500,7 +449,15 @@ async function handleGetAdminVerifications(_req, res) {
         "verificationDetails.idFrontUrl": mongoose.trusted({ $ne: "" }),
         role: mongoose.trusted({ $in: ["client", "provider"] }),
       })
-        .select("fullName firstName middleName lastName username email role createdAt verificationStatus isVerified verificationDetails")
+        .select([
+          "fullName firstName middleName lastName username email role dateOfBirth createdAt verificationStatus isVerified",
+          "verificationDetails.idFrontUrl verificationDetails.idBackUrl",
+          "verificationDetails.tradeCertificate verificationDetails.ocrConfidence verificationDetails.verificationScore verificationDetails.nameMatchAccuracy",
+          "verificationDetails.dateOfBirthMatched verificationDetails.ageEligible verificationDetails.ocrProcessing",
+          "verificationDetails.autoVerified verificationDetails.securityFlags verificationDetails.rejectionReason",
+          "verificationDetails.status verificationDetails.submittedAt",
+          "+verificationDetails.identifierLastFour +verificationDetails.identifierType",
+        ].join(" "))
         .lean(),
       User.find({
         "tesdaCertificates.status": mongoose.trusted({ $regex: "^pending$", $options: "i" }),
@@ -526,6 +483,7 @@ async function handleGetAdminVerifications(_req, res) {
       username: user.username || "",
       email: user.email,
       role: user.role,
+      dateOfBirth: user.role === "provider" ? user.dateOfBirth || null : null,
       accountCreatedAt: user.createdAt,
       submittedAt: user.verificationDetails?.submittedAt || null,
       status: user.verificationDetails?.status || "Pending",
@@ -533,9 +491,19 @@ async function handleGetAdminVerifications(_req, res) {
       idBackUrl: user.verificationDetails?.idBackUrl || "",
       tradeCertificate: user.verificationDetails?.tradeCertificate || "",
       ocrConfidence: user.verificationDetails?.ocrConfidence ?? null,
+      verificationScore: user.verificationDetails?.verificationScore ?? null,
       nameMatchAccuracy: user.verificationDetails?.nameMatchAccuracy ?? null,
       ocrProcessing: user.verificationDetails?.ocrProcessing === true,
       autoVerified: user.verificationDetails?.autoVerified === true,
+      maskedIdentifier: user.verificationDetails?.identifierLastFour
+        ? maskIdentifier(
+          user.verificationDetails.identifierType,
+          user.verificationDetails.identifierLastFour,
+        )
+        : "",
+      identifierType: user.verificationDetails?.identifierType || "",
+      dateOfBirthMatched: user.verificationDetails?.dateOfBirthMatched === true,
+      ageEligible: user.verificationDetails?.ageEligible === true,
       securityFlags: (user.verificationDetails?.securityFlags || [])
         .filter((flag) => Object.values(SECURITY_FLAGS).includes(flag)),
       rejectionReason: user.verificationDetails?.rejectionReason || "",
@@ -662,24 +630,52 @@ async function handleReviewTesdaCertificate(req, res) {
 }
 
 async function handleReviewVerification(req, res) {
-  const { action, nameMatchConfirmed, rejectionReason } = req.body;
+  const { action, nameMatchConfirmed, dobMatchConfirmed, rejectionReason } = req.body || {};
+  if (!["approve", "reject"].includes(action)) {
+    return res.status(400).json({ message: "Choose approve or reject for this PhilSys verification." });
+  }
   if (action === "approve" && nameMatchConfirmed !== true) {
-    return res.status(400).json({ message: "Inspect the ID and confirm that its name matches the account before approving." });
+    return res.status(400).json({ message: "Confirm that the name on the PhilSys ID matches the account before approving." });
+  }
+  const trimmedRejectionReason = String(rejectionReason || "").trim();
+  if (action === "reject" && (!trimmedRejectionReason || trimmedRejectionReason.length > 500)) {
+    return res.status(400).json({ message: "Provide a rejection reason of 1 to 500 characters." });
   }
   try {
     const approved = action === "approve";
-    const targetUser = approved
-      ? null
-      : await User.findById(req.params.userId).select("role").lean();
+    const targetUser = await User.findById(req.params.userId)
+      .select("role dateOfBirth verificationDetails.submittedAt +verificationDetails.idFrontPublicId +verificationDetails.idBackPublicId")
+      .lean();
+    if (!targetUser) return res.status(404).json({ message: "This pending verification could not be found." });
+    if (approved && targetUser.role === "provider" && dobMatchConfirmed !== true) {
+      return res.status(400).json({ message: "Confirm that the date of birth on the PhilSys ID matches the provider account before approving." });
+    }
+    const profileDob = typeof targetUser.dateOfBirth === "string"
+      ? targetUser.dateOfBirth.slice(0, 10)
+      : targetUser.dateOfBirth?.toISOString?.().slice(0, 10) || "";
+    if (approved && targetUser.role === "provider" &&
+      (getAgeFromDateOfBirth(profileDob) ?? 0) < 18) {
+      return res.status(400).json({ message: "Providers must be at least 18 years old to verify their identity." });
+    }
     const update = {
       $set: {
         "verificationDetails.status": approved ? "Active" : "Rejected",
         "verificationDetails.ocrProcessing": false,
-        "verificationDetails.rejectionReason": approved ? "" : rejectionReason.trim(),
+        "verificationDetails.rejectionReason": approved ? "" : trimmedRejectionReason,
         "verificationDetails.autoVerified": false,
+        "verificationDetails.dateOfBirthMatched": approved && targetUser.role === "provider",
+        "verificationDetails.ageEligible": approved,
+        "verificationDetails.idFrontUrl": "",
+        "verificationDetails.idBackUrl": "",
         "verificationDetails.reviewedAt": new Date(),
         isVerified: approved,
         verificationStatus: approved ? "verified" : "rejected",
+      },
+      $unset: {
+        "verificationDetails.idFrontPublicId": 1,
+        "verificationDetails.idBackPublicId": 1,
+        "verificationDetails.idFrontFormat": 1,
+        "verificationDetails.idBackFormat": 1,
       },
     };
     if (!approved) {
@@ -687,7 +683,7 @@ async function handleReviewVerification(req, res) {
         verificationNotifications: {
           $each: [{
             title: "Identity verification rejected",
-            message: `Your identity verification was rejected. ${rejectionReason.trim()}`,
+            message: `Your identity verification was rejected. ${trimmedRejectionReason}`,
             href: userProfilePathForRole(targetUser?.role),
             createdAt: new Date(),
           }],
@@ -697,16 +693,23 @@ async function handleReviewVerification(req, res) {
     }
     const user = await User.findOneAndUpdate({
       _id: req.params.userId,
+      "verificationDetails.submittedAt": targetUser.verificationDetails?.submittedAt,
       "verificationDetails.status": "Pending",
       role: mongoose.trusted({ $in: ["client", "provider"] }),
     }, update, { new: true, runValidators: true });
     if (!user) return res.status(404).json({ message: "This pending verification could not be found." });
+    await Promise.all([
+      targetUser.verificationDetails?.idFrontPublicId,
+      targetUser.verificationDetails?.idBackPublicId,
+    ].filter(Boolean).map((publicId) => deleteVerificationImage(publicId).catch((error) => {
+      console.error("Could not remove reviewed PhilSys image:", error.message);
+    })));
     void logAuditAction(req, {
       category: "OPERATIONS",
       action: approved ? "VERIFICATION_APPROVED" : "VERIFICATION_REJECTED",
       targetResource: "User",
       targetId: user._id,
-      details: `Identity verification ${approved ? "approved" : "rejected"} for ${user.fullName || user.email}.`,
+      details: `PhilSys identity verification ${approved ? "approved" : "rejected"} for ${user.fullName || user.email}.`,
     });
 
     let voucherAwarded = false;
@@ -726,7 +729,7 @@ async function handleReviewVerification(req, res) {
         const result = await sendPushNotification({
           userIds: [String(user._id)],
           title: "Identity verification rejected",
-          body: `Your identity verification was rejected. ${rejectionReason.trim()}`,
+          body: `Your identity verification was rejected. ${trimmedRejectionReason}`,
           url: user.role === "provider" ? "/provider-profile" : "/profile",
           data: { event: "verification.rejected", userId: String(user._id) },
           name: "Identity verification update",

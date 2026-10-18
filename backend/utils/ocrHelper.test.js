@@ -1,607 +1,398 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const sharp = require("sharp");
 const {
-  OCR_LANGUAGES,
+  OCR_ROTATIONS,
   OCR_SEGMENTATION_MODES,
-  areIdSidesLikelySwapped,
-  classifyIdSide,
+  calculateVerificationScore,
   createIdOCRVariants,
-  detectIdType,
-  scoreLtoNameMatch,
-  scoreNameMatch,
-  selectBestOCRCandidate,
-  shouldAutoVerify,
+  detectCardBounds,
+  evaluateOCRCandidate,
+  extractIdentifier,
+  hasPhilSysHeader,
+  isPhysicalCardLayout,
+  normalizeText,
+  parseDateOfBirth,
+  resolveIdentifier,
+  selectOCRConfidence,
+  shouldUseManualReview,
 } = require("./ocrHelper");
-const philippineIdNameFixtures = JSON.parse(fs.readFileSync(
-  path.join(__dirname, "fixtures", "ph-id-name-layouts.json"),
-  "utf8"
-));
 
-test("OCR uses a single Latin-script language model and bounded card layout modes", () => {
-  assert.equal(OCR_LANGUAGES, "eng");
-  assert.deepEqual(OCR_SEGMENTATION_MODES, [
-    "6",
-    "11",
-  ]);
+const basePhilSysCard = [
+  "PAMBANSANG PAGKAKAKILANLAN",
+  "PSN: 1234-5678-9012",
+  "APELYIDO: Santos",
+  "MGA PANGALAN: Mika Luz",
+  "GITNANG APELYIDO: Reyes",
+  "PETSA NG KAPANGANAKAN: OKTUBRE 5, 2005",
+].join("\n");
+
+test("OCR is limited to PhilSys anchors and four universal orientations", () => {
+  assert.deepEqual(OCR_ROTATIONS, [0, 90, 180, 270]);
+  assert.deepEqual(OCR_SEGMENTATION_MODES, ["4", "6", "7", "8"]);
+  assert.equal(hasPhilSysHeader(basePhilSysCard), true);
+  assert.equal(hasPhilSysHeader("UNSUPPORTED DOCUMENT REPUBLIC OF THE PHILIPPINES"), false);
 });
 
-test("OCR name matching normalizes accents, case, and punctuation", () => {
-  assert.deepEqual(scoreNameMatch("JOSE, MARIA! SANTOS.", "José María Santos"), {
-    accuracy: 1,
-    matchedParts: 3,
-    totalParts: 3,
-    firstNameMatched: true,
-    lastNameMatched: true,
+test("image preprocessing finds and crops a card against a dark photo background", async () => {
+  const width = 400;
+  const height = 250;
+  const pixels = Buffer.alloc(width * height, 25);
+  for (let y = 30; y < 220; y += 1) {
+    pixels.fill(220, y * width + 40, y * width + 360);
+  }
+
+  const bounds = detectCardBounds(pixels, width, height);
+  assert.ok(bounds);
+  assert.ok(bounds.left < 40);
+  assert.ok(bounds.top < 30);
+  assert.ok(bounds.left + bounds.width > 360);
+  assert.ok(bounds.top + bounds.height > 220);
+  assert.ok(bounds.width < width);
+
+  const image = await sharp(pixels, {
+    raw: { width, height, channels: 1 },
+  }).png().toBuffer();
+  const variants = await createIdOCRVariants(image);
+  assert.equal(variants.length, OCR_ROTATIONS.length);
+  assert.ok(variants.some((variant) => variant.width / variant.height > 1.3));
+  const processed = await sharp(variants[0].enhanced)
+    .greyscale()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const colorMetadata = await sharp(variants[0].color).metadata();
+  assert.equal(processed.info.channels, 1);
+  assert.ok(processed.data[
+    Math.floor(processed.info.height / 2) * processed.info.width +
+    Math.floor(processed.info.width / 2)
+  ] > 200);
+  assert.equal(colorMetadata.width, variants[0].width);
+  assert.equal(colorMetadata.height, variants[0].height);
+});
+
+test("card layout distinguishes inline digital fields from stacked physical fields", () => {
+  assert.equal(isPhysicalCardLayout([
+    { text: "APELYIDO/LAST NAME CALIMLIM" },
+    { text: "MGA PANGALAN/GIVEN NAMES MIGUEL EDUARDO" },
+  ]), false);
+  assert.equal(isPhysicalCardLayout([
+    { text: "Apelyido/Last Name" },
+    { text: "CALIMLIM" },
+    { text: "Mga Pangalan/Given Names" },
+    { text: "MIGUEL EDUARDO" },
+  ], 1.61), true);
+  assert.equal(isPhysicalCardLayout([
+    { text: "Gitnang Apelyido/Midd/e Name" },
+  ], 1.61), true);
+  assert.equal(isPhysicalCardLayout([], 1.76), false);
+});
+
+test("name normalization ignores case, extra spaces, and diacritics", () => {
+  assert.equal(normalizeText("  JOSÉ   María "), "jose maria");
+});
+
+test("identifier extraction accepts 12-digit PSNs and 16-digit PCNs", () => {
+  assert.deepEqual(extractIdentifier("PSN 1234-5678-9012"), {
+    digits: "123456789012",
+    type: "PSN",
+    labeled: true,
   });
-});
-
-test("OCR name matching ignores short prepositions", () => {
-  assert.deepEqual(scoreNameMatch("JOSE MARIA SANTOS", "José de la María Santos"), {
-    accuracy: 1,
-    matchedParts: 3,
-    totalParts: 3,
-    firstNameMatched: true,
-    lastNameMatched: true,
+  assert.deepEqual(extractIdentifier("PCN: 1234-5678-9012-3456"), {
+    digits: "1234567890123456",
+    type: "PCN",
+    labeled: true,
   });
+  assert.equal(extractIdentifier("PSN5285-3761-9548-6750").digits, "5285376195486750");
+  assert.equal(extractIdentifier("5285-3761-9548l6750").digits, "5285376195486750");
 });
 
-test("Philippine driver's-license surname-first layout matches a conventionally ordered profile name", () => {
-  const result = scoreNameMatch(
-    "CALIMLIM MIGUEL EDUARDO ESTRADA",
-    "Miguel Eduardo Estrada Calimlim"
-  );
-  assert.equal(result.accuracy, 1);
+test("targeted PCN reads outvote one conflicting full-card OCR read", () => {
+  const expected = { digits: "5285376195486750", type: "PCN", labeled: false };
+  const noisyFullCardRead = { digits: "5285376195484750", type: "PCN", labeled: true };
+  assert.deepEqual(resolveIdentifier(noisyFullCardRead, [expected, expected]), expected);
+});
+
+test("ambiguous PCN readings are not silently stored as a guessed identifier", () => {
+  const expected = { digits: "5285376195486750", type: "PCN", labeled: false };
+  const conflictingRead = { digits: "5285376195484750", type: "PCN", labeled: false };
+  assert.equal(resolveIdentifier(conflictingRead, [expected]), null);
+  assert.equal(resolveIdentifier(expected, [expected, conflictingRead]), null);
+  assert.equal(resolveIdentifier(null, [expected]), null);
+});
+
+test("OCR confidence prefers a stronger scan of the selected PCN over unrelated crop reads", () => {
+  const selected = { digits: "5285376195486750", type: "PCN", labeled: false };
+  const readings = [
+    { identifier: selected, confidence: 64 },
+    { identifier: { ...selected, digits: "5285376195484750" }, confidence: 98 },
+  ];
+  assert.equal(selectOCRConfidence(42, readings, selected), 64);
+  assert.equal(selectOCRConfidence(72, readings, selected), 72);
+  assert.equal(selectOCRConfidence(42, readings, null), 42);
+});
+
+test("field rescans retain the PCN selected by targeted scan consensus", () => {
+  const selected = { digits: "5285376195486750", type: "PCN", labeled: false };
+  const rescanned = evaluateOCRCandidate({
+    confidence: 92,
+    text: basePhilSysCard.replace("6750", "4750"),
+    identifier: selected,
+  }, {
+    firstName: "Mika Luz",
+    lastName: "Santos",
+    role: "client",
+  });
+  assert.equal(rescanned.identifier.digits.slice(-4), "6750");
+});
+
+test("number parsing corrects common OCR confusions under numeric labels", () => {
+  assert.equal(extractIdentifier("PSN 12O4-567B-9012").digits, "120456789012");
+  assert.equal(parseDateOfBirth("1O/5/2O05"), "2005-10-05");
+});
+
+test("birth dates parse English and Tagalog month names with their anchor", () => {
+  assert.equal(parseDateOfBirth("OCTOBER 5, 2005"), "2005-10-05");
+  assert.equal(parseDateOfBirth("OCTOBER'5, 2005"), "2005-10-05");
+  assert.equal(parseDateOfBirth("5 OKTUBRE 2005"), "2005-10-05");
+  assert.equal(parseDateOfBirth("FEBRUARY 31, 2005"), null);
+});
+
+test("bilingual PhilSys field labels are not included in extracted names", () => {
+  const result = evaluateOCRCandidate({
+    confidence: 96,
+    text: [
+      "PAMBANSANG PAGKAKAKILANLAN",
+      "PCN: 1234-5678-9012-3456",
+      "APELYIDO / LAST NAME",
+      "Santos",
+      "MGA PANGALAN / GIVEN NAMES",
+      "Mika Luz",
+      "GITNANG APELYIDO / MIDOLE NAME",
+      "Reyes",
+    ].join("\n"),
+  }, {
+    firstName: "Mika Luz",
+    lastName: "Santos",
+    role: "client",
+  });
+  assert.equal(result.fields.lastName, "Santos");
+  assert.equal(result.fields.firstName, "Mika Luz");
+  assert.equal(result.fields.middleName, "Reyes");
+  assert.equal(result.nameMatchAccuracy, 100);
+});
+
+test("exact PhilSys name and DOB matches qualify only at high OCR confidence", () => {
+  const result = evaluateOCRCandidate({
+    confidence: 96,
+    text: basePhilSysCard,
+  }, {
+    firstName: "Mika Luz",
+    lastName: "Santos",
+    dateOfBirth: "2005-10-05",
+    role: "client",
+  });
+  assert.equal(result.ocrConfidence, 96);
+  assert.equal(result.identityValid, true);
   assert.equal(result.firstNameMatched, true);
   assert.equal(result.lastNameMatched, true);
+  assert.equal(result.dateOfBirthMatched, true);
+  assert.equal(result.autoVerified, true);
 });
 
-test("LTO name matching tolerates one OCR character error in a long name token", () => {
-  const result = scoreLtoNameMatch(
-    "DRIVER'S LICENSE CALIML1M MIGUEL EDUARDO ESTRADA",
-    "Miguel Eduardo Estrada Calimlim"
-  );
-  assert.ok(result.accuracy >= 0.9);
-  assert.equal(result.firstNameMatched, true);
-  assert.equal(result.lastNameMatched, false);
-  assert.equal(shouldAutoVerify(87, result), false);
-});
-
-test("driver's-license matching compares the labeled comma-separated name with account fields", () => {
-  const result = selectBestOCRCandidate([
-    {
-      confidence: 87,
-      text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nLAST NAME, FIRST NAME, MIDDLE NAME\nCALIMLIM, MIGUEL EDUARDO ESTRADA",
-      lines: [
-        { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
-        { text: "LAST NAME, FIRST NAME, MIDDLE NAME" },
-        { text: "CALIMLIM, MIGUEL EDUARDO ESTRADA" },
-      ],
-    },
-  ], {
-    firstName: "Miguel Eduardo",
-    middleName: "Estrada",
-    lastName: "Calimlim",
+test("clients do not require an account DOB match for identity verification", () => {
+  const result = evaluateOCRCandidate({
+    confidence: 96,
+    text: basePhilSysCard,
+  }, {
+    firstName: "Mika Luz",
+    lastName: "Santos",
+    role: "client",
   });
-  assert.equal(result.detectedIdType, "Driver's License");
-  assert.equal(result.nameMatch.accuracy, 1);
-  assert.equal(result.nameMatch.allNamePartsMatched, true);
+  assert.equal(result.dateOfBirthMatched, false);
+  assert.equal(result.autoVerified, true);
+  assert.equal(shouldUseManualReview(result), false);
 });
 
-test("driver's-license matching requires a middle name when the account has one", () => {
-  const result = selectBestOCRCandidate([{
-    confidence: 87,
-    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nLAST NAME, FIRST NAME, MIDDLE NAME\nCALIMLIM, MIGUEL EDUARDO ESTRADA",
-    lines: [
-      { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
-      { text: "LAST NAME, FIRST NAME, MIDDLE NAME" },
-      { text: "CALIMLIM, MIGUEL EDUARDO ESTRADA" },
-    ],
-  }], {
-    firstName: "Miguel Eduardo",
-    middleName: "Estrada",
-    lastName: "Calimlim",
+test("full-name matching works when account name parts differ from PhilSys field boundaries", () => {
+  const result = evaluateOCRCandidate({
+    confidence: 96,
+    text: basePhilSysCard,
+  }, {
+    firstName: "Mika",
+    middleName: "Luz Reyes",
+    lastName: "Santos",
+    fullName: "Mika Luz Reyes Santos",
+    dateOfBirth: "2005-10-05",
+    role: "client",
   });
-
-  assert.equal(result.detectedIdType, "Driver's License");
-  assert.equal(result.nameMatch.accuracy, 1);
-  assert.equal(result.nameMatch.firstNameMatched, true);
-  assert.equal(result.nameMatch.lastNameMatched, true);
-  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), true);
+  assert.equal(result.nameMatchAccuracy, 100);
+  assert.equal(result.autoVerified, true);
 });
 
-test("driver's-license matching does not accept a missing account middle name", () => {
-  const result = selectBestOCRCandidate([{
-    confidence: 87,
-    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nLAST NAME, FIRST NAME, MIDDLE NAME\nCALIMLIM, MIGUEL EDUARDO",
-    lines: [
-      { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
-      { text: "LAST NAME, FIRST NAME, MIDDLE NAME" },
-      { text: "CALIMLIM, MIGUEL EDUARDO" },
-    ],
-  }], {
-    firstName: "Miguel Eduardo",
-    middleName: "Estrada",
-    lastName: "Calimlim",
+test("client verification score normalizes the PCN and name weights without DOB", () => {
+  const result = evaluateOCRCandidate({
+    confidence: 42,
+    text: basePhilSysCard,
+  }, {
+    firstName: "Mika Luz",
+    lastName: "Santos",
+    role: "client",
   });
-
-  assert.equal(result.nameMatch.firstNameMatched, false);
-  assert.equal(result.nameMatch.lastNameMatched, true);
-  assert.equal(result.nameMatch.allNamePartsMatched, false);
-  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), false);
+  assert.equal(result.ocrConfidence, 42);
+  assert.equal(result.verificationScore, 100);
+  assert.equal(result.autoVerified, true);
 });
 
-test("driver's-license matching allows only one one-character OCR error in the full name", () => {
-  const result = selectBestOCRCandidate([{
-    confidence: 87,
-    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nLAST NAME, FIRST NAME, MIDDLE NAME\nCALIML1M, MIGUEL EDUARDO ESTRADA",
-    lines: [
-      { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
-      { text: "LAST NAME, FIRST NAME, MIDDLE NAME" },
-      { text: "CALIML1M, MIGUEL EDUARDO ESTRADA" },
-    ],
-  }], {
-    firstName: "Miguel Eduardo",
-    middleName: "Estrada",
-    lastName: "Calimlim",
+test("provider verification score includes DOB match and adult eligibility", () => {
+  const validProvider = evaluateOCRCandidate({
+    confidence: 42,
+    text: basePhilSysCard,
+  }, {
+    firstName: "Mika Luz",
+    lastName: "Santos",
+    dateOfBirth: "2005-10-05",
+    role: "provider",
   });
+  assert.equal(validProvider.verificationScore, 100);
+  assert.equal(validProvider.autoVerified, true);
 
-  assert.ok(result.nameMatch.accuracy >= 0.9);
-  assert.equal(result.nameMatch.matchedParts, 3);
-  assert.equal(result.nameMatch.allNamePartsMatched, true);
-  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), true);
-});
-
-test("driver's-license matching rejects more than one OCR character error", () => {
-  const result = selectBestOCRCandidate([{
-    confidence: 87,
-    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nLAST NAME, FIRST NAME, MIDDLE NAME\nCALIML1M, MIGUE1 EDUARDO ESTRADA",
-    lines: [
-      { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
-      { text: "LAST NAME, FIRST NAME, MIDDLE NAME" },
-      { text: "CALIML1M, MIGUE1 EDUARDO ESTRADA" },
-    ],
-  }], {
-    firstName: "Miguel Eduardo",
-    middleName: "Estrada",
-    lastName: "Calimlim",
+  const missingDob = evaluateOCRCandidate({
+    confidence: 99,
+    text: basePhilSysCard,
+  }, {
+    firstName: "Mika Luz",
+    lastName: "Santos",
+    role: "provider",
   });
-
-  assert.equal(result.nameMatch.allNamePartsMatched, false);
-  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), false);
+  assert.equal(missingDob.verificationScore, 80);
+  assert.equal(missingDob.autoVerified, false);
+  assert.equal(shouldUseManualReview(missingDob), true);
 });
 
-test("driver's-license matching requires the labeled comma-separated name block", () => {
-  const account = {
-    firstName: "Miguel Eduardo",
-    middleName: "Estrada",
-    lastName: "Calimlim",
-  };
-  const noLabel = selectBestOCRCandidate([{
-    confidence: 92,
-    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nCALIMLIM, MIGUEL EDUARDO ESTRADA",
-  }], account);
-  const noComma = selectBestOCRCandidate([{
-    confidence: 92,
-    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nLAST NAME, FIRST NAME, MIDDLE NAME\nCALIMLIM MIGUEL EDUARDO ESTRADA",
-  }], account);
-
-  assert.equal(shouldAutoVerify(noLabel.confidence, noLabel.nameMatch), false);
-  assert.equal(shouldAutoVerify(noComma.confidence, noComma.nameMatch), false);
+test("verification score uses valid identifier format, fuzzy name, and applicable weights", () => {
+  assert.equal(calculateVerificationScore({
+    identifier: { digits: "1234567890123456" },
+    nameMatchAccuracy: 80,
+    role: "client",
+  }), 93);
+  assert.equal(calculateVerificationScore({
+    identifier: { digits: "123456789012" },
+    nameMatchAccuracy: 80,
+    parsedDateOfBirth: "2000-01-01",
+    dateOfBirthMatched: true,
+    providerAge: 26,
+    role: "provider",
+  }), 94);
+  assert.equal(calculateVerificationScore({
+    identifier: { digits: "12345678" },
+    nameMatchAccuracy: 100,
+    role: "client",
+  }), 38);
 });
 
-test("driver's-license matching requires only first and last names for a two-part account", () => {
-  const result = selectBestOCRCandidate([{
-    confidence: 87,
-    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nLAST NAME, FIRST NAME, MIDDLE NAME\nCALIMLIM, JUAN",
-  }], {
-    firstName: "Juan",
-    middleName: "",
-    lastName: "Calimlim",
+test("low Tesseract confidence does not block a high-scoring matching identity", () => {
+  const result = evaluateOCRCandidate({
+    confidence: 75,
+    text: basePhilSysCard,
+  }, {
+    firstName: "Mika Luz",
+    lastName: "Santos",
+    dateOfBirth: "2005-10-05",
+    role: "client",
   });
-
-  assert.equal(result.nameMatch.accuracy, 1);
-  assert.equal(result.nameMatch.allNamePartsMatched, true);
-  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), true);
+  assert.equal(result.ocrConfidence, 75);
+  assert.equal(result.verificationScore, 100);
+  assert.equal(result.identityValid, true);
+  assert.equal(result.autoVerified, true);
+  assert.equal(shouldUseManualReview(result), false);
 });
 
-test("driver's-license OCR joins the header and name line from separate OCR blocks", () => {
-  const result = selectBestOCRCandidate([
-    { confidence: 92, text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
-    { confidence: 76, text: "LAST NAME, FIRST NAME, MIDDLE NAME" },
-    { confidence: 68, text: "CALIML1M, MIGUEL EDUARDO ESTRADA" },
-  ], {
-    firstName: "Miguel Eduardo",
-    middleName: "Estrada",
-    lastName: "Calimlim",
+test("provider age eligibility is checked against the PhilSys birth date", () => {
+  const adult = evaluateOCRCandidate({
+    confidence: 97,
+    text: basePhilSysCard,
+  }, {
+    firstName: "Mika Luz",
+    lastName: "Santos",
+    dateOfBirth: "2005-10-05",
+    role: "provider",
   });
-  assert.equal(result.nameMatch.allNamePartsMatched, true);
-  assert.match(result.text, /CALIML1M, MIGUEL EDUARDO ESTRADA/);
-});
+  assert.equal(adult.providerAgeEligible, true);
+  assert.equal(adult.autoVerified, true);
 
-test("driver's-license matching can use the combined label header from OCR blocks", () => {
-  const result = selectBestOCRCandidate([
-    { confidence: 54, text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
-    { confidence: 59, text: "LAST NAME, FIRST NAME, MIDDLE NAME" },
-    { confidence: 63, text: "CALIMLIM, MIGUEL EDUARDO ESTRADA" },
-  ], {
-    firstName: "Miguel Eduardo",
-    middleName: "Estrada",
-    lastName: "Calimlim",
+  const mismatch = evaluateOCRCandidate({
+    confidence: 97,
+    text: basePhilSysCard,
+  }, {
+    firstName: "Mika Luz",
+    lastName: "Santos",
+    dateOfBirth: "2004-10-05",
+    role: "provider",
   });
-
-  assert.equal(result.detectedIdType, "Driver's License");
-  assert.equal(result.nameMatch.accuracy, 1);
-  assert.equal(result.nameMatch.firstNameMatched, true);
-  assert.equal(result.nameMatch.lastNameMatched, true);
-  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), true);
+  assert.equal(mismatch.dateOfBirthMatched, false);
+  assert.equal(mismatch.autoVerified, false);
+  assert.equal(shouldUseManualReview(mismatch), true);
 });
 
-test("synthetic Philippine ID layouts match structured names with conservative fallback", () => {
-  for (const fixture of philippineIdNameFixtures) {
-    const result = selectBestOCRCandidate([{
-      confidence: fixture.ocrConfidence,
-      text: fixture.lines.join("\n"),
-      lines: fixture.lines,
-    }], fixture.profile);
-    assert.equal(result.detectedIdType, fixture.idType, fixture.idType);
-    assert.equal(result.nameMatch.firstNameMatched, fixture.expectedFirstNameMatch, fixture.idType);
-    assert.equal(result.nameMatch.lastNameMatched, fixture.expectedLastNameMatch, fixture.idType);
-    assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), fixture.expectedAutoVerify, fixture.idType);
-  }
-});
-
-test("ID OCR prioritizes a focused card crop with the original image as fallback", async () => {
-  const image = await sharp({
-    create: { width: 1000, height: 1600, channels: 3, background: "#fff" },
-  }).jpeg().toBuffer();
-  const variants = await createIdOCRVariants(image);
-
-  assert.equal(variants.length, 2);
-  const processedMetadata = await sharp(variants[0]).metadata();
-  assert.equal(processedMetadata.width, 1600);
-  assert.ok(processedMetadata.height < 1000);
-  assert.deepEqual(variants[1], image);
-});
-
-test("OCR keeps the unmodified upload as a fallback when preprocessing cannot read it", async () => {
-  const original = Buffer.from("synthetic invalid image");
-  const originalWarn = console.warn;
-  let variants;
-  console.warn = () => {};
-  try {
-    variants = await createIdOCRVariants(original);
-  } finally {
-    console.warn = originalWarn;
-  }
-  assert.deepEqual(variants, [original]);
-});
-
-test("OCR name matching does not treat approximate spellings as a verified identity", () => {
-  assert.deepEqual(scoreNameMatch("MAR1A SANTOS", "Maria Beatriz Santos"), {
-    accuracy: 0.375,
-    matchedParts: 1,
-    totalParts: 3,
-    firstNameMatched: false,
-    lastNameMatched: true,
+test("provider DOB that cannot be matched stays in manual review", () => {
+  const result = evaluateOCRCandidate({
+    confidence: 97,
+    text: basePhilSysCard,
+  }, {
+    firstName: "Mika Luz",
+    lastName: "Santos",
+    role: "provider",
   });
+  assert.equal(result.providerAgeEligible, true);
+  assert.equal(result.dateOfBirthMatched, false);
+  assert.equal(result.autoVerified, false);
+  assert.equal(shouldUseManualReview(result), true);
 });
 
-test("first and last name matches meet the threshold when middle names are absent", () => {
-  assert.deepEqual(scoreNameMatch("ANA CRUZ", "Ana Beatriz Maria Cruz"), {
-    accuracy: 0.75,
-    matchedParts: 2,
-    totalParts: 4,
-    firstNameMatched: true,
-    lastNameMatched: true,
+test("provider younger than 18 is not eligible for automatic verification", () => {
+  const underageBirthYear = new Date().getUTCFullYear() - 17;
+  const card = basePhilSysCard.replace("2005", String(underageBirthYear));
+  const result = evaluateOCRCandidate({
+    confidence: 99,
+    text: card,
+  }, {
+    firstName: "Mika Luz",
+    lastName: "Santos",
+    dateOfBirth: `${underageBirthYear}-10-05`,
+    role: "provider",
   });
-  assert.equal(shouldAutoVerify(60, scoreNameMatch("ANA CRUZ", "Ana Beatriz Maria Cruz")), true);
+  assert.equal(result.providerAge < 18, true);
+  assert.equal(result.providerAgeEligible, false);
+  assert.equal(result.autoVerified, false);
 });
 
-test("matching the middle name increases the weighted score", () => {
-  assert.equal(scoreNameMatch("ANA MARIA CRUZ", "Ana Maria Cruz").accuracy, 1);
-});
-
-test("structured profile names match labeled fields regardless of the ID's name order", () => {
-  const result = selectBestOCRCandidate([{
-    confidence: 91,
-    text: "PASSPORT\nSURNAME: CALIMLIM\nGIVEN NAMES: MIGUEL EDUARDO\nMIDDLE NAME: ESTRADA",
-    lines: [
-      { text: "PASSPORT" },
-      { text: "SURNAME: CALIMLIM" },
-      { text: "GIVEN NAMES: MIGUEL EDUARDO" },
-      { text: "MIDDLE NAME: ESTRADA" },
-    ],
-  }], {
-    firstName: "Miguel Eduardo",
-    middleName: "Estrada",
-    lastName: "Calimlim",
+test("a borderline fuzzy name stays in review even when the weighted score exceeds 85", () => {
+  const result = evaluateOCRCandidate({
+    confidence: 94,
+    text: basePhilSysCard.replace("Mika Luz", "Mika"),
+  }, {
+    firstName: "Mika Luz",
+    lastName: "Santos",
+    dateOfBirth: "2005-10-05",
+    role: "client",
   });
-
-  assert.equal(result.nameMatch.accuracy, 1);
-  assert.equal(result.nameMatch.firstNameMatched, true);
-  assert.equal(result.nameMatch.lastNameMatched, true);
-  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), true);
+  assert.equal(result.nameMatchAccuracy, 75);
+  assert.equal(result.firstNameMatched, false);
+  assert.equal(result.verificationScore, 91);
+  assert.equal(result.autoVerified, false);
+  assert.equal(shouldUseManualReview(result), true);
 });
 
-test("labeled name values on separate rows match and missing optional middle names remain eligible", () => {
-  const result = selectBestOCRCandidate([{
-    confidence: 82,
-    text: "PASSPORT\nSURNAME\nCALIMLIM\nGIVEN NAMES\nMIGUEL EDUARDO",
-    lines: [
-      { text: "PASSPORT" },
-      { text: "SURNAME" },
-      { text: "CALIMLIM" },
-      { text: "GIVEN NAMES" },
-      { text: "MIGUEL EDUARDO" },
-    ],
-  }], {
-    firstName: "Miguel Eduardo",
-    middleName: "Estrada",
-    lastName: "Calimlim",
+test("a non-PhilSys document never qualifies for manual identity review", () => {
+  const result = evaluateOCRCandidate({
+    confidence: 99,
+    text: "UNSUPPORTED DOCUMENT\nPSN 1234-5678-9012\nSURNAME: SANTOS",
+  }, {
+    firstName: "Mika Luz",
+    lastName: "Santos",
+    dateOfBirth: "2005-10-05",
+    role: "client",
   });
-
-  assert.equal(result.nameMatch.accuracy, 0.75);
-  assert.equal(result.nameMatch.firstNameMatched, true);
-  assert.equal(result.nameMatch.lastNameMatched, true);
-  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), true);
-});
-
-test("labeled name columns use OCR word positions to associate values with labels", () => {
-  const result = selectBestOCRCandidate([{
-    confidence: 89,
-    text: "SURNAME GIVEN NAMES\nCALIMLIM MIGUEL EDUARDO",
-    lines: [
-      {
-        text: "SURNAME GIVEN NAMES",
-        words: [
-          { text: "SURNAME", bbox: { x0: 10, x1: 80 } },
-          { text: "GIVEN", bbox: { x0: 150, x1: 200 } },
-          { text: "NAMES", bbox: { x0: 205, x1: 260 } },
-        ],
-      },
-      {
-        text: "CALIMLIM MIGUEL EDUARDO",
-        words: [
-          { text: "CALIMLIM", bbox: { x0: 12, x1: 95 } },
-          { text: "MIGUEL", bbox: { x0: 150, x1: 215 } },
-          { text: "EDUARDO", bbox: { x0: 220, x1: 300 } },
-        ],
-      },
-    ],
-  }], {
-    firstName: "Miguel Eduardo",
-    middleName: "",
-    lastName: "Calimlim",
-  });
-
-  assert.equal(result.nameMatch.accuracy, 1);
-  assert.equal(result.nameMatch.firstNameMatched, true);
-  assert.equal(result.nameMatch.lastNameMatched, true);
-});
-
-test("labeled name matching does not borrow a surname from unrelated ID text", () => {
-  const result = selectBestOCRCandidate([{
-    confidence: 95,
-    text: "GIVEN NAMES: MIGUEL EDUARDO\nADDRESS: CALIMLIM STREET",
-    lines: [
-      { text: "GIVEN NAMES: MIGUEL EDUARDO" },
-      { text: "ADDRESS: CALIMLIM STREET" },
-    ],
-  }], {
-    firstName: "Miguel Eduardo",
-    middleName: "Estrada",
-    lastName: "Calimlim",
-  });
-
-  assert.equal(result.nameMatch.firstNameMatched, true);
-  assert.equal(result.nameMatch.lastNameMatched, false);
-  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), false);
-});
-
-test("driver's-license name order remains matchable when OCR reads labels separately from values", () => {
-  const result = selectBestOCRCandidate([{
-    confidence: 88,
-    text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE\nLAST NAME FIRST NAME MIDDLE NAME\nCALIMLIM MIGUEL EDUARDO ESTRADA",
-    lines: [
-      { text: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE" },
-      { text: "LAST NAME FIRST NAME MIDDLE NAME" },
-      { text: "CALIMLIM, MIGUEL EDUARDO ESTRADA" },
-    ],
-  }], {
-    firstName: "Miguel Eduardo",
-    middleName: "Estrada",
-    lastName: "Calimlim",
-  });
-
-  assert.equal(result.nameMatch.accuracy, 1);
-  assert.equal(result.nameMatch.firstNameMatched, true);
-  assert.equal(result.nameMatch.lastNameMatched, true);
-  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), true);
-});
-
-test("unlabeled names split across adjacent ID rows are compared independent of order", () => {
-  const result = selectBestOCRCandidate([{
-    confidence: 88,
-    text: "CALIMLIM\nMIGUEL EDUARDO\nESTRADA",
-    lines: [
-      { text: "CALIMLIM" },
-      { text: "MIGUEL EDUARDO" },
-      { text: "ESTRADA" },
-    ],
-  }], {
-    firstName: "Miguel Eduardo",
-    middleName: "Estrada",
-    lastName: "Calimlim",
-  });
-
-  assert.equal(result.nameMatch.accuracy, 1);
-  assert.equal(result.nameMatch.firstNameMatched, true);
-  assert.equal(result.nameMatch.lastNameMatched, true);
-});
-
-test("a missing first or last name prevents auto-verification", () => {
-  assert.deepEqual(scoreNameMatch("Nina Nino", "Nina Nino Cruz"), {
-    accuracy: 0.625,
-    matchedParts: 2,
-    totalParts: 3,
-    firstNameMatched: true,
-    lastNameMatched: false,
-  });
-  assert.equal(shouldAutoVerify(100, scoreNameMatch("Nina Nino", "Nina Nino Cruz")), false);
-});
-
-test("two-part names require both first and last names to match", () => {
-  assert.equal(shouldAutoVerify(60, scoreNameMatch("ANA CRUZ", "Ana Cruz")), true);
-  assert.equal(shouldAutoVerify(100, scoreNameMatch("ANA", "Ana Cruz")), false);
-});
-
-test("automatic verification retains the OCR confidence floor and requires two name parts", () => {
-  assert.equal(shouldAutoVerify(59.99, scoreNameMatch("Ana Cruz", "Ana Cruz")), false);
-  assert.equal(shouldAutoVerify(100, scoreNameMatch("Ana", "Ana")), false);
-});
-
-test("OCR identifies supported Philippine ID types from structural text", () => {
-  assert.equal(detectIdType("REPUBLIC OF THE PHILIPPINES PhilSys"), "PhilSys National ID");
-  assert.equal(detectIdType("LAND TRANSPORTATION OFFICE LTO"), "Driver's License");
-  assert.equal(detectIdType("REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE"), "Driver's License");
-  assert.equal(detectIdType("LAND TRANSPORTATION OFFICE DRIVER LICENSE"), "Driver's License");
-  assert.equal(detectIdType("POSTAL ID"), "Postal ID");
-  assert.equal(detectIdType("UMID CRN"), "UMID");
-  assert.equal(detectIdType("PhilPost Postal ID"), "Postal ID");
-  assert.equal(detectIdType("COMELEC Voter Registration"), "Voter's ID");
-  assert.equal(detectIdType("PASSPORT"), "Passport");
-  assert.equal(detectIdType("Republic of the Philippines"), "Unknown");
-});
-
-test("ID side check rejects only clear back-side evidence", () => {
-  assert.equal(classifyIdSide({
-    extractedText: "SIGNATURE THUMBPRINT EMERGENCY CONTACT",
-    ocrConfidence: 88,
-    nameMatch: { firstNameMatched: false, lastNameMatched: false },
-    detectedIdType: "Unknown",
-  }), "back");
-  assert.equal(classifyIdSide({
-    extractedText: "CARDHOLDER SIGNATURE",
-    ocrConfidence: 88,
-    nameMatch: { firstNameMatched: false, lastNameMatched: false },
-    detectedIdType: "Unknown",
-  }), "uncertain");
-});
-
-test("ID side check recognizes a front when OCR confidently matches first and last names", () => {
-  assert.equal(classifyIdSide({
-    extractedText: "ANA CRUZ PHILSYS",
-    ocrConfidence: 72,
-    nameMatch: { firstNameMatched: true, lastNameMatched: true },
-    detectedIdType: "PhilSys National ID",
-  }), "front");
-});
-
-test("ID side check recognizes a readable driver's-license front when name OCR is incomplete", () => {
-  assert.equal(classifyIdSide({
-    extractedText: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE SURNAME GIVEN NAMES DATE OF BIRTH SEX ADDRESS",
-    ocrConfidence: 86,
-    nameMatch: { accuracy: 0, firstNameMatched: false, lastNameMatched: false },
-    detectedIdType: "Driver's License",
-  }), "front");
-});
-
-test("ID side check treats weak or ambiguous evidence as uncertain", () => {
-  assert.equal(classifyIdSide({
-    extractedText: "SIGNATURE",
-    ocrConfidence: 80,
-    nameMatch: { firstNameMatched: false, lastNameMatched: false },
-    detectedIdType: "Unknown",
-  }), "uncertain");
-});
-
-test("ID side pair check detects a clear swap when the matching name is only on the back image", () => {
-  assert.equal(areIdSidesLikelySwapped(
-    {
-      ocrConfidence: 84,
-      nameMatchAccuracy: 37,
-      firstNameMatched: false,
-      lastNameMatched: true,
-    },
-    {
-      ocrConfidence: 76,
-      nameMatchAccuracy: 100,
-      firstNameMatched: true,
-      lastNameMatched: true,
-    }
-  ), true);
-});
-
-test("ID side pair check detects a swapped driver's license when only the back has face-side layout", () => {
-  assert.equal(areIdSidesLikelySwapped(
-    {
-      ocrConfidence: 74,
-      nameMatchAccuracy: 0,
-      firstNameMatched: false,
-      lastNameMatched: false,
-      detectedIdType: "Unknown",
-      extractedText: "RESTRICTIONS QR CODE BARCODE",
-    },
-    {
-      ocrConfidence: 56,
-      nameMatchAccuracy: 0,
-      firstNameMatched: false,
-      lastNameMatched: false,
-      detectedIdType: "Driver's License",
-      extractedText: "REPUBLIC OF THE PHILIPPINES DRIVER'S LICENSE SURNAME GIVEN NAMES DATE OF BIRTH SEX",
-    }
-  ), true);
-});
-
-test("ID side pair check does not reject uncertain or correctly assigned sides", () => {
-  assert.equal(areIdSidesLikelySwapped(
-    {
-      ocrConfidence: 76,
-      nameMatchAccuracy: 100,
-      firstNameMatched: true,
-      lastNameMatched: true,
-    },
-    {
-      ocrConfidence: 86,
-      nameMatchAccuracy: 100,
-      firstNameMatched: true,
-      lastNameMatched: true,
-    }
-  ), false);
-  assert.equal(areIdSidesLikelySwapped(
-    { ocrConfidence: 35, nameMatchAccuracy: 75, firstNameMatched: true, lastNameMatched: true },
-    { ocrConfidence: 59, nameMatchAccuracy: 100, firstNameMatched: true, lastNameMatched: true }
-  ), false);
-});
-
-test("OCR selects a full account-name match over higher-confidence unrelated layout output", () => {
-  const result = selectBestOCRCandidate([
-    { confidence: 96, text: "MARIA SANTOS" },
-    { confidence: 63, text: "ANA BEATRIZ CRUZ" },
-  ], "Ana Beatriz Cruz");
-
-  assert.equal(result.confidence, 63);
-  assert.equal(result.text, "ANA BEATRIZ CRUZ");
-  assert.equal(result.nameMatch.accuracy, 1);
-  assert.equal(shouldAutoVerify(result.confidence, result.nameMatch), true);
-});
-
-test("OCR name matching fails closed when either side has no usable name parts", () => {
-  assert.deepEqual(scoreNameMatch("", "Maria Santos"), {
-    accuracy: 0,
-    matchedParts: 0,
-    totalParts: 2,
-    firstNameMatched: false,
-    lastNameMatched: false,
-  });
-  assert.deepEqual(scoreNameMatch("Maria Santos", ""), {
-    accuracy: 0,
-    matchedParts: 0,
-    totalParts: 0,
-    firstNameMatched: false,
-    lastNameMatched: false,
-  });
+  assert.equal(result.identityValid, false);
+  assert.equal(shouldUseManualReview(result), false);
 });

@@ -2,7 +2,6 @@ const exifr = require("exifr");
 
 const SECURITY_FLAGS = Object.freeze({
   AI_OR_EDITED_METADATA_DETECTED: "AI_OR_EDITED_METADATA_DETECTED",
-  CAMERA_METADATA_MISSING: "CAMERA_METADATA_MISSING",
   METADATA_INSPECTION_FAILED: "METADATA_INSPECTION_FAILED",
 });
 
@@ -19,7 +18,7 @@ function collectMetadataText(value, result = []) {
   return result;
 }
 
-function getVerificationMetadataFlags(metadata, { cameraCaptured = false } = {}) {
+function getVerificationMetadataFlags(metadata) {
   const flags = [];
   const metadataText = collectMetadataText(metadata).join(" ");
 
@@ -27,17 +26,13 @@ function getVerificationMetadataFlags(metadata, { cameraCaptured = false } = {})
     flags.push(SECURITY_FLAGS.AI_OR_EDITED_METADATA_DETECTED);
   }
 
-  if (!cameraCaptured && !metadata?.Make && !metadata?.Model) {
-    flags.push(SECURITY_FLAGS.CAMERA_METADATA_MISSING);
-  }
-
   return flags;
 }
 
-async function inspectVerificationMetadata(imageBuffer, options) {
+async function inspectVerificationMetadata(imageBuffer) {
   try {
     const metadata = await exifr.parse(imageBuffer);
-    return { flags: getVerificationMetadataFlags(metadata, options) };
+    return { flags: getVerificationMetadataFlags(metadata) };
   } catch (error) {
     return {
       flags: [SECURITY_FLAGS.METADATA_INSPECTION_FAILED],

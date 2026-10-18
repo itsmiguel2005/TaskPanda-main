@@ -15,25 +15,14 @@ test("metadata from known editing and AI software is flagged", () => {
   }
 });
 
-test("missing camera metadata is flagged for admin inspection", () => {
-  assert.deepEqual(getVerificationMetadataFlags({ Software: "Unknown application" }), [
-    SECURITY_FLAGS.CAMERA_METADATA_MISSING,
-  ]);
+test("missing camera metadata does not flag an otherwise valid upload", () => {
+  assert.deepEqual(getVerificationMetadataFlags({ Software: "Unknown application" }), []);
+  assert.deepEqual(getVerificationMetadataFlags({}), []);
 });
 
-test("guided camera captures are not flagged when canvas output has no camera metadata", () => {
+test("known editing software is flagged whether or not camera metadata is present", () => {
   assert.deepEqual(
-    getVerificationMetadataFlags({}, { cameraCaptured: true }),
-    [],
-  );
-});
-
-test("guided camera captures still flag known editing software", () => {
-  assert.deepEqual(
-    getVerificationMetadataFlags(
-      { XMP: { CreatorTool: "Adobe Photoshop 25" } },
-      { cameraCaptured: true },
-    ),
+    getVerificationMetadataFlags({ XMP: { CreatorTool: "Adobe Photoshop 25" } }),
     [SECURITY_FLAGS.AI_OR_EDITED_METADATA_DETECTED],
   );
 });
