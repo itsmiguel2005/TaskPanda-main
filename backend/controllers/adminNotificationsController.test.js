@@ -5,6 +5,7 @@ require("../db");
 const AdminNotification = require("../models/AdminNotification");
 const {
   handleGetAdminNotifications,
+  handleDismissAdminNotification,
   handleMarkAdminNotificationRead,
   handleMarkAllAdminNotificationsRead,
 } = require("./adminNotificationsController");
@@ -13,6 +14,7 @@ const originals = {
   find: AdminNotification.find,
   countDocuments: AdminNotification.countDocuments,
   findOneAndUpdate: AdminNotification.findOneAndUpdate,
+  updateOne: AdminNotification.updateOne,
   updateMany: AdminNotification.updateMany,
 };
 
@@ -21,6 +23,7 @@ test.afterEach(() => {
     find: originals.find,
     countDocuments: originals.countDocuments,
     findOneAndUpdate: originals.findOneAndUpdate,
+    updateOne: originals.updateOne,
     updateMany: originals.updateMany,
   });
 });
@@ -37,7 +40,10 @@ test("admin notification list computes unread state for the authenticated admin"
   const adminEmail = "admin@example.com";
   let unreadFilter;
   const notificationId = new mongoose.Types.ObjectId();
-  AdminNotification.find = () => ({
+  let notificationFilter;
+  AdminNotification.find = (filter) => {
+    notificationFilter = filter;
+    return ({
     sort() { return this; },
     limit() { return this; },
     select() { return this; },
@@ -51,7 +57,8 @@ test("admin notification list computes unread state for the authenticated admin"
       updatedAt: new Date("2026-10-01T00:00:00.000Z"),
       readBy: [],
     }],
-  });
+    });
+  };
   AdminNotification.countDocuments = async (filter) => {
     unreadFilter = filter;
     return 1;
@@ -61,7 +68,11 @@ test("admin notification list computes unread state for the authenticated admin"
   await handleGetAdminNotifications({ adminEmail, query: { limit: "10" } }, res);
 
   const sanitizedUnreadFilter = mongoose.sanitizeFilter(unreadFilter);
+  const sanitizedNotificationFilter = mongoose.sanitizeFilter(notificationFilter);
+  assert.equal(sanitizedNotificationFilter.readBy.$ne, adminEmail);
+  assert.equal(sanitizedNotificationFilter.dismissedBy.$ne, adminEmail);
   assert.equal(sanitizedUnreadFilter.readBy.$ne, adminEmail);
+  assert.equal(sanitizedUnreadFilter.dismissedBy.$ne, adminEmail);
   assert.equal(Object.hasOwn(sanitizedUnreadFilter.readBy, "$eq"), false);
   assert.equal(res.body.unreadCount, 1);
   assert.equal(res.body.notifications[0].id, String(notificationId));
@@ -97,8 +108,34 @@ test("mark-read endpoints persist state against the admin email", async () => {
   assert.deepEqual(readQuery, { _id: notificationId });
   assert.deepEqual(readUpdate, { $addToSet: { readBy: adminEmail } });
   const sanitizedAllQuery = mongoose.sanitizeFilter(allQuery);
-  assert.equal(sanitizedAllQuery.readBy.$ne, adminEmail);
-  assert.equal(Object.hasOwn(sanitizedAllQuery.readBy, "$eq"), false);
-  assert.deepEqual(allUpdate, { $addToSet: { readBy: adminEmail } });
+  assert.deepEqual(sanitizedAllQuery, {});
+  assert.deepEqual(allUpdate, {
+    $addToSet: {
+      readBy: adminEmail,
+      dismissedBy: adminEmail,
+    },
+  });
   assert.equal(allReadResponse.body.updatedCount, 3);
+});
+
+test("dismiss endpoint persists dismissal for only the authenticated admin", async () => {
+  const adminEmail = "admin@example.com";
+  const notificationId = new mongoose.Types.ObjectId().toString();
+  let dismissQuery;
+  let dismissUpdate;
+  AdminNotification.findOneAndUpdate = (filter, update) => {
+    dismissQuery = filter;
+    dismissUpdate = update;
+    return { select: async () => ({ _id: notificationId }) };
+  };
+  const res = response();
+
+  await handleDismissAdminNotification({
+    adminEmail,
+    params: { notificationId },
+  }, res);
+
+  assert.deepEqual(dismissQuery, { _id: notificationId });
+  assert.deepEqual(dismissUpdate, { $addToSet: { dismissedBy: adminEmail } });
+  assert.deepEqual(res.body, { success: true });
 });

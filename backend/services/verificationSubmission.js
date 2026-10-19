@@ -1,5 +1,42 @@
 const mongoose = require("mongoose");
 
+async function hasIdentityIdentifierOnOtherAccount(userModel, userId, identifierHash) {
+  if (!identifierHash) return false;
+  return Boolean(await userModel.exists({
+    _id: mongoose.trusted({ $ne: userId }),
+    "verificationDetails.identifierHash": identifierHash,
+  }));
+}
+
+function getManualReviewReason(result, duplicateIdentifier = false) {
+  if (duplicateIdentifier) {
+    return "This PhilSys ID was also submitted on another account. Admin review is required.";
+  }
+  if (result.role === "provider" && !result.providerAgeEligible) {
+    return "Provider age eligibility could not be confirmed automatically.";
+  }
+  if (result.role === "provider" && !result.parsedDateOfBirth) {
+    return "The date of birth on the ID could not be read clearly.";
+  }
+  if (result.role === "provider" && !result.dateOfBirthMatched) {
+    return "The ID date of birth did not match the provider account.";
+  }
+  if (!result.fields?.firstName || !result.fields?.lastName) {
+    return "The ID name fields could not all be read clearly.";
+  }
+  if (result.nameMatchAccuracy < 85) {
+    return "The name on this ID does not match this account. Admin review is required.";
+  }
+  if (result.verificationScore < 85) {
+    return "The verification score did not meet the automatic-approval threshold.";
+  }
+  return "The automated checks could not confidently verify this ID. Admin review is required.";
+}
+
+function shouldQueueManualIdentityReview(result, duplicateIdentifier = false) {
+  return duplicateIdentifier || result.identityValid === true && result.autoVerified !== true;
+}
+
 async function persistVerificationSubmission(userModel, previousUser, verificationDetails, autoVerified) {
   const previousDetails = previousUser.verificationDetails || {};
   const user = await userModel.findOneAndUpdate({
@@ -88,8 +125,11 @@ async function releaseStaleVerificationOCR(userModel, staleBefore) {
 }
 
 module.exports = {
+  getManualReviewReason,
+  hasIdentityIdentifierOnOtherAccount,
   markVerificationOCRUnavailable,
   persistVerificationOCRResult,
   persistVerificationSubmission,
   releaseStaleVerificationOCR,
+  shouldQueueManualIdentityReview,
 };

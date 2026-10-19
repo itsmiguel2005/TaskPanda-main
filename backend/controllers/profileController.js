@@ -24,6 +24,8 @@ function profileFromUser(user) {
     phoneVerified: user.phoneVerified === true,
     verificationDetailsStatus: user.verificationDetails?.status || null,
     verificationRejectionReason: user.verificationDetails?.rejectionReason || "",
+    duplicateIdentifier: user.verificationDetails?.duplicateIdentifier === true,
+    manualReviewReason: user.verificationDetails?.manualReviewReason || "",
     tesdaCertificates: (user.tesdaCertificates || []).map((certificate) => ({
       id: String(certificate._id),
       trade: certificate.trade || "",
@@ -184,6 +186,8 @@ function handleGetVerificationStatus(req, res) {
     verificationStatus: user.verificationStatus || "unverified",
     verificationDetailsStatus: user.verificationDetails?.status || null,
     verificationRejectionReason: user.verificationDetails?.rejectionReason || "",
+    duplicateIdentifier: user.verificationDetails?.duplicateIdentifier === true,
+    manualReviewReason: user.verificationDetails?.manualReviewReason || "",
   });
 }
 

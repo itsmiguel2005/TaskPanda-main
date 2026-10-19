@@ -204,6 +204,8 @@ const userSchema = new mongoose.Schema(
       ageEligible: { type: Boolean, default: false },
       ocrProcessing: { type: Boolean, default: false },
       autoVerified: { type: Boolean, default: false },
+      duplicateIdentifier: { type: Boolean, default: false },
+      manualReviewReason: { type: String, trim: true, maxlength: 240, default: "" },
       securityFlags: {
         type: [{
           type: String,
@@ -447,12 +449,4 @@ userSchema.pre("validate", function removeRetiredCameraMetadataFlag() {
 userSchema.index({ geoLocation: "2dsphere" });
 userSchema.index({ username: 1 });
 userSchema.index({ referralCode: 1 }, { unique: true, sparse: true });
-userSchema.index(
-  { "verificationDetails.identifierHash": 1 },
-  {
-    unique: true,
-    partialFilterExpression: { "verificationDetails.identifierHash": { $type: "string" } },
-  }
-);
-
 module.exports = mongoose.model("User", userSchema);

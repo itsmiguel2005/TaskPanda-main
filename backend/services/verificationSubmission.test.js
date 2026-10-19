@@ -1,11 +1,76 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  getManualReviewReason,
+  hasIdentityIdentifierOnOtherAccount,
   markVerificationOCRUnavailable,
   persistVerificationOCRResult,
   persistVerificationSubmission,
   releaseStaleVerificationOCR,
+  shouldQueueManualIdentityReview,
 } = require("./verificationSubmission");
+
+test("manual review reason identifies reused IDs before other review gates", () => {
+  assert.match(getManualReviewReason({
+    role: "provider",
+    providerAgeEligible: true,
+    parsedDateOfBirth: "2005-10-05",
+    dateOfBirthMatched: true,
+    fields: { firstName: "Miguel", lastName: "Calimlim" },
+    nameMatchAccuracy: 96,
+    verificationScore: 99,
+  }, true), /submitted on another account/);
+});
+
+test("manual review reason identifies an unreadable provider name despite a high score", () => {
+  assert.match(getManualReviewReason({
+    role: "provider",
+    providerAgeEligible: true,
+    parsedDateOfBirth: "2005-10-05",
+    dateOfBirthMatched: true,
+    fields: { firstName: "Miguel", lastName: "" },
+    nameMatchAccuracy: 96,
+    verificationScore: 99,
+  }), /name fields could not all be read clearly/);
+});
+
+test("valid PhilSys IDs with an identity mismatch are queued instead of rejected", () => {
+  assert.equal(shouldQueueManualIdentityReview({
+    identityValid: true,
+    autoVerified: false,
+    nameMatchAccuracy: 0,
+  }), true);
+  assert.equal(shouldQueueManualIdentityReview({
+    identityValid: false,
+    autoVerified: false,
+  }), false);
+});
+
+test("identity reuse is detected only on another account", async () => {
+  const userModel = {
+    filter: null,
+    async exists(filter) {
+      this.filter = filter;
+      return { _id: "other-user" };
+    },
+  };
+
+  assert.equal(await hasIdentityIdentifierOnOtherAccount(userModel, "current-user", "hashed-id"), true);
+  assert.equal(userModel.filter._id.$ne, "current-user");
+  assert.equal(userModel.filter["verificationDetails.identifierHash"], "hashed-id");
+});
+
+test("identity reuse lookup skips empty hashes", async () => {
+  const userModel = {
+    called: false,
+    async exists() {
+      this.called = true;
+    },
+  };
+
+  assert.equal(await hasIdentityIdentifierOnOtherAccount(userModel, "current-user", ""), false);
+  assert.equal(userModel.called, false);
+});
 
 function createUserModel(currentUser) {
   return {
@@ -87,6 +152,30 @@ test("a submission is saved when the verification state has not changed", async 
   assert.equal(savedUser.verificationDetails, nextDetails);
   assert.equal(savedUser.isVerified, false);
   assert.equal(savedUser.verificationStatus, "pending");
+});
+
+test("a reused ID submission stays pending and keeps its duplicate review flag", async () => {
+  const submittedAt = new Date("2026-10-04T07:10:00.000Z");
+  const currentUser = {
+    _id: "user-123",
+    isVerified: false,
+    verificationStatus: "unverified",
+    verificationDetails: {},
+  };
+  const userModel = createUserModel(currentUser);
+  const duplicateDetails = {
+    status: "Pending",
+    submittedAt,
+    duplicateIdentifier: true,
+    autoVerified: false,
+  };
+
+  const savedUser = await persistVerificationSubmission(userModel, currentUser, duplicateDetails, false);
+
+  assert.equal(savedUser.isVerified, false);
+  assert.equal(savedUser.verificationStatus, "pending");
+  assert.equal(savedUser.verificationDetails.duplicateIdentifier, true);
+  assert.equal(savedUser.verificationDetails.autoVerified, false);
 });
 
 test("a review marker prevents an in-flight submission from replacing the review result", async () => {

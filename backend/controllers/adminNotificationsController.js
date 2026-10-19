@@ -17,12 +17,18 @@ async function handleGetAdminNotifications(req, res) {
 
   try {
     const [notifications, unreadCount] = await Promise.all([
-      AdminNotification.find()
+      AdminNotification.find({
+        readBy: mongoose.trusted({ $ne: adminEmail }),
+        dismissedBy: mongoose.trusted({ $ne: adminEmail }),
+      })
         .sort({ updatedAt: -1 })
         .limit(limit)
         .select("_id event title message targetUrl createdAt updatedAt readBy")
         .lean(),
-      AdminNotification.countDocuments({ readBy: mongoose.trusted({ $ne: adminEmail }) }),
+      AdminNotification.countDocuments({
+        readBy: mongoose.trusted({ $ne: adminEmail }),
+        dismissedBy: mongoose.trusted({ $ne: adminEmail }),
+      }),
     ]);
     return res.json({
       notifications: notifications.map((notification) => ({
@@ -64,14 +70,40 @@ async function handleMarkAdminNotificationRead(req, res) {
   }
 }
 
+async function handleDismissAdminNotification(req, res) {
+  const adminEmail = getAdminEmail(req, res);
+  if (!adminEmail) return;
+  if (!mongoose.isValidObjectId(req.params.notificationId)) {
+    return res.status(400).json({ message: "Choose a valid admin notification." });
+  }
+
+  try {
+    const notification = await AdminNotification.findOneAndUpdate(
+      { _id: req.params.notificationId },
+      { $addToSet: { dismissedBy: adminEmail } },
+      { new: true },
+    ).select("_id");
+    if (!notification) return res.status(404).json({ message: "Admin notification not found." });
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("Dismiss admin notification failed:", error);
+    return res.status(500).json({ message: "Could not dismiss this admin notification." });
+  }
+}
+
 async function handleMarkAllAdminNotificationsRead(req, res) {
   const adminEmail = getAdminEmail(req, res);
   if (!adminEmail) return;
 
   try {
     const result = await AdminNotification.updateMany(
-      { readBy: mongoose.trusted({ $ne: adminEmail }) },
-      { $addToSet: { readBy: adminEmail } },
+      {},
+      {
+        $addToSet: {
+          readBy: adminEmail,
+          dismissedBy: adminEmail,
+        },
+      },
     );
     return res.json({ success: true, updatedCount: result.modifiedCount });
   } catch (error) {
@@ -82,6 +114,7 @@ async function handleMarkAllAdminNotificationsRead(req, res) {
 
 module.exports = {
   handleGetAdminNotifications,
+  handleDismissAdminNotification,
   handleMarkAdminNotificationRead,
   handleMarkAllAdminNotificationsRead,
 };

@@ -269,6 +269,34 @@ test("provider verification score includes DOB match and adult eligibility", () 
   assert.equal(shouldUseManualReview(missingDob), true);
 });
 
+test("a high-scoring adult provider with matching name and DOB qualifies for auto-verification", () => {
+  const result = evaluateOCRCandidate({
+    confidence: 87,
+    text: [
+      "PAMBANSANG PAGKAKAKILANLAN",
+      "PCN: 5285-3761-9548-6750",
+      "APELYIDO: CALIMLIX",
+      "MGA PANGALAN: MIGUEL EDUARDO",
+      "GITNANG APELYIDO: REYES",
+      "PETSA NG KAPANGANAKAN: OKTUBRE 5, 2005",
+    ].join("\n"),
+  }, {
+    firstName: "Miguel Eduardo",
+    middleName: "Reyes",
+    lastName: "Calimlim",
+    fullName: "Miguel Eduardo Reyes Calimlim",
+    dateOfBirth: "2005-10-05",
+    role: "provider",
+  });
+
+  assert.equal(result.verificationScore, 99);
+  assert.equal(result.nameMatchAccuracy >= 85, true);
+  assert.equal(result.dateOfBirthMatched, true);
+  assert.equal(result.providerAgeEligible, true);
+  assert.equal(result.autoVerified, true);
+  assert.equal(shouldUseManualReview(result), false);
+});
+
 test("verification score uses valid identifier format, fuzzy name, and applicable weights", () => {
   assert.equal(calculateVerificationScore({
     identifier: { digits: "1234567890123456" },

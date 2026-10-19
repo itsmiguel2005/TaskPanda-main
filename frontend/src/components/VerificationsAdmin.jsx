@@ -339,6 +339,16 @@ export default function VerificationsAdmin() {
                             autoVerified={applicant.autoVerified}
                             ocrProcessing={applicant.ocrProcessing}
                           />
+                          {applicant.duplicateIdentifier && (
+                            <p className="mt-2 max-w-56 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs font-bold leading-5 text-amber-950" role="note">
+                              Used ID before · manual review required
+                            </p>
+                          )}
+                          {!applicant.duplicateIdentifier && applicant.manualReviewReason && (
+                            <p className="mt-2 max-w-56 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs font-semibold leading-5 text-amber-950" role="note">
+                              {applicant.manualReviewReason}
+                            </p>
+                          )}
                           {applicant.verificationScore !== null && applicant.verificationScore !== undefined && applicant.ocrConfidence !== null && (
                             <p className="mt-1 text-xs text-slate-600">
                               Text OCR: {Math.round(applicant.ocrConfidence)}%
@@ -465,6 +475,11 @@ export default function VerificationsAdmin() {
                       : "Not provided"}
                   </p>
                 )}
+                {viewing.type === "identity" && viewing.duplicateIdentifier && (
+                  <p className="mt-2 inline-flex rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-950" role="note">
+                    Used ID before. Review the account details carefully; this submission was not auto-verified.
+                  </p>
+                )}
               </div>
               <button type="button" aria-label="Close document viewer" onClick={() => setViewing(null)} className="dashboard-focus shrink-0 rounded-xl p-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950">
                 <Icon name="close" className="h-5 w-5" />
@@ -524,6 +539,11 @@ export default function VerificationsAdmin() {
                 ? <>Approving will mark the <span className="font-bold text-slate-900">{approving.trade}</span> certificate for <span className="font-bold text-slate-900">{approving.name}</span> as verified.</>
                 : <>Approving will verify <span className="font-bold text-slate-900">{approving.name}</span> and activate this account. Check the PhilSys ID name{approving.role === "provider" ? " and date of birth" : ""} against the account before continuing.</>}
             </p>
+            {approving.type === "identity" && approving.duplicateIdentifier && (
+              <p className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm leading-5 text-amber-950" role="note">
+                Used ID before. Confirm the account holder and ID details carefully before deciding.
+              </p>
+            )}
             {actionError && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">{actionError}</p>}
             <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-xl border border-sky-200 bg-sky-50/80 p-4 text-sm leading-6 text-sky-950">
               <input

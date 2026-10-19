@@ -7,6 +7,7 @@ const adminNotificationSchema = new mongoose.Schema({
   message: { type: String, required: true, trim: true, maxlength: 240 },
   targetUrl: { type: String, required: true, trim: true, maxlength: 500 },
   readBy: { type: [String], default: [] },
+  dismissedBy: { type: [String], default: [] },
 }, {
   timestamps: true,
 });

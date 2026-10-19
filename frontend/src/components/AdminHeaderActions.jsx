@@ -10,6 +10,7 @@ function HeaderIcon({ name, className = "h-5 w-5" }) {
     bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></>,
     chevron: <path d="m7 10 5 5 5-5" />,
     check: <path d="m5 12 4 4L19 6" />,
+    close: <path d="m18 6-12 12M6 6l12 12" />,
     dashboard: <><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="m19.4 15 .1.1a1.7 1.7 0 1 1-2.4 2.4l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a1.7 1.7 0 1 1-3.4 0v-.2a1.7 1.7 0 0 0-2.9-1.2l-.1.1a1.7 1.7 0 1 1-2.4-2.4l.1-.1a1.7 1.7 0 0 0-1.2-2.9H4a1.7 1.7 0 1 1 0-3.4h.2a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a1.7 1.7 0 1 1 2.4-2.4l.1.1a1.7 1.7 0 0 0 2.9-1.2V2a1.7 1.7 0 1 1 3.4 0v.2a1.7 1.7 0 0 0 2.9 1.2l.1-.1a1.7 1.7 0 1 1 2.4 2.4l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a1.7 1.7 0 1 1 0 3.4h-.2a1.7 1.7 0 0 0-1.2 2.9Z" /></>,
     logout: <><path d="M10 17l5-5-5-5M15 12H3" /><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6" /></>,
@@ -168,10 +169,23 @@ export default function AdminHeaderActions() {
     setNotificationError("");
     try {
       await adminRequest("/api/admin/notifications/read-all", token, { method: "POST" });
-      setNotifications((current) => current.map((notification) => ({ ...notification, isRead: true })));
+      setNotifications([]);
       setUnreadCount(0);
     } catch (error) {
       setNotificationError(error.message || "Could not mark notifications as read.");
+    }
+  };
+
+  const handleDismissNotification = async (notification) => {
+    setNotificationError("");
+    try {
+      await adminRequest(`/api/admin/notifications/${encodeURIComponent(notification.id)}/dismiss`, token, {
+        method: "POST",
+      });
+      setNotifications((current) => current.filter((item) => item.id !== notification.id));
+      if (!notification.isRead) setUnreadCount((current) => Math.max(0, current - 1));
+    } catch (error) {
+      setNotificationError(error.message || "Could not dismiss this notification.");
     }
   };
 
@@ -276,12 +290,12 @@ export default function AdminHeaderActions() {
               ) : notifications.length ? (
                 <ul aria-label="Recent admin notifications" className="divide-y divide-slate-100">
                   {notifications.map((notification) => (
-                    <li key={notification.id}>
+                    <li key={notification.id} className={`flex min-h-[76px] items-start gap-1 px-2 py-1 ${notification.isRead ? "bg-white" : "bg-indigo-50/50"}`}>
                       <button
                         type="button"
                         onClick={() => void handleNotificationOpen(notification)}
                         aria-label={`Open notification: ${notification.title}`}
-                        className={`flex min-h-[76px] w-full gap-3 px-4 py-3 text-left transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${notification.isRead ? "bg-white" : "bg-indigo-50/50"}`}
+                        className="flex min-h-[68px] min-w-0 flex-1 gap-3 px-2 py-2 text-left transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
                       >
                         <span aria-hidden="true" className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${notification.isRead ? "bg-transparent" : "bg-indigo-600"}`} />
                         <span className="min-w-0 flex-1">
@@ -293,6 +307,15 @@ export default function AdminHeaderActions() {
                             {formatNotificationDate(notification.updatedAt || notification.createdAt)}
                           </span>
                         </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDismissNotification(notification)}
+                        aria-label={`Dismiss notification: ${notification.title}`}
+                        title="Dismiss notification"
+                        className="mt-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-rose-50 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                      >
+                        <HeaderIcon name="close" className="h-4 w-4" />
                       </button>
                     </li>
                   ))}

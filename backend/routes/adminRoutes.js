@@ -45,6 +45,7 @@ const { handleGetAdminAuditLogs } = require("../controllers/auditLogController")
 const { handleGetAdminAccounts, handleCreateAdminAccount } = require("../controllers/adminAccountsController");
 const {
   handleGetAdminNotifications,
+  handleDismissAdminNotification,
   handleMarkAdminNotificationRead,
   handleMarkAllAdminNotificationsRead,
 } = require("../controllers/adminNotificationsController");
@@ -59,6 +60,13 @@ router.get(
   handleGetAdminNotifications
 );
 router.post("/notifications/read-all", requireAdmin, handleMarkAllAdminNotificationsRead);
+router.post(
+  "/notifications/:notificationId/dismiss",
+  requireAdmin,
+  [param("notificationId").isMongoId()],
+  validateRequest,
+  handleDismissAdminNotification
+);
 router.post(
   "/notifications/:notificationId/read",
   requireAdmin,

@@ -313,6 +313,8 @@ export default function VerificationPage() {
   const [pendingPhoto, setPendingPhoto] = useState(null);
   const pendingPhotoUrlRef = useRef("");
   const [ocrProcessing, setOcrProcessing] = useState(false);
+  const [duplicateIdentifier, setDuplicateIdentifier] = useState(false);
+  const [manualReviewReason, setManualReviewReason] = useState("");
   const [voucherAwarded, setVoucherAwarded] = useState(false);
   const [voucherAwardError, setVoucherAwardError] = useState(false);
   const [error, setError] = useState("");
@@ -350,6 +352,8 @@ export default function VerificationPage() {
         if (!active) return;
 
         updateUser(data.user);
+        setDuplicateIdentifier(data.user.duplicateIdentifier === true);
+        setManualReviewReason(data.user.manualReviewReason || "");
         const status = String(data.user.verificationStatus || "").toLowerCase();
         const detailStatus = String(data.user.verificationDetailsStatus || "").toLowerCase();
         if (data.user.isVerified === true || status === "verified" || detailStatus === "active") {
@@ -517,6 +521,8 @@ export default function VerificationPage() {
       setVoucherAwarded(data.voucherAwarded === true);
       setVoucherAwardError(data.voucherAwardError === true);
       setVerificationState(data.isVerified === true ? "verified" : "pending");
+      setDuplicateIdentifier(data.duplicateIdentifier === true);
+      setManualReviewReason(data.manualReviewReason || "");
       setUploading(false);
     } catch (err) {
       console.error("Identity verification submission failed:", err);
@@ -640,10 +646,16 @@ export default function VerificationPage() {
               Under review
             </span>
             <h2 className="relative mt-3 text-xl font-extrabold tracking-tight text-emerald-950 sm:text-2xl">
-              Hang tight! Panda is reviewing your ID documents.
+              {duplicateIdentifier
+                ? "Your ID is waiting for an additional account review."
+                : "Hang tight! Panda is reviewing your ID documents."}
             </h2>
             <p className="relative mx-auto mt-2 max-w-md text-sm leading-6 text-emerald-800">
-              Verification usually takes 24–48 hours. We’ll notify you once your documents are approved.
+              {duplicateIdentifier
+                ? manualReviewReason || "This PhilSys ID was also submitted on another TaskPanda account. You can still submit it here, but it will not be auto-verified. An admin will review this account's details before making a decision."
+                : manualReviewReason
+                  ? `${manualReviewReason} An admin will review your submission and notify you of the decision.`
+                : "Verification usually takes 24–48 hours. We’ll notify you once your documents are approved."}
             </p>
             {ocrProcessing && (
               <p className="relative mt-2 text-xs font-medium text-emerald-700">

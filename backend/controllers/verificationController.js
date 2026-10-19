@@ -23,11 +23,14 @@ function tesdaCertificateResponse(certificate) {
     rejectionReason: certificate.rejectionReason || "",
   };
 }
-const { performOCRVerification, shouldUseManualReview } = require("../utils/ocrHelper");
+const { performOCRVerification } = require("../utils/ocrHelper");
 const { SECURITY_FLAGS, inspectVerificationMetadata } = require("../utils/verificationMetadata");
 const {
+  getManualReviewReason,
+  hasIdentityIdentifierOnOtherAccount,
   persistVerificationSubmission,
   releaseStaleVerificationOCR,
+  shouldQueueManualIdentityReview,
 } = require("../services/verificationSubmission");
 const { removeUploadedFiles } = require("../storage/verificationUpload");
 const { sendPushNotification } = require("../services/oneSignal");
@@ -116,6 +119,11 @@ async function handleSubmitVerification(req, res) {
       keys,
     );
     identifierHash = protectedIdentifier.hash;
+    const duplicateIdentifier = await hasIdentityIdentifierOnOtherAccount(
+      User,
+      previousUser._id,
+      protectedIdentifier.hash,
+    );
 
     if (previousUser.role === 'provider' && ocrResult.providerAge !== null && ocrResult.providerAge < 18) {
       await recordAttempt('FAILURE', 'underage');
@@ -132,12 +140,12 @@ async function handleSubmitVerification(req, res) {
       if (error) console.warn('Verification metadata inspection failed.');
     });
 
-    const autoVerified = ocrResult.autoVerified;
-    const manualReview = !autoVerified && shouldUseManualReview(ocrResult);
+    const autoVerified = ocrResult.autoVerified && !duplicateIdentifier;
+    const manualReview = shouldQueueManualIdentityReview(ocrResult, duplicateIdentifier);
     if (!autoVerified && !manualReview) {
-      await recordAttempt('FAILURE', 'identity_mismatch');
+      await recordAttempt('FAILURE', 'invalid_document');
       return res.status(422).json({
-        message: 'The name on your PhilSys ID does not match your TaskPanda account. Check your profile details or contact support.',
+        message: 'We could not validate this as a PhilSys National ID. Check the document and submit a clear photo of the ID front.',
       });
     }
 
@@ -152,6 +160,9 @@ async function handleSubmitVerification(req, res) {
     }
 
     const frontImage = uploadedDocuments[0] || null;
+    const manualReviewReason = autoVerified
+      ? ""
+      : getManualReviewReason(ocrResult, duplicateIdentifier);
     const submittedAt = new Date();
     const verificationDetails = {
       idFrontUrl: frontImage ? `/api/v1/admin/verifications/${req.user._id}/documents/front` : '',
@@ -167,6 +178,8 @@ async function handleSubmitVerification(req, res) {
         ocrResult.providerAge !== null && ocrResult.providerAge >= 18,
       ocrProcessing: false,
       autoVerified,
+      duplicateIdentifier,
+      manualReviewReason,
       securityFlags,
       rejectionReason: '',
       status: autoVerified ? 'Active' : 'Pending',
@@ -197,7 +210,7 @@ async function handleSubmitVerification(req, res) {
 
     await recordAttempt(
       autoVerified ? 'SUCCESS' : 'PENDING_MANUAL_REVIEW',
-      autoVerified ? 'verified' : 'manual_review',
+      autoVerified ? 'verified' : duplicateIdentifier ? 'duplicate_identifier' : 'manual_review',
     );
 
     if (!autoVerified) await notifyIdentityVerificationReview(savedUser._id, savedUser.role, submittedAt);
@@ -219,10 +232,14 @@ async function handleSubmitVerification(req, res) {
       ocrConfidence: ocrResult.ocrConfidence,
       verificationScore: ocrResult.verificationScore,
       nameMatchAccuracy: ocrResult.nameMatchAccuracy,
+      duplicateIdentifier,
+      manualReviewReason,
       securityFlags,
       message: autoVerified
         ? 'Your PhilSys ID is verified.'
-        : 'Your PhilSys ID is in the secure admin queue for manual review.',
+        : duplicateIdentifier
+          ? 'Your PhilSys ID was submitted successfully. Because it was also submitted on another account, it will not be auto-verified and is in the secure admin queue for manual review.'
+          : 'Your PhilSys ID is in the secure admin queue for manual review.',
       user: {
         isVerified: autoVerified,
         status: autoVerified ? 'Active' : 'Pending',
@@ -232,7 +249,7 @@ async function handleSubmitVerification(req, res) {
   } catch (error) {
     if (!auditRecorded) {
       try {
-        await recordAttempt('FAILURE', error.code === 11000 ? 'duplicate_identifier' : 'processing_error');
+        await recordAttempt('FAILURE', 'processing_error');
       } catch (auditError) {
         console.error('Identity verification audit write failed:', auditError.message);
       }
@@ -243,9 +260,6 @@ async function handleSubmitVerification(req, res) {
       })));
     }
     console.error('PhilSys verification submission failed:', error.code || error.statusCode || 'unexpected error');
-    if (error.code === 11000) {
-      return res.status(409).json({ message: 'This PhilSys ID is already linked to another TaskPanda account.' });
-    }
     if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
     return res.status(500).json({ message: 'We could not securely process your PhilSys ID. Please try again.' });
   } finally {
@@ -455,6 +469,8 @@ async function handleGetAdminVerifications(_req, res) {
           "verificationDetails.tradeCertificate verificationDetails.ocrConfidence verificationDetails.verificationScore verificationDetails.nameMatchAccuracy",
           "verificationDetails.dateOfBirthMatched verificationDetails.ageEligible verificationDetails.ocrProcessing",
           "verificationDetails.autoVerified verificationDetails.securityFlags verificationDetails.rejectionReason",
+          "verificationDetails.duplicateIdentifier",
+          "verificationDetails.manualReviewReason",
           "verificationDetails.status verificationDetails.submittedAt",
           "+verificationDetails.identifierLastFour +verificationDetails.identifierType",
         ].join(" "))
@@ -495,6 +511,8 @@ async function handleGetAdminVerifications(_req, res) {
       nameMatchAccuracy: user.verificationDetails?.nameMatchAccuracy ?? null,
       ocrProcessing: user.verificationDetails?.ocrProcessing === true,
       autoVerified: user.verificationDetails?.autoVerified === true,
+      duplicateIdentifier: user.verificationDetails?.duplicateIdentifier === true,
+      manualReviewReason: user.verificationDetails?.manualReviewReason || "",
       maskedIdentifier: user.verificationDetails?.identifierLastFour
         ? maskIdentifier(
           user.verificationDetails.identifierType,
