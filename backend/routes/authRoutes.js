@@ -19,6 +19,7 @@ const {
   handleForgotPassword,
   handleVerifyPasswordResetCode,
   handleResetPassword,
+  handleCompleteAdminSetup,
 } = require("../controllers/authController");
 const { body, query } = require("express-validator");
 const { limitAuthAttempts, limitRegistrationChecks, limitLocationLookups } = require("../middleware/rateLimits");
@@ -121,5 +122,10 @@ router.post("/reset-password", limitAuthAttempts, [
   body("code").isString().matches(/^\d{6}$/),
   body("password").isString().matches(passwordPattern),
 ], validateRequest, handleResetPassword);
+router.post("/admin-setup", limitAuthAttempts, [
+  emailField(),
+  body("setupToken").isString().matches(/^[a-f\d]{64}$/i),
+  body("password").isString().matches(passwordPattern),
+], validateRequest, handleCompleteAdminSetup);
 
 module.exports = router;

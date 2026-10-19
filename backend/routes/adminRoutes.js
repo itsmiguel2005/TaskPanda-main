@@ -254,7 +254,7 @@ router.post(
   requirePrimaryAdmin,
   [
     body("fullName").isString().trim().isLength({ min: 2, max: 100 }),
-    body("email").isEmail().customSanitizer((value) => value.trim().toLowerCase()).isLength({ max: 254 }),
+    body("deliveryEmail").isEmail().customSanitizer((value) => value.trim().toLowerCase()).isLength({ max: 254 }),
   ],
   validateRequest,
   handleCreateAdminAccount

@@ -57,7 +57,7 @@ export default function AdminAccountsManagement() {
     try {
       const result = await adminRequest("/api/admin/admin-accounts", token, {
         method: "POST",
-        body: JSON.stringify({ fullName: fullName.trim(), email: email.trim() }),
+        body: JSON.stringify({ fullName: fullName.trim(), deliveryEmail: email.trim() }),
       });
       setAccounts((current) => [...current, result.account]);
       setFullName("");
@@ -82,7 +82,7 @@ export default function AdminAccountsManagement() {
     <section aria-labelledby="admin-accounts-title" className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
       <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
         <h2 id="admin-accounts-title" className="text-sm font-bold text-slate-950">Admin accounts</h2>
-        <p className="mt-1 text-xs leading-5 text-slate-600">Create named admin logins. Each admin receives sign-in verification codes at their own email address.</p>
+        <p className="mt-1 text-xs leading-5 text-slate-600">Create an admin login alias. Setup links and sign-in codes go to the admin’s email address.</p>
       </div>
       {error && <p role="alert" className="m-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</p>}
       {notice && <p role="status" className="m-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{notice}</p>}
@@ -92,7 +92,7 @@ export default function AdminAccountsManagement() {
           <input value={fullName} onChange={(event) => setFullName(event.target.value)} minLength={2} maxLength={100} required disabled={isCreating} className="dashboard-focus mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-950 disabled:bg-slate-100" autoComplete="name" />
         </label>
         <label className="text-xs font-semibold text-slate-700">
-          Admin email
+          Admin email for setup and verification
           <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} maxLength={254} required disabled={isCreating} className="dashboard-focus mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-950 disabled:bg-slate-100" autoComplete="email" />
         </label>
         <button type="submit" disabled={isCreating || !fullName.trim() || !email.trim()} className="dashboard-focus h-10 rounded-xl bg-blue-800 px-4 text-sm font-semibold text-white transition hover:bg-blue-900 disabled:cursor-wait disabled:opacity-50">
@@ -104,7 +104,8 @@ export default function AdminAccountsManagement() {
           <div key={account.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-5">
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-slate-900">{account.fullName}</p>
-              <p className="truncate text-xs text-slate-600">{account.email}</p>
+              <p className="truncate text-xs text-slate-700">Login: {account.email}</p>
+              <p className="truncate text-xs text-slate-500">Email: {account.deliveryEmail || account.email}</p>
             </div>
             <div className="flex shrink-0 items-center gap-3">
               <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${account.isAvailable ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-700"}`}>
@@ -118,7 +119,7 @@ export default function AdminAccountsManagement() {
         )}
       </div>
       <p className="border-t border-slate-200 px-4 py-3 text-xs leading-5 text-slate-600 sm:px-5">
-        New admins should choose <strong className="font-semibold text-slate-800">Forgot password</strong> on the sign-in page to set their own password before signing in.
+        New admins receive a one-time setup link by email to create their password. Their login email is a generated <strong className="font-semibold text-slate-800">adminN@taskpanda.com</strong> alias.
       </p>
     </section>
   );

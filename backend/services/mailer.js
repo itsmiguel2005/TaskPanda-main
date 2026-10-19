@@ -66,20 +66,58 @@ if (process.env.VERCEL) {
   });
 }
 
-async function sendPasswordResetEmail(email, code) {
+async function sendPasswordResetEmail(email, code, loginEmail = email) {
   const resetUrl = new URL("/forgot-password", `${config.appUrl}/`);
-  resetUrl.searchParams.set("email", String(email).trim().toLowerCase());
+  resetUrl.searchParams.set("email", String(loginEmail).trim().toLowerCase());
   resetUrl.searchParams.set("code", code);
-  const result = await mailTransport.sendMail({
+  const result = await sendVerificationMailWithRetry(() => mailTransport.sendMail({
     from: taskPandaSender,
     to: email,
     subject: "Reset your TaskPanda password",
     text: `Your TaskPanda password reset code is ${code}. It expires in 10 minutes.\n\nReset your password: ${resetUrl.toString()}`,
     html: `<p>Your TaskPanda password reset code is:</p><p style="font-size: 24px; font-weight: 700; letter-spacing: 4px">${code}</p><p>This code expires in 10 minutes.</p><p><a href="${resetUrl.toString()}">Reset your password</a></p>`,
-  });
+  }));
+  const acceptedRecipients = (result.accepted || []).map((recipient) =>
+    String(typeof recipient === "string" ? recipient : recipient.address || "").trim().toLowerCase()
+  );
+  if (!acceptedRecipients.includes(String(email).trim().toLowerCase())) {
+    console.error("SMTP did not accept the password reset email recipient:", {
+      acceptedCount: acceptedRecipients.length,
+      rejectedCount: result.rejected?.length || 0,
+    });
+    throw new Error("The email provider did not accept the password reset message.");
+  }
   console.log("Password reset email accepted by SMTP:", {
     messageId: result.messageId,
-    acceptedCount: result.accepted?.length || 0,
+    acceptedCount: acceptedRecipients.length,
+    rejectedCount: result.rejected?.length || 0,
+  });
+}
+
+async function sendAdminAccountSetupEmail(destinationEmail, loginEmail, setupToken) {
+  const setupUrl = new URL("/forgot-password", `${config.appUrl}/`);
+  setupUrl.searchParams.set("email", String(loginEmail).trim().toLowerCase());
+  setupUrl.searchParams.set("setupToken", setupToken);
+  const result = await sendVerificationMailWithRetry(() => mailTransport.sendMail({
+    from: taskPandaSender,
+    to: destinationEmail,
+    subject: "Set up your TaskPanda admin account",
+    text: `Your TaskPanda admin login is ${loginEmail}.\n\nSet up your password: ${setupUrl.toString()}\nThis one-time setup link expires in 24 hours. If you were not expecting this invitation, you can ignore this email.`,
+    html: `<p>Your TaskPanda admin login is <strong>${loginEmail}</strong>.</p><p><a href="${setupUrl.toString()}">Set up your password</a></p><p>This one-time setup link expires in 24 hours. If you were not expecting this invitation, you can ignore this email.</p>`,
+  }));
+  const acceptedRecipients = (result.accepted || []).map((recipient) =>
+    String(typeof recipient === "string" ? recipient : recipient.address || "").trim().toLowerCase()
+  );
+  if (!acceptedRecipients.includes(String(destinationEmail).trim().toLowerCase())) {
+    console.error("SMTP did not accept the admin setup email recipient:", {
+      acceptedCount: acceptedRecipients.length,
+      rejectedCount: result.rejected?.length || 0,
+    });
+    throw new Error("The email provider did not accept the admin setup message.");
+  }
+  console.log("Admin setup email accepted by SMTP:", {
+    messageId: result.messageId,
+    acceptedCount: acceptedRecipients.length,
     rejectedCount: result.rejected?.length || 0,
   });
 }
@@ -110,17 +148,27 @@ async function sendEmailVerificationEmail(email, verificationUrl) {
 }
 
 async function sendAdminLoginOtpEmail(email, code) {
-  const result = await mailTransport.sendMail({
+  const result = await sendVerificationMailWithRetry(() => mailTransport.sendMail({
     from: taskPandaSender,
     to: email,
     subject: "Your TaskPanda admin sign-in code",
     text: `Your TaskPanda admin sign-in code is ${code}. It expires in 5 minutes. If you did not request this code, secure your admin credentials immediately.`,
     html: `<p>Your TaskPanda admin sign-in code is:</p><p style="font-size: 24px; font-weight: 700; letter-spacing: 4px">${code}</p><p>This code expires in 5 minutes. If you did not request this code, secure your admin credentials immediately.</p>`,
-  });
+  }));
+  const acceptedRecipients = (result.accepted || []).map((recipient) =>
+    String(typeof recipient === "string" ? recipient : recipient.address || "").trim().toLowerCase()
+  );
+  if (!acceptedRecipients.includes(String(email).trim().toLowerCase())) {
+    console.error("SMTP did not accept the admin sign-in email recipient:", {
+      acceptedCount: acceptedRecipients.length,
+      rejectedCount: result.rejected?.length || 0,
+    });
+    throw new Error("The email provider did not accept the admin sign-in message.");
+  }
   console.log("Admin sign-in code accepted by SMTP:", {
     messageId: result.messageId,
-    accepted: result.accepted,
-    rejected: result.rejected,
+    acceptedCount: acceptedRecipients.length,
+    rejectedCount: result.rejected?.length || 0,
   });
 }
 
@@ -151,6 +199,7 @@ module.exports = {
   hasValidSmtpCredentials,
   sendVerificationMailWithRetry,
   sendAdminLoginOtpEmail,
+  sendAdminAccountSetupEmail,
   sendOtpEmail,
   sendEmailVerificationEmail,
   sendPasswordResetEmail,

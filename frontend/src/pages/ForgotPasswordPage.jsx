@@ -30,11 +30,22 @@ export default function ForgotPasswordPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [adminSetupToken, setAdminSetupToken] = useState("");
   const codeInputs = useRef([]);
 
   useEffect(() => {
     const linkedEmail = String(searchParams.get("email") || "").trim().toLowerCase();
     const linkedCode = String(searchParams.get("code") || "").trim();
+    const linkedSetupToken = String(searchParams.get("setupToken") || "").trim();
+    if (/^\S+@\S+\.\S+$/.test(linkedEmail) && /^[a-f\d]{64}$/i.test(linkedSetupToken)) {
+      setEmail(linkedEmail);
+      setAdminSetupToken(linkedSetupToken);
+      setStep(3);
+      setError("");
+      setMessage("");
+      navigate("/forgot-password", { replace: true });
+      return;
+    }
     if (!/^\S+@\S+\.\S+$/.test(linkedEmail) || !/^\d{6}$/.test(linkedCode)) return;
 
     setEmail(linkedEmail);
@@ -199,16 +210,18 @@ export default function ForgotPasswordPage() {
       setError("Passwords do not match.");
       return;
     }
-    if (!/^\d{6}$/.test(code)) {
+    if (!adminSetupToken && !/^\d{6}$/.test(code)) {
       setError("Enter the 6-digit reset code.");
       return;
     }
     setIsSubmitting(true);
     try {
-      const response = await apiFetch("/api/auth/reset-password", {
+      const response = await apiFetch(adminSetupToken ? "/api/auth/admin-setup" : "/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), code, password }),
+        body: JSON.stringify(adminSetupToken
+          ? { email: email.trim(), setupToken: adminSetupToken, password }
+          : { email: email.trim(), code, password }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -236,9 +249,11 @@ export default function ForgotPasswordPage() {
             </div>
 
             <div className="space-y-1 text-center">
-              <h2 className="text-2xl font-bold text-gray-900">Reset your password</h2>
+              <h2 className="text-2xl font-bold text-gray-900">{adminSetupToken ? "Set your admin password" : "Reset your password"}</h2>
               <p className="text-sm text-gray-600">
-                {step === 1
+                {adminSetupToken
+                  ? "Choose a password for your new admin login."
+                  : step === 1
                   ? "Enter your account email and we will send you a reset code."
                   : step === 2
                   ? "Enter the 6-digit code sent to your email."
@@ -258,7 +273,7 @@ export default function ForgotPasswordPage() {
             ) : step === 2 ? (
               <div className="space-y-5">
                 <p className="text-center text-sm leading-6 text-slate-600">
-                  We sent a reset code to <span className="font-medium text-slate-800">{email}</span>. It expires in 10 minutes.
+                  We sent a reset code to the email address on file for this account. It expires in 10 minutes.
                 </p>
                 <form onSubmit={verifyCode} className="space-y-5">
                   <div className="space-y-2">
@@ -351,10 +366,10 @@ export default function ForgotPasswordPage() {
                   </div>
                 </div>
                 {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
-                <button type="submit" disabled={isSubmitting} className={`w-full rounded-lg bg-linear-to-r ${a.button} px-4 py-2.5 font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50`}>{isSubmitting ? "Updating..." : "Reset password"}</button>
+                <button type="submit" disabled={isSubmitting} className={`w-full rounded-lg bg-linear-to-r ${a.button} px-4 py-2.5 font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50`}>{isSubmitting ? "Updating..." : adminSetupToken ? "Set password" : "Reset password"}</button>
               </form>
             )}
-            <RecaptchaDisclosure />
+            {!adminSetupToken && <RecaptchaDisclosure />}
           </div>
         </section>
       )}

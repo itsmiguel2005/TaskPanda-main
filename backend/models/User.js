@@ -145,6 +145,12 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
+    adminContactEmail: {
+      type: String,
+      lowercase: true,
+      trim: true,
+      select: false,
+    },
     passwordHash: {
       type: String,
       required: true,
@@ -177,6 +183,14 @@ const userSchema = new mongoose.Schema(
       select: false,
     },
     passwordResetExpiresAt: {
+      type: Date,
+      select: false,
+    },
+    adminSetupTokenHash: {
+      type: String,
+      select: false,
+    },
+    adminSetupExpiresAt: {
       type: Date,
       select: false,
     },
