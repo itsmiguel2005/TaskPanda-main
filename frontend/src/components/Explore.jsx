@@ -37,6 +37,10 @@ function estimateTravelFare(distanceKm) {
   return Math.round((fare + Number.EPSILON) * 100) / 100;
 }
 
+function isPhilSysVerifiedProvider(provider) {
+  return provider?.isVerified === true && provider?.verificationStatus === "verified";
+}
+
 function normalizeLocalityName(value) {
   return String(value || "")
     .trim()
@@ -119,6 +123,7 @@ export default function Explore() {
   const [sortBy, setSortBy] = useState("distance");
   const [selectedCategories, setSelectedCategories] = useState(new Set());
   const [tesdaOnly, setTesdaOnly] = useState(false);
+  const [philsysVerifiedOnly, setPhilsysVerifiedOnly] = useState(false);
   const [minKm] = useState(0);
   const [maxKm, setMaxKm] = useState(MAX_DISCOVERY_DISTANCE_KM);
   const [providers, setProviders] = useState([]);
@@ -126,7 +131,6 @@ export default function Explore() {
   const [presenceRefresh, setPresenceRefresh] = useState(0);
   const [favoriteProviderIds, setFavoriteProviderIds] = useState(new Set());
   const [favoriteToast, setFavoriteToast] = useState("");
-  const [verifiedFavoriteProviderIds, setVerifiedFavoriteProviderIds] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
   const { token } = useAuth();
@@ -238,7 +242,6 @@ export default function Explore() {
   useEffect(() => {
     if (!token) {
       setFavoriteProviderIds(new Set());
-      setVerifiedFavoriteProviderIds(new Set());
       return undefined;
     }
 
@@ -255,12 +258,7 @@ export default function Explore() {
         const favorites = Array.isArray(data.favorites) ? data.favorites : [];
         const nextIds = favorites.map((favorite) => String(favorite._id || favorite.id)).filter(Boolean);
         const normalizedSet = new Set(nextIds);
-        const verifiedIds = favorites
-          .filter((favorite) => favorite.isVerified === true || favorite.verificationStatus === "verified")
-          .map((favorite) => String(favorite._id || favorite.id))
-          .filter(Boolean);
         setFavoriteProviderIds(normalizedSet);
-        setVerifiedFavoriteProviderIds(new Set(verifiedIds));
         window.dispatchEvent(new CustomEvent(FAVORITES_SYNC_EVENT, { detail: { favoriteProviderIds: nextIds } }));
       } catch {
         if (!cancelled) setFavoriteProviderIds(new Set());
@@ -296,6 +294,7 @@ export default function Explore() {
       if (appliedQuery) params.set("q", appliedQuery);
       if (selectedCategories.size) params.set("categories", [...selectedCategories].join(","));
       if (tesdaOnly) params.set("credential", "tesda");
+      if (philsysVerifiedOnly) params.set("philsysVerified", "true");
 
       try {
         const response = await apiFetch(`/api/providers?${params}`, { signal: controller.signal });
@@ -314,7 +313,7 @@ export default function Explore() {
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [searchCoordinates, appliedQuery, selectedCategories, tesdaOnly, minKm, maxKm, presenceRefresh]);
+  }, [searchCoordinates, appliedQuery, selectedCategories, tesdaOnly, philsysVerifiedOnly, minKm, maxKm, presenceRefresh]);
 
   useEffect(() => {
     if (!searchCoordinates?.coordinates) return undefined;
@@ -374,6 +373,7 @@ export default function Explore() {
   const clearFilters = () => {
     setSelectedCategories(new Set());
     setTesdaOnly(false);
+    setPhilsysVerifiedOnly(false);
     setMaxKm(MAX_DISCOVERY_DISTANCE_KM);
     setSearchQuery("");
     setAppliedQuery("");
@@ -430,6 +430,8 @@ export default function Explore() {
       });
     } else if (type === "tesda") {
       setTesdaOnly(false);
+    } else if (type === "philsys-verified") {
+      setPhilsysVerifiedOnly(false);
     } else if (type === "search") {
       setAppliedQuery("");
       setSearchQuery("");
@@ -437,7 +439,10 @@ export default function Explore() {
   };
 
   const filteredProviders = useMemo(() => {
-    return [...providers].sort((a, b) => {
+    const matchingProviders = philsysVerifiedOnly
+      ? providers.filter(isPhilSysVerifiedProvider)
+      : providers;
+    return [...matchingProviders].sort((a, b) => {
       const aIsFavorite = favoriteProviderIds.has(String(a._id));
       const bIsFavorite = favoriteProviderIds.has(String(b._id));
       if (aIsFavorite !== bIsFavorite) return aIsFavorite ? -1 : 1;
@@ -446,7 +451,10 @@ export default function Explore() {
       }
       return 0;
     });
-  }, [providers, sortBy, favoriteProviderIds]);
+  }, [providers, sortBy, favoriteProviderIds, philsysVerifiedOnly]);
+  const providerCount = philsysVerifiedOnly && providers.some((provider) => !isPhilSysVerifiedProvider(provider))
+    ? filteredProviders.length
+    : totalProviders;
 
   const activeFilters = [];
   if (appliedQuery) {
@@ -457,6 +465,9 @@ export default function Explore() {
   });
   if (tesdaOnly) {
     activeFilters.push({ type: "tesda", label: "TESDA Certified", value: "tesda" });
+  }
+  if (philsysVerifiedOnly) {
+    activeFilters.push({ type: "philsys-verified", label: "PhilSys ID verified", value: "philsys-verified" });
   }
 
   const distanceRangeMaxKm = Math.min(MAX_DISCOVERY_DISTANCE_KM, Math.max(0.5, Number(maxKm) || MAX_DISCOVERY_DISTANCE_KM));
@@ -478,6 +489,7 @@ export default function Explore() {
     if (appliedQuery) params.set("q", appliedQuery);
     if (selectedCategories.size) params.set("categories", [...selectedCategories].join(","));
     if (tesdaOnly) params.set("credential", "tesda");
+    if (philsysVerifiedOnly) params.set("philsysVerified", "true");
     try {
       const response = await apiFetch(`/api/providers?${params}`);
       const data = await response.json().catch(() => ({}));
@@ -591,6 +603,11 @@ export default function Explore() {
                   checked={tesdaOnly}
                   onChange={() => setTesdaOnly((value) => !value)}
                 />
+                <CheckBox
+                  label="PhilSys identity verified"
+                  checked={philsysVerifiedOnly}
+                  onChange={() => setPhilsysVerifiedOnly((value) => !value)}
+                />
               </div>
             </div>
 
@@ -654,8 +671,8 @@ export default function Explore() {
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <p className="text-lg font-bold tracking-tight text-slate-900">
-                {totalProviders}{" "}
-                {totalProviders === 1 ? "Professional" : "Professionals"}{" "}
+                {providerCount}{" "}
+                {providerCount === 1 ? "Professional" : "Professionals"}{" "}
                 Found
               </p>
               <p className="text-sm text-slate-600">{resultsSubtitle()}</p>
@@ -732,9 +749,7 @@ export default function Explore() {
             <div className={`${dashboardDensity === "compact" ? "flex flex-col gap-2" : "grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"} transition-all duration-200 ease-in-out`}>
               {filteredProviders.map((provider) => {
                 const isProviderVerified = Boolean(
-                  provider.isVerified === true
-                    || provider.verificationStatus === "verified"
-                    || verifiedFavoriteProviderIds.has(String(provider._id))
+                  isPhilSysVerifiedProvider(provider)
                 );
                 const rating = Number(provider?.averageRating ?? 0);
                 const reviews = Number(provider?.totalReviews ?? 0);
@@ -988,6 +1003,7 @@ export default function Explore() {
                 addressPlaceholder="Address or nearby landmark"
                 mapLabel="OpenStreetMap nearby provider search location"
                 showNearbyProviders
+                scrollWheelZoom
                 onProviderSelect={(provider) => {
                   setViewingProvider(provider);
                 }}

@@ -53,6 +53,7 @@ function profileFromUser(user) {
     totalReviews: user.totalReviews ?? 0,
     createdAt: user.createdAt,
     referralCode: user.referralCode || "",
+    referralRewardStatus: user.referralRewardStatus || "",
     stampProgress: Number(user.stampProgress || 0),
     completedBookings: Number(user.completedBookings || 0),
     vouchers: (user.vouchers || []).map((voucher) => ({

@@ -1124,6 +1124,14 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                   </dl>
                   <div className="mt-3 border-t border-dashed border-gray-200 pt-3">
                     <label htmlFor="booking-voucher" className="block text-xs font-semibold text-gray-700">Vouchers &amp; rewards</label>
+                    {user?.referralRewardStatus === "PENDING_FIRST_BOOKING" && (
+                      <aside className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2.5 text-sky-950" role="status">
+                        <p className="text-xs font-bold">Your first cash booking earns a ₱50 voucher</p>
+                        <p className="mt-1 text-xs leading-5 text-sky-900">
+                          Once your first cash booking is completed and settled, a ₱50 travel-fee voucher will be added to your wallet.
+                        </p>
+                      </aside>
+                    )}
                     <VoucherSelector
                       vouchers={availableVouchers}
                       value={selectedVoucherId}

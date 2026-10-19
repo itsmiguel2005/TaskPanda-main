@@ -122,6 +122,7 @@ export default function ServiceLocationPicker({
   endpointBase = "/api/bookings/service-location",
   showNearbyProviders = false,
   onProviderSelect = () => {},
+  scrollWheelZoom = false,
 }) {
   const mapElementRef = useRef(null);
   const mapRef = useRef(null);
@@ -151,7 +152,7 @@ export default function ServiceLocationPicker({
   useEffect(() => {
     if (!mapElementRef.current || mapRef.current) return undefined;
     const initialCoordinates = getCoordinates(valueRef.current.geoLocation);
-    const map = L.map(mapElementRef.current, { scrollWheelZoom: false })
+    const map = L.map(mapElementRef.current, { scrollWheelZoom })
       .setView(initialCoordinates || DEFAULT_MAP_CENTER, initialCoordinates ? 16 : 6);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
@@ -300,7 +301,7 @@ export default function ServiceLocationPicker({
       providerMarkersLayerRef.current = null;
       choosePinRef.current = null;
     };
-  }, [endpointBase, token]);
+  }, [endpointBase, scrollWheelZoom, token]);
 
   useEffect(() => {
     const layer = providerMarkersLayerRef.current;

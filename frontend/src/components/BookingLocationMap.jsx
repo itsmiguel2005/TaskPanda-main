@@ -24,7 +24,7 @@ function getCoordinates(geoLocation) {
   return { latitude, longitude };
 }
 
-export default function BookingLocationMap({ address, serviceGeoLocation, className = "h-40" }) {
+export default function BookingLocationMap({ address, serviceGeoLocation, className = "h-40", showAddress = true }) {
   const mapElementRef = useRef(null);
   const location = getCoordinates(serviceGeoLocation);
   const safeAddress = String(address || "").trim();
@@ -74,7 +74,7 @@ export default function BookingLocationMap({ address, serviceGeoLocation, classN
 
   return (
     <div className="min-w-0">
-      <p className="wrap-break-word text-sm leading-5 text-slate-800">{safeAddress || "Address to be confirmed"}</p>
+      {showAddress && <p className="wrap-break-word text-sm leading-5 text-slate-800">{safeAddress || "Address to be confirmed"}</p>}
       {location ? (
         <>
           <div

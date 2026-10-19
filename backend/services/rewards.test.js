@@ -93,6 +93,12 @@ test("referral request signals are hashed and detect shared IP or device fingerp
       await sharesReferralSignal(new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId()),
       true
     );
+
+    ReferralLog.find = () => makeQuery([]);
+    assert.equal(
+      await sharesReferralSignal(new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId()),
+      false
+    );
   } finally {
     ReferralLog.find = originalFind;
   }
@@ -168,7 +174,7 @@ test("concurrent settlements atomically retain one first-settled booking", async
   }
 });
 
-test("referral vouchers are issued transactionally after the first settled booking", async () => {
+test("referral vouchers are issued transactionally after the first settled booking despite shared IP", async () => {
   const clientId = new mongoose.Types.ObjectId();
   const referrerId = new mongoose.Types.ObjectId();
   const client = {
@@ -223,8 +229,8 @@ test("referral vouchers are issued transactionally after the first settled booki
   ReferralLog.find = () => {
     referralFindCount += 1;
     return makeQuery(referralFindCount === 1
-      ? [{ ipHash: "client-ip", deviceHash: "client-device" }]
-      : [{ ipHash: "referrer-ip", deviceHash: "referrer-device" }]);
+      ? [{ ipHash: "shared-ip", deviceHash: "client-device" }]
+      : [{ ipHash: "shared-ip", deviceHash: "referrer-device" }]);
   };
   mongoose.startSession = async () => ({
     withTransaction: async (callback) => callback(),
@@ -241,6 +247,7 @@ test("referral vouchers are issued transactionally after the first settled booki
     assert.equal(updates[1].update.$addToSet.referralRewardedClientIds, clientId);
     assert.equal(updates[1].update.$push.vouchers.amount, 50);
     assert.ok(updates.every(({ options }) => options.session));
+    assert.equal(referralFindCount, 0);
   } finally {
     Booking.findOne = originalBookingFindOne;
     User.findById = originalFindById;

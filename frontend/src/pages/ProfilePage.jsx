@@ -299,6 +299,25 @@ export default function ProfilePage() {
                     {activeVouchers.length} available
                   </span>
                 </div>
+                {role === "client" && ["PENDING_FIRST_BOOKING", "REWARDED"].includes(user?.referralRewardStatus) && (
+                  <aside
+                    className={`mx-5 mt-5 rounded-xl border p-4 sm:mx-6 ${
+                      user.referralRewardStatus === "REWARDED"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                        : "border-sky-200 bg-sky-50 text-sky-950"
+                    }`}
+                    aria-live="polite"
+                  >
+                    <h3 className="text-sm font-bold">
+                      {user.referralRewardStatus === "REWARDED" ? "Your ₱50 referral voucher is ready" : "Earn a ₱50 referral voucher"}
+                    </h3>
+                    <p className="mt-1 text-xs leading-5">
+                      {user.referralRewardStatus === "REWARDED"
+                        ? "Your first cash booking has been settled. Check your travel-fee wallet to use the voucher on a future booking."
+                        : "Complete and settle your first cash booking to receive a ₱50 voucher for a future travel fee."}
+                    </p>
+                  </aside>
+                )}
                 <div className="grid lg:grid-cols-2">
                   <div className="p-5 sm:p-6">
                     <h3 className="text-sm font-bold text-slate-900">Your bamboo stamp card</h3>

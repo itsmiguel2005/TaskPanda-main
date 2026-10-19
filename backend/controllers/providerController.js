@@ -25,6 +25,7 @@ async function handleDiscoverProviders(req, res) {
     .filter(Boolean)
     .slice(0, 20);
   const tesdaOnly = req.query.credential === "tesda";
+  const philsysVerifiedOnly = req.query.philsysVerified === "true";
 
   if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
     return res.status(400).json({ message: "Set a valid search location to find nearby providers.", field: "location" });
@@ -46,6 +47,10 @@ async function handleDiscoverProviders(req, res) {
     };
   }
   if (tesdaOnly) providerQuery.tesdaCertificates = { $elemMatch: { status: "approved" } };
+  if (philsysVerifiedOnly) {
+    providerQuery.isVerified = true;
+    providerQuery.verificationStatus = "verified";
+  }
 
   const searchPattern = search ? new RegExp(escapeRegex(search), "i") : null;
   const searchMatch = searchPattern ? {

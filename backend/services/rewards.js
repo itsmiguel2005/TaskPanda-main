@@ -146,7 +146,7 @@ async function sharesReferralSignal(clientId, referrerId) {
   ]);
   const completeClientSignals = clientSignals.filter((signal) => signal.ipHash && signal.deviceHash);
   const completeReferrerSignals = referrerSignals.filter((signal) => signal.ipHash && signal.deviceHash);
-  if (!completeClientSignals.length || !completeReferrerSignals.length) return true;
+  if (!completeClientSignals.length || !completeReferrerSignals.length) return false;
 
   const clientIpHashes = new Set(completeClientSignals.map((signal) => signal.ipHash));
   const clientDeviceHashes = new Set(completeClientSignals.map((signal) => signal.deviceHash));
@@ -184,8 +184,9 @@ async function awardPendingReferralRewards(clientId) {
     role: "client",
     registrationComplete: true,
   }).select("_id referralRewardedClientIds");
-  if (!referrer || await sharesReferralSignal(client._id, referrer._id)) return false;
+  if (!referrer) return false;
 
+  // Network and browser overlap is retained for abuse monitoring, not used to deny rewards.
   const clientVoucher = makeVoucher({
     kind: "referral",
     title: "A welcome from a friend",

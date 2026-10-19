@@ -272,8 +272,11 @@ export default function ClientRegisterPage() {
                   aria-controls="clientReferralField"
                   className="text-left text-xs font-medium text-primary-700 underline-offset-2 transition-colors hover:text-primary-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
                 >
-                  {isReferralOpen ? "− Hide referral code" : "+ Have a referral code?"}
+                  {isReferralOpen ? "− Hide referral code" : "+ Have a referral code? Get ₱50"}
                 </button>
+                <p className="max-w-lg text-xs leading-5 text-slate-600">
+                  Enter a friend&apos;s code before registering. Your first completed and settled cash booking earns you a ₱50 travel-fee voucher.
+                </p>
                 <div
                   id="clientReferralField"
                   aria-hidden={!isReferralOpen}
@@ -306,9 +309,6 @@ export default function ClientRegisterPage() {
                         className="block w-full rounded-lg border border-primary-200 bg-primary-50/50 py-2.5 pl-10 pr-4 text-sm uppercase tracking-wider text-gray-800 placeholder-normal-case placeholder:tracking-normal placeholder:text-gray-400/70 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
                       />
                     </div>
-                    <p className="text-xs leading-5 text-gray-600">
-                      Enter a friend&apos;s code to get a ₱50 travel-fee voucher after you complete and settle your first cash booking.
-                    </p>
                   </div>
                 </div>
               </div>

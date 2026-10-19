@@ -148,6 +148,19 @@ const FILTERS = [
   { key: "Expired", label: "Expired" },
 ];
 
+const ACTIVE_SCHEDULE_STATUSES = new Set([
+  "pending",
+  "approved",
+  "en_route",
+  "in_progress",
+  "cancel_requested",
+  "Pending Request",
+  "Confirmed",
+  "On the Way",
+  "In Progress",
+  "Cancellation Requested",
+]);
+
 // ─── Incoming Request card ───────────────────────────────────────────────────
 
 function RequestCard({ booking, allBookings, onAccept, onDecline, onOpenConversation, currentTime, density = "comfortable" }) {
@@ -265,19 +278,19 @@ function RequestCard({ booking, allBookings, onAccept, onDecline, onOpenConversa
       <p className="mt-0.5 text-sm leading-6 text-slate-600">{booking.description || ""}</p>
 
       {/* Location + Requested time */}
-      <div className={`mt-3 grid grid-cols-1 items-start gap-3 ${booking.serviceGeoLocation ? "md:grid-cols-[minmax(0,1fr)_180px]" : ""}`}>
-        <div className="flex flex-wrap items-start gap-x-6 gap-y-1.5">
+      <div className={`mt-3 grid grid-cols-1 items-start gap-4 ${booking.serviceGeoLocation ? "md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]" : ""}`}>
+        <div className="flex min-w-0 flex-col items-start gap-2">
         {address && (
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 items-start gap-1.5">
             <LocationIcon />
-            <div>
+            <div className="min-w-0">
               <p className="dashboard-kicker">Location</p>
-                <p className="text-xs text-slate-700">{address}</p>
+              <p className="line-clamp-3 wrap-break-word text-xs leading-5 text-slate-700">{address}</p>
             </div>
           </div>
         )}
         {requestedTime && (
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-start gap-1.5">
             <ClockIcon />
             <div>
               <p className="dashboard-kicker">Requested time</p>
@@ -286,7 +299,14 @@ function RequestCard({ booking, allBookings, onAccept, onDecline, onOpenConversa
           </div>
         )}
         </div>
-        {booking.serviceGeoLocation && <BookingLocationMap address={address} serviceGeoLocation={booking.serviceGeoLocation} className="h-28" />}
+        {booking.serviceGeoLocation && (
+          <BookingLocationMap
+            address={address}
+            serviceGeoLocation={booking.serviceGeoLocation}
+            className="h-44"
+            showAddress={false}
+          />
+        )}
       </div>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -432,7 +452,7 @@ function JobCard({
     providerProfession ||
     "Professional Service";
   // X (dismiss) button only for terminal statuses
-  const isDismissable = ["Settled", "Cancelled", "Cancelled - Provider No-Show", "Declined by Provider", "Expired"].includes(booking.status);
+  const isDismissable = ["Settled", "Refunded", "Partially Refunded", "Cancelled", "Cancelled - Provider No-Show", "Declined by Provider", "Expired"].includes(booking.status);
 
   // Determine primary action state button
   // "In Progress" → Mark Complete opens the proof modal (not a simple status advance)
@@ -799,6 +819,11 @@ export default function ProviderDashboard() {
     [bookings]
   );
 
+  const scheduleBookings = useMemo(
+    () => bookings.filter((booking) => ACTIVE_SCHEDULE_STATUSES.has(booking.status)),
+    [bookings]
+  );
+
   const jobs = useMemo(
     () => [...bookings.filter((b) => b.status !== "Pending Request")].sort(compareBookingsByLatestActivity),
     [bookings]
@@ -872,7 +897,7 @@ export default function ProviderDashboard() {
   const pendingRequestExpired = !pendingRequest || Boolean(pendingRequest.requestExpiresAt
     && new Date(pendingRequest.requestExpiresAt).getTime() <= currentTime.getTime());
   const pendingScheduleConflict = pendingRequest
-    ? hasScheduleConflict(pendingRequest, bookings, pendingRequest.id)
+    ? hasScheduleConflict(pendingRequest, scheduleBookings, pendingRequest.id)
     : false;
   const pendingArrivalFeasible = pendingRequest
     ? canArriveForSameDayBooking(pendingRequest, currentTime)
@@ -1072,7 +1097,7 @@ export default function ProviderDashboard() {
                 ) : (
                   <div>
                     {requests.map((req) => (
-                      <RequestCard key={req.id} booking={req} allBookings={bookings} onAccept={handleAccept} onDecline={handleDecline} onOpenConversation={(bookingId) => navigate(`/provider/messages?bookingId=${bookingId}`)} currentTime={currentTime} density={incomingRequestsDensity} />
+                      <RequestCard key={req.id} booking={req} allBookings={scheduleBookings} onAccept={handleAccept} onDecline={handleDecline} onOpenConversation={(bookingId) => navigate(`/provider/messages?bookingId=${bookingId}`)} currentTime={currentTime} density={incomingRequestsDensity} />
                     ))}
                   </div>
                 )}

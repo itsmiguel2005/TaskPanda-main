@@ -90,11 +90,7 @@ export default function ForgotPasswordPage() {
         setMessage("");
         return;
       }
-      setMessage(
-        data.debugCode
-          ? `${data.message} Use this code for testing: ${data.debugCode}`
-          : data.message
-      );
+      setMessage(data.debugCode ? `Use this code for testing: ${data.debugCode}` : "");
       setError("");
       setCode("");
       setStep(2);
@@ -181,11 +177,7 @@ export default function ForgotPasswordPage() {
         setError(data.message || "Unable to resend the reset code.");
         return;
       }
-      setMessage(
-        data.debugCode
-          ? `${data.message} Use this code for testing: ${data.debugCode}`
-          : data.message
-      );
+      setMessage(data.debugCode ? `Use this code for testing: ${data.debugCode}` : "");
       setCode("");
       codeInputs.current[0]?.focus();
       setResendCooldown(60);

@@ -1088,6 +1088,7 @@ async function handleCompleteRegistration(req, res) {
       createdAt: updatedUser.createdAt,
       role: updatedUser.role,
       referralCode: updatedUser.referralCode,
+      referralRewardStatus: updatedUser.referralRewardStatus || "",
       stampProgress: updatedUser.stampProgress,
       completedBookings: updatedUser.completedBookings,
       vouchers: updatedUser.vouchers.map((voucher) => ({

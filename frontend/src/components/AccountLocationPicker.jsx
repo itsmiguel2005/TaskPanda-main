@@ -48,6 +48,7 @@ export default function AccountLocationPicker({
         addressLabel="Street address or landmark"
         addressPlaceholder="House number, street, or nearby landmark"
         mapLabel={provider ? "Choose your provider service-base location" : "Choose your account location"}
+        scrollWheelZoom
       />
 
       <div className="grid gap-3 sm:grid-cols-3">
