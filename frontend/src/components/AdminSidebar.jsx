@@ -104,23 +104,36 @@ export default function AdminSidebar({
             <AdminIcon name="close" />
           </button>
         )}
-        {!mobile && (
+        {!mobile && !collapsed && (
           <button
             type="button"
             onClick={onToggleCollapse}
             aria-label={collapsed ? "Expand admin sidebar" : "Collapse admin sidebar"}
             aria-expanded={!collapsed}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-blue-900 transition hover:bg-blue-100 hover:text-blue-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
-              collapsed ? "absolute left-1/2 top-[4.75rem] -translate-x-1/2" : ""
-            }`}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-blue-900 transition hover:bg-blue-100 hover:text-blue-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
           >
-            <AdminIcon name={collapsed ? "expand" : "collapse"} className="h-[18px] w-[18px]" />
+            <AdminIcon name="collapse" className="h-[18px] w-[18px]" />
           </button>
         )}
       </div>
 
-      <nav aria-label="Admin sections" className={`min-h-0 flex-1 overflow-y-auto py-5 ${collapsed && !mobile ? "px-2 pt-12" : "px-3"}`}>
+      {!mobile && collapsed && (
+        <div className="flex shrink-0 justify-center px-2 pt-2">
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            aria-label="Expand admin sidebar"
+            aria-expanded={false}
+            title="Expand sidebar"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-blue-900 transition hover:bg-blue-100 hover:text-blue-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            <AdminIcon name="expand" className="h-[18px] w-[18px]" />
+          </button>
+        </div>
+      )}
+
+      <nav aria-label="Admin sections" className={`min-h-0 flex-1 overflow-y-auto ${collapsed && !mobile ? "px-2 pb-5 pt-3" : "px-3 py-5"}`}>
         {navigationGroups.map((group, groupIndex) => (
           <div key={group.label || "overview"} className={groupIndex > 0 ? (collapsed && !mobile ? "mt-3" : "mt-6") : ""}>
             {group.label && (!collapsed || mobile) && (
