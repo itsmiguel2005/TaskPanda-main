@@ -43,7 +43,7 @@ function ActionButton({ children, onClick, disabled = false, tone = "neutral", t
   );
 }
 
-function ConversationSupportReports() {
+function ConversationSupportReports({ reportTabs }) {
   const { token, logout } = useAuth();
   const navigate = useNavigate();
   const [status, setStatus] = useState("open");
@@ -207,18 +207,6 @@ function ConversationSupportReports() {
         </ActionButton>
       </header>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4">
-        <label className="flex items-center gap-3 text-sm font-semibold text-slate-800">
-          Report status
-          <select value={status} onChange={(event) => { setPage(1); setActiveReportId(""); setStatus(event.target.value); }} className="dashboard-focus h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900">
-            <option value="open">Open</option>
-            <option value="resolved">Resolved</option>
-            <option value="all">All reports</option>
-          </select>
-        </label>
-        <p className="text-xs text-slate-600">{data ? `${data.pagination.total.toLocaleString()} reports` : "Loading report count"}</p>
-      </div>
-
       {notice && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">{notice}</p>}
       {error && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
@@ -227,17 +215,34 @@ function ConversationSupportReports() {
         </div>
       )}
 
-      {isLoading && !data ? (
-        <div role="status" aria-label="Loading support reports" className="space-y-3">
-          <SkeletonBlock className="h-36 w-full rounded-2xl" />
-          <SkeletonBlock className="h-36 w-full rounded-2xl" />
-          <span className="sr-only">Loading support reports</span>
+      {reportTabs}
+      <div className="overflow-hidden rounded-3xl border border-white/80 bg-white/85 shadow-[0_18px_48px_rgba(15,23,42,0.07)] backdrop-blur-xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3.5 sm:px-5">
+          <label className="flex items-center gap-3 text-sm font-semibold text-slate-800">
+            Report status
+            <select value={status} onChange={(event) => { setPage(1); setActiveReportId(""); setStatus(event.target.value); }} className="dashboard-focus h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900">
+              <option value="open">Open</option>
+              <option value="resolved">Resolved</option>
+              <option value="all">All reports</option>
+            </select>
+          </label>
+          <p className="text-xs text-slate-600">{data ? `${data.pagination.total.toLocaleString()} reports` : "Loading report count"}</p>
         </div>
-      ) : data?.reports?.length ? (
-        <div className="divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-          {data.reports.map((report) => {
-            return (
-              <article key={report.id} className="bg-white">
+        {isLoading && !data ? (
+          <div role="status" aria-label="Loading support reports" className="divide-y divide-slate-100">
+            {[0, 1].map((row) => (
+              <div key={row} aria-hidden="true" className="px-4 py-5 sm:px-5">
+                <SkeletonBlock className="h-4 w-48 max-w-full" />
+                <SkeletonBlock className="mt-3 h-3 w-64 max-w-full" />
+              </div>
+            ))}
+            <span className="sr-only">Loading support reports</span>
+          </div>
+        ) : data?.reports?.length ? (
+          <div className="divide-y divide-slate-200">
+            {data.reports.map((report) => {
+              return (
+                <article key={report.id} className="bg-white">
                 <button
                   type="button"
                   aria-haspopup="dialog"
@@ -256,16 +261,17 @@ function ConversationSupportReports() {
                     <path d="M4.5 10h11m-4.5-4.5L15.5 10 11 14.5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
-              </article>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-12 text-center">
-          <h2 className="text-base font-bold text-slate-950">No {status === "all" ? "" : `${status} `}reports found</h2>
-          <p className="mt-2 text-sm text-slate-600">Reports submitted from booking conversations will appear here.</p>
-        </div>
-      )}
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="px-5 py-12 text-center">
+            <h2 className="text-base font-bold text-slate-950">No {status === "all" ? "" : `${status} `}reports found</h2>
+            <p className="mt-2 text-sm text-slate-600">Reports submitted from booking conversations will appear here.</p>
+          </div>
+        )}
+      </div>
 
       <dialog
         ref={reportDialogRef}
@@ -467,6 +473,30 @@ function ConversationSupportReports() {
   );
 }
 
+function ReportCategoryTabs({ activeTab, onSelect }) {
+  return (
+    <nav aria-label="Report categories" className="flex gap-1 overflow-x-auto border-b border-slate-200" role="tablist">
+      {[
+        { id: "conversations", label: "Conversation reports" },
+        { id: "no-shows", label: "Provider no-show reports" },
+      ].map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          role="tab"
+          aria-selected={activeTab === tab.id}
+          onClick={() => onSelect(tab.id)}
+          className={`dashboard-focus inline-flex shrink-0 items-center border-b-2 px-3 py-2.5 text-xs font-semibold transition ${
+            activeTab === tab.id ? "border-blue-800 text-blue-950" : "border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-900"
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 export default function AdminSupportReports() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get("reportTab") === "no-shows" ? "no-shows" : "conversations";
@@ -480,23 +510,9 @@ export default function AdminSupportReports() {
 
   return (
     <div className="space-y-5">
-      <nav aria-label="Report categories" className="flex flex-wrap gap-2">
-        {[
-          { id: "conversations", label: "Conversation reports" },
-          { id: "no-shows", label: "Provider no-show reports" },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            aria-pressed={activeTab === tab.id}
-            onClick={() => selectTab(tab.id)}
-            className={`dashboard-focus min-h-10 rounded-xl px-4 py-2 text-sm font-semibold transition ${activeTab === tab.id ? "bg-slate-900 text-white shadow-sm" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
-      {activeTab === "no-shows" ? <AdminProviderNoShowReports /> : <ConversationSupportReports />}
+      {activeTab === "no-shows"
+        ? <AdminProviderNoShowReports reportTabs={<ReportCategoryTabs activeTab={activeTab} onSelect={selectTab} />} />
+        : <ConversationSupportReports reportTabs={<ReportCategoryTabs activeTab={activeTab} onSelect={selectTab} />} />}
     </div>
   );
 }

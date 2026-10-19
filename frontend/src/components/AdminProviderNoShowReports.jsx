@@ -32,7 +32,7 @@ function reviewTone(status) {
   return "border-amber-200 bg-amber-50 text-amber-900";
 }
 
-export default function AdminProviderNoShowReports({ demoReport = null, onDemoReview }) {
+export default function AdminProviderNoShowReports({ demoReport = null, onDemoReview, reportTabs }) {
   const { token, logout } = useAuth();
   const navigate = useNavigate();
   const [status, setStatus] = useState("needs_review");
@@ -137,24 +137,12 @@ export default function AdminProviderNoShowReports({ demoReport = null, onDemoRe
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 id="provider-no-show-reports-title" className="text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">Provider no-show reports</h1>
-          <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-600">Review the client’s report alongside the provider’s response. Reports are not counted as confirmed reliability issues until reviewed.</p>
+          <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-600">Review no-show reports and provider responses.</p>
         </div>
         <button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={isLoading} className="dashboard-focus min-h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-50">
           {isLoading ? "Refreshing…" : "Refresh reports"}
         </button>
       </header>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4">
-        <label className="flex items-center gap-3 text-sm font-semibold text-slate-800">
-          Review status
-          <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); setExpandedId(""); }} className="dashboard-focus h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900">
-            <option value="needs_review">Needs review</option>
-            <option value="reviewed">Reviewed</option>
-            <option value="all">All reports</option>
-          </select>
-        </label>
-        <p className="text-xs text-slate-600">{data ? `${data.pagination.total.toLocaleString()} reports` : "Loading report count"}</p>
-      </div>
 
       {notice && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">{notice}</p>}
       {error && (
@@ -164,15 +152,32 @@ export default function AdminProviderNoShowReports({ demoReport = null, onDemoRe
         </div>
       )}
 
-      {isLoading && !data ? (
-        <div role="status" aria-label="Loading provider no-show reports" className="space-y-3">
-          <SkeletonBlock className="h-36 w-full rounded-2xl" />
-          <SkeletonBlock className="h-36 w-full rounded-2xl" />
-          <span className="sr-only">Loading provider no-show reports</span>
+      {reportTabs}
+      <div className="overflow-hidden rounded-3xl border border-white/80 bg-white/85 shadow-[0_18px_48px_rgba(15,23,42,0.07)] backdrop-blur-xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3.5 sm:px-5">
+          <label className="flex items-center gap-3 text-sm font-semibold text-slate-800">
+            Review status
+            <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); setExpandedId(""); }} className="dashboard-focus h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900">
+              <option value="needs_review">Needs review</option>
+              <option value="reviewed">Reviewed</option>
+              <option value="all">All reports</option>
+            </select>
+          </label>
+          <p className="text-xs text-slate-600">{data ? `${data.pagination.total.toLocaleString()} reports` : "Loading report count"}</p>
         </div>
-      ) : reports.length ? (
-        <div className="divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-          {reports.map((report) => {
+        {isLoading && !data ? (
+          <div role="status" aria-label="Loading provider no-show reports" className="divide-y divide-slate-100">
+            {[0, 1].map((row) => (
+              <div key={row} aria-hidden="true" className="px-4 py-5 sm:px-5">
+                <SkeletonBlock className="h-4 w-48 max-w-full" />
+                <SkeletonBlock className="mt-3 h-3 w-64 max-w-full" />
+              </div>
+            ))}
+            <span className="sr-only">Loading provider no-show reports</span>
+          </div>
+        ) : reports.length ? (
+          <div className="divide-y divide-slate-200">
+            {reports.map((report) => {
             const isExpanded = expandedId === report.id;
             const isReviewed = ["confirmed", "dismissed"].includes(report.reviewStatus);
             const isSaving = activeActionId.startsWith(`${report.id}:`);
@@ -262,21 +267,21 @@ export default function AdminProviderNoShowReports({ demoReport = null, onDemoRe
               </article>
             );
           })}
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-12 text-center">
-          <h2 className="text-base font-bold text-slate-950">{status === "all" ? "No provider no-show reports" : status === "reviewed" ? "No reviewed no-show reports" : "No no-show reports need review"}</h2>
-          <p className="mt-2 text-sm text-slate-600">Client-reported provider no-shows will appear here automatically. The booking can be cancelled while the report waits for review.</p>
-        </div>
-      )}
-
-      {data && data.pagination.pages > 1 && (
-        <nav aria-label="Provider no-show report pages" className="flex items-center justify-between gap-3">
-          <button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page <= 1 || isLoading} className="dashboard-focus min-h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-800 disabled:opacity-50">Previous</button>
-          <p className="text-sm text-slate-600">Page {page} of {data.pagination.pages}</p>
-          <button type="button" onClick={() => setPage((value) => Math.min(data.pagination.pages, value + 1))} disabled={page >= data.pagination.pages || isLoading} className="dashboard-focus min-h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-800 disabled:opacity-50">Next</button>
-        </nav>
-      )}
+          </div>
+        ) : (
+          <div className="px-5 py-12 text-center">
+            <h2 className="text-base font-bold text-slate-950">{status === "all" ? "No provider no-show reports" : status === "reviewed" ? "No reviewed no-show reports" : "No no-show reports need review"}</h2>
+            <p className="mt-2 text-sm text-slate-600">Client-reported provider no-shows will appear here automatically. The booking can be cancelled while the report waits for review.</p>
+          </div>
+        )}
+        {data && data.pagination.pages > 1 && (
+          <nav aria-label="Provider no-show report pages" className="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3.5 sm:px-5">
+            <button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page <= 1 || isLoading} className="dashboard-focus min-h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-800 disabled:opacity-50">Previous</button>
+            <p className="text-sm text-slate-600">Page {page} of {data.pagination.pages}</p>
+            <button type="button" onClick={() => setPage((value) => Math.min(data.pagination.pages, value + 1))} disabled={page >= data.pagination.pages || isLoading} className="dashboard-focus min-h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-800 disabled:opacity-50">Next</button>
+          </nav>
+        )}
+      </div>
     </section>
   );
 }

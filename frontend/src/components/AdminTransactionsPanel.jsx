@@ -112,21 +112,6 @@ function AdminTransactionsPanel() {
         </dl>
       )}
 
-      <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-2 xl:grid-cols-[minmax(15rem,1fr)_10rem_10rem] xl:items-end">
-        <label className="block text-xs font-semibold text-slate-700 sm:col-span-2 xl:col-span-1">
-          Search task, client, provider, or booking ID
-          <input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} maxLength={100} className="dashboard-focus mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 placeholder:text-slate-500" placeholder="e.g. plumbing repair or name" />
-        </label>
-        <label className="block text-xs font-semibold text-slate-700">
-          Completed from
-          <input type="date" value={filters.from} onChange={(event) => { setPage(1); setFilters((current) => ({ ...current, from: event.target.value })); }} className="dashboard-focus mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" />
-        </label>
-        <label className="block text-xs font-semibold text-slate-700">
-          Completed to
-          <input type="date" value={filters.to} onChange={(event) => { setPage(1); setFilters((current) => ({ ...current, to: event.target.value })); }} className="dashboard-focus mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" />
-        </label>
-      </div>
-
       {error && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           <span>{error}</span>
@@ -135,6 +120,20 @@ function AdminTransactionsPanel() {
       )}
 
       <section aria-label="Completed task transactions" className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="grid gap-3 border-b border-slate-200 px-4 py-4 sm:grid-cols-2 xl:grid-cols-[minmax(15rem,1fr)_10rem_10rem] xl:items-end">
+          <label className="block text-xs font-semibold text-slate-700 sm:col-span-2 xl:col-span-1">
+            Search task, client, provider, or booking ID
+            <input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} maxLength={100} className="dashboard-focus mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 placeholder:text-slate-500" placeholder="e.g. plumbing repair or name" />
+          </label>
+          <label className="block text-xs font-semibold text-slate-700">
+            Completed from
+            <input type="date" value={filters.from} onChange={(event) => { setPage(1); setFilters((current) => ({ ...current, from: event.target.value })); }} className="dashboard-focus mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" />
+          </label>
+          <label className="block text-xs font-semibold text-slate-700">
+            Completed to
+            <input type="date" value={filters.to} onChange={(event) => { setPage(1); setFilters((current) => ({ ...current, to: event.target.value })); }} className="dashboard-focus mt-1.5 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" />
+          </label>
+        </div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3.5 sm:px-5">
           <div>
             <h2 className="text-sm font-bold text-slate-950">Completed tasks</h2>

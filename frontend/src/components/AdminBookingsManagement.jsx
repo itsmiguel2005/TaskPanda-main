@@ -578,12 +578,6 @@ export default function AdminBookingsManagement() {
         ))}
       </div>
 
-      <form onSubmit={applySearch} className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-3 sm:flex-row">
-        <label htmlFor="admin-booking-search" className="sr-only">Search tasks, participant names, or booking ID</label>
-        <input id="admin-booking-search" value={searchInput} maxLength={100} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search task, client, provider, or booking ID" className="dashboard-focus min-h-10 min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-500" />
-        <button type="submit" className="dashboard-focus min-h-10 rounded-xl bg-blue-900 px-4 text-sm font-semibold text-white transition hover:bg-blue-950">Search</button>
-      </form>
-
       {error && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           <span>{error}</span>
@@ -592,6 +586,13 @@ export default function AdminBookingsManagement() {
       )}
 
       <section aria-label="Booking records" aria-busy={loading} className="flex h-[calc(100dvh-25rem)] min-h-56 max-h-136 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <form onSubmit={applySearch} className="flex shrink-0 items-center border-b border-slate-200 px-4 py-3 sm:px-5">
+          <label htmlFor="admin-booking-search" className="sr-only">Search tasks, participant names, or booking ID</label>
+          <div className="flex min-w-0 flex-1 overflow-hidden rounded-xl border border-slate-300 bg-white focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-100">
+            <input id="admin-booking-search" value={searchInput} maxLength={100} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search task, client, provider, or booking ID" className="dashboard-focus min-h-10 min-w-0 flex-1 border-0 bg-transparent px-3 text-sm text-slate-900 outline-none placeholder:text-slate-500 focus:ring-0" />
+            <button type="submit" className="dashboard-focus min-h-10 shrink-0 border-l border-slate-200 bg-blue-900 px-4 text-sm font-semibold text-white transition hover:bg-blue-950">Search</button>
+          </div>
+        </form>
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 sm:px-5">
           <div>
             <h2 className="text-sm font-bold text-slate-950">Booking records</h2>
