@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { SkeletonBlock } from "./Skeletons.jsx";
+import { apiFetch } from "../services/api.js";
 import { adminRequest } from "../services/adminApi.js";
 import { DEFAULT_ESTIMATED_DURATION_MINUTES, formatEstimatedDuration } from "../utils/bookingDuration.js";
 
@@ -451,7 +452,9 @@ export default function AdminBookingsManagement() {
   const [page, setPage] = useState(1);
   const [resultsRevision, setResultsRevision] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
+  const [exportError, setExportError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [showOverride, setShowOverride] = useState(false);
@@ -533,6 +536,45 @@ export default function AdminBookingsManagement() {
     setStatusFilter(value);
   };
 
+  const exportBookings = async () => {
+    if (!token || exporting) return;
+    setExporting(true);
+    setExportError("");
+    const params = new URLSearchParams();
+    if (statusFilter) params.set("status", statusFilter);
+    if (query) params.set("q", query);
+    try {
+      const queryString = params.toString();
+      const response = await apiFetch(`/api/admin/bookings/export${queryString ? `?${queryString}` : ""}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          logout();
+          navigate("/login", { replace: true });
+          return;
+        }
+        throw new Error(result.message || "Could not export bookings. Please try again.");
+      }
+      const workbook = await response.blob();
+      if (!workbook.size) throw new Error("The export was empty. Please try again.");
+      const objectUrl = URL.createObjectURL(workbook);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = `taskpanda-bookings-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (exportRequestError) {
+      setExportError(exportRequestError.message || "Could not export bookings. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const runOverride = async (targetStatus, reason) => {
     if (!selectedBooking || !targetStatus || reason.trim().length < 5) return;
     setOverrideBusy(true);
@@ -565,10 +607,20 @@ export default function AdminBookingsManagement() {
           <h1 id="admin-bookings-title" className="text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">Bookings</h1>
           <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-600">Inspect every booking, review its quoted amounts and status history, and resolve exceptions with an auditable override.</p>
         </div>
-        <button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading} className="dashboard-focus inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-blue-950 shadow-sm transition hover:bg-sky-50 disabled:cursor-wait disabled:opacity-50">
-          {loading ? "Refreshing…" : "Refresh bookings"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={exportBookings} disabled={exporting || loading} className="dashboard-focus inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-blue-950 shadow-sm transition hover:bg-sky-50 disabled:cursor-wait disabled:opacity-50">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-4 w-4" aria-hidden="true">
+              <path d="M10 2.5v10m0 0 3.5-3.5M10 12.5 6.5 9M3.5 13v3a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {exporting ? "Exporting…" : "Export XLSX"}
+          </button>
+          <button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading} className="dashboard-focus inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-blue-950 shadow-sm transition hover:bg-sky-50 disabled:cursor-wait disabled:opacity-50">
+            {loading ? "Refreshing…" : "Refresh bookings"}
+          </button>
+        </div>
       </header>
+
+      {exportError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{exportError}</p>}
 
       <div className="flex gap-1 overflow-x-auto border-b border-slate-200" role="group" aria-label="Filter bookings by status">
         {statusFilters.map((filter) => (

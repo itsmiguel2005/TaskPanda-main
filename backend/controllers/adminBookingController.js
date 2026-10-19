@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const ExcelJS = require("exceljs");
 const { logAuditAction } = require("../utils/logAuditAction");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
@@ -172,38 +173,43 @@ function serializeAdminBooking(booking) {
   };
 }
 
+async function buildAdminBookingFilter(searchValue, status) {
+  const search = String(searchValue || "").trim().slice(0, 100);
+  const clauses = [];
+  if (search) {
+    const pattern = new RegExp(escapeRegex(search), "i");
+    const matchingUsers = await User.find({
+      role: mongoose.trusted({ $in: ["client", "provider"] }),
+      $or: [{ fullName: pattern }, { firstName: pattern }, { lastName: pattern }, { username: pattern }, { email: pattern }],
+    }).select("_id role").lean();
+    const terms = [
+      { repairDescription: pattern },
+      { clientId: mongoose.trusted({ $in: matchingUsers.filter((user) => user.role === "client").map((user) => user._id) }) },
+      { providerId: mongoose.trusted({ $in: matchingUsers.filter((user) => user.role === "provider").map((user) => user._id) }) },
+    ];
+    if (mongoose.isValidObjectId(search)) terms.push({ _id: new mongoose.Types.ObjectId(search) });
+    clauses.push({ $or: terms });
+  }
+  if (status) clauses.push({ status: mongoose.trusted({ $in: STATUS_ALIASES[status] }) });
+  return clauses.length ? { $and: clauses } : {};
+}
+
+function populateAdminBookingParticipants(query) {
+  return query
+    .populate("clientId", "fullName firstName lastName username email profileImage role")
+    .populate("providerId", "fullName firstName lastName username email profileImage role")
+    .populate("revisionRequests.requestedBy", "fullName firstName lastName username email");
+}
+
 async function handleGetAdminBookings(req, res) {
   try {
     const page = Math.min(10000, Math.max(1, Number.parseInt(req.query.page, 10) || 1));
-    const search = String(req.query.q || "").trim().slice(0, 100);
     const status = String(req.query.status || "");
-    const clauses = [];
-    if (search) {
-      const pattern = new RegExp(escapeRegex(search), "i");
-      const matchingUsers = await User.find({
-        role: mongoose.trusted({ $in: ["client", "provider"] }),
-        $or: [{ fullName: pattern }, { firstName: pattern }, { lastName: pattern }, { username: pattern }, { email: pattern }],
-      }).select("_id role").lean();
-      const terms = [
-        { repairDescription: pattern },
-        { clientId: mongoose.trusted({ $in: matchingUsers.filter((user) => user.role === "client").map((user) => user._id) }) },
-        { providerId: mongoose.trusted({ $in: matchingUsers.filter((user) => user.role === "provider").map((user) => user._id) }) },
-      ];
-      if (mongoose.isValidObjectId(search)) terms.push({ _id: new mongoose.Types.ObjectId(search) });
-      clauses.push({ $or: terms });
-    }
-    if (status) {
-      clauses.push({ status: mongoose.trusted({ $in: STATUS_ALIASES[status] }) });
-    }
-    const filter = clauses.length ? { $and: clauses } : {};
+    const filter = await buildAdminBookingFilter(req.query.q, status);
     const [bookings, total] = await Promise.all([
-      Booking.find(filter)
-        .sort({ createdAt: -1, _id: -1 })
+      populateAdminBookingParticipants(Booking.find(filter).sort({ createdAt: -1, _id: -1 }))
         .skip((page - 1) * PAGE_SIZE)
         .limit(PAGE_SIZE)
-        .populate("clientId", "fullName firstName lastName username email profileImage role")
-        .populate("providerId", "fullName firstName lastName username email profileImage role")
-        .populate("revisionRequests.requestedBy", "fullName firstName lastName username email")
         .lean(),
       Booking.countDocuments(filter),
     ]);
@@ -214,6 +220,91 @@ async function handleGetAdminBookings(req, res) {
   } catch (error) {
     console.error("Admin booking list error:", error);
     return res.status(500).json({ message: "Could not load admin bookings." });
+  }
+}
+
+async function handleExportAdminBookings(req, res) {
+  try {
+    const status = String(req.query.status || "");
+    const filter = await buildAdminBookingFilter(req.query.q, status);
+    const bookings = await populateAdminBookingParticipants(
+      Booking.find(filter).sort({ createdAt: -1, _id: -1 })
+    ).lean();
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "TaskPanda";
+    workbook.created = new Date();
+    const worksheet = workbook.addWorksheet("Bookings", {
+      views: [{ state: "frozen", ySplit: 1 }],
+    });
+    worksheet.columns = [
+      { header: "Booking ID", key: "id", width: 28 },
+      { header: "Task", key: "task", width: 36 },
+      { header: "Status", key: "status", width: 24 },
+      { header: "Client", key: "client", width: 28 },
+      { header: "Client email", key: "clientEmail", width: 32 },
+      { header: "Provider", key: "provider", width: 28 },
+      { header: "Provider email", key: "providerEmail", width: 32 },
+      { header: "Service date", key: "serviceDate", width: 22, style: { numFmt: "mmm d, yyyy h:mm AM/PM" } },
+      { header: "Time slot", key: "timeSlot", width: 20 },
+      { header: "Requested", key: "requested", width: 22, style: { numFmt: "mmm d, yyyy h:mm AM/PM" } },
+      { header: "Payment method", key: "paymentMethod", width: 18 },
+      { header: "Task offer (PHP)", key: "offeredPrice", width: 18, style: { numFmt: '"₱"#,##0.00' } },
+      { header: "Travel fee (PHP)", key: "travelFee", width: 18, style: { numFmt: '"₱"#,##0.00' } },
+      { header: "Travel discount (PHP)", key: "travelFeeDiscount", width: 22, style: { numFmt: '"₱"#,##0.00' } },
+      { header: "Tip (PHP)", key: "tipAmount", width: 16, style: { numFmt: '"₱"#,##0.00' } },
+      { header: "Client total (PHP)", key: "total", width: 20, style: { numFmt: '"₱"#,##0.00' } },
+      { header: "Refund status", key: "refundStatus", width: 22 },
+      { header: "Refund amount (PHP)", key: "refundAmount", width: 22, style: { numFmt: '"₱"#,##0.00' } },
+      { header: "Address", key: "address", width: 44 },
+    ];
+    const header = worksheet.getRow(1);
+    header.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    header.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A8A" } };
+    header.alignment = { vertical: "middle" };
+    header.height = 24;
+
+    for (const booking of bookings) {
+      const record = serializeAdminBooking(booking);
+      worksheet.addRow({
+        id: record.id,
+        task: record.task,
+        status: record.statusLabel,
+        client: record.client?.name || "Profile unavailable",
+        clientEmail: record.client?.email || "",
+        provider: record.provider?.name || "Profile unavailable",
+        providerEmail: record.provider?.email || "",
+        serviceDate: record.serviceDate ? new Date(record.serviceDate) : null,
+        timeSlot: record.timeSlot,
+        requested: record.createdAt ? new Date(record.createdAt) : null,
+        paymentMethod: record.paymentMethod,
+        offeredPrice: record.offeredPrice,
+        travelFee: record.travelFee,
+        travelFeeDiscount: record.travelFeeDiscount,
+        tipAmount: record.tipAmount,
+        total: record.total,
+        refundStatus: record.refundStatus,
+        refundAmount: record.refundAmount,
+        address: record.address,
+      });
+    }
+    worksheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: worksheet.columnCount },
+    };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = `taskpanda-bookings-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    res.set({
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Length": String(buffer.byteLength),
+      "Cache-Control": "no-store",
+    });
+    return res.send(Buffer.from(buffer));
+  } catch (error) {
+    console.error("Admin booking export failed:", error);
+    return res.status(500).json({ message: "Could not export bookings. Please try again." });
   }
 }
 
@@ -302,4 +393,4 @@ async function handleOverrideAdminBooking(req, res) {
   }
 }
 
-module.exports = { handleGetAdminBookings, handleOverrideAdminBooking };
+module.exports = { handleGetAdminBookings, handleExportAdminBookings, handleOverrideAdminBooking };

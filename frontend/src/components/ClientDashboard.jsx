@@ -357,7 +357,7 @@ export default function Dashboard() {
   const visibleTopRatedProviders = useMemo(() => topRatedProviders, [topRatedProviders]);
 
   const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined", "Expired"];
-  const dashboardDismissableStatuses = new Set(["Completed", "Settled", "Cancelled", "Cancelled - Provider No-Show", "Declined by Provider"]);
+  const dashboardDismissableStatuses = new Set(["Completed", "Settled", "Cancelled", "Cancelled - Provider No-Show", "Declined by Provider", "Expired", "Refunded", "Partially Refunded"]);
   const nonDismissedBookingList = bookingList;
 
   const canDismissBookingFromDashboard = (booking) => dashboardDismissableStatuses.has(String(booking?.status || ""));

@@ -17,7 +17,7 @@ const {
   handleUpdateAdminSystemSettings,
   handleAdminBroadcast,
 } = require("../controllers/adminOperationsController");
-const { handleGetAdminBookings, handleOverrideAdminBooking } = require("../controllers/adminBookingController");
+const { handleGetAdminBookings, handleExportAdminBookings, handleOverrideAdminBooking } = require("../controllers/adminBookingController");
 const {
   handleListAdminRefunds,
   handleResolveAdminRefund,
@@ -176,6 +176,16 @@ router.patch(
   ],
   validateRequest,
   handleReviewAdminProviderNoShowReport
+);
+router.get(
+  "/bookings/export",
+  requireAdmin,
+  [
+    query("q").optional().isString().isLength({ max: 100 }),
+    query("status").optional().isIn(["pending", "approved", "in_progress", "complete", "settled", "canceled", "declined", "expired", "refund_pending", "refund_repayment_pending", "refund_repayment_reported", "refund_repayment_overdue", "refunded", "partially_refunded"]),
+  ],
+  validateRequest,
+  handleExportAdminBookings
 );
 router.get(
   "/bookings",
