@@ -281,7 +281,16 @@ router.post(
   validateRequest,
   handleAdminBroadcast
 );
-router.get("/users", requireAdmin, handleGetAdminUsers);
+router.get(
+  "/users",
+  requireAdmin,
+  [
+    query("sort").optional().isIn(["account", "role", "joined", "status"]),
+    query("direction").optional().isIn(["asc", "desc"]),
+  ],
+  validateRequest,
+  handleGetAdminUsers,
+);
 router.get("/users/:userId", requireAdmin, param("userId").isMongoId(), validateRequest, handleGetAdminUserDetails);
 router.patch(
   "/users/:userId/suspension",

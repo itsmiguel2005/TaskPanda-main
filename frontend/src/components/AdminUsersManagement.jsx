@@ -16,6 +16,7 @@ const FILTERS = [
 ];
 
 const EMPTY_COUNTS = { all: 0, suspended: 0, archived: 0, verified: 0, tesdaCertified: 0 };
+const USER_SORT_FIELDS = ["account", "role", "joined", "status"];
 
 const STATUS_STYLES = {
   Active: "border-emerald-200 bg-emerald-50 text-emerald-800",
@@ -85,6 +86,27 @@ function StatusPill({ status }) {
       <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
       {status}
     </span>
+  );
+}
+
+function SortHeader({ field, label, sort, onSort, className = "" }) {
+  const active = sort.field === field;
+  const direction = active ? sort.direction : null;
+
+  return (
+    <th scope="col" aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"} className={`px-4 py-3.5 ${className}`}>
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        aria-label={`${field === "account" ? "Sort accounts by verification status" : `Sort by ${label}`}${direction === "asc" ? ", ascending" : direction === "desc" ? ", descending" : ""}`}
+        className={`inline-flex items-center gap-1.5 rounded-sm text-left transition hover:text-sky-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-600 ${active ? "text-sky-900" : ""}`}
+      >
+        {label}
+        <svg viewBox="0 0 12 12" fill="none" aria-hidden="true" className={`h-3 w-3 ${active ? "text-sky-800" : "text-slate-400"}`}>
+          {direction === "asc" ? <path d="m3 7.5 3-3 3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> : direction === "desc" ? <path d="m3 4.5 3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> : <><path d="m3 4.5 3-3 3 3M3 7.5l3 3 3-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /></>}
+        </svg>
+      </button>
+    </th>
   );
 }
 
@@ -305,6 +327,7 @@ export default function AdminUsersManagement() {
   const [pages, setPages] = useState(1);
   const [resultsRevision, setResultsRevision] = useState(0);
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState({ field: "joined", direction: "desc" });
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -337,7 +360,7 @@ export default function AdminUsersManagement() {
     }
     setLoading(true);
     setError("");
-    const params = new URLSearchParams({ filter, page: String(page) });
+    const params = new URLSearchParams({ filter, page: String(page), sort: sort.field, direction: sort.direction });
     if (debouncedSearch) params.set("q", debouncedSearch);
     try {
       const response = await apiFetch(`/api/admin/users?${params}`, {
@@ -362,7 +385,7 @@ export default function AdminUsersManagement() {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [debouncedSearch, filter, logout, navigate, page, token]);
+  }, [debouncedSearch, filter, logout, navigate, page, sort, token]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -481,6 +504,17 @@ export default function AdminUsersManagement() {
     setFilter(nextFilter);
   };
 
+  const chooseSort = (field) => {
+    if (!USER_SORT_FIELDS.includes(field)) return;
+    setPage(1);
+    setSort((current) => ({
+      field,
+      direction: current.field === field
+        ? current.direction === "asc" ? "desc" : "asc"
+        : field === "joined" ? "desc" : "asc",
+    }));
+  };
+
   const openUser = (id) => {
     setError("");
     setNotice("");
@@ -554,6 +588,12 @@ export default function AdminUsersManagement() {
                   active ? "border-blue-800 text-blue-950" : "border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-900"
                 }`}
               >
+                {item.id === "verified" && (
+                  <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" className="h-3.5 w-3.5 text-emerald-700">
+                    <circle cx="8" cy="8" r="7" fill="currentColor" />
+                    <path d="m4.5 8.1 2.2 2.2 4.8-4.8" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
                 {item.id === "tesda-certified" && (
                   <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" className="h-3.5 w-3.5 text-emerald-700">
                     <path fillRule="evenodd" d="M10 1.667a2.5 2.5 0 0 1 2.357 1.666h1.81a2.5 2.5 0 0 1 2.5 2.5v1.81a2.5 2.5 0 0 1 0 4.714v1.81a2.5 2.5 0 0 1-2.5 2.5h-1.81a2.5 2.5 0 0 1-4.714 0h-1.81a2.5 2.5 0 0 1-2.5-2.5v-1.81a2.5 2.5 0 0 1 0-4.714v-1.81a2.5 2.5 0 0 1 2.5-2.5h1.81A2.5 2.5 0 0 1 10 1.667Zm3.09 6.75a.75.75 0 0 0-1.18-.92l-2.74 3.52-1.08-1.08a.75.75 0 0 0-1.06 1.06l1.68 1.68a.75.75 0 0 0 1.12-.07l3.26-4.19Z" clipRule="evenodd" />
@@ -608,10 +648,10 @@ export default function AdminUsersManagement() {
               <table className="w-full min-w-190 text-left">
                 <thead className="bg-slate-50/90 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-600">
                   <tr>
-                    <th scope="col" className="px-6 py-3.5">Account</th>
-                    <th scope="col" className="px-4 py-3.5">Role</th>
-                    <th scope="col" className="px-4 py-3.5">Joined</th>
-                    <th scope="col" className="px-4 py-3.5">Status</th>
+                    <SortHeader field="account" label="Account" sort={sort} onSort={chooseSort} className="px-6" />
+                    <SortHeader field="role" label="Role" sort={sort} onSort={chooseSort} />
+                    <SortHeader field="joined" label="Joined" sort={sort} onSort={chooseSort} />
+                    <SortHeader field="status" label="Status" sort={sort} onSort={chooseSort} />
                     <th scope="col" className="px-4 py-3.5 text-right">Details</th>
                   </tr>
                 </thead>

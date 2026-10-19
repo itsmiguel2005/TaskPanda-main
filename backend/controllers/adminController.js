@@ -14,6 +14,7 @@ const PENDING_STATUSES = ["pending", "Pending Request"];
 const COMPLETED_STATUSES = ["complete", "closed", "settled", "Completed", "Settled"];
 const ADMINISTRABLE_ROLES = ["client", "provider"];
 const USER_PAGE_SIZE = 25;
+const ADMIN_USER_SORT_FIELDS = ["account", "role", "joined", "status"];
 const ACTIVE_BOOKING_STATUSES = [
   "pending", "approved", "en_route", "in_progress", "in_revision", "disputed", "cancel_requested",
   "refund_repayment_pending", "refund_repayment_reported", "refund_repayment_overdue",
@@ -174,6 +175,8 @@ async function handleGetAdminUsers(req, res) {
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
     const search = String(req.query.q || "").trim().slice(0, 100);
     const filter = String(req.query.filter || "all");
+    const sortBy = ADMIN_USER_SORT_FIELDS.includes(req.query.sort) ? req.query.sort : "joined";
+    const sortDirection = req.query.direction === "asc" ? 1 : -1;
     const query = { role: mongoose.trusted({ $in: ADMINISTRABLE_ROLES }) };
     const additionalFilters = [];
 
@@ -208,13 +211,82 @@ async function handleGetAdminUsers(req, res) {
     if (additionalFilters.length > 0) query.$and = mongoose.trusted(additionalFilters);
 
     const offset = (page - 1) * USER_PAGE_SIZE;
+    const sortField = {
+      account: "_adminSortAccount",
+      role: "role",
+      joined: "createdAt",
+      status: "_adminSortStatus",
+    }[sortBy];
+    const sortStages = sortBy === "account"
+      ? [{
+        $addFields: {
+          _adminSortAccount: {
+            $or: [
+              { $eq: ["$isVerified", true] },
+              { $eq: [{ $toLower: { $ifNull: ["$verificationStatus", ""] } }, "verified"] },
+              { $eq: [{ $toLower: { $ifNull: ["$verificationDetails.status", ""] } }, "active"] },
+            ],
+          },
+        },
+      }]
+      : sortBy === "status"
+        ? [{
+          $addFields: {
+            _adminSortStatus: {
+              $switch: {
+                branches: [
+                  { case: { $ne: [{ $ifNull: ["$archivedAt", null] }, null] }, then: 3 },
+                  { case: { $eq: ["$isSuspended", true] }, then: 2 },
+                  {
+                    case: {
+                      $or: [
+                        { $eq: ["$emailVerified", false] },
+                        { $eq: ["$registrationComplete", false] },
+                      ],
+                    },
+                    then: 1,
+                  },
+                ],
+                default: 0,
+              },
+            },
+          },
+        }]
+        : [];
     const [users, total, counts] = await Promise.all([
-      User.find(query)
-        .select("fullName firstName lastName username email role emailVerified registrationComplete isVerified verificationStatus verificationDetails.status profileImage professions tesdaCertificates.trade tesdaCertificates.status createdAt referralCode stampProgress completedBookings isSuspended suspendedAt archivedAt")
-        .sort({ createdAt: -1, _id: -1 })
-        .skip(offset)
-        .limit(USER_PAGE_SIZE)
-        .lean(),
+      User.aggregate([
+        { $match: query },
+        ...sortStages,
+        { $sort: { [sortField]: sortDirection, _id: sortBy === "joined" ? sortDirection : 1 } },
+        { $skip: offset },
+        { $limit: USER_PAGE_SIZE },
+        {
+          $project: {
+            fullName: 1,
+            firstName: 1,
+            lastName: 1,
+            username: 1,
+            email: 1,
+            role: 1,
+            emailVerified: 1,
+            registrationComplete: 1,
+            isVerified: 1,
+            verificationStatus: 1,
+            "verificationDetails.status": 1,
+            profileImage: 1,
+            professions: 1,
+            "tesdaCertificates.trade": 1,
+            "tesdaCertificates.status": 1,
+            createdAt: 1,
+            referralCode: 1,
+            stampProgress: 1,
+            completedBookings: 1,
+            isSuspended: 1,
+            suspendedAt: 1,
+            archivedAt: 1,
+          },
+        },
+      ]),
       User.countDocuments(query),
       Promise.all([
         User.countDocuments({ role: mongoose.trusted({ $in: ADMINISTRABLE_ROLES }), archivedAt: null }),
