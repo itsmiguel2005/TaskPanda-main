@@ -11,6 +11,38 @@ function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function sanitizePublicText(value) {
+  return String(value || "")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email hidden]")
+    .replace(/(?:\+?63[\s().-]*)?0?9\d{2}[\s().-]*\d{3}[\s.-]*\d{4}/g, (candidate) => {
+      const digitCount = candidate.replace(/\D/g, "").length;
+      return digitCount >= 10 && digitCount <= 13 ? "[phone hidden]" : candidate;
+    });
+}
+
+function toPublicProvider(provider, streak) {
+  const isVerified = provider.isVerified === true && provider.verificationStatus === "verified";
+  return {
+    _id: String(provider._id),
+    fullName: sanitizePublicText(provider.businessName || provider.fullName || provider.username || "Local provider"),
+    username: sanitizePublicText(provider.username || ""),
+    profileImage: provider.profileImage || "",
+    professions: Array.isArray(provider.professions) ? provider.professions : [],
+    bio: sanitizePublicText(provider.bio),
+    isVerified,
+    verificationStatus: isVerified ? "verified" : "unverified",
+    averageRating: Number(provider.averageRating || 0),
+    totalReviews: Number(provider.totalReviews || 0),
+    city: provider.city || "",
+    province: provider.province || "",
+    distanceKm: Number(provider.distanceKm || 0),
+    tesdaCertificates: Array.isArray(provider.tesdaCertificates)
+      ? provider.tesdaCertificates.map((certificate) => ({ trade: certificate.trade || "", status: "approved" }))
+      : [],
+    onTimeStreak: streak || { count: 0, milestone: null, nextMilestone: 5 },
+  };
+}
+
 async function handleDiscoverProviders(req, res) {
   const latitude = Number(req.query.latitude);
   const longitude = Number(req.query.longitude);
@@ -88,10 +120,9 @@ async function handleDiscoverProviders(req, res) {
             {
               $project: {
                 _id: 1,
+                businessName: 1,
                 fullName: 1,
                 username: 1,
-                lastActive: 1,
-                isOnline: 1,
                 isVerified: 1,
                 verificationStatus: 1,
                 profileImage: 1,
@@ -101,8 +132,6 @@ async function handleDiscoverProviders(req, res) {
                 totalReviews: 1,
                 province: 1,
                 city: 1,
-                barangay: 1,
-                createdAt: 1,
                 distanceKm: { $round: [{ $divide: ["$distanceMeters", 1000] }, 2] },
                 tesdaCertificates: {
                   $map: {
@@ -126,10 +155,10 @@ async function handleDiscoverProviders(req, res) {
 
     const providerStreaks = await getProviderStreaks(result.providers.map((provider) => provider._id));
     return res.json({
-      providers: result.providers.map((provider) => ({
-        ...provider,
-        onTimeStreak: providerStreaks.get(String(provider._id)) || { count: 0, milestone: null, nextMilestone: 5 },
-      })),
+      providers: result.providers.map((provider) => toPublicProvider(
+        provider,
+        providerStreaks.get(String(provider._id)),
+      )),
       total: result.metadata[0]?.total || 0,
       page,
       limit,
@@ -171,6 +200,7 @@ async function handleDiscoverProviderMapMarkers(req, res) {
       {
         $project: {
           _id: 1,
+          businessName: 1,
           fullName: 1,
           username: 1,
           profileImage: 1,
@@ -191,8 +221,8 @@ async function handleDiscoverProviderMapMarkers(req, res) {
     return res.json({
       providers: providers.map((provider) => ({
         id: String(provider._id),
-        name: provider.fullName || provider.username || "Local provider",
-        username: provider.username || "",
+        name: sanitizePublicText(provider.businessName || provider.fullName || provider.username || "Local provider"),
+        username: sanitizePublicText(provider.username || ""),
         profileImage: provider.profileImage || "",
         professions: provider.professions || [],
         isVerified: provider.isVerified === true || provider.verificationStatus === "verified",
@@ -217,7 +247,7 @@ async function handleGetProviderProfile(req, res) {
       isSuspended: mongoose.trusted({ $ne: true }),
       archivedAt: null,
     })
-      .select("fullName username profileImage professions bio isVerified verificationStatus averageRating totalReviews province city barangay tesdaCertificates +lastActive +isOnline")
+      .select("businessName fullName username profileImage professions bio isVerified verificationStatus averageRating totalReviews province city barangay tesdaCertificates +lastActive +isOnline")
       .lean();
 
     if (!provider) return res.status(404).json({ message: "This provider could not be found." });
@@ -276,13 +306,13 @@ async function handleGetProviderProfile(req, res) {
     return res.json({
       provider: {
         id: String(provider._id),
-        name: provider.fullName || provider.username || "Local provider",
-        username: provider.username || "",
+        name: sanitizePublicText(provider.businessName || provider.fullName || provider.username || "Local provider"),
+        username: sanitizePublicText(provider.username || ""),
         profileImage: provider.profileImage || "",
         lastActive: provider.lastActive || null,
         isOnline: provider.isOnline === true,
         professions: provider.professions || [],
-        bio: provider.bio || "",
+        bio: sanitizePublicText(provider.bio),
         verified: provider.isVerified === true || provider.verificationStatus === "verified",
         tesdaCertificates: (provider.tesdaCertificates || [])
           .filter((certificate) => String(certificate.status || "").toLowerCase() === "approved")
@@ -295,10 +325,10 @@ async function handleGetProviderProfile(req, res) {
           : [],
         reviews: reviews.map((review) => ({
           id: String(review._id),
-          reviewer: review.reviewerName || "Client",
+          reviewer: sanitizePublicText(review.reviewerName || "Client"),
           reviewerProfileImage: review.reviewerProfileImage || "",
           rating: Number(review.clientRating),
-          comment: review.clientReview,
+          comment: sanitizePublicText(review.clientReview),
           photos: Array.isArray(review.clientReviewPhotos) ? review.clientReviewPhotos : [],
           reviewedAt: review.reviewedAt || review.updatedAt,
         })),
@@ -310,4 +340,4 @@ async function handleGetProviderProfile(req, res) {
   }
 }
 
-module.exports = { handleDiscoverProviders, handleDiscoverProviderMapMarkers, handleGetProviderProfile, MAX_DISTANCE_KM };
+module.exports = { handleDiscoverProviders, handleDiscoverProviderMapMarkers, handleGetProviderProfile, sanitizePublicText, toPublicProvider, MAX_DISTANCE_KM };

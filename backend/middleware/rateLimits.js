@@ -38,6 +38,7 @@ function limitAuthAttempts(req, res, next) {
 
 const limitRegistrationChecks = createRateLimiter(30);
 const limitLocationLookups = createRateLimiter(30, 60 * 1000, "Location lookup limit reached. Please wait a minute and try again.");
+const limitPublicProviderSearch = createRateLimiter(60, 60 * 1000, "Too many provider searches. Please wait a minute and try again.");
 const limitBookingCreation = createRateLimiter(10);
 const limitPhoneVerificationSends = createRateLimiter(
   3,
@@ -76,4 +77,4 @@ const limitChatPhotoUploads = createRateLimiter(30, 15 * 60 * 1000);
 const limitTypingUpdates = createRateLimiter(60, 60 * 1000);
 const limitProfilePhotoUploads = createRateLimiter(30, 15 * 60 * 1000);
 
-module.exports = { createRateLimiter, limitAuthAttempts, limitRegistrationChecks, limitLocationLookups, limitBookingCreation, limitPhoneVerificationSends, limitVerificationUploads, limitTesdaCertificateUploads, limitChatPhotoUploads, limitTypingUpdates, limitProfilePhotoUploads };
+module.exports = { createRateLimiter, limitAuthAttempts, limitRegistrationChecks, limitLocationLookups, limitPublicProviderSearch, limitBookingCreation, limitPhoneVerificationSends, limitVerificationUploads, limitTesdaCertificateUploads, limitChatPhotoUploads, limitTypingUpdates, limitProfilePhotoUploads };

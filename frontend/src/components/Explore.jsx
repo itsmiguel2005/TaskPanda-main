@@ -1,6 +1,6 @@
 import { apiFetch } from "../services/api.js";
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import Header from "./Header.jsx";
 import ProviderProfileModal from "./ProviderProfileModal.jsx";
 import ProviderStreak from "./ProviderStreak.jsx";
@@ -24,6 +24,17 @@ const sortOptions = [
 const FAVORITES_SYNC_EVENT = "taskpanda:favorites-sync";
 const MINIMUM_TASK_OFFER = 100;
 const MAX_DISCOVERY_DISTANCE_KM = 10;
+const GUEST_VOUCHER_AD_DISMISSED_KEY = "taskpanda:guest-verification-voucher-ad-dismissed:v1";
+const DEFAULT_GUEST_LOCATION = {
+  address: "Dagupan City, Pangasinan",
+  geoLocation: { type: "Point", coordinates: [120.3336, 16.0433] },
+};
+const LANDING_CATEGORY_FILTERS = {
+  "Aircon Repair": ["Aircon Tech"],
+  Plumbing: ["Plumber"],
+  Electrical: ["Electrician"],
+  "IT & Gadget Repair": ["IT Tech", "IT Repair"],
+};
 
 function formatPhpAmount(value) {
   const amount = Number(value);
@@ -105,11 +116,21 @@ function CheckBox({ label, count, checked, onChange }) {
 
 export default function Explore() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { user, isLoggedIn, token } = useAuth();
   const dashboardDensity = user?.dashboardDensityPreference === "compact" ? "compact" : "comfortable";
   const { createBooking } = useBookings();
+  const [showGuestVoucherAd, setShowGuestVoucherAd] = useState(() => {
+    try {
+      return window.localStorage.getItem(GUEST_VOUCHER_AD_DISMISSED_KEY) !== "true";
+    } catch {
+      return true;
+    }
+  });
   const [viewingProvider, setViewingProvider] = useState(null);
   const [bookingProvider, setBookingProvider] = useState(null);
+  const [authIntercept, setAuthIntercept] = useState(null);
   const [bookingInitialValues, setBookingInitialValues] = useState({});
   const [searchQuery, setSearchQuery] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
@@ -133,7 +154,6 @@ export default function Explore() {
   const [favoriteToast, setFavoriteToast] = useState("");
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
-  const { token } = useAuth();
   const searchLocationStorageKey = user?.id
     ? `taskpanda:explore-search-location:${user.id}`
     : "";
@@ -146,6 +166,8 @@ export default function Explore() {
         geoLocation: user?.geoLocation,
       }) ? user.geoLocation : null,
     };
+
+    if (!isLoggedIn && !user) nextLocation = DEFAULT_GUEST_LOCATION;
 
     if (searchLocationStorageKey) {
       try {
@@ -165,7 +187,7 @@ export default function Explore() {
 
     setSearchLocation(nextLocation);
     setSearchCoordinates(nextLocation.geoLocation);
-  }, [user, searchLocationStorageKey]);
+  }, [isLoggedIn, user, searchLocationStorageKey]);
 
   useEffect(() => {
     if (!showSearchLocationPicker) return undefined;
@@ -177,8 +199,22 @@ export default function Explore() {
   }, [showSearchLocationPicker]);
 
   useEffect(() => {
+    if (!authIntercept) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setAuthIntercept(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [authIntercept]);
+
+  useEffect(() => {
+    const landingCategory = searchParams.get("category");
     const service = searchParams.get("service");
-    if (service) {
+    if (landingCategory) {
+      setSelectedCategories(new Set(LANDING_CATEGORY_FILTERS[landingCategory] || [landingCategory]));
+      setSearchQuery("");
+      setAppliedQuery("");
+    } else if (service) {
       setSelectedCategories(new Set([service]));
       setSearchQuery(service);
       setAppliedQuery(service);
@@ -188,6 +224,13 @@ export default function Explore() {
   useEffect(() => {
     const providerId = searchParams.get("bookProvider");
     if (!providerId) return undefined;
+    if (!isLoggedIn) {
+      setAuthIntercept({
+        action: "book",
+        redirectTo: `${location.pathname}${location.search}${location.hash}`,
+      });
+      return undefined;
+    }
     const bookingDate = searchParams.get("bookDate") || "";
     const bookingTime = searchParams.get("bookTime") || "";
 
@@ -224,6 +267,37 @@ export default function Explore() {
     };
 
     void openRecommendedProvider();
+    return () => controller.abort();
+  }, [isLoggedIn, location.hash, location.pathname, location.search, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const providerId = searchParams.get("provider");
+    if (!providerId) return undefined;
+    const controller = new AbortController();
+    const openProviderProfile = async () => {
+      try {
+        const response = await apiFetch(`/api/providers/${encodeURIComponent(providerId)}/profile`, { signal: controller.signal });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.provider) throw new Error(data.message || "That professional is no longer available.");
+        const provider = data.provider;
+        setViewingProvider({
+          _id: String(provider.id || providerId),
+          fullName: provider.name || provider.username || "TaskPanda professional",
+          username: provider.username || "",
+          profileImage: provider.profileImage || "",
+          professions: Array.isArray(provider.professions) ? provider.professions : [],
+          averageRating: Number(provider.averageRating || 0),
+          totalReviews: Number(provider.totalReviews || 0),
+          isVerified: provider.verified === true,
+        });
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.delete("provider");
+        setSearchParams(nextParams, { replace: true });
+      } catch (error) {
+        if (error.name !== "AbortError") setSearchError(error.message || "Could not open this professional.");
+      }
+    };
+    void openProviderProfile();
     return () => controller.abort();
   }, [searchParams, setSearchParams]);
 
@@ -421,6 +495,35 @@ export default function Explore() {
     }
   }, [favoriteProviderIds, token]);
 
+  const handleProviderAction = (action, provider, execute) => {
+    if (isLoggedIn) {
+      execute?.();
+      return;
+    }
+
+    const providerId = String(provider?._id || provider?.id || "");
+    const params = new URLSearchParams();
+    if (action === "book" || action === "offer") params.set("bookProvider", providerId);
+    else params.set("provider", providerId);
+    setAuthIntercept({ action, redirectTo: `/explore?${params.toString()}` });
+  };
+
+  const continueToAuth = (path) => {
+    if (!authIntercept?.redirectTo) return;
+    const redirectTo = authIntercept.redirectTo;
+    setAuthIntercept(null);
+    navigate(`${path}?${path === "/signup" ? "role=client&" : ""}redirectTo=${encodeURIComponent(redirectTo)}`);
+  };
+
+  const dismissGuestVoucherAd = () => {
+    setShowGuestVoucherAd(false);
+    try {
+      window.localStorage.setItem(GUEST_VOUCHER_AD_DISMISSED_KEY, "true");
+    } catch (error) {
+      console.warn("Guest voucher promotion dismissal could not be saved:", error.message);
+    }
+  };
+
   const removeFilter = (type, value) => {
     if (type === "category") {
       setSelectedCategories((prev) => {
@@ -504,10 +607,10 @@ export default function Explore() {
   };
 
   return (
-    <div className="dashboard-page">
+    <div className={`dashboard-page ${isLoggedIn ? "" : "pt-0"}`}>
       <Header showNav activeTab="Explore" />
 
-      <div className="dashboard-shell mt-6 grid grid-cols-1 gap-6 pb-10 lg:grid-cols-[16rem_minmax(0,1fr)]">
+      <div className={`dashboard-shell mt-6 grid grid-cols-1 gap-6 ${!isLoggedIn && showGuestVoucherAd ? "pb-28" : "pb-10"} lg:grid-cols-[16rem_minmax(0,1fr)]`}>
         {/* Hero Search Section */}
         <div className="relative lg:col-start-2 lg:row-start-1">
           <div className="dashboard-panel grid gap-5 px-5 py-6 sm:px-8 sm:py-8">
@@ -773,7 +876,7 @@ export default function Explore() {
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center gap-1.5">
-                            <span className="truncate text-sm font-bold text-slate-900">{provider.fullName || provider.username || "Provider"}</span>
+                            <span className="truncate text-sm font-bold capitalize text-slate-900">{provider.fullName || provider.username || "Provider"}</span>
                             {isProviderVerified && <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-800">Verified</span>}
                           </span>
                           <span className="mt-0.5 block truncate text-xs text-slate-600">{provider.professions?.join(" · ") || "Service provider"}</span>
@@ -794,12 +897,10 @@ export default function Explore() {
                         <span className="text-slate-500"> · from {formatPhpAmount(MINIMUM_TASK_OFFER)} task offer</span>
                       </div>
                       <div className="ml-auto flex items-center gap-2">
-                        {token && (
-                          <button type="button" aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"} onClick={() => toggleFavorite(provider._id)} className={`dashboard-focus inline-flex h-9 w-9 items-center justify-center rounded-full border transition-all duration-200 ${isFavorite ? "border-rose-200 bg-rose-50 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:border-rose-200 hover:text-rose-600"}`}>
-                            <svg viewBox="0 0 24 24" fill={isFavorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" className="h-4 w-4"><path d="M12 21.35 10.55 20C5.4 15.36 2 12.28 2 8.5A4.5 4.5 0 0 1 6.5 4c1.74 0 3.41.81 4.5 2.09A6.12 6.12 0 0 1 15.5 4 4.5 4.5 0 0 1 20 8.5c0 3.78-3.4 6.86-8.55 11.5L12 21.35Z" /></svg>
-                          </button>
-                        )}
-                        <button type="button" onClick={() => setBookingProvider(provider)} className="dashboard-primary-button dashboard-focus px-3 py-2 text-xs">Book</button>
+                        <button type="button" aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"} onClick={() => handleProviderAction("favorite", provider, () => toggleFavorite(provider._id))} className={`dashboard-focus inline-flex h-9 w-9 items-center justify-center rounded-full border transition-all duration-200 ${isFavorite ? "border-rose-200 bg-rose-50 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:border-rose-200 hover:text-rose-600"}`}>
+                          <svg viewBox="0 0 24 24" fill={isFavorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" className="h-4 w-4"><path d="M12 21.35 10.55 20C5.4 15.36 2 12.28 2 8.5A4.5 4.5 0 0 1 6.5 4c1.74 0 3.41.81 4.5 2.09A6.12 6.12 0 0 1 15.5 4 4.5 4.5 0 0 1 20 8.5c0 3.78-3.4 6.86-8.55 11.5L12 21.35Z" /></svg>
+                        </button>
+                        <button type="button" onClick={() => handleProviderAction("book", provider, () => setBookingProvider(provider))} className="dashboard-primary-button dashboard-focus px-3 py-2 text-xs">Book</button>
                       </div>
                     </article>
                   );
@@ -834,11 +935,11 @@ export default function Explore() {
                             <h3
                               aria-label={provider.fullName || provider.username || "Provider"}
                               title={provider.fullName || provider.username || "Provider"}
-                              className="min-w-0 flex-1 truncate whitespace-nowrap text-sm font-bold text-slate-900"
+                              className="min-w-0 flex-1 truncate whitespace-nowrap text-sm font-bold capitalize text-slate-900"
                             >
                               {provider.fullName || provider.username || "Provider"}
                             </h3>
-                            <ProviderStreak streak={provider.onTimeStreak} variant="inline" />
+                            <ProviderStreak streak={provider.onTimeStreak} variant="inline" showStreak={isLoggedIn} />
                           </div>
                           <div className="flex min-w-0 items-center gap-1.5">
                             <p className="truncate text-xs text-slate-600">{provider.professions?.join(" · ") || "Service provider"}</p>
@@ -852,18 +953,16 @@ export default function Explore() {
                             )}
                           </div>
                         </div>
-                        {token && (
-                          <button
-                            type="button"
-                            aria-label={favoriteProviderIds.has(String(provider._id)) ? "Remove from favorites" : "Add to favorites"}
-                            onClick={() => toggleFavorite(provider._id)}
-                            className={`dashboard-focus flex h-9 w-9 items-center justify-center rounded-full border transition ${favoriteProviderIds.has(String(provider._id)) ? "border-rose-200 bg-rose-100 text-rose-600" : "border-sky-100 bg-white text-slate-500 hover:border-rose-200 hover:text-rose-600"}`}
-                          >
-                            <svg viewBox="0 0 24 24" fill={favoriteProviderIds.has(String(provider._id)) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
-                              <path d="M12 21.35 10.55 20C5.4 15.36 2 12.28 2 8.5A4.5 4.5 0 0 1 6.5 4c1.74 0 3.41.81 4.5 2.09A6.12 6.12 0 0 1 15.5 4 4.5 4.5 0 0 1 20 8.5c0 3.78-3.4 6.86-8.55 11.5L12 21.35Z" />
-                            </svg>
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          aria-label={favoriteProviderIds.has(String(provider._id)) ? "Remove from favorites" : "Add to favorites"}
+                          onClick={() => handleProviderAction("favorite", provider, () => toggleFavorite(provider._id))}
+                          className={`dashboard-focus flex h-9 w-9 items-center justify-center rounded-full border transition ${favoriteProviderIds.has(String(provider._id)) ? "border-rose-200 bg-rose-100 text-rose-600" : "border-sky-100 bg-white text-slate-500 hover:border-rose-200 hover:text-rose-600"}`}
+                        >
+                          <svg viewBox="0 0 24 24" fill={favoriteProviderIds.has(String(provider._id)) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+                            <path d="M12 21.35 10.55 20C5.4 15.36 2 12.28 2 8.5A4.5 4.5 0 0 1 6.5 4c1.74 0 3.41.81 4.5 2.09A6.12 6.12 0 0 1 15.5 4 4.5 4.5 0 0 1 20 8.5c0 3.78-3.4 6.86-8.55 11.5L12 21.35Z" />
+                          </svg>
+                        </button>
                       </div>
 
                       <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
@@ -913,7 +1012,7 @@ export default function Explore() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setBookingProvider(provider)}
+                          onClick={() => handleProviderAction("book", provider, () => setBookingProvider(provider))}
                           className="dashboard-primary-button dashboard-focus px-3 py-2 text-xs"
                         >
                           Book
@@ -950,21 +1049,62 @@ export default function Explore() {
         <ProviderProfileModal
           provider={viewingProvider}
           onClose={() => setViewingProvider(null)}
+          onContact={!isLoggedIn ? () => handleProviderAction("contact", viewingProvider) : undefined}
+          showProviderStreak={isLoggedIn}
           isFavorite={viewingProvider ? favoriteProviderIds.has(String(viewingProvider._id)) : false}
-          onToggleFavorite={() => viewingProvider && toggleFavorite(viewingProvider._id)}
+          onToggleFavorite={() => viewingProvider && handleProviderAction("favorite", viewingProvider, () => toggleFavorite(viewingProvider._id))}
           onBook={() => {
-            setBookingInitialValues({});
-            setBookingProvider(viewingProvider);
-            setViewingProvider(null);
+            handleProviderAction("book", viewingProvider, () => {
+              setBookingInitialValues({});
+              setBookingProvider(viewingProvider);
+              setViewingProvider(null);
+            });
           }}
         />
         <RequestBookingModal
           provider={bookingProvider}
           onClose={() => setBookingProvider(null)}
-          onSubmit={createBooking}
+          onSubmit={(...args) => isLoggedIn
+            ? createBooking(...args)
+            : handleProviderAction("offer", bookingProvider)}
           initialValues={bookingInitialValues}
         />
         <ActionToast message={favoriteToast} onDismiss={() => setFavoriteToast("")} />
+        {!isLoggedIn && showGuestVoucherAd && (
+          <aside className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-[0_-8px_28px_rgba(15,23,42,0.1)] backdrop-blur-md sm:px-6">
+            <div className="mx-auto grid max-w-7xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 sm:flex sm:justify-between sm:gap-6">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-800">A welcome reward</p>
+                <p className="text-sm font-semibold leading-5 text-slate-900">Sign up as a client and verify your identity to get a ₱50 travel-fee voucher.</p>
+              </div>
+              <button type="button" onClick={dismissGuestVoucherAd} aria-label="Dismiss voucher promotion" title="Dismiss promotion" className="col-start-2 row-start-1 inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 sm:order-last">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" className="h-5 w-5"><path d="m6 6 12 12M18 6 6 18" /></svg>
+              </button>
+              <div className="col-start-1 row-start-2 flex items-center sm:ml-auto">
+                <button type="button" onClick={() => navigate("/signup?role=client")} className="min-h-10 rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800">Sign Up</button>
+              </div>
+            </div>
+          </aside>
+        )}
+        {authIntercept && (
+          <div className="fixed inset-0 z-90 flex items-center justify-center bg-slate-950/55 p-4" onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setAuthIntercept(null);
+          }}>
+            <section role="dialog" aria-modal="true" aria-labelledby="auth-intercept-title" className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+              <div className="flex items-start justify-between gap-4">
+                <h2 id="auth-intercept-title" className="text-xl font-bold text-slate-950">Log in to continue</h2>
+                <button type="button" onClick={() => setAuthIntercept(null)} aria-label="Close sign-in prompt" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" strokeLinecap="round" /></svg>
+                </button>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-slate-600">Please log in or create a TaskPanda account to book this service provider.</p>
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => continueToAuth("/login")} className="min-h-11 rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Log In</button>
+                <button type="button" onClick={() => continueToAuth("/signup")} className="min-h-11 rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800">Create account</button>
+              </div>
+            </section>
+          </div>
+        )}
         {showSearchLocationPicker && (
           <div
             className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/50 p-3 sm:p-5"

@@ -4,6 +4,7 @@ import { useNavigate, useLocation, Link } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import SocialButton from "../components/SocialButton.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
+import { getSafeInternalPath } from "../utils/safeRedirect.js";
 
 function formatWaitTime(totalSeconds) {
   const minutes = Math.floor(totalSeconds / 60);
@@ -11,33 +12,11 @@ function formatWaitTime(totalSeconds) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-function getSafeReturnPath(from) {
-  const pathname = typeof from === "string" ? from : from?.pathname;
-  if (
-    typeof pathname !== "string"
-    || !pathname.startsWith("/")
-    || pathname.startsWith("//")
-    || pathname.includes("\\")
-    || /[\u0000-\u001f\u007f]/.test(pathname)
-  ) {
-    return null;
-  }
-
-  const search = typeof from === "object" && typeof from.search === "string" && from.search.startsWith("?")
-    ? from.search
-    : "";
-  const hash = typeof from === "object" && typeof from.hash === "string" && from.hash.startsWith("#")
-    ? from.hash
-    : "";
-
-  try {
-    const destination = new URL(`${pathname}${search}${hash}`, window.location.origin);
-    return destination.origin === window.location.origin && !destination.pathname.startsWith("//")
-      ? `${destination.pathname}${destination.search}${destination.hash}`
-      : null;
-  } catch {
-    return null;
-  }
+function getAuthReturnPath(location) {
+  const redirectTo = new URLSearchParams(location.search).get("redirectTo");
+  return getSafeInternalPath(location.state?.from)
+    || getSafeInternalPath(redirectTo)
+    || getSafeInternalPath(sessionStorage.getItem("taskpanda_post_auth_redirect"));
 }
 
 export default function LoginPage() {
@@ -224,7 +203,9 @@ export default function LoginPage() {
           : data.role === "admin"
           ? "/admin"
           : "/dashboard";
-        navigate(getSafeReturnPath(location.state?.from) || destination);
+        const returnPath = getAuthReturnPath(location);
+        if (returnPath) sessionStorage.removeItem("taskpanda_post_auth_redirect");
+        navigate(returnPath || destination);
       } else {
         if (data.requiresEmailVerification) {
           const email = data.email || formData.email;
@@ -272,7 +253,9 @@ export default function LoginPage() {
       const role = data.role || loggedInUser.role || loginOtpRole;
       login({ ...loggedInUser, role }, data.token, formData.remember);
       const destination = role === "provider" ? "/provider-dashboard" : "/dashboard";
-      navigate(getSafeReturnPath(location.state?.from) || destination);
+      const returnPath = getAuthReturnPath(location);
+      if (returnPath) sessionStorage.removeItem("taskpanda_post_auth_redirect");
+      navigate(returnPath || destination);
     } catch {
       setServerError("Network error. Please check your connection and try again.");
     } finally {
@@ -375,7 +358,9 @@ export default function LoginPage() {
 
       const adminUser = data.user || { email: formData.email, role: "admin" };
       login({ ...adminUser, role: "admin" }, data.token, formData.remember);
-      navigate(getSafeReturnPath(location.state?.from) || "/admin");
+      const returnPath = getAuthReturnPath(location);
+      if (returnPath) sessionStorage.removeItem("taskpanda_post_auth_redirect");
+      navigate(returnPath || "/admin");
     } catch {
       setServerError("Network error. Please check your connection and try again.");
     } finally {

@@ -4,6 +4,7 @@ const { handleDiscoverProviders, handleDiscoverProviderMapMarkers, handleGetProv
 const { handleUpdateProviderPreferences } = require("../controllers/profileController");
 const { validateRequest } = require("../middleware/validateRequest");
 const { requireAuth, requireRole } = require("../middleware/requireAuth");
+const { limitPublicProviderSearch } = require("../middleware/rateLimits");
 
 const router = express.Router();
 
@@ -22,11 +23,11 @@ router.patch(
   validateRequest,
   handleUpdateProviderPreferences
 );
-router.get("/map", requireAuth, [
+router.get("/map", limitPublicProviderSearch, [
   query("latitude").isFloat({ min: -90, max: 90 }),
   query("longitude").isFloat({ min: -180, max: 180 }),
 ], validateRequest, handleDiscoverProviderMapMarkers);
-router.get("/", handleDiscoverProviders);
-router.get("/:providerId/profile", param("providerId").isMongoId(), validateRequest, handleGetProviderProfile);
+router.get("/", limitPublicProviderSearch, handleDiscoverProviders);
+router.get("/:providerId/profile", limitPublicProviderSearch, param("providerId").isMongoId(), validateRequest, handleGetProviderProfile);
 
 module.exports = router;

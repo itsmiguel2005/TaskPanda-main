@@ -1,11 +1,14 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import RoleCard from "../components/RoleCard.jsx";
+import { getSafeInternalPath } from "../utils/safeRedirect.js";
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const [selectedRole, setSelectedRole] = useState("");
+  const [searchParams] = useSearchParams();
+  const roleIntent = searchParams.get("role");
+  const [selectedRole, setSelectedRole] = useState(() => ["client", "provider"].includes(roleIntent) ? roleIntent : "");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleBack = () => {
@@ -24,6 +27,9 @@ export default function RegisterPage() {
     e.preventDefault();
     console.log("[RegisterPage] handleSubmit, selectedRole:", selectedRole);
     if (!selectedRole) return;
+    const redirectTo = getSafeInternalPath(searchParams.get("redirectTo"));
+    if (redirectTo) sessionStorage.setItem("taskpanda_post_auth_redirect", redirectTo);
+    else sessionStorage.removeItem("taskpanda_post_auth_redirect");
 
     if (selectedRole === "client") {
       console.log("[RegisterPage] navigating to /client-register");

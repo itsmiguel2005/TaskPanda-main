@@ -27,6 +27,88 @@ function readNotificationPermission() {
   return window.Notification.permission;
 }
 
+function GuestNavigationHeader({ logoColor }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const location = useLocation();
+
+  const sectionLink = (id) => ({
+    to: `/#${id}`,
+    onClick: (event) => {
+      if (location.pathname !== "/") return;
+      const section = document.getElementById(id);
+      if (!section) return;
+      event.preventDefault();
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+      setMobileOpen(false);
+    },
+  });
+
+  const links = [
+    { label: "Explore Services", to: "/explore" },
+    { label: "How It Works", ...sectionLink("how-it-works") },
+    { label: "Why Us", ...sectionLink("built-for-trust") },
+  ];
+
+  return (
+    <header className="sticky top-0 z-50 border-b border-gray-100 bg-white/90 backdrop-blur-md">
+      <div className="container mx-auto flex h-16 items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+        <Link to="/" className={`shrink-0 text-2xl font-extrabold tracking-tight ${logoColor}`} aria-label="TaskPanda home">
+          <span className="text-black">Task</span>Panda
+        </Link>
+
+        <nav aria-label="Main navigation" className="hidden items-center justify-center gap-1 md:flex">
+          {links.map((link) => (
+            <Link key={link.label} {...link} className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+
+        <div className="hidden shrink-0 items-center gap-2 md:flex">
+          <Link to="/login" className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
+            Log In
+          </Link>
+          <Link to="/signup" className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
+            Sign Up
+          </Link>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setMobileOpen((open) => !open)}
+          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 md:hidden"
+          aria-label={mobileOpen ? "Close navigation menu" : "Open navigation menu"}
+          aria-expanded={mobileOpen}
+          aria-controls="guest-navigation-drawer"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true" className="h-6 w-6">
+            {mobileOpen ? <path d="m6 6 12 12M18 6 6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
+          </svg>
+        </button>
+      </div>
+
+      {mobileOpen && (
+        <div id="guest-navigation-drawer" className="border-t border-gray-100 bg-white px-4 py-4 shadow-lg md:hidden">
+          <nav aria-label="Mobile navigation" className="flex flex-col gap-1">
+            {links.map((link) => (
+              <Link key={link.label} {...link} onClick={(event) => {
+                link.onClick?.(event);
+                setMobileOpen(false);
+              }} className="rounded-lg px-3 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-gray-100 pt-3">
+            <Link to="/login" onClick={() => setMobileOpen(false)} className="rounded-lg border border-slate-200 px-4 py-3 text-center text-sm font-semibold text-slate-700">Log In</Link>
+            <Link to="/signup" onClick={() => setMobileOpen(false)} className="rounded-lg bg-blue-700 px-4 py-3 text-center text-sm font-semibold text-white">Sign Up</Link>
+          </div>
+        </div>
+      )}
+    </header>
+  );
+}
+
 export default function Header({ logoColor = "text-primary-700", showNav = false, activeTab = "Home", role = "client" }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -635,6 +717,8 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   const availablePerkCount = (user?.vouchers || []).filter((voucher) =>
     voucher.status === "active" && (!voucher.expiresAt || new Date(voucher.expiresAt) > new Date())
   ).length;
+
+  if (!isLoggedIn) return <GuestNavigationHeader logoColor={logoColor} />;
 
   return (
     <header className="fixed inset-x-0 top-0 z-30 bg-white/80 backdrop-blur-md shadow-sm">

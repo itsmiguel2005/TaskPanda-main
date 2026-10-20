@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 
 const options = [
@@ -15,9 +15,10 @@ const options = [
 ];
 
 export default function DashboardDensityToggle({ persona = "client", iconOnly = false, preferenceKey = "dashboard" }) {
-  const { user, updateDashboardDensityPreference, updateProviderDensityPreference } = useAuth();
+  const { user, isLoggedIn, updateDashboardDensityPreference, updateProviderDensityPreference } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
+  const [guestNoticeVisible, setGuestNoticeVisible] = useState(false);
   const isProviderPreference = preferenceKey.startsWith("provider");
   const preferenceField = isProviderPreference ? `${preferenceKey}DensityPreference` : "dashboardDensityPreference";
   const preference = user?.[preferenceField] === "compact" ? "compact" : "comfortable";
@@ -25,9 +26,28 @@ export default function DashboardDensityToggle({ persona = "client", iconOnly = 
     ? persona === "provider" ? "border-emerald-200 bg-emerald-50 text-emerald-600 shadow-sm" : "border-blue-200 bg-blue-50 text-blue-600 shadow-sm"
     : persona === "provider" ? "bg-emerald-600 text-white shadow-sm" : "bg-blue-600 text-white shadow-sm";
 
+  useEffect(() => {
+    if (isLoggedIn || error !== "Sign in to save your display preference.") {
+      setGuestNoticeVisible(false);
+      return undefined;
+    }
+
+    setGuestNoticeVisible(true);
+    const fadeTimer = window.setTimeout(() => setGuestNoticeVisible(false), 2500);
+    const clearTimer = window.setTimeout(() => setError(""), 2800);
+    return () => {
+      window.clearTimeout(fadeTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [error, isLoggedIn]);
+
   const handleChange = async (value) => {
     if (value === preference || isSaving) return;
     setError("");
+    if (!isLoggedIn) {
+      setError("Sign in to save your display preference.");
+      return;
+    }
     setIsSaving(true);
     try {
       if (isProviderPreference) {
@@ -43,7 +63,7 @@ export default function DashboardDensityToggle({ persona = "client", iconOnly = 
   };
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="relative flex flex-col items-end">
       <div role="group" aria-label="Display density" className="inline-flex rounded-xl border border-slate-200 bg-white p-1">
         {options.map((option) => {
           const selected = preference === option.value;
@@ -64,7 +84,7 @@ export default function DashboardDensityToggle({ persona = "client", iconOnly = 
           );
         })}
       </div>
-      {error && <p role="alert" className="max-w-56 text-right text-xs font-medium text-rose-700">{error}</p>}
+      {error && <p role={isLoggedIn ? "alert" : "status"} aria-hidden={!isLoggedIn && !guestNoticeVisible} className={`absolute right-0 top-full z-10 mt-1 w-max max-w-56 text-right text-xs font-medium transition-opacity duration-300 ${isLoggedIn ? "text-rose-700" : `text-slate-600 ${guestNoticeVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}`}>{error}</p>}
     </div>
   );
 }

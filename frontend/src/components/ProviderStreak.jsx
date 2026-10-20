@@ -1,8 +1,9 @@
-export default function ProviderStreak({ streak, variant = "compact", className = "" }) {
+export default function ProviderStreak({ streak, variant = "compact", className = "", showStreak = true }) {
   const count = Math.max(0, Number(streak?.count) || 0);
   const milestone = Number(streak?.milestone) || 0;
   const nextMilestone = Number(streak?.nextMilestone) || 0;
   const isProfile = variant === "profile";
+  if (!showStreak) return null;
   if (!count && !isProfile) return null;
 
   if (variant === "inline") {

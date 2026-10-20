@@ -51,6 +51,8 @@ export default function ProviderProfileModal({
   provider,
   onClose,
   onBook,
+  onContact,
+  showProviderStreak = true,
   isFavorite = false,
   onToggleFavorite,
 }) {
@@ -243,7 +245,7 @@ export default function ProviderProfileModal({
             </p>
           </section>
 
-          <ProviderStreak streak={provider?.onTimeStreak} variant="profile" />
+          <ProviderStreak streak={provider?.onTimeStreak} variant="profile" showStreak={showProviderStreak} />
 
           <section aria-labelledby="provider-reviews-heading">
             <div className="flex items-center justify-between gap-3">
@@ -339,6 +341,7 @@ export default function ProviderProfileModal({
 
         <footer className="flex shrink-0 flex-col-reverse gap-2 border-t border-sky-100 bg-white px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
           <button type="button" onClick={onClose} className="dashboard-secondary-button dashboard-focus px-5 py-2.5 text-sm">Close</button>
+          {onContact && <button type="button" onClick={onContact} className="dashboard-secondary-button dashboard-focus px-5 py-2.5 text-sm">Contact provider</button>}
           <button
             type="button"
             onClick={() => onBook({ ...provider, ...profile, _id: provider?._id || provider?.id || profile?.id })}

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import { categories } from "../components/ClientDashboard.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -138,9 +138,19 @@ function StarIcon({ filled }) {
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isVerified } = useAuth();
   const [howTab, setHowTab] = useState("client");
   const [showVerifyPrompt, setShowVerifyPrompt] = useState(false);
+
+  useEffect(() => {
+    const sectionId = location.hash.slice(1);
+    if (!sectionId) return undefined;
+    const frameId = window.requestAnimationFrame(() => {
+      document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [location.hash]);
 
   const pricingSummary = [
     { label: "Aircon tune-up", value: "₱1,299" },
@@ -149,7 +159,7 @@ export default function LandingPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-sky-50/60 pt-16 text-slate-900">
+    <div className="min-h-screen bg-sky-50/60 text-slate-900">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
         :root {
@@ -191,6 +201,11 @@ export default function LandingPage() {
                   Trusted local home help
                 </div>
 
+                <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-900">
+                  <span aria-hidden="true">🛡️</span>
+                  Instant PhilSys OCR Identity Verification
+                </div>
+
                 <h1 className="landing-enter landing-enter-1 mt-6 text-[clamp(2.8rem,4vw,5rem)] font-black leading-[0.96] tracking-[-0.07em] text-slate-900">
                   Find trusted local
                   <span className="block text-blue-600">
@@ -225,7 +240,7 @@ export default function LandingPage() {
                     </div>
 
                     <button
-                      onClick={() => navigate("/login")}
+                      onClick={() => navigate("/explore")}
                       className="landing-interactive flex min-h-16 items-center justify-center rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-600"
                     >
                       Explore
@@ -339,7 +354,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="py-16">
+        <section id="built-for-trust" className="scroll-mt-20 py-16">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="mb-10 text-center">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
@@ -386,7 +401,7 @@ export default function LandingPage() {
               {categoryCards.map((card) => (
                 <button
                   key={card.name}
-                  onClick={() => navigate(`/explore?service=${encodeURIComponent(card.name)}`)}
+                  onClick={() => navigate(`/explore?category=${encodeURIComponent(card.name)}`)}
                   className={`landing-interactive rounded-[1.6rem] border bg-linear-to-br p-5 text-left shadow-[0_16px_48px_rgba(15,23,42,0.05)] ${card.tone}`}
                 >
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/80 text-2xl shadow-sm">
@@ -402,7 +417,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="bg-white py-16">
+        <section id="how-it-works" className="scroll-mt-20 bg-white py-16">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="mb-10 text-center">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
@@ -526,7 +541,7 @@ export default function LandingPage() {
                 </ul>
 
                 <button
-                  onClick={() => navigate("/register")}
+                  onClick={() => navigate("/signup?role=client")}
                   className="landing-interactive mt-8 rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800"
                 >
                   Book a service
@@ -546,13 +561,13 @@ export default function LandingPage() {
             </h2>
             <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
               <button
-                onClick={() => navigate("/register")}
+                onClick={() => navigate("/signup?role=client")}
                 className="landing-interactive rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-900 hover:bg-sky-50"
               >
                 Book a service
               </button>
               <button
-                onClick={() => navigate("/login")}
+                onClick={() => navigate("/signup?role=provider")}
                 className="landing-interactive rounded-full border border-white/30 bg-transparent px-6 py-3 text-sm font-semibold text-white hover:bg-white/5"
               >
                 Sign up as a provider

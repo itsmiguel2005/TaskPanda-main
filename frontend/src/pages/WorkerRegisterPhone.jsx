@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import PhilippineMobileInput from "../components/PhilippineMobileInput.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
+import { getSafeInternalPath } from "../utils/safeRedirect.js";
 import { clearRegistrationDraft, readRegistrationDraft, saveRegistrationDraft } from "../utils/registrationDraft.js";
 import { getPhilippineMobileInputValue, normalizePhilippineMobile } from "../utils/registrationValidation.js";
 
@@ -98,7 +99,9 @@ export default function WorkerRegisterPhone() {
       clearRegistrationDraft("workerPhoneStep");
       sessionStorage.removeItem("taskpanda_onboarding_token");
       login(data.user, data.token, false);
-      navigate("/provider-dashboard", { replace: true });
+      const redirectTo = getSafeInternalPath(sessionStorage.getItem("taskpanda_post_auth_redirect"));
+      sessionStorage.removeItem("taskpanda_post_auth_redirect");
+      navigate(redirectTo || "/provider-dashboard", { replace: true });
     } catch {
       setError("Network error. Please try again.");
     } finally {
