@@ -94,6 +94,55 @@ async function sendPasswordResetEmail(email, code, loginEmail = email) {
   });
 }
 
+async function sendPasswordChangedEmail(email) {
+  const text = "Your TaskPanda Account password has been changed successfully. If you did not initiate this change, please contact support immediately.";
+  const result = await sendVerificationMailWithRetry(() => mailTransport.sendMail({
+    from: taskPandaSender,
+    to: email,
+    subject: "[TaskPanda] Your password was changed successfully",
+    text: `${text}\n\nContact Support: mailto:support@taskpanda.ph`,
+    html: `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      @media only screen and (max-width: 600px) {
+        .email-card { padding: 24px 18px !important; }
+        .email-title { font-size: 24px !important; }
+      }
+    </style>
+  </head>
+  <body style="margin:0;padding:24px 12px;background-color:#f3f4f6;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;margin:0 auto;background-color:#ffffff;border-radius:12px;">
+      <tr>
+        <td class="email-card" style="padding:36px 32px;">
+          <h1 class="email-title" style="margin:0 0 20px;font-size:28px;line-height:1.3;color:#111827;">Your TaskPanda Account password was reset</h1>
+          <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">${text}</p>
+          <a href="mailto:support@taskpanda.ph" style="display:inline-block;padding:13px 20px;background-color:#16a34a;border-radius:8px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;">Contact Support</a>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`,
+  }));
+  const acceptedRecipients = (result.accepted || []).map((recipient) =>
+    String(typeof recipient === "string" ? recipient : recipient.address || "").trim().toLowerCase()
+  );
+  if (!acceptedRecipients.includes(String(email).trim().toLowerCase())) {
+    console.error("SMTP did not accept the password changed email recipient:", {
+      acceptedCount: acceptedRecipients.length,
+      rejectedCount: result.rejected?.length || 0,
+    });
+    throw new Error("The email provider did not accept the password changed message.");
+  }
+  console.log("Password changed email accepted by SMTP:", {
+    messageId: result.messageId,
+    acceptedCount: acceptedRecipients.length,
+    rejectedCount: result.rejected?.length || 0,
+  });
+}
+
 async function sendAdminAccountSetupEmail(destinationEmail, loginEmail, setupToken) {
   const setupUrl = new URL("/forgot-password", `${config.appUrl}/`);
   setupUrl.searchParams.set("email", String(loginEmail).trim().toLowerCase());
@@ -203,4 +252,5 @@ module.exports = {
   sendOtpEmail,
   sendEmailVerificationEmail,
   sendPasswordResetEmail,
+  sendPasswordChangedEmail,
 };

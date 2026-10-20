@@ -41,6 +41,18 @@ const {
   loginLockResponse,
 } = require("../middleware/authAttempts");
 
+function sendPasswordChangedNotification(email) {
+  if (!mailer.hasValidSmtpCredentials) {
+    console.warn("Password changed email was not sent because SMTP credentials are not configured.");
+    return;
+  }
+  void Promise.resolve()
+    .then(() => mailer.sendPasswordChangedEmail(email))
+    .catch((error) => {
+      console.error("Password changed email delivery failed:", error);
+    });
+}
+
 const hashToken = (token) => createHash("sha256").update(token).digest("hex");
 const registrationSessionCookie = "taskpanda_registration";
 const ADMIN_LOGIN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
@@ -1762,6 +1774,7 @@ async function handleResetPassword(req, res) {
     );
     if (!resetResult.matchedCount) return res.status(400).json({ message: "The reset code is missing or expired." });
     clearLoginAttempts(email);
+    sendPasswordChangedNotification(user.email);
     return res.json({ message: "Password reset successfully." });
   } catch (error) {
     console.error("Reset password error:", error);
