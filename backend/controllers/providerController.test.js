@@ -18,6 +18,8 @@ test("public provider discovery payloads exclude contact and identity verificati
     averageRating: 4.8,
     totalReviews: 12,
     distanceKm: 2.5,
+    lastActive: "2026-10-20T14:00:00.000Z",
+    isOnline: true,
     tesdaCertificates: [{ trade: "Plumbing", status: "approved", certificateUrl: "/private.pdf" }],
   });
 
@@ -28,7 +30,9 @@ test("public provider discovery payloads exclude contact and identity verificati
     "city",
     "distanceKm",
     "fullName",
+    "isOnline",
     "isVerified",
+    "lastActive",
     "onTimeStreak",
     "profileImage",
     "professions",
@@ -39,6 +43,8 @@ test("public provider discovery payloads exclude contact and identity verificati
     "verificationStatus",
   ].sort());
   assert.equal(publicProvider.fullName, "Dagupan Home Repair");
+  assert.equal(publicProvider.lastActive, "2026-10-20T14:00:00.000Z");
+  assert.equal(publicProvider.isOnline, true);
   assert.deepEqual(publicProvider.tesdaCertificates, [{ trade: "Plumbing", status: "approved" }]);
   assert.equal(publicProvider.bio.includes("service@example.com"), false);
   assert.equal(publicProvider.bio.includes("+63 917 123 4567"), false);
@@ -52,6 +58,8 @@ test("public provider discovery payloads exclude contact and identity verificati
     username: "maria.santos",
   });
   assert.equal(providerWithoutShopName.fullName, "Maria Santos");
+  assert.equal(providerWithoutShopName.lastActive, null);
+  assert.equal(providerWithoutShopName.isOnline, false);
 });
 
 test("public text masking leaves non-contact text intact", () => {

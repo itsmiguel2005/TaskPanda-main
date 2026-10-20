@@ -36,6 +36,8 @@ function toPublicProvider(provider, streak) {
     city: provider.city || "",
     province: provider.province || "",
     distanceKm: Number(provider.distanceKm || 0),
+    lastActive: provider.lastActive || null,
+    isOnline: provider.isOnline === true,
     tesdaCertificates: Array.isArray(provider.tesdaCertificates)
       ? provider.tesdaCertificates.map((certificate) => ({ trade: certificate.trade || "", status: "approved" }))
       : [],
@@ -132,6 +134,8 @@ async function handleDiscoverProviders(req, res) {
                 totalReviews: 1,
                 province: 1,
                 city: 1,
+                lastActive: 1,
+                isOnline: 1,
                 distanceKm: { $round: [{ $divide: ["$distanceMeters", 1000] }, 2] },
                 tesdaCertificates: {
                   $map: {
@@ -154,6 +158,7 @@ async function handleDiscoverProviders(req, res) {
     ]);
 
     const providerStreaks = await getProviderStreaks(result.providers.map((provider) => provider._id));
+    res.set("Cache-Control", "private, no-store");
     return res.json({
       providers: result.providers.map((provider) => toPublicProvider(
         provider,
