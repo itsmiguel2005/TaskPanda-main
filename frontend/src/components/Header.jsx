@@ -52,8 +52,9 @@ function GuestNavigationHeader({ logoColor }) {
   return (
     <header className="sticky top-0 z-50 border-b border-gray-100 bg-white/90 backdrop-blur-md">
       <div className="container mx-auto flex h-16 items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
-        <Link to="/" className={`shrink-0 text-2xl font-extrabold tracking-tight ${logoColor}`} aria-label="TaskPanda home">
-          <span className="text-black">Task</span>Panda
+        <Link to="/" className={`flex shrink-0 items-center gap-2 text-2xl font-extrabold tracking-tight ${logoColor}`} aria-label="TaskPanda home">
+          <img src="/assets/taskpanda-logo.jpg" alt="" aria-hidden="true" className="h-10 w-10 shrink-0 object-contain" />
+          <span><span className="text-black">Task</span>Panda</span>
         </Link>
 
         <nav aria-label="Main navigation" className="hidden items-center justify-center gap-1 md:flex">
@@ -724,8 +725,9 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     <header className="fixed inset-x-0 top-0 z-30 bg-white/80 backdrop-blur-md shadow-sm">
       <div className="container mx-auto flex h-16 items-center justify-between gap-2 px-4 sm:px-6 lg:px-8">
         <div className="flex min-w-0 shrink-0 items-center justify-start gap-3">
-          <Link to="/" className={`text-2xl font-extrabold tracking-tight ${logoColor}`}>
-            <span className="text-black">Task</span>Panda
+          <Link to="/" className={`flex items-center gap-2 text-2xl font-extrabold tracking-tight ${logoColor}`} aria-label="TaskPanda home">
+            <img src="/assets/taskpanda-logo.jpg" alt="" aria-hidden="true" className="h-10 w-10 shrink-0 object-contain" />
+            <span><span className="text-black">Task</span>Panda</span>
           </Link>
         </div>
 

@@ -6,9 +6,12 @@ export default function Footer({ theme = "primary" }) {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <a href="/" className="text-2xl font-extrabold tracking-tight">
-              <span className="text-gray-900">Task</span>
-              <span className="text-primary-700">Panda</span>
+            <a href="/" className="flex items-center gap-2 text-2xl font-extrabold tracking-tight" aria-label="TaskPanda home">
+              <img src="/assets/taskpanda-logo.jpg" alt="" aria-hidden="true" className="h-10 w-10 shrink-0 object-contain" />
+              <span>
+                <span className="text-gray-900">Task</span>
+                <span className="text-primary-700">Panda</span>
+              </span>
             </a>
             <p className="mt-3 text-sm leading-relaxed text-gray-500">
               Connecting homeowners with trusted local tradespeople since 2026.
