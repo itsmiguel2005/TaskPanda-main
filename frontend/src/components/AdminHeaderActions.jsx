@@ -210,7 +210,7 @@ export default function AdminHeaderActions() {
       message: pushPromptStatus === "unavailable"
         ? "Browser alerts are not configured for TaskPanda on this site."
         : pushPromptStatus === "error"
-          ? "Could not open the browser alert prompt. Try again."
+          ? "OneSignal could not start. Reload this page and try again."
           : "Choose Allow in your browser to receive alerts.",
       className: "bg-amber-50 text-amber-800",
     },
@@ -341,11 +341,15 @@ export default function AdminHeaderActions() {
               {notificationPermission === "default" && pushPromptStatus !== "unavailable" && (
                 <button
                   type="button"
-                  onClick={handleEnableAlerts}
+                  onClick={() => pushPromptStatus === "error" ? window.location.reload() : handleEnableAlerts()}
                   disabled={isPrompting}
                   className="mt-2 inline-flex min-h-10 items-center text-sm font-semibold text-blue-800 transition hover:text-blue-950 focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {isPrompting ? "Opening browser prompt…" : "Enable browser alerts"}
+                  {isPrompting
+                    ? "Opening browser prompt…"
+                    : pushPromptStatus === "error"
+                      ? "Reload to retry"
+                      : "Enable browser alerts"}
                 </button>
               )}
             </div>

@@ -78,6 +78,72 @@ test("password reset responds successfully without waiting for notification emai
   }
 });
 
+test("invalid password-reset codes atomically increment the per-account attempt counter", async () => {
+  const user = {
+    _id: "user-id",
+    email: "user@example.com",
+    passwordHash: await bcrypt.hash("OldPass1!", 4),
+    passwordResetTokenHash: await bcrypt.hash("123456", 4),
+    passwordResetExpiresAt: new Date(Date.now() + 60_000),
+    passwordResetAttempts: 0,
+  };
+  User.findOne = () => ({ select: async () => user });
+  let updateQuery;
+  let updateDocument;
+  User.updateOne = async (query, update) => {
+    updateQuery = query;
+    updateDocument = update;
+    return { matchedCount: 1 };
+  };
+
+  try {
+    const response = createResponse();
+    await handleResetPassword({
+      body: { email: user.email, code: "654321", password: "NewPass1!" },
+    }, response);
+
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.body.message, "The reset code is incorrect.");
+    assert.equal(updateQuery._id, user._id);
+    assert.equal(updateQuery.passwordResetTokenHash, user.passwordResetTokenHash);
+    assert.equal(updateQuery.$or.length, 2);
+    assert.deepEqual(updateDocument, { $inc: { passwordResetAttempts: 1 } });
+  } finally {
+    User.findOne = originalFindOne;
+    User.updateOne = originalUpdateOne;
+  }
+});
+
+test("password reset rejects codes after the per-account attempt limit", async () => {
+  const user = {
+    _id: "user-id",
+    email: "user@example.com",
+    passwordResetTokenHash: await bcrypt.hash("123456", 4),
+    passwordResetExpiresAt: new Date(Date.now() + 60_000),
+    passwordResetAttempts: 5,
+  };
+  User.findOne = () => ({ select: async () => user });
+  let updateCalled = false;
+  User.updateOne = async () => {
+    updateCalled = true;
+    return { matchedCount: 1 };
+  };
+
+  try {
+    const response = createResponse();
+    await handleResetPassword({
+      body: { email: user.email, code: "123456", password: "NewPass1!" },
+    }, response);
+
+    assert.equal(response.statusCode, 400);
+    assert.match(response.body.message, /too many incorrect reset codes/i);
+    assert.equal(updateCalled, false);
+  } finally {
+    User.findOne = originalFindOne;
+    User.updateOne = originalUpdateOne;
+  }
+});
+
 test.after(() => {
   User.findOne = originalFindOne;
   User.updateOne = originalUpdateOne;

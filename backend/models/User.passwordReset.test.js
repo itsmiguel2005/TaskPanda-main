@@ -12,6 +12,12 @@ test("user schema stores only a hidden reset-token hash and its expiry", () => {
   assert.ok(expiresAt, "passwordResetExpiresAt should exist on the user schema");
   assert.equal(expiresAt.instance, "Date");
   assert.equal(expiresAt.options.select, false);
+
+  const attempts = User.schema.path("passwordResetAttempts");
+  assert.ok(attempts, "passwordResetAttempts should exist on the user schema");
+  assert.equal(attempts.instance, "Number");
+  assert.equal(attempts.options.default, 0);
+  assert.equal(attempts.options.select, false);
 });
 
 test("user schema stores only a hidden admin setup-token hash and its expiry", () => {

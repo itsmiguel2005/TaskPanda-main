@@ -17,12 +17,7 @@ export function initializeOneSignal() {
           prompts: [{ type: "push", autoPrompt: false, delay: { pageViews: 1 } }],
         },
       },
-    })
-      .then(() => OneSignal)
-      .catch((error) => {
-        initializationPromise = null;
-        throw error;
-      });
+    }).then(() => OneSignal);
   }
 
   return initializationPromise;
@@ -48,6 +43,17 @@ export async function clearOneSignalIdentity() {
 }
 
 export async function promptForPushPermission() {
+  if (
+    typeof window === "undefined"
+    || !("Notification" in window)
+    || !("serviceWorker" in navigator)
+    || !window.isSecureContext
+    || !OneSignal.Notifications.isPushSupported()
+  ) {
+    return "unsupported";
+  }
+  if (window.Notification.permission === "denied") return "denied";
+
   const oneSignal = await initializeOneSignal();
   if (!oneSignal) return "unavailable";
   if (!oneSignal.Notifications.isPushSupported()) return "unsupported";

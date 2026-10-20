@@ -1872,14 +1872,24 @@ async function processCashSettlementFallbacks() {
         cashPaidAutoConfirmed: booking.cashPaidAutoConfirmed || !booking.cashPaidConfirmedAt,
         cashReceivedAutoConfirmed: booking.cashReceivedAutoConfirmed || !booking.cashReceivedConfirmedAt,
       };
-      await Booking.findByIdAndUpdate(
-        booking._id,
+      const settledBooking = await Booking.findOneAndUpdate(
+        {
+          _id: booking._id,
+          status: "complete",
+          paymentMethod: "cash",
+          workCompletedAt: { $lte: cutoff },
+          $or: [
+            { clientConfirmedCash: { $ne: true } },
+            { providerConfirmedCash: { $ne: true } },
+          ],
+        },
         {
           $set: updatePayload,
           $push: { statusHistory: { status: nextStatus, at: autoSettledAt } },
         },
         { new: true }
       );
+      if (!settledBooking) continue;
       try {
         await awardSettledBookingStamp(booking._id);
       } catch (stampError) {

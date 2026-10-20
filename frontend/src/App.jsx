@@ -98,11 +98,19 @@ function ProtectedRoute({ children, roles }) {
   }
 
   if (!isLoggedIn) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    return <Navigate
+      to="/login"
+      replace
+      state={{ from: { pathname: location.pathname, search: location.search, hash: location.hash } }}
+    />;
   }
 
   if (user?.emailVerified === false || user?.registrationComplete === false) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    return <Navigate
+      to="/login"
+      replace
+      state={{ from: { pathname: location.pathname, search: location.search, hash: location.hash } }}
+    />;
   }
 
   if (roles && !roles.includes(role)) {

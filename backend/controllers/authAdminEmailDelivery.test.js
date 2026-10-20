@@ -105,7 +105,7 @@ test("failed reset email delivery clears the unusable reset code", async () => {
       passwordResetTokenHash: updates[0][1].$set.passwordResetTokenHash,
     });
     assert.deepEqual(updates[1][1], {
-      $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 },
+      $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1, passwordResetAttempts: 1 },
     });
   } finally {
     User.findOne = originalFindOne;

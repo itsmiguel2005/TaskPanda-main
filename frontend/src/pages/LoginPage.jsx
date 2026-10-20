@@ -11,6 +11,35 @@ function formatWaitTime(totalSeconds) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+function getSafeReturnPath(from) {
+  const pathname = typeof from === "string" ? from : from?.pathname;
+  if (
+    typeof pathname !== "string"
+    || !pathname.startsWith("/")
+    || pathname.startsWith("//")
+    || pathname.includes("\\")
+    || /[\u0000-\u001f\u007f]/.test(pathname)
+  ) {
+    return null;
+  }
+
+  const search = typeof from === "object" && typeof from.search === "string" && from.search.startsWith("?")
+    ? from.search
+    : "";
+  const hash = typeof from === "object" && typeof from.hash === "string" && from.hash.startsWith("#")
+    ? from.hash
+    : "";
+
+  try {
+    const destination = new URL(`${pathname}${search}${hash}`, window.location.origin);
+    return destination.origin === window.location.origin && !destination.pathname.startsWith("//")
+      ? `${destination.pathname}${destination.search}${destination.hash}`
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -195,7 +224,7 @@ export default function LoginPage() {
           : data.role === "admin"
           ? "/admin"
           : "/dashboard";
-        navigate(destination);
+        navigate(getSafeReturnPath(location.state?.from) || destination);
       } else {
         if (data.requiresEmailVerification) {
           const email = data.email || formData.email;
@@ -242,7 +271,8 @@ export default function LoginPage() {
       const loggedInUser = data.user || { email: formData.email, role: loginOtpRole };
       const role = data.role || loggedInUser.role || loginOtpRole;
       login({ ...loggedInUser, role }, data.token, formData.remember);
-      navigate(role === "provider" ? "/provider-dashboard" : "/dashboard");
+      const destination = role === "provider" ? "/provider-dashboard" : "/dashboard";
+      navigate(getSafeReturnPath(location.state?.from) || destination);
     } catch {
       setServerError("Network error. Please check your connection and try again.");
     } finally {
@@ -345,7 +375,7 @@ export default function LoginPage() {
 
       const adminUser = data.user || { email: formData.email, role: "admin" };
       login({ ...adminUser, role: "admin" }, data.token, formData.remember);
-      navigate("/admin");
+      navigate(getSafeReturnPath(location.state?.from) || "/admin");
     } catch {
       setServerError("Network error. Please check your connection and try again.");
     } finally {

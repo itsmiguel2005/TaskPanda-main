@@ -54,12 +54,32 @@ function sendPasswordChangedNotification(email) {
 }
 
 const hashToken = (token) => createHash("sha256").update(token).digest("hex");
+const PASSWORD_RESET_MAX_ATTEMPTS = 5;
 const registrationSessionCookie = "taskpanda_registration";
 const ADMIN_LOGIN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const LOGIN_OTP_TTL_MS = 5 * 60 * 1000;
 const TRUSTED_DEVICE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const TRUSTED_DEVICE_COOKIE = "taskpanda_device_trust";
 const personNamePattern = /^[\p{L}\p{M}]+(?:[ .'-][\p{L}\p{M}]+)*$/u;
+
+function passwordResetAttemptQuery(user) {
+  return {
+    _id: user._id,
+    passwordResetTokenHash: user.passwordResetTokenHash,
+    passwordResetExpiresAt: mongoose.trusted({ $gt: new Date() }),
+    $or: [
+      { passwordResetAttempts: mongoose.trusted({ $lt: PASSWORD_RESET_MAX_ATTEMPTS }) },
+      { passwordResetAttempts: mongoose.trusted({ $exists: false }) },
+    ],
+  };
+}
+
+async function recordFailedPasswordResetAttempt(user) {
+  const result = await User.updateOne(passwordResetAttemptQuery(user), {
+    $inc: { passwordResetAttempts: 1 },
+  });
+  return Boolean(result.matchedCount);
+}
 
 function getRequestCookie(req, name) {
   const parsedCookie = req.cookies?.[name];
@@ -1705,13 +1725,13 @@ async function handleForgotPassword(req, res) {
     const tokenHash = await bcrypt.hash(code, 10);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
     await User.updateOne({ _id: user._id }, {
-      $set: { passwordResetTokenHash: tokenHash, passwordResetExpiresAt: expiresAt },
+      $set: { passwordResetTokenHash: tokenHash, passwordResetExpiresAt: expiresAt, passwordResetAttempts: 0 },
     });
     try {
       await mailer.sendPasswordResetEmail(deliveryEmail, code, user.email);
     } catch (deliveryError) {
       await User.updateOne({ _id: user._id, passwordResetTokenHash: tokenHash }, {
-        $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 },
+        $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1, passwordResetAttempts: 1 },
       });
       throw deliveryError;
     }
@@ -1726,12 +1746,20 @@ async function handleVerifyPasswordResetCode(req, res) {
   try {
     const email = String(req.body.email || "").trim().toLowerCase();
     const code = String(req.body.code || "").trim();
-    const user = await User.findOne({ email }).select("+passwordResetTokenHash +passwordResetExpiresAt");
+    const user = await User.findOne({ email }).select("+passwordResetTokenHash +passwordResetExpiresAt +passwordResetAttempts");
     if (!user?.passwordResetTokenHash || !user.passwordResetExpiresAt || user.passwordResetExpiresAt <= new Date()) {
       return res.status(400).json({ message: "The reset code is missing or expired." });
     }
+    if (user.passwordResetAttempts >= PASSWORD_RESET_MAX_ATTEMPTS) {
+      return res.status(400).json({ message: "Too many incorrect reset codes. Request a new reset code to try again." });
+    }
     if (!/^\d{6}$/.test(code) || !(await bcrypt.compare(code, user.passwordResetTokenHash))) {
-      return res.status(400).json({ message: "The reset code is incorrect." });
+      const attemptRecorded = await recordFailedPasswordResetAttempt(user);
+      return res.status(400).json({
+        message: attemptRecorded
+          ? "The reset code is incorrect."
+          : "The reset code is missing, expired, or has too many incorrect attempts. Request a new reset code.",
+      });
     }
     return res.json({ message: "Reset code verified." });
   } catch (error) {
@@ -1745,12 +1773,20 @@ async function handleResetPassword(req, res) {
     const email = String(req.body.email || "").trim().toLowerCase();
     const code = String(req.body.code || "").trim();
     const password = String(req.body.password || "");
-    const user = await User.findOne({ email }).select("+passwordResetTokenHash +passwordResetExpiresAt");
+    const user = await User.findOne({ email }).select("+passwordResetTokenHash +passwordResetExpiresAt +passwordResetAttempts");
     if (!user?.passwordResetTokenHash || !user.passwordResetExpiresAt || user.passwordResetExpiresAt <= new Date()) {
       return res.status(400).json({ message: "The reset code is missing or expired." });
     }
+    if (user.passwordResetAttempts >= PASSWORD_RESET_MAX_ATTEMPTS) {
+      return res.status(400).json({ message: "Too many incorrect reset codes. Request a new reset code to try again." });
+    }
     if (!/^\d{6}$/.test(code) || !(await bcrypt.compare(code, user.passwordResetTokenHash))) {
-      return res.status(400).json({ message: "The reset code is incorrect." });
+      const attemptRecorded = await recordFailedPasswordResetAttempt(user);
+      return res.status(400).json({
+        message: attemptRecorded
+          ? "The reset code is incorrect."
+          : "The reset code is missing, expired, or has too many incorrect attempts. Request a new reset code.",
+      });
     }
 
     if (!user || (await bcrypt.compare(password, user.passwordHash))) return res.status(400).json({ message: "Your new password must be different from your previous password." });
@@ -1763,13 +1799,11 @@ async function handleResetPassword(req, res) {
 
     const resetResult = await User.updateOne(
       {
-        _id: user._id,
-        passwordResetTokenHash: user.passwordResetTokenHash,
-        passwordResetExpiresAt: mongoose.trusted({ $gt: new Date() }),
+        ...passwordResetAttemptQuery(user),
       },
       {
         $set: { passwordHash: await bcrypt.hash(password, 10) },
-        $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1 },
+        $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1, passwordResetAttempts: 1 },
       }
     );
     if (!resetResult.matchedCount) return res.status(400).json({ message: "The reset code is missing or expired." });

@@ -572,6 +572,7 @@ async function handleRequestAdminPasswordReset(req, res) {
         $set: {
           passwordResetTokenHash: tokenHash,
           passwordResetExpiresAt: expiresAt,
+          passwordResetAttempts: 0,
           adminPasswordResetRequestedAt: new Date(),
         },
         ...adminActivity("password_reset_requested", req.adminEmail),
@@ -591,7 +592,7 @@ async function handleRequestAdminPasswordReset(req, res) {
       await sendPasswordResetEmail(resetRequest.email, code);
     } catch (mailError) {
       await User.updateOne({ _id: user._id, passwordResetTokenHash: tokenHash }, {
-        $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1, adminPasswordResetRequestedAt: 1 },
+        $unset: { passwordResetTokenHash: 1, passwordResetExpiresAt: 1, passwordResetAttempts: 1, adminPasswordResetRequestedAt: 1 },
       });
       throw mailError;
     }

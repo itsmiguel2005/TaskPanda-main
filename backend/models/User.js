@@ -186,6 +186,11 @@ const userSchema = new mongoose.Schema(
       type: Date,
       select: false,
     },
+    passwordResetAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
     adminSetupTokenHash: {
       type: String,
       select: false,

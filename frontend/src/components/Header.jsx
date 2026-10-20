@@ -627,7 +627,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
       message: pushPromptStatus === "unavailable"
         ? "Browser alerts are not configured for TaskPanda on this site."
         : pushPromptStatus === "error"
-          ? "Could not open the browser alert prompt. Try again."
+          ? "OneSignal could not start. Reload this page and try again."
           : "Choose Allow in your browser to receive alerts.",
       className: "bg-amber-50 text-amber-800",
     },
@@ -849,11 +849,15 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                       {notificationPermission === "default" && import.meta.env.VITE_ONESIGNAL_APP_ID && pushPromptStatus !== "unavailable" && (
                         <button
                           type="button"
-                          onClick={handleEnablePush}
+                          onClick={() => pushPromptStatus === "error" ? window.location.reload() : handleEnablePush()}
                           disabled={pushPromptStatus === "loading"}
                           className="mt-2 inline-flex min-h-10 items-center text-sm font-semibold text-primary-700 hover:text-primary-800 focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
                         >
-                          {pushPromptStatus === "loading" ? "Opening browser prompt…" : "Enable browser alerts"}
+                          {pushPromptStatus === "loading"
+                            ? "Opening browser prompt…"
+                            : pushPromptStatus === "error"
+                              ? "Reload to retry"
+                              : "Enable browser alerts"}
                         </button>
                       )}
                     </div>
