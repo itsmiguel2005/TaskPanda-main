@@ -52,6 +52,8 @@ Create a `.env` file in the project root when you need to change the database, p
 ```env
 MONGO_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/taskpanda?retryWrites=true&w=majority
 MONGO_DB_NAME=taskpanda
+# Optional; Vercel/serverless default is 10 connections per warm instance
+MONGO_MAX_POOL_SIZE=10
 PORT=3000
 # Optional API origin for a separately hosted HTTPS backend; unset to use the same-origin Vercel API
 VITE_API_BASE_URL=
@@ -128,7 +130,7 @@ Urgent admin broadcasts are stored for clients and providers in the in-app notif
 - **Authorization:** Server middleware restricts profile, booking, messaging, favorites, and verification routes by role. Booking and conversation handlers also check participant ownership before access or updates.
 - **Safer error responses:** Unexpected server and database failures return generic messages rather than stack traces or raw database errors. Unknown `/api` paths return JSON 404 responses.
 
-The rate limiter currently uses its default in-memory store. Limits are per application process and are not shared between separate serverless instances; use a shared store such as Redis when consistent limits across multiple instances are required.
+Rate limits use a MongoDB-backed store in the `rateLimits` collection, shared across Vercel function instances. MongoDB creates a TTL index to remove expired counters. The database user must be allowed to create indexes. Location lookups are limited to 30 requests per minute and provider discovery to 60 requests per minute per client IP.
 
 ## Vercel Deployment
 
@@ -139,6 +141,7 @@ Add these Environment Variables in the Vercel project settings for every environ
 ```text
 MONGO_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/taskpanda?retryWrites=true&w=majority
 MONGO_DB_NAME=taskpanda
+MONGO_MAX_POOL_SIZE=10
 ADMIN_EMAIL=your-admin-email
 ADMIN_PASSWORD=your-strong-admin-password
 ADMIN_OTP_EMAIL=your-admin-security-email
@@ -146,6 +149,9 @@ ADMIN_OTP_SECRET=<at-least-32-random-characters>
 AUTH_OTP_SECRET=<a-different-at-least-32-random-characters>
 VITE_RECAPTCHA_SITE_KEY=<your-recaptcha-v3-site-key>
 RECAPTCHA_SECRET_KEY=<your-recaptcha-v3-secret-key>
+GEMINI_API_KEY=<your-gemini-api-key>
+IDENTITY_PSN_ENCRYPTION_KEY=<64-hex-characters>
+IDENTITY_PSN_HMAC_KEY=<different-64-hex-characters>
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_SECURE=false
@@ -159,6 +165,8 @@ CRON_SECRET=<random-secret-for-vercel-cron-authorization>
 APP_URL=https://your-taskpanda-domain.example
 CORS_ORIGINS=https://your-taskpanda-domain.example,https://www.your-taskpanda-domain.example
 ```
+
+`MONGO_MAX_POOL_SIZE` is optional and defaults to `10` per warm function instance. Set it lower if your Atlas connection budget requires it. There is no `MONGODB_URI` or `JWT_SECRET` setting in this repository: use `MONGO_URI`; OTP-scoped JWTs are signed with `AUTH_OTP_SECRET` and admin OTP operations use `ADMIN_OTP_SECRET`. `GEMINI_API_KEY` enables PandaBot, and the two distinct identity keys are required for PhilSys identity verification. Add `TEXTBEE_API_KEY` only when SMS delivery is configured to use TextBee. Add `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` when enabling Cloudinary-backed chat photo uploads; those feature-specific values are documented in the chat-photo section below.
 
 Email verification links use the current Vercel deployment URL when available, or the configured `APP_URL`; locally, they use the Vite app at `http://localhost:5173`. New registrations stay pending until the email link is confirmed; verified users must finish onboarding before they can open the app. Registration can be started on one device and verified on another: the registration-starting browser keeps its own session and automatically resumes onboarding after it sees the verified status. If that browser cannot recover its session, the verified device displays a one-time 12-character resume code, valid for 15 minutes, which can be entered on the registration device. Verification links do not transfer onboarding credentials to the device that opens them. The root `.env` supplies server-only OneSignal credentials; `VITE_ONESIGNAL_APP_ID` is a public app identifier, not a secret.
 

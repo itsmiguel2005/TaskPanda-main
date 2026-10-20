@@ -26,6 +26,10 @@ function getCoordinates(geoLocation) {
   return [latitude, longitude];
 }
 
+function getAuthHeaders(token) {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 function getProviderMapCoordinates(provider) {
   return getCoordinates(provider?.mapLocation);
 }
@@ -120,6 +124,7 @@ export default function ServiceLocationPicker({
   addressPlaceholder = "Choose a result or enter the address for the pin",
   mapLabel = "OpenStreetMap service location picker",
   endpointBase = "/api/bookings/service-location",
+  guestSearch = false,
   showNearbyProviders = false,
   onProviderSelect = () => {},
   scrollWheelZoom = false,
@@ -169,6 +174,8 @@ export default function ServiceLocationPicker({
       }
 
       providerRequestTimeoutRef.current = window.setTimeout(async () => {
+        providerRequestTimeoutRef.current = null;
+        if (mapRef.current !== map) return;
         const center = map.getCenter();
         const previousCenter = lastProviderSearchCenterRef.current;
         if (previousCenter && getMapCenterDistanceKm(center, previousCenter) < 0.7) return;
@@ -186,7 +193,7 @@ export default function ServiceLocationPicker({
             longitude: String(center.lng),
           });
           const response = await apiFetch(`/api/providers/map?${parameters}`, {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: getAuthHeaders(token),
             signal: controller.signal,
           });
           const data = await response.json().catch(() => ({}));
@@ -238,7 +245,7 @@ export default function ServiceLocationPicker({
       try {
         const parameters = new URLSearchParams({ latitude: String(latitude), longitude: String(longitude) });
         const response = await apiFetch(`${endpointBase}/reverse?${parameters}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: getAuthHeaders(token),
           signal: controller.signal,
         });
         const data = await response.json().catch(() => ({}));
@@ -254,7 +261,9 @@ export default function ServiceLocationPicker({
         setSearchQuery(data.result.address);
       } catch (lookupError) {
         if (lookupError.name !== "AbortError") {
-          setError("The pin is saved, but its street address could not be loaded. You can still book using the pinned coordinates, or enter a nearby address or landmark.");
+          setError(guestSearch
+            ? "The pin is selected, but we could not find a street address. You can still search this area using the pin."
+            : "The pin is saved, but its street address could not be loaded. You can still book using the pinned coordinates, or enter a nearby address or landmark.");
         }
       } finally {
         if (!controller.signal.aborted) setIsLookingUp(false);
@@ -294,6 +303,8 @@ export default function ServiceLocationPicker({
       }
       lookupControllerRef.current?.abort();
       providerRequestControllerRef.current?.abort();
+      map.stop();
+      map.off();
       providerMarkersLayer.remove();
       map.remove();
       mapRef.current = null;
@@ -301,7 +312,7 @@ export default function ServiceLocationPicker({
       providerMarkersLayerRef.current = null;
       choosePinRef.current = null;
     };
-  }, [endpointBase, scrollWheelZoom, token]);
+  }, [endpointBase, guestSearch, scrollWheelZoom, token]);
 
   useEffect(() => {
     const layer = providerMarkersLayerRef.current;
@@ -358,7 +369,7 @@ export default function ServiceLocationPicker({
     try {
       const parameters = new URLSearchParams({ q: query });
       const response = await apiFetch(`${endpointBase}/search?${parameters}`, {
-        headers: { Authorization: `Bearer ${token}` },
+      headers: getAuthHeaders(token),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "Address search is unavailable.");

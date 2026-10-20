@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Header from "../components/Header.jsx";
-import { categories } from "../components/ClientDashboard.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 
 const howItWorksClient = [

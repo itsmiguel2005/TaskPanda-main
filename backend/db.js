@@ -1,10 +1,14 @@
 const mongoose = require("mongoose");
-const { mongoUri, mongoDbName } = require("./config/env");
+const { mongoUri, mongoDbName, mongoMaxPoolSize } = require("./config/env");
 
 mongoose.set("sanitizeFilter", true);
 mongoose.set("strictQuery", true);
 
-let connectionPromise;
+const mongooseCacheKey = Symbol.for("taskpanda.mongooseConnectionCache");
+const mongooseCache = globalThis[mongooseCacheKey] || (globalThis[mongooseCacheKey] = {
+  connection: null,
+  promise: null,
+});
 
 async function migrateIdentityIdentifierIndex() {
   const users = mongoose.connection.collection("users");
@@ -44,7 +48,11 @@ async function migrateIdentityIdentifierIndex() {
 }
 
 async function connectDB() {
-  if (mongoose.connection.readyState === 1) return mongoose.connection;
+  if (mongooseCache.connection?.readyState === 1) return mongooseCache.connection;
+  if (mongoose.connection.readyState === 1) {
+    mongooseCache.connection = mongoose.connection;
+    return mongooseCache.connection;
+  }
 
   if (!mongoUri || /<[^>]+>/.test(mongoUri)) {
     throw new Error(
@@ -52,20 +60,26 @@ async function connectDB() {
     );
   }
 
-  if (!connectionPromise) {
-    connectionPromise = mongoose.connect(mongoUri, { dbName: mongoDbName }).then(async () => {
+  if (!mongooseCache.promise) {
+    mongooseCache.promise = mongoose.connect(mongoUri, {
+      dbName: mongoDbName,
+      maxPoolSize: mongoMaxPoolSize,
+    }).then(async () => {
       await migrateIdentityIdentifierIndex();
+      mongooseCache.connection = mongoose.connection;
       console.log("MongoDB connected successfully");
       return mongoose.connection;
     });
   }
 
   try {
-    return await connectionPromise;
+    return await mongooseCache.promise;
   } catch (error) {
     console.error("MongoDB connection error:", error.message);
-    connectionPromise = undefined;
+    mongooseCache.connection = null;
     throw error;
+  } finally {
+    mongooseCache.promise = null;
   }
 }
 

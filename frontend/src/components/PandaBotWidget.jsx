@@ -156,10 +156,10 @@ function RecommendationCard({ provider, onBook }) {
   );
 }
 
-export default function PandaBotWidget() {
+export default function PandaBotWidget({ initiallyOpen = false }) {
   const { isLoggedIn, isAuthLoading, role, user, token } = useAuth();
   const navigate = useNavigate();
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(initiallyOpen);
   const [hasUnreadAssistantMessage, setHasUnreadAssistantMessage] = useState(false);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);

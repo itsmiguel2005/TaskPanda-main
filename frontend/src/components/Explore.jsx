@@ -1136,6 +1136,8 @@ export default function Explore() {
                 value={draftSearchLocation}
                 onChange={setDraftSearchLocation}
                 token={token}
+                endpointBase={isLoggedIn ? "/api/bookings/service-location" : "/api/auth/location"}
+                guestSearch={!isLoggedIn}
                 heading="Pin the center of your provider search"
                 description="Search an address, use your current location, or explore the map to preview nearby providers before applying a search area. Provider pins are approximate, not exact addresses."
                 searchPlaceholder="Street, barangay, city, or landmark"

@@ -1,12 +1,17 @@
 const { ipKeyGenerator, rateLimit } = require("express-rate-limit");
+const MongoRateLimitStore = require("./MongoRateLimitStore");
+
+let defaultLimiterSequence = 0;
 
 function createRateLimiter(limit, windowMs = 15 * 60 * 1000, message = "Too many requests. Please try again later.", options = {}) {
+  const storePrefix = options.identifier || `limiter-${defaultLimiterSequence++}`;
   return rateLimit({
     windowMs,
     limit,
     standardHeaders: "draft-8",
     legacyHeaders: false,
     ...options,
+    store: new MongoRateLimitStore({ prefix: storePrefix }),
     handler: (_req, res) => res.status(429).json({ message }),
   });
 }
