@@ -24,6 +24,7 @@ const corsOrigins = [
 
 const configuredProxyHops = Number(process.env.TRUST_PROXY);
 const configuredMongoMaxPoolSize = Number.parseInt(process.env.MONGO_MAX_POOL_SIZE, 10);
+const maxMongoPoolSize = 10;
 const trustProxy = process.env.VERCEL
   ? 1
   : Number.isInteger(configuredProxyHops) && configuredProxyHops > 0
@@ -34,8 +35,8 @@ module.exports = {
   mongoUri: String(process.env.MONGO_URI || "").trim(),
   mongoDbName: String(process.env.MONGO_DB_NAME || "taskpanda").trim(),
   mongoMaxPoolSize: Number.isInteger(configuredMongoMaxPoolSize) && configuredMongoMaxPoolSize > 0
-    ? configuredMongoMaxPoolSize
-    : 10,
+    ? Math.min(configuredMongoMaxPoolSize, maxMongoPoolSize)
+    : maxMongoPoolSize,
   port: process.env.PORT || 3000,
   smtpUser: String(process.env.SMTP_USER || "").replace(/\s+/g, "").trim(),
   smtpPassword: String(process.env.SMTP_PASSWORD || "").replace(/\s+/g, "").trim(),

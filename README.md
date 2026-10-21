@@ -52,7 +52,7 @@ Create a `.env` file in the project root when you need to change the database, p
 ```env
 MONGO_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/taskpanda?retryWrites=true&w=majority
 MONGO_DB_NAME=taskpanda
-# Optional; Vercel/serverless default is 10 connections per warm instance
+# Optional; capped at 10 connections per warm Vercel function instance
 MONGO_MAX_POOL_SIZE=10
 PORT=3000
 # Optional API origin for a separately hosted HTTPS backend; unset to use the same-origin Vercel API
@@ -166,7 +166,7 @@ APP_URL=https://your-taskpanda-domain.example
 CORS_ORIGINS=https://your-taskpanda-domain.example,https://www.your-taskpanda-domain.example
 ```
 
-`MONGO_MAX_POOL_SIZE` is optional and defaults to `10` per warm function instance. Set it lower if your Atlas connection budget requires it. There is no `MONGODB_URI` or `JWT_SECRET` setting in this repository: use `MONGO_URI`; OTP-scoped JWTs are signed with `AUTH_OTP_SECRET` and admin OTP operations use `ADMIN_OTP_SECRET`. `GEMINI_API_KEY` enables PandaBot, and the two distinct identity keys are required for PhilSys identity verification. Add `TEXTBEE_API_KEY` only when SMS delivery is configured to use TextBee. Add `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` when enabling Cloudinary-backed chat photo uploads; those feature-specific values are documented in the chat-photo section below.
+`MONGO_MAX_POOL_SIZE` defaults to `10` and is capped at `10` per warm Vercel function instance; lower it if needed. This is a per-instance limit, not a project-wide cap: multiple concurrent function instances can each open their own pool, in addition to MongoDB monitoring connections. Monitor Atlas's current connections as traffic grows. There is no `MONGODB_URI` or `JWT_SECRET` setting in this repository: use `MONGO_URI`; OTP-scoped JWTs are signed with `AUTH_OTP_SECRET` and admin OTP operations use `ADMIN_OTP_SECRET`. `GEMINI_API_KEY` enables PandaBot, and the two distinct identity keys are required for PhilSys identity verification. Add `TEXTBEE_API_KEY` only when SMS delivery is configured to use TextBee. Add `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` when enabling Cloudinary-backed chat photo uploads; those feature-specific values are documented in the chat-photo section below.
 
 Email verification links use the current Vercel deployment URL when available, or the configured `APP_URL`; locally, they use the Vite app at `http://localhost:5173`. New registrations stay pending until the email link is confirmed; verified users must finish onboarding before they can open the app. Registration can be started on one device and verified on another: the registration-starting browser keeps its own session and automatically resumes onboarding after it sees the verified status. If that browser cannot recover its session, the verified device displays a one-time 12-character resume code, valid for 15 minutes, which can be entered on the registration device. Verification links do not transfer onboarding credentials to the device that opens them. The root `.env` supplies server-only OneSignal credentials; `VITE_ONESIGNAL_APP_ID` is a public app identifier, not a secret.
 
