@@ -6,6 +6,7 @@ const { uploadProfileImage } = require("../services/cloudinaryMedia");
 const { ensureReferralCode } = require("../services/rewards");
 const { generateLoginOtpCode, hashLoginOtpCode, timingSafeHexEqual } = require("../services/loginOtpSecurity");
 const { normalizePhilippinePhone, sendSms } = require("../utils/sendSms");
+const { getAgeFromDateOfBirth } = require("../utils/providerAge");
 
 const PHONE_OTP_TTL_MS = 5 * 60 * 1000;
 
@@ -41,6 +42,9 @@ function profileFromUser(user) {
     username: user.username,
     email: user.email,
     mobileNumber: user.mobileNumber,
+    ...(user.role === "provider"
+      ? { dateOfBirth: user.dateOfBirth ? new Date(user.dateOfBirth).toISOString().slice(0, 10) : "" }
+      : {}),
     address: user.address,
     geoLocation: user.geoLocation || null,
     province: user.province,
@@ -347,6 +351,7 @@ async function handleUpdateProfile(req, res) {
     const address = String(req.body.address || [barangay, city, province].filter(Boolean).join(", ")).trim();
     const geoLocationInput = req.body.geoLocation;
     const bio = String(req.body.bio || "").trim();
+    const dateOfBirth = String(req.body.dateOfBirth || "").trim();
     const hasStructuredName = ["firstName", "middleName", "lastName"].some((field) =>
       Object.prototype.hasOwnProperty.call(req.body, field)
     );
@@ -405,6 +410,15 @@ async function handleUpdateProfile(req, res) {
     if (bio.length > 500) {
       return res.status(400).json({ message: "Bio must be 500 characters or fewer.", field: "bio" });
     }
+    if (user.role === "provider") {
+      const age = getAgeFromDateOfBirth(dateOfBirth);
+      if (age === null || age < 18 || age > 120) {
+        return res.status(400).json({
+          message: "Enter a valid date of birth. Providers must be 18 to 120 years old.",
+          field: "dateOfBirth",
+        });
+      }
+    }
 
     const existingUsername = await User.findOne({ username, _id: mongoose.trusted({ $ne: user._id }) }).select("_id");
     if (existingUsername) {
@@ -439,7 +453,10 @@ async function handleUpdateProfile(req, res) {
     user.city = city;
     user.barangay = barangay;
     user.bio = bio;
-    if (user.role === "provider") user.professions = professions;
+    if (user.role === "provider") {
+      user.professions = professions;
+      user.dateOfBirth = new Date(`${dateOfBirth}T00:00:00.000Z`);
+    }
     await user.save();
 
     return res.json({

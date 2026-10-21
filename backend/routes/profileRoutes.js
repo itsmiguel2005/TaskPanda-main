@@ -35,6 +35,10 @@ router.put("/", [
 	body("lastName").optional().isString().isLength({ max: 80 }),
 	body("username").isString().trim().isLength({ min: 3, max: 30 }),
 	body("mobileNumber").isString().isLength({ max: 11 }),
+	body("dateOfBirth")
+		.if((value, { req }) => req.user.role === "provider")
+		.isString()
+		.matches(/^\d{4}-\d{2}-\d{2}$/),
 	body("province").optional().isString().isLength({ max: 100 }),
 	body("city").optional().isString().isLength({ max: 100 }),
 	body("barangay").optional().isString().isLength({ max: 100 }),

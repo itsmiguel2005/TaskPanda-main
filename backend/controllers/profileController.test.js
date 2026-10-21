@@ -1,6 +1,53 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { handleUpdateDashboardPreferences, handleUpdateProviderPreferences, handleUpdateProviderAvailability } = require("./profileController");
+const { handleUpdateDashboardPreferences, handleUpdateProviderPreferences, handleUpdateProviderAvailability, handleUpdateProfile } = require("./profileController");
+
+test("provider profile updates reject an underage date of birth", async () => {
+  const birthDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const req = {
+    body: {
+      firstName: "Pat",
+      middleName: "",
+      lastName: "Provider",
+      fullName: "Pat Provider",
+      username: "pat_provider",
+      mobileNumber: "09123456789",
+      province: "Cebu",
+      city: "Cebu City",
+      barangay: "Lahug",
+      address: "Lahug, Cebu City, Cebu",
+      geoLocation: { type: "Point", coordinates: [123.9, 10.3] },
+      bio: "",
+      dateOfBirth: birthDate,
+      professions: ["Carpenter"],
+    },
+    user: {
+      _id: "provider-id",
+      role: "provider",
+      firstName: "Pat",
+      lastName: "Provider",
+      username: "pat_provider",
+      mobileNumber: "09123456789",
+    },
+  };
+  const res = {
+    statusCode: 200,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.payload = payload;
+      return this;
+    },
+  };
+
+  await handleUpdateProfile(req, res);
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.payload.field, "dateOfBirth");
+  assert.match(res.payload.message, /18 to 120 years old/);
+});
 
 test("dashboard density preference is saved and returned from the profile API handler", async () => {
   let saveCount = 0;

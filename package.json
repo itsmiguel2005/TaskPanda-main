@@ -7,7 +7,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test",
     "dev": "concurrently --kill-others \"npm:start\" \"vite\"",
     "build": "vite build",
     "check:health": "node scripts/check-health.js",

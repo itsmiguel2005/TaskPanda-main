@@ -3,6 +3,11 @@ const { createHash, randomBytes, randomInt, randomUUID } = require("crypto");
 const mongoose = require("mongoose");
 const { waitUntil } = require("@vercel/functions");
 const User = require("../models/User");
+const {
+  TRUSTED_DEVICE_TTL_SECONDS,
+  getTrustedDeviceToken,
+  sendTrustedDeviceCookie,
+} = require("../utils/trustedDeviceCookies");
 const { normalizePhilippinePhone, sendSms } = require("../utils/sendSms");
 const AdminSession = require("../models/AdminSession");
 const AdminLoginChallenge = require("../models/AdminLoginChallenge");
@@ -58,8 +63,6 @@ const PASSWORD_RESET_MAX_ATTEMPTS = 5;
 const registrationSessionCookie = "taskpanda_registration";
 const ADMIN_LOGIN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const LOGIN_OTP_TTL_MS = 5 * 60 * 1000;
-const TRUSTED_DEVICE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const TRUSTED_DEVICE_COOKIE = "taskpanda_device_trust";
 const personNamePattern = /^[\p{L}\p{M}]+(?:[ .'-][\p{L}\p{M}]+)*$/u;
 
 function passwordResetAttemptQuery(user) {
@@ -79,15 +82,6 @@ async function recordFailedPasswordResetAttempt(user) {
     $inc: { passwordResetAttempts: 1 },
   });
   return Boolean(result.matchedCount);
-}
-
-function getRequestCookie(req, name) {
-  const parsedCookie = req.cookies?.[name];
-  if (typeof parsedCookie === "string" && parsedCookie) return parsedCookie;
-  const cookieHeader = String(req.get("cookie") || "");
-  const encodedName = `${name}=`;
-  const match = cookieHeader.split(";").map((part) => part.trim()).find((part) => part.startsWith(encodedName));
-  return match ? match.slice(encodedName.length) : "";
 }
 
 function getDeviceName(req) {
@@ -142,13 +136,6 @@ function getLoginUserPayload(user) {
     emailVerified: user.emailVerified !== false,
     registrationComplete: user.registrationComplete !== false,
   };
-}
-
-function sendTrustedDeviceCookie(res, token) {
-  res.append(
-    "Set-Cookie",
-    `${TRUSTED_DEVICE_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=${TRUSTED_DEVICE_TTL_SECONDS}`
-  );
 }
 
 async function findPreAuthUser(req) {
@@ -1260,7 +1247,7 @@ async function handleLogin(req, res) {
       }
     }
 
-    const presentedDeviceToken = getRequestCookie(req, TRUSTED_DEVICE_COOKIE);
+    const presentedDeviceToken = getTrustedDeviceToken(req, user._id);
     const presentedDeviceTokenHash = presentedDeviceToken ? hashToken(presentedDeviceToken) : "";
     const isTrustProtectedRole = ["client", "provider"].includes(user.role);
     let trustedDevice = isTrustProtectedRole && presentedDeviceTokenHash && (user.trustedDevices || []).find((device) =>
@@ -1312,7 +1299,7 @@ async function handleLogin(req, res) {
       });
     }
 
-    if (trustedDevice) sendTrustedDeviceCookie(res, presentedDeviceToken);
+    if (trustedDevice) sendTrustedDeviceCookie(res, user._id, presentedDeviceToken);
     clearLoginAttempts(normalizedIdentifier);
     await recordReferralSignalSafely(user, req);
     const accountToken = await issueAccountToken(user._id);
@@ -1392,7 +1379,7 @@ async function handleVerifyLoginOtp(req, res) {
     if (!consumedOtp) {
       return res.status(400).json({ message: "The verification code is invalid or expired. Sign in again to request a new one." });
     }
-    if (rememberDevice) sendTrustedDeviceCookie(res, deviceToken);
+    if (rememberDevice) sendTrustedDeviceCookie(res, consumedOtp._id, deviceToken);
 
     await recordReferralSignalSafely(consumedOtp, req);
     const accountToken = await issueAccountToken(consumedOtp._id);

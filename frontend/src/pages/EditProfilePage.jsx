@@ -8,6 +8,7 @@ import PhoneVerificationPanel, { PhoneVerificationStatus } from "../components/P
 import ProfessionSelector from "../components/ProfessionSelector.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { getPhilippineMobileInputValue } from "../utils/registrationValidation.js";
+import { getProviderDateOfBirthBounds, isProviderDateOfBirthInRange } from "../utils/providerDateOfBirth.js";
 
 const buildFullName = ({ firstName = "", middleName = "", lastName = "" } = {}) => [firstName, middleName, lastName].filter(Boolean).join(" ").trim();
 
@@ -30,6 +31,7 @@ const getFormFromUser = (user = {}) => {
     username: user.username || "",
     email: user.email || "",
     phone: getPhilippineMobileInputValue(user.mobileNumber || ""),
+    dateOfBirth: typeof user.dateOfBirth === "string" ? user.dateOfBirth.slice(0, 10) : "",
     address: user.address || "",
     province: user.province || "",
     city: user.city || "",
@@ -51,6 +53,9 @@ function validateForm(form, role) {
   if (!form.email.trim()) errors.email = "Email is required";
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errors.email = "Invalid email format";
   if (form.phone && !/^9\d{9}$/.test(form.phone)) errors.phone = "Enter the 10 digits after +63, starting with 9.";
+  if (role === "provider" && !isProviderDateOfBirthInRange(form.dateOfBirth)) {
+    errors.dateOfBirth = "Enter a valid date of birth. Providers must be 18 to 120 years old.";
+  }
   if (!form.province || !form.city || !form.barangay) errors.location = "Confirm your barangay, city, and province.";
   else if (!Array.isArray(form.geoLocation?.coordinates) || form.geoLocation.coordinates.length !== 2) errors.location = "Pin your exact location on the map.";
   if (role === "provider" && !form.professions.some((profession) => profession.trim())) errors.professions = "Add at least one service you offer";
@@ -65,6 +70,7 @@ export default function EditProfilePage() {
   const profileFieldAccent = role === "provider"
     ? "border-green-200 bg-green-50/50 focus:border-green-500 focus:ring-green-500/20"
     : "focus:border-primary-500 focus:ring-primary-500/20";
+  const { min: minDateOfBirth, max: maxDateOfBirth } = getProviderDateOfBirthBounds();
   const [form, setForm] = useState(() => getFormFromUser());
   const [saved, setSaved] = useState(false);
   const [savedMessage, setSavedMessage] = useState("Profile saved successfully!");
@@ -247,6 +253,7 @@ export default function EditProfilePage() {
           lastName: form.lastName,
           username: form.username,
           mobileNumber: user?.mobileNumber || "",
+          ...(role === "provider" ? { dateOfBirth: form.dateOfBirth } : {}),
           address: form.address,
           province: form.province,
           city: form.city,
@@ -444,6 +451,32 @@ export default function EditProfilePage() {
               required
             />
           </div>
+
+          {role === "provider" && (
+            <div>
+              <label htmlFor="dateOfBirth" className="block text-sm font-medium text-gray-700">
+                Date of Birth <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="dateOfBirth"
+                type="date"
+                name="dateOfBirth"
+                value={form.dateOfBirth}
+                min={minDateOfBirth}
+                max={maxDateOfBirth}
+                onChange={handleChange}
+                required
+                aria-invalid={Boolean(errors.dateOfBirth)}
+                aria-describedby={errors.dateOfBirth ? "dateOfBirth-hint dateOfBirth-error" : "dateOfBirth-hint"}
+                className={`mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:ring-2 ${profileFieldAccent}`}
+                style={{ borderColor: errors.dateOfBirth ? "#ef4444" : undefined }}
+              />
+              <p id="dateOfBirth-hint" className="mt-1 text-xs text-slate-600">Used to confirm provider eligibility. Your date of birth is not shown on your public profile.</p>
+              {errors.dateOfBirth
+                ? <p id="dateOfBirth-error" className="mt-1 text-xs text-red-600" role="alert">{errors.dateOfBirth}</p>
+                : null}
+            </div>
+          )}
 
           {role === "provider" && (
             <div>
