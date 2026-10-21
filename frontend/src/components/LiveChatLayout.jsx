@@ -1403,7 +1403,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   };
 
   return (
-    <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-linear-to-b from-sky-50 to-slate-50 pt-16">
+    <div className={`flex h-dvh min-h-0 flex-col overflow-hidden pt-16 ${role === "provider" ? "provider-page-background" : "bg-linear-to-b from-sky-50 to-slate-50"}`}>
       <Header showNav activeTab="Messages" role={role} />
       <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 overflow-hidden border-y border-sky-100 bg-white shadow-[0_18px_55px_rgba(15,23,42,0.08)] sm:my-4 sm:rounded-2xl sm:border">
         <aside className={`flex min-h-0 w-full shrink-0 flex-col border-r border-sky-100 bg-slate-50/70 md:w-80 lg:w-96 ${selectedConversation ? "hidden md:flex" : ""}`}>

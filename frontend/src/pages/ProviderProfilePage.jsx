@@ -79,7 +79,7 @@ export default function ProviderProfilePage() {
   return (
     <div>
       <Header showNav activeTab="Profile" role="provider" />
-      <main className="dashboard-page">
+      <main className="dashboard-page provider-page-background">
         <div className="dashboard-shell">
           <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <div>

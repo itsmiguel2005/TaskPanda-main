@@ -188,7 +188,7 @@ export default function ProfilePage() {
   return (
     <div>
       <Header showNav activeTab="Profile" />
-      <main className="dashboard-page">
+      <main className={`dashboard-page ${role === "provider" ? "provider-page-background" : ""}`}>
         <div className="dashboard-shell">
           <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <div>

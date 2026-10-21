@@ -307,7 +307,7 @@ export default function TesdaCertificatePage() {
   return (
     <div>
       <Header showNav activeTab="Profile" role="provider" />
-      <main className="dashboard-page bg-[radial-gradient(ellipse_at_top,rgba(186,230,253,0.4),transparent_55%),linear-gradient(180deg,#eff6ff_0%,#f8fbff_28rem,#f8fafc_100%)]">
+      <main className="dashboard-page provider-page-background">
         <div className="dashboard-shell max-w-lg">
           <button
             type="button"

@@ -307,7 +307,7 @@ export default function ProviderBookingsPage() {
   return (
     <>
     <OnboardingTour />
-    <div className="dashboard-page text-slate-800">
+    <div className="dashboard-page provider-page-background text-slate-800">
       <Header showNav activeTab="Bookings" role="provider" />
 
       <div className="dashboard-shell max-w-6xl">

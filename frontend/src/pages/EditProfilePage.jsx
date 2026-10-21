@@ -62,6 +62,9 @@ export default function EditProfilePage() {
   const navigate = useNavigate();
   const { user, token, role, updateUser, refreshProfile, isAuthLoading } = useAuth();
   const profilePath = role === "provider" ? "/provider-profile" : "/profile";
+  const profileFieldAccent = role === "provider"
+    ? "border-green-200 bg-green-50/50 focus:border-green-500 focus:ring-green-500/20"
+    : "focus:border-primary-500 focus:ring-primary-500/20";
   const [form, setForm] = useState(() => getFormFromUser());
   const [saved, setSaved] = useState(false);
   const [savedMessage, setSavedMessage] = useState("Profile saved successfully!");
@@ -331,7 +334,7 @@ export default function EditProfilePage() {
     <div>
       <Header showNav activeTab="Profile" role={role === "provider" ? "provider" : undefined} />
 
-      <main className="dashboard-page">
+      <main className={`dashboard-page ${role === "provider" ? "provider-page-background" : ""}`}>
       <div className="dashboard-shell max-w-3xl">
         <button
           onClick={handleCancel}
@@ -374,8 +377,8 @@ export default function EditProfilePage() {
                 name="lastName"
                 value={form.lastName}
                 onChange={handleChange}
-                className="mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-                style={{ borderColor: errors.lastName ? "#ef4444" : "#e5e7eb" }}
+                className={`mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:ring-2 ${profileFieldAccent}`}
+                style={{ borderColor: errors.lastName ? "#ef4444" : role === "provider" ? undefined : "#e5e7eb" }}
                 required
               />
               {errors.lastName && <p className="mt-1 text-xs text-red-500">{errors.lastName}</p>}
@@ -390,8 +393,8 @@ export default function EditProfilePage() {
                 name="firstName"
                 value={form.firstName}
                 onChange={handleChange}
-                className="mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-                style={{ borderColor: errors.firstName ? "#ef4444" : "#e5e7eb" }}
+                className={`mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:ring-2 ${profileFieldAccent}`}
+                style={{ borderColor: errors.firstName ? "#ef4444" : role === "provider" ? undefined : "#e5e7eb" }}
                 required
               />
               {errors.firstName && <p className="mt-1 text-xs text-red-500">{errors.firstName}</p>}
@@ -406,8 +409,8 @@ export default function EditProfilePage() {
                 name="middleName"
                 value={form.middleName}
                 onChange={handleChange}
-                className="mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-                style={{ borderColor: errors.middleName ? "#ef4444" : "#e5e7eb" }}
+                className={`mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:ring-2 ${profileFieldAccent}`}
+                style={{ borderColor: errors.middleName ? "#ef4444" : role === "provider" ? undefined : "#e5e7eb" }}
               />
               {errors.middleName && <p className="mt-1 text-xs text-red-500">{errors.middleName}</p>}
             </div>
@@ -448,7 +451,7 @@ export default function EditProfilePage() {
               <div className="mt-1.5">
                 <ProfessionSelector
                   id="professions"
-                  tone="blue"
+                  tone={role === "provider" ? "green" : "blue"}
                   value={form.professions}
                   onChange={handleProfessionsChange}
                   placeholder="Type or select a profession..."
@@ -466,6 +469,7 @@ export default function EditProfilePage() {
               id="profile-phone"
               value={form.phone}
               label="Phone"
+              theme={role === "provider" ? "green" : "primary"}
               rightSlot={(
                 <PhoneVerificationStatus
                   verified={Boolean(form.phone) && `0${form.phone}` === user?.mobileNumber && user?.phoneVerified === true}
@@ -496,6 +500,7 @@ export default function EditProfilePage() {
               formData={form}
               setFormData={setForm}
               token={token}
+              accent={role === "provider" ? "green" : "primary"}
               provider={role === "provider"}
             />
             {errors.location && <p className="mt-1 text-xs text-red-500">{errors.location}</p>}
@@ -509,8 +514,8 @@ export default function EditProfilePage() {
               value={form.bio}
               onChange={handleChange}
               rows={4}
-              className="mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20"
-              style={{ borderColor: errors.bio ? "#ef4444" : "#e5e7eb" }}
+              className={`mt-1 w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 outline-none focus:ring-2 ${profileFieldAccent}`}
+              style={{ borderColor: errors.bio ? "#ef4444" : role === "provider" ? undefined : "#e5e7eb" }}
               placeholder="Tell us a bit about yourself..."
             />
             <div className="mt-1 flex items-center justify-between">

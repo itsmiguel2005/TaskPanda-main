@@ -1231,7 +1231,7 @@ export default function ProviderDashboard() {
     : false;
 
   return (
-    <div className="dashboard-page">
+    <div className="dashboard-page provider-page-background">
       <Header showNav activeTab="Home" role="provider" notifCount={requests.length} />
 
       <div className="dashboard-shell max-w-7xl">

@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { apiFetch } from "../services/api.js";
 import { adminRequest } from "../services/adminApi.js";
 import { promptForPushPermission } from "../services/oneSignal.js";
+import usePhilippineGreeting from "../hooks/usePhilippineGreeting.js";
 
 function HeaderIcon({ name, className = "h-5 w-5" }) {
   const shapes = {
@@ -45,6 +46,7 @@ function formatNotificationDate(value) {
 
 export default function AdminHeaderActions() {
   const { user, token, role, logout } = useAuth();
+  const greeting = usePhilippineGreeting();
   const location = useLocation();
   const navigate = useNavigate();
   const actionsRef = useRef(null);
@@ -365,7 +367,7 @@ export default function AdminHeaderActions() {
           aria-expanded={openMenu === "profile"}
           className="flex min-h-11 items-center gap-2 rounded-xl px-1.5 text-left transition hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 sm:gap-3 sm:px-2"
         >
-          <span className="hidden max-w-[12rem] truncate text-sm text-blue-900 md:inline">Good morning, {firstName}</span>
+          <span className="hidden max-w-[12rem] truncate text-sm text-blue-900 md:inline">{greeting}, {firstName}</span>
           <span className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-blue-100 bg-blue-50 text-sm font-semibold text-blue-900">
             {user?.profileImage ? (
               <img src={user.profileImage} alt="" className="h-full w-full object-cover" />

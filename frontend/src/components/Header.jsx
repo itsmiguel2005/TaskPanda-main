@@ -4,6 +4,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { promptForPushPermission } from "../services/oneSignal.js";
 import UserOnlineStatus from "./UserOnlineStatus.jsx";
+import usePhilippineGreeting from "../hooks/usePhilippineGreeting.js";
 
 const CONVERSATION_READ_EVENT = "taskpanda:conversation-read";
 
@@ -128,6 +129,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   const navigate = useNavigate();
   const location = useLocation();
   const { isLoggedIn, role: authRole, user, firstName, logout, token, updateUser } = useAuth();
+  const greeting = usePhilippineGreeting(isLoggedIn);
   const dismissedStorageKey = `taskpanda_dismissed_notifications_${authRole || role}_${user?._id || user?.id || user?.email || "guest"}`;
   const notifRef = useRef(null);
   const userRef = useRef(user);
@@ -977,7 +979,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
                 className="flex min-h-11 min-w-11 items-center justify-center gap-0 rounded-lg text-sm sm:gap-3"
                 aria-expanded={dropdownOpen}
               >
-                <span className="hidden whitespace-nowrap text-gray-600 2xl:inline">Good morning, {firstNameOnly}!</span>
+                <span className="hidden whitespace-nowrap text-gray-600 2xl:inline">{greeting}, {firstNameOnly}!</span>
                 <span className="relative inline-flex h-8 w-8 shrink-0">
                   <span className={`avatar-shell h-8 w-8 border border-slate-200 bg-slate-100 text-sm font-bold ${user?.profileImage ? "bg-transparent" : "bg-primary-100 text-primary-700"}`}>
                     {user?.profileImage ? <img src={user.profileImage} alt={`${displayName} profile`} className="avatar-image" /> : displayName.charAt(0).toUpperCase()}

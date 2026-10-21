@@ -148,6 +148,10 @@
     background: linear-gradient(180deg, #eff6ff 0, #f8fbff 18rem, #f8fafc 44rem);
   }
 
+  .provider-page-background {
+    background: linear-gradient(180deg, #ecfdf5 0, #f7fdf9 18rem, #f8fafc 44rem);
+  }
+
   .dashboard-shell {
     width: 100%;
     max-width: 80rem;
@@ -272,6 +276,37 @@
     border-color: var(--taskpanda-blue);
     outline: 2px solid rgba(37, 99, 235, 0.18);
     outline-offset: 1px;
+  }
+
+  .provider-page-background .dashboard-primary-button {
+    background: #047857;
+  }
+
+  .provider-page-background .dashboard-primary-button:hover {
+    background: #065f46;
+  }
+
+  .provider-page-background .dashboard-secondary-button:hover {
+    border-color: #a7f3d0;
+    background: #ecfdf5;
+  }
+
+  .provider-page-background .dashboard-focus:focus-visible {
+    outline-color: #059669;
+  }
+
+  .provider-page-background .profile-form input:not([type="checkbox"]):not([type="file"]):not(.auth-inline-field):not([readonly]),
+  .provider-page-background .profile-form select,
+  .provider-page-background .profile-form textarea {
+    border-color: #bbf7d0;
+    background-color: #f0fdf4;
+  }
+
+  .provider-page-background .profile-form input:not([type="checkbox"]):not([type="file"]):not(.auth-inline-field):not([readonly]):focus,
+  .provider-page-background .profile-form select:focus,
+  .provider-page-background .profile-form textarea:focus {
+    border-color: #10b981;
+    outline-color: rgba(16, 185, 129, 0.2);
   }
 
   .profile-form input[readonly]:not(.auth-inline-field) {

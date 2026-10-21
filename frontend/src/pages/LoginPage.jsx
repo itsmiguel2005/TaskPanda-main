@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
-import { getSafeInternalPath } from "../utils/safeRedirect.js";
 import { resumeRegistrationAttempt } from "../utils/registrationDraft.js";
 
 function formatWaitTime(totalSeconds) {
@@ -12,11 +11,10 @@ function formatWaitTime(totalSeconds) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-function getAuthReturnPath(location) {
-  const redirectTo = new URLSearchParams(location.search).get("redirectTo");
-  return getSafeInternalPath(location.state?.from)
-    || getSafeInternalPath(redirectTo)
-    || getSafeInternalPath(sessionStorage.getItem("taskpanda_post_auth_redirect"));
+function getDashboardPath(role) {
+  if (role === "provider") return "/provider-dashboard";
+  if (role === "admin") return "/admin";
+  return "/dashboard";
 }
 
 export default function LoginPage() {
@@ -197,15 +195,10 @@ export default function LoginPage() {
       }
       if (response.ok) {
         const loggedInUser = data.user || { email: formData.email, role: data.role || "client" };
-        login({ ...loggedInUser, role: data.role || loggedInUser.role || "client" }, data.token, formData.remember);
-        const destination = data.role === "provider"
-          ? "/provider-dashboard"
-          : data.role === "admin"
-          ? "/admin"
-          : "/dashboard";
-        const returnPath = getAuthReturnPath(location);
-        if (returnPath) sessionStorage.removeItem("taskpanda_post_auth_redirect");
-        navigate(returnPath || destination);
+        const role = data.role || loggedInUser.role || "client";
+        login({ ...loggedInUser, role }, data.token, formData.remember);
+        sessionStorage.removeItem("taskpanda_post_auth_redirect");
+        navigate(getDashboardPath(role));
       } else {
         if (data.requiresEmailVerification) {
           const email = data.email || formData.email;
@@ -252,10 +245,8 @@ export default function LoginPage() {
       const loggedInUser = data.user || { email: formData.email, role: loginOtpRole };
       const role = data.role || loggedInUser.role || loginOtpRole;
       login({ ...loggedInUser, role }, data.token, formData.remember);
-      const destination = role === "provider" ? "/provider-dashboard" : "/dashboard";
-      const returnPath = getAuthReturnPath(location);
-      if (returnPath) sessionStorage.removeItem("taskpanda_post_auth_redirect");
-      navigate(returnPath || destination);
+      sessionStorage.removeItem("taskpanda_post_auth_redirect");
+      navigate(getDashboardPath(role));
     } catch {
       setServerError("Network error. Please check your connection and try again.");
     } finally {
@@ -358,9 +349,8 @@ export default function LoginPage() {
 
       const adminUser = data.user || { email: formData.email, role: "admin" };
       login({ ...adminUser, role: "admin" }, data.token, formData.remember);
-      const returnPath = getAuthReturnPath(location);
-      if (returnPath) sessionStorage.removeItem("taskpanda_post_auth_redirect");
-      navigate(returnPath || "/admin");
+      sessionStorage.removeItem("taskpanda_post_auth_redirect");
+      navigate(getDashboardPath("admin"));
     } catch {
       setServerError("Network error. Please check your connection and try again.");
     } finally {
