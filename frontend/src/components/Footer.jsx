@@ -7,7 +7,7 @@ export default function Footer({ theme = "primary" }) {
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <a href="/" className="flex items-center gap-2 text-2xl font-extrabold tracking-tight" aria-label="TaskPanda home">
-              <img src="/assets/taskpanda-logo.jpg" alt="" aria-hidden="true" className="h-10 w-10 shrink-0 object-contain" />
+              <img src="/assets/taskpanda-logo-transparent.png" alt="" aria-hidden="true" className="h-10 w-10 shrink-0 object-contain" />
               <span>
                 <span className="text-gray-900">Task</span>
                 <span className="text-primary-700">Panda</span>

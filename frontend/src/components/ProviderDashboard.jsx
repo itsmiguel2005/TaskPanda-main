@@ -405,39 +405,38 @@ const STATUS_PROGRESS_INDEX = {
   Settled: 3,
 };
 
-function JobProgressTracker({ status, onAdvanceStatus }) {
+function JobProgressTracker({ status, onAdvanceStatus, compact = false }) {
   const activeIndex = STATUS_PROGRESS_INDEX[status] ?? -1;
   const isTerminal = ["Cancelled", "Declined by Provider", "Expired"].includes(status);
 
   return (
-    <div className="mt-4" role="progressbar" aria-label="Job progress">
-      <div className="grid grid-cols-4 gap-2">
+    <div className={compact ? "mt-2 w-full" : "mt-4"} role="group" aria-label="Job progress">
+      <div className={`grid grid-cols-4 ${compact ? "gap-1" : "gap-2"}`}>
         {TRACKER_STEPS.map((step, idx) => {
           const isActive = !isTerminal && activeIndex >= idx;
-          const isNext = !isTerminal && activeIndex + 1 === idx;
+          const isNext = !isTerminal && activeIndex >= 0 && activeIndex + 1 === idx;
 
           return (
-            <div
+            <button
+              type="button"
               key={step.key}
-              onClick={() => {
-                if (isNext && onAdvanceStatus) {
-                  onAdvanceStatus(step.statusCode, step.label);
-                }
-              }}
+              disabled={!isNext || !onAdvanceStatus}
+              onClick={() => onAdvanceStatus?.(step.statusCode, step.label)}
+              aria-label={isNext ? `Advance job to ${step.label}` : isActive ? `${step.label} complete` : step.label}
               title={isNext ? `Click to advance to ${step.label}` : undefined}
-              className={`group flex flex-col ${isNext ? "cursor-pointer" : ""}`}
+              className="group flex min-w-0 flex-col bg-transparent p-0 text-left disabled:cursor-default"
             >
               <div
-                className={`h-1.5 w-full rounded-full transition-colors ${
+                className={`${compact ? "h-1" : "h-1.5"} w-full rounded-full transition-colors ${
                   isActive
-                    ? "bg-blue-600"
+                    ? "bg-[#6046f5]"
                     : isNext
-                    ? "bg-sky-100 group-hover:bg-blue-200"
+                    ? "bg-sky-100 group-hover:bg-violet-200"
                     : "bg-sky-100"
                 }`}
               />
               <span
-                className={`mt-1.5 text-xs truncate transition-colors ${
+                className={`${compact ? "mt-1 text-[9px] leading-3" : "mt-1.5 text-xs"} truncate transition-colors ${
                   isActive
                     ? "font-semibold text-gray-900"
                     : isNext
@@ -447,7 +446,7 @@ function JobProgressTracker({ status, onAdvanceStatus }) {
               >
                 {step.label}
               </span>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -564,9 +563,20 @@ function JobCard({
               </div>
               <BookingPriceBreakdown booking={booking} className="mt-0 p-3" />
             </div>
-            <div className="flex flex-wrap content-start gap-2">
-              <button type="button" onClick={() => onNavigate(`/provider/messages?bookingId=${booking.id}`)} className="dashboard-secondary-button dashboard-focus px-3 py-2 text-xs">Open conversation</button>
-              <button type="button" onClick={() => onViewDetails(booking)} className="dashboard-secondary-button dashboard-focus px-3 py-2 text-xs">View details</button>
+            <div className="flex min-w-0 flex-col items-stretch gap-2">
+              <button type="button" onClick={() => onNavigate(`/provider/messages?bookingId=${booking.id}`)} className="dashboard-secondary-button dashboard-focus w-full px-3 py-2 text-xs">Open conversation</button>
+              <button type="button" onClick={() => onViewDetails(booking)} className="dashboard-secondary-button dashboard-focus w-full px-3 py-2 text-xs">View details</button>
+              <JobProgressTracker
+                status={booking.status}
+                compact
+                onAdvanceStatus={(statusCode, nextStatus) => {
+                  if (statusCode === "complete") {
+                    onMarkComplete(booking);
+                  } else {
+                    onAdvanceStatus(booking.id, statusCode, nextStatus);
+                  }
+                }}
+              />
               {actionButton && (
                 <button
                   type="button"
