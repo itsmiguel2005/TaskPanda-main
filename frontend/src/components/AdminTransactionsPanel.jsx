@@ -28,6 +28,16 @@ function amount(value) {
   return currency.format(Number(value || 0));
 }
 
+function csvCell(value) {
+  const text = String(value ?? "");
+  const safeText = /^[\t\r ]*[=+\-@]/.test(text) ? `'${text}` : text;
+  return `"${safeText.replaceAll('"', '""')}"`;
+}
+
+function csvRow(values) {
+  return values.map(csvCell).join(",");
+}
+
 function AdminTransactionsPanel() {
   const { token, logout } = useAuth();
   const navigate = useNavigate();
@@ -36,6 +46,9 @@ function AdminTransactionsPanel() {
   const [filters, setFilters] = useState({ q: "", from: "", to: "" });
   const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState("");
+  const [exportError, setExportError] = useState("");
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -89,6 +102,84 @@ function AdminTransactionsPanel() {
     return () => controller.abort();
   }, [filters, logout, navigate, page, refreshKey, token]);
 
+  const exportCsv = async () => {
+    if (!data || isExporting) return;
+    setIsExporting(true);
+    setExportError("");
+    setExportProgress("Preparing CSV…");
+    try {
+      const exportFilters = { ...filters };
+      const pages = data.pagination.pages;
+      const transactions = [];
+      for (let requestedPage = 1; requestedPage <= pages; requestedPage += 1) {
+        if (requestedPage === page) {
+          transactions.push(...data.transactions);
+        } else {
+          const query = new URLSearchParams({ page: String(requestedPage) });
+          if (exportFilters.q) query.set("q", exportFilters.q);
+          if (exportFilters.from) query.set("from", exportFilters.from);
+          if (exportFilters.to) query.set("to", exportFilters.to);
+          const pageData = await adminRequest(`/api/admin/transactions?${query}`, token);
+          transactions.push(...pageData.transactions);
+        }
+        setExportProgress(`Loading transactions… ${Math.min(requestedPage * data.pagination.pageSize, data.pagination.total).toLocaleString()} of ${data.pagination.total.toLocaleString()}`);
+      }
+
+      const headers = [
+        "Completed at",
+        "Booking ID",
+        "Task",
+        "Client",
+        "Provider",
+        "Status",
+        "Gross task value",
+        "Travel fee",
+        "Voucher deduction",
+        "Tip",
+        "Client paid total",
+        "Distance (km)",
+        "Refund status",
+        "Refund amount",
+      ];
+      const rows = transactions.map((row) => [
+        row.completedAt || "",
+        row.id,
+        row.task,
+        row.client,
+        row.provider,
+        row.status,
+        row.grossTaskValue,
+        row.travelFee,
+        Number(row.voucherDeduction || 0) ? -Math.abs(Number(row.voucherDeduction)) : 0,
+        row.tip,
+        row.clientPaidTotal,
+        Number(row.distanceKm || 0).toFixed(2),
+        row.refundStatus,
+        row.refundAmount,
+      ]);
+      const csv = `\uFEFF${[headers, ...rows].map(csvRow).join("\r\n")}`;
+      const objectUrl = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = `taskpanda-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      setExportProgress("");
+    } catch (exportRequestError) {
+      if (exportRequestError.status === 401) {
+        logout();
+        navigate("/login", { replace: true });
+        return;
+      }
+      setExportError(exportRequestError.message || "Could not export the transaction ledger.");
+      setExportProgress("");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <section aria-labelledby="admin-transactions-title" className="space-y-5">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -96,10 +187,23 @@ function AdminTransactionsPanel() {
           <h1 id="admin-transactions-title" className="text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">Transaction ledger</h1>
           <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-600">Completed tasks with labor, travel, voucher, and tip amounts shown separately.</p>
         </div>
-        <button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={isLoading} className="dashboard-focus inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-blue-950 shadow-sm transition hover:bg-sky-50 disabled:cursor-wait disabled:opacity-50">
-          {isLoading ? "Refreshing…" : "Refresh ledger"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={isLoading || isExporting || !data?.pagination.total}
+            className="dashboard-focus inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-blue-950 shadow-sm transition hover:bg-sky-50 disabled:cursor-wait disabled:opacity-50"
+          >
+            {isExporting ? "Exporting…" : "Export CSV"}
+          </button>
+          <button type="button" onClick={() => setRefreshKey((value) => value + 1)} disabled={isLoading || isExporting} className="dashboard-focus inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-blue-950 shadow-sm transition hover:bg-sky-50 disabled:cursor-wait disabled:opacity-50">
+            {isLoading ? "Refreshing…" : "Refresh ledger"}
+          </button>
+        </div>
       </header>
+
+      {exportProgress && <p role="status" aria-live="polite" className="text-sm text-slate-700">{exportProgress}</p>}
+      {exportError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{exportError}</p>}
 
       {data?.summary && (
         <dl className="grid grid-cols-2 divide-x divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white sm:grid-cols-3 sm:divide-y-0 xl:grid-cols-6">

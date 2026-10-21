@@ -160,6 +160,7 @@ export default function PandaBotWidget({ initiallyOpen = false }) {
   const { isLoggedIn, isAuthLoading, role, user, token } = useAuth();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(initiallyOpen);
+  const [isGreetingVisible, setIsGreetingVisible] = useState(false);
   const [hasUnreadAssistantMessage, setHasUnreadAssistantMessage] = useState(false);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -170,6 +171,21 @@ export default function PandaBotWidget({ initiallyOpen = false }) {
   const quickActionsRef = useRef(null);
   const inputRef = useRef(null);
   const isOpenRef = useRef(isOpen);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    try {
+      if (window.sessionStorage.getItem("pandabot_greeting_closed") === "true") {
+        return undefined;
+      }
+    } catch (storageError) {
+      console.warn("Could not read the PandaBot greeting session preference.", storageError);
+    }
+
+    const timeoutId = window.setTimeout(() => setIsGreetingVisible(true), 2750);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
 
   useEffect(() => {
     isOpenRef.current = isOpen;
@@ -325,25 +341,66 @@ export default function PandaBotWidget({ initiallyOpen = false }) {
     quickActionsRef.current?.scrollBy({ left: direction * 180, behavior: "smooth" });
   }
 
+  function dismissGreeting() {
+    setIsGreetingVisible(false);
+    if (typeof window === "undefined") return;
+
+    try {
+      window.sessionStorage.setItem("pandabot_greeting_closed", "true");
+    } catch (storageError) {
+      console.warn("Could not save the PandaBot greeting session preference.", storageError);
+    }
+  }
+
   return (
     <div data-onboarding-target="pandabot" className="fixed bottom-4 right-4 z-70 flex flex-col items-end sm:bottom-6 sm:right-6">
+      {isGreetingVisible && !isOpen && (
+        <div className={`content-arrive mb-3 flex max-w-[min(20rem,calc(100vw-2rem))] items-start gap-3 rounded-2xl border bg-white px-4 py-3 shadow-[0_12px_36px_rgba(15,23,42,0.16)] ${
+          role === "client" ? "border-sky-200" : "border-emerald-100"
+        }`}>
+          <p className="flex-1 text-sm font-medium leading-5 text-slate-800">
+            Hi there! Have a question? Chat with us here.
+          </p>
+          <button
+            type="button"
+            onClick={dismissGreeting}
+            className="dashboard-focus -mr-1 -mt-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            aria-label="Dismiss PandaBot greeting"
+            title="Dismiss greeting"
+          >
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="h-4 w-4" aria-hidden="true">
+              <path d="m5 5 10 10M15 5 5 15" />
+            </svg>
+          </button>
+        </div>
+      )}
       {isOpen && (
         <section
           aria-label="PandaBot customer support chat"
-          className="mb-3 flex h-[min(36rem,calc(100dvh-6rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_70px_rgba(15,23,42,0.24)] content-arrive"
+          className={`mb-3 flex h-[min(36rem,calc(100dvh-6rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border bg-white shadow-[0_20px_70px_rgba(15,23,42,0.24)] content-arrive ${
+            role === "client" ? "border-sky-200" : "border-slate-200"
+          }`}
         >
-          <header className="flex shrink-0 items-center justify-between gap-3 bg-emerald-950 px-4 py-3.5 text-white">
+          <header className={`flex shrink-0 items-center justify-between gap-3 px-4 py-3.5 ${
+            role === "client" ? "bg-sky-100 text-sky-950" : "bg-emerald-950 text-white"
+          }`}>
             <div className="flex min-w-0 items-center gap-3">
               <PandaMark className="h-10 w-10" />
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-bold">PandaBot</h2>
-                <p className="mt-0.5 truncate text-xs text-emerald-100">TaskPanda support</p>
+                <p className={`mt-0.5 truncate text-xs ${
+                  role === "client" ? "text-sky-800" : "text-emerald-100"
+                }`}>TaskPanda support</p>
               </div>
             </div>
             <button
               type="button"
               onClick={() => setIsOpen(false)}
-              className="dashboard-focus flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-emerald-50 transition hover:bg-white/10"
+              className={`dashboard-focus flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition ${
+                role === "client"
+                  ? "text-sky-800 hover:bg-sky-200"
+                  : "text-emerald-50 hover:bg-white/10"
+              }`}
               aria-label="Close PandaBot chat"
               title="Close chat"
             >
@@ -366,7 +423,9 @@ export default function PandaBotWidget({ initiallyOpen = false }) {
                     item.type === "PROFILE_CARD"
                       ? "rounded-bl-md bg-transparent p-0 text-slate-800 shadow-none"
                       : item.role === "user"
-                      ? "rounded-br-md bg-emerald-800 text-white"
+                      ? role === "client"
+                        ? "rounded-br-md bg-sky-100 text-sky-950"
+                        : "rounded-br-md bg-emerald-800 text-white"
                       : item.role === "error"
                       ? "rounded-bl-md border border-rose-200 bg-rose-50 text-rose-800"
                       : "rounded-bl-md border border-slate-200 bg-white text-slate-800 shadow-sm"
@@ -394,9 +453,9 @@ export default function PandaBotWidget({ initiallyOpen = false }) {
             {isSending && (
               <div className="flex justify-start" role="status" aria-label="PandaBot is replying">
                 <div className="flex items-center gap-2 rounded-2xl rounded-bl-md border border-slate-200 bg-white px-3.5 py-3 text-xs text-slate-500 shadow-sm">
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-700 [animation-delay:-0.2s]" />
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-700 [animation-delay:-0.1s]" />
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-700" />
+                  <span className={`h-2 w-2 animate-pulse rounded-full ${role === "client" ? "bg-sky-700" : "bg-emerald-700"} [animation-delay:-0.2s]`} />
+                  <span className={`h-2 w-2 animate-pulse rounded-full ${role === "client" ? "bg-sky-700" : "bg-emerald-700"} [animation-delay:-0.1s]`} />
+                  <span className={`h-2 w-2 animate-pulse rounded-full ${role === "client" ? "bg-sky-700" : "bg-emerald-700"}`} />
                   <span className="sr-only">PandaBot is replying</span>
                 </div>
               </div>
@@ -408,7 +467,9 @@ export default function PandaBotWidget({ initiallyOpen = false }) {
               type="button"
               onClick={() => scrollQuickActions(-1)}
               disabled={!quickActionScroll.left}
-              className="dashboard-focus flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-emerald-900 transition hover:bg-emerald-50 disabled:cursor-default disabled:opacity-30"
+              className={`dashboard-focus flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition disabled:cursor-default disabled:opacity-30 ${
+                role === "client" ? "text-sky-900 hover:bg-sky-50" : "text-emerald-900 hover:bg-emerald-50"
+              }`}
               aria-label="Scroll suggestions left"
               title="Scroll suggestions left"
             >
@@ -424,7 +485,11 @@ export default function PandaBotWidget({ initiallyOpen = false }) {
                   type="button"
                   disabled={isSending}
                   onClick={() => void sendMessage(action)}
-                  className="dashboard-focus min-h-8 shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-950 transition hover:border-emerald-400 hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-50"
+                  className={`dashboard-focus min-h-8 shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition disabled:cursor-wait disabled:opacity-50 ${
+                    role === "client"
+                      ? "border-sky-200 bg-sky-50 text-sky-950 hover:border-sky-400 hover:bg-sky-100"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-950 hover:border-emerald-400 hover:bg-emerald-100"
+                  }`}
                 >
                   {action}
                 </button>
@@ -434,7 +499,9 @@ export default function PandaBotWidget({ initiallyOpen = false }) {
               type="button"
               onClick={() => scrollQuickActions(1)}
               disabled={!quickActionScroll.right}
-              className="dashboard-focus flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-emerald-900 transition hover:bg-emerald-50 disabled:cursor-default disabled:opacity-30"
+              className={`dashboard-focus flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition disabled:cursor-default disabled:opacity-30 ${
+                role === "client" ? "text-sky-900 hover:bg-sky-50" : "text-emerald-900 hover:bg-emerald-50"
+              }`}
               aria-label="Scroll suggestions right"
               title="Scroll suggestions right"
             >
@@ -453,12 +520,16 @@ export default function PandaBotWidget({ initiallyOpen = false }) {
               rows={1}
               maxLength={4000}
               disabled={isSending}
-              className="dashboard-focus max-h-28 min-h-11 flex-1 resize-y rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm leading-5 text-slate-900 placeholder:text-slate-400 disabled:opacity-60"
+              className={`dashboard-focus max-h-28 min-h-11 flex-1 resize-y rounded-xl border px-3 py-2.5 text-sm leading-5 text-slate-900 placeholder:text-slate-400 disabled:opacity-60 ${
+                role === "client" ? "border-sky-200 bg-sky-50" : "border-slate-200 bg-slate-50"
+              }`}
             />
             <button
               type="submit"
               disabled={isSending || !input.trim()}
-              className="dashboard-focus flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-800 text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:bg-slate-300"
+              className={`dashboard-focus flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white transition disabled:cursor-not-allowed disabled:bg-slate-300 ${
+                role === "client" ? "bg-sky-700 hover:bg-sky-800" : "bg-emerald-800 hover:bg-emerald-900"
+              }`}
               aria-label="Send message"
               title="Send message"
             >
@@ -476,12 +547,17 @@ export default function PandaBotWidget({ initiallyOpen = false }) {
       <button
         type="button"
         onClick={() => {
+          dismissGreeting();
           const nextOpen = !isOpenRef.current;
           isOpenRef.current = nextOpen;
           setIsOpen(nextOpen);
           if (nextOpen) setHasUnreadAssistantMessage(false);
         }}
-        className={`dashboard-focus relative flex h-14 w-14 items-center justify-center rounded-full border-2 border-white bg-emerald-800 shadow-[0_8px_28px_rgba(6,78,59,0.38)] transition duration-200 hover:-translate-y-0.5 hover:bg-emerald-900 motion-reduce:transform-none ${hasUnreadAssistantMessage && !isOpen ? "pandabot-attention" : ""}`}
+        className={`dashboard-focus relative flex h-14 w-14 items-center justify-center rounded-full border-2 border-white transition duration-200 hover:-translate-y-0.5 motion-reduce:transform-none ${
+          role === "client"
+            ? "bg-sky-700 shadow-[0_8px_28px_rgba(3,105,161,0.38)] hover:bg-sky-800"
+            : "bg-emerald-800 shadow-[0_8px_28px_rgba(6,78,59,0.38)] hover:bg-emerald-900"
+        } ${hasUnreadAssistantMessage && !isOpen ? "pandabot-attention" : ""}`}
         aria-label={isOpen ? "Close PandaBot support" : hasUnreadAssistantMessage ? "Open PandaBot support, new message" : "Open PandaBot support"}
         aria-expanded={isOpen}
         title={isOpen ? "Close support chat" : "Chat with PandaBot"}

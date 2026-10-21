@@ -2,7 +2,6 @@ import { apiFetch } from "../services/api.js";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
-import SocialButton from "../components/SocialButton.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { getSafeInternalPath } from "../utils/safeRedirect.js";
 
@@ -388,7 +387,7 @@ export default function LoginPage() {
     <Layout theme={loginOtpToken && loginOtpRole === "provider" ? "green" : "primary"}>
       {(a) => (
         <>
-        <section className="flex items-center justify-center bg-white px-6 pt-16 pb-6 lg:h-full sm:px-8 md:pt-20">
+        <section className="flex items-center justify-center bg-white px-6 py-8 sm:px-8 lg:h-[calc(100svh-4rem)] lg:py-6">
           <div className="w-full max-w-sm space-y-6">
             {loginOtpToken ? (
               <div className="space-y-6">
@@ -732,17 +731,6 @@ export default function LoginPage() {
                 {isSubmitting ? "Signing in..." : "Login"}
               </button>
             </form>
-
-            <div className="flex items-center gap-3 text-sm text-gray-400">
-              <span className="h-px flex-1 bg-gray-200"></span>
-              <span>Or continue with</span>
-              <span className="h-px flex-1 bg-gray-200"></span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <SocialButton provider="google" />
-              <SocialButton provider="facebook" />
-            </div>
 
             <div className="text-center text-sm text-gray-600">
               Don&apos;t have an account?{' '}
