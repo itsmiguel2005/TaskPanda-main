@@ -48,8 +48,7 @@ export default function WorkerRegisterLocation() {
       address: formData.address,
       geoLocation: formData.geoLocation,
     };
-    sessionStorage.setItem("workerLocationStep", JSON.stringify(locationData));
-    localStorage.setItem("workerLocationStep", JSON.stringify(locationData));
+    saveRegistrationDraft("workerLocationStep", locationData);
     navigate("/worker-register/dob");
   };
 

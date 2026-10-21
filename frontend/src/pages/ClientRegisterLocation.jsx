@@ -28,21 +28,19 @@ export default function ClientRegisterLocation() {
     }
 
     const step1Raw = sessionStorage.getItem("clientStep1") || localStorage.getItem("clientStep1");
-    const nameRaw = sessionStorage.getItem("clientNameStep") || localStorage.getItem("clientNameStep");
-    if (!step1Raw || !nameRaw) {
+    const nameData = readRegistrationDraft("clientNameStep", {});
+    if (!step1Raw || !nameData.firstName || !nameData.lastName) {
       setError("Session expired. Please start registration again.");
       return;
     }
 
     try {
       JSON.parse(step1Raw);
-      JSON.parse(nameRaw);
     } catch (error) {
       setError("Registration data is invalid. Please start again.");
       return;
     }
-    sessionStorage.setItem("clientLocationStep", JSON.stringify(formData));
-    localStorage.setItem("clientLocationStep", JSON.stringify(formData));
+    saveRegistrationDraft("clientLocationStep", formData);
     navigate("/client-register/phone");
   };
 

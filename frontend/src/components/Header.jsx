@@ -27,7 +27,7 @@ function readNotificationPermission() {
   return window.Notification.permission;
 }
 
-function GuestNavigationHeader({ logoColor }) {
+function GuestNavigationHeader({ logoColor, showReviewsLink }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
 
@@ -45,8 +45,9 @@ function GuestNavigationHeader({ logoColor }) {
 
   const links = [
     { label: "Explore Services", to: "/explore" },
-    { label: "How It Works", ...sectionLink("how-it-works") },
     { label: "Why Us", ...sectionLink("built-for-trust") },
+    ...(showReviewsLink ? [{ label: "Reviews", ...sectionLink("homeowner-testimonials") }] : []),
+    { label: "How It Works", ...sectionLink("how-it-works") },
   ];
 
   return (
@@ -110,7 +111,7 @@ function GuestNavigationHeader({ logoColor }) {
   );
 }
 
-export default function Header({ logoColor = "text-primary-700", showNav = false, activeTab = "Home", role = "client" }) {
+export default function Header({ logoColor = "text-primary-700", showNav = false, showReviewsLink = false, activeTab = "Home", role = "client" }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -719,7 +720,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     voucher.status === "active" && (!voucher.expiresAt || new Date(voucher.expiresAt) > new Date())
   ).length;
 
-  if (!isLoggedIn) return <GuestNavigationHeader logoColor={logoColor} />;
+  if (!isLoggedIn) return <GuestNavigationHeader logoColor={logoColor} showReviewsLink={showReviewsLink} />;
 
   return (
     <header className="fixed inset-x-0 top-0 z-30 bg-white/80 backdrop-blur-md shadow-sm">
@@ -757,6 +758,21 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
         )}
 
         <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-3 xl:gap-4">
+          {showReviewsLink && !showNav && (
+            <Link
+              to="/#homeowner-testimonials"
+              onClick={(event) => {
+                if (location.pathname !== "/") return;
+                const section = document.getElementById("homeowner-testimonials");
+                if (!section) return;
+                event.preventDefault();
+                section.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+              className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+            >
+              Reviews
+            </Link>
+          )}
           {showNav && isLoggedIn && authRole === "client" && (
             <Link
               to="/profile#rewards"

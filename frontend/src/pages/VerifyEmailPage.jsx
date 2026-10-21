@@ -2,6 +2,7 @@ import { apiFetch } from "../services/api.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
+import { resumeRegistrationAttempt } from "../utils/registrationDraft.js";
 
 export default function VerifyEmailPage() {
   const [searchParams] = useSearchParams();
@@ -20,23 +21,12 @@ export default function VerifyEmailPage() {
 
     const user = payload.user;
     const isProvider = user.role === "provider";
-    const stepKey = isProvider ? "workerStep1" : "clientStep1";
-    const existingRaw = sessionStorage.getItem(stepKey) || localStorage.getItem(stepKey);
-    let existingStep = {};
-    try {
-      existingStep = existingRaw ? JSON.parse(existingRaw) : {};
-    } catch {
-      existingStep = {};
-    }
-
     sessionStorage.setItem("taskpanda_onboarding_token", payload.onboardingToken);
-    sessionStorage.setItem(stepKey, JSON.stringify({
-      ...existingStep,
+    resumeRegistrationAttempt(isProvider ? "worker" : "client", {
       email: user.email || email,
-      username: user.username || existingStep.username || "",
-      ...(isProvider ? { professions: user.professions || existingStep.professions || [] } : {}),
-    }));
-    localStorage.removeItem(stepKey);
+      username: user.username || "",
+      ...(isProvider && Array.isArray(user.professions) ? { professions: user.professions } : {}),
+    });
     navigate(isProvider ? "/worker-register/name" : "/client-register/name", { replace: true });
   }, [email, navigate]);
 

@@ -5,7 +5,7 @@ import Layout from "../components/Layout.jsx";
 import PhilippineMobileInput from "../components/PhilippineMobileInput.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { getSafeInternalPath } from "../utils/safeRedirect.js";
-import { clearRegistrationDraft, readRegistrationDraft, saveRegistrationDraft } from "../utils/registrationDraft.js";
+import { clearRegistrationAttemptDrafts, readRegistrationDraft, saveRegistrationDraft } from "../utils/registrationDraft.js";
 import { getPhilippineMobileInputValue, normalizePhilippineMobile } from "../utils/registrationValidation.js";
 
 export default function ClientRegisterPhone() {
@@ -71,9 +71,9 @@ export default function ClientRegisterPhone() {
       return;
     }
     const step1Raw = sessionStorage.getItem("clientStep1") || localStorage.getItem("clientStep1");
-    const nameRaw = sessionStorage.getItem("clientNameStep") || localStorage.getItem("clientNameStep");
-    const locationRaw = sessionStorage.getItem("clientLocationStep") || localStorage.getItem("clientLocationStep");
-    if (!step1Raw || !nameRaw || !locationRaw) {
+    const nameData = readRegistrationDraft("clientNameStep", {});
+    const locationData = readRegistrationDraft("clientLocationStep", {});
+    if (!step1Raw || !nameData.firstName || !nameData.lastName || !locationData.geoLocation?.coordinates) {
       setError("Registration data is missing. Please start again.");
       return;
     }
@@ -97,9 +97,7 @@ export default function ClientRegisterPhone() {
         setVerifiedPhone(normalizedMobileNumber);
       }
       const step1 = JSON.parse(step1Raw);
-      const nameData = JSON.parse(nameRaw);
-      const locationData = JSON.parse(locationRaw);
-      const { password, ...accountData } = step1;
+      const { password, draftId, ...accountData } = step1;
       const payload = {
         ...accountData,
         ...nameData,
@@ -122,11 +120,11 @@ export default function ClientRegisterPhone() {
         if (response.status === 401) sessionStorage.removeItem("taskpanda_onboarding_token");
         return;
       }
+      clearRegistrationAttemptDrafts("client");
       ["clientStep1", "clientNameStep", "clientLocationStep"].forEach((key) => {
         sessionStorage.removeItem(key);
         localStorage.removeItem(key);
       });
-      clearRegistrationDraft("clientPhoneStep");
       sessionStorage.removeItem("taskpanda_onboarding_token");
       login(data.user, data.token, false);
       const redirectTo = getSafeInternalPath(sessionStorage.getItem("taskpanda_post_auth_redirect"));

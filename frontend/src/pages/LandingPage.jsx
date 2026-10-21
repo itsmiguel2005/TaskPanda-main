@@ -83,6 +83,86 @@ const categoryCards = [
   { name: "IT & Gadget Repair", icon: "🖥️", tone: "from-slate-50 to-cyan-50 text-slate-700 border-sky-100" },
 ];
 
+const completedJobs = [
+  {
+    title: "Aircon Tune-Up",
+    category: "Aircon service",
+    location: "Dagupan City",
+    rating: "4.9",
+    price: "₱1,299",
+    icon: "aircon",
+    tone: "from-sky-200 via-blue-100 to-cyan-50",
+    iconTone: "bg-white/80 text-sky-700",
+  },
+  {
+    title: "Kitchen Pipe Repair",
+    category: "Plumbing",
+    location: "Calasiao",
+    rating: "4.8",
+    price: "₱899",
+    icon: "plumbing",
+    tone: "from-cyan-200 via-sky-100 to-blue-50",
+    iconTone: "bg-white/80 text-cyan-700",
+  },
+  {
+    title: "Electrical Wiring",
+    category: "Electrical",
+    location: "Urdaneta",
+    rating: "5.0",
+    price: "₱1,580",
+    icon: "electrical",
+    tone: "from-blue-200 via-indigo-100 to-sky-50",
+    iconTone: "bg-white/80 text-blue-700",
+  },
+  {
+    title: "Faucet Replacement",
+    category: "Plumbing",
+    location: "Dagupan City",
+    rating: "4.9",
+    price: "₱650",
+    icon: "faucet",
+    tone: "from-teal-200 via-cyan-100 to-sky-50",
+    iconTone: "bg-white/80 text-teal-700",
+  },
+  {
+    title: "Home Deep Cleaning",
+    category: "Cleaning",
+    location: "Calasiao",
+    rating: "4.8",
+    price: "₱1,200",
+    icon: "cleaning",
+    tone: "from-sky-200 via-blue-100 to-cyan-50",
+    iconTone: "bg-white/80 text-sky-700",
+  },
+];
+
+const homeownerTestimonials = [
+  {
+    quote: "Got my aircon fixed on the same day right here in Dagupan. Super convenient and no sketchy off-platform negotiations!",
+    name: "Maria S.",
+    role: "Homeowner",
+    location: "Dagupan City",
+    initials: "MS",
+    avatarTone: "bg-sky-100 text-sky-800",
+  },
+  {
+    quote: "Found a reliable electrician for our kitchen wiring in Calasiao. The price quote feature made it transparent.",
+    name: "John D.",
+    role: "Resident",
+    location: "Calasiao",
+    initials: "JD",
+    avatarTone: "bg-blue-100 text-blue-800",
+  },
+  {
+    quote: "Very user-friendly app for booking trusted local technicians. Love the chat support and booking tracking.",
+    name: "Ana L.",
+    role: "Homeowner",
+    location: "Tagudin",
+    initials: "AL",
+    avatarTone: "bg-cyan-100 text-cyan-800",
+  },
+];
+
 const providers = [
   {
     name: "Johhny Cruz",
@@ -135,6 +215,22 @@ function StarIcon({ filled }) {
   );
 }
 
+function CompletedJobIcon({ type }) {
+  const paths = {
+    aircon: <><rect x="3" y="5" width="18" height="10" rx="2" /><path d="M7 19h10M8 15v2m8-2v2M7 9h10" /></>,
+    plumbing: <><path d="M7 4v5a5 5 0 0 0 10 0V4M5 4h4m6 0h4M12 14v6m-3-2h6" /><path d="M10 8h4" /></>,
+    electrical: <><path d="M13 2 5 13h6l-1 9 9-12h-6l1-8Z" /></>,
+    faucet: <><path d="M4 8h16M7 8V5a3 3 0 0 1 6 0v3m0 0h4a3 3 0 0 1 3 3v2M7 8v5a4 4 0 0 0 8 0v-1" /><path d="M19 17v2" /></>,
+    cleaning: <><path d="m4 19 9-9m-5 11 9-9M11 4l1.5 3.5L16 9l-3.5 1.5L11 14l-1.5-3.5L6 9l3.5-1.5L11 4Z" /><path d="m19 3 .8 2.2L22 6l-2.2.8L19 9l-.8-2.2L16 6l2.2-.8L19 3Z" /></>,
+  };
+
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-9 w-9" aria-hidden="true">
+      {paths[type]}
+    </svg>
+  );
+}
+
 export default function LandingPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -179,6 +275,28 @@ export default function LandingPage() {
         }
         .landing-interactive:hover { transform: translateY(-1px) scale(1.02); }
         .landing-interactive:active { transform: scale(0.98); }
+        @keyframes completedJobsMarquee {
+          to { transform: translateX(-50%); }
+        }
+        .completed-jobs-track {
+          animation: completedJobsMarquee 42s linear infinite;
+        }
+        .completed-jobs-marquee:hover .completed-jobs-track,
+        .completed-jobs-marquee:focus-within .completed-jobs-track {
+          animation-play-state: paused;
+        }
+        @media (max-width: 639px), (prefers-reduced-motion: reduce) {
+          .completed-jobs-marquee {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+          .completed-jobs-track {
+            animation: none;
+          }
+          .completed-jobs-group[aria-hidden="true"] {
+            display: none;
+          }
+        }
         @media (prefers-reduced-motion: reduce) {
           .landing-enter { animation: none; }
           .landing-interactive { transition: none; }
@@ -187,7 +305,7 @@ export default function LandingPage() {
         }
       `}</style>
 
-      <Header showNav={false} />
+      <Header showNav={false} showReviewsLink />
 
       <main className="pb-20">
         <section className="relative overflow-hidden">
@@ -406,6 +524,142 @@ export default function LandingPage() {
                     Book now
                   </div>
                 </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section aria-labelledby="completed-jobs-heading" className="overflow-hidden bg-white py-16">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-700">
+                  Completed jobs &amp; verified pros
+                </p>
+                <h2 id="completed-jobs-heading" className="mt-3 text-3xl font-black tracking-[-0.06em] text-slate-900 sm:text-4xl">
+                  Good work, close to home
+                </h2>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+                  A look at the local services TaskPanda helps you book and complete.
+                </p>
+              </div>
+              <p className="text-xs font-medium text-slate-500">
+                Sample projects · Prices and ratings are illustrative
+              </p>
+            </div>
+
+            <div className="completed-jobs-marquee -mx-4 overflow-hidden px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+              <div className="completed-jobs-track flex w-max">
+                {[false, true].map((isDuplicate) => (
+                  <div
+                    key={isDuplicate ? "duplicate" : "original"}
+                    className="completed-jobs-group flex shrink-0 gap-4 pr-4"
+                    aria-hidden={isDuplicate ? "true" : undefined}
+                  >
+                    {completedJobs.map((job) => (
+                      <article
+                        key={`${isDuplicate ? "duplicate-" : ""}${job.title}`}
+                        className="w-[min(18rem,calc(100vw-3rem))] shrink-0 overflow-hidden rounded-[1.5rem] border border-sky-100 bg-white shadow-[0_16px_48px_rgba(15,23,42,0.07)]"
+                      >
+                        <div className={`relative flex h-36 items-center justify-center bg-linear-to-br ${job.tone}`}>
+                          <span className="absolute left-3 top-3 rounded-full border border-white/80 bg-white/90 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600">
+                            Sample project
+                          </span>
+                          <span className={`flex h-16 w-16 items-center justify-center rounded-2xl shadow-sm ${job.iconTone}`}>
+                            <CompletedJobIcon type={job.icon} />
+                          </span>
+                          <span className="absolute bottom-3 right-3 rounded-lg bg-white/90 px-2.5 py-1 text-xs font-bold text-slate-900 shadow-sm">
+                            {job.price}
+                          </span>
+                        </div>
+                        <div className="p-4">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-700">
+                              {job.category}
+                            </span>
+                            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-800">
+                              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" className="h-3 w-3" aria-hidden="true">
+                                <path d="m3 8 3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                              Verified completed
+                            </span>
+                          </div>
+                          <h3 className="mt-2 text-base font-bold tracking-[-0.03em] text-slate-900">
+                            {job.title}
+                          </h3>
+                          <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-600">
+                            <span className="inline-flex min-w-0 items-center gap-1.5">
+                              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-4 w-4 shrink-0 text-sky-700" aria-hidden="true">
+                                <path d="M16 8.3c0 4.2-6 9.2-6 9.2S4 12.5 4 8.3a6 6 0 1 1 12 0Z" />
+                                <circle cx="10" cy="8" r="2" />
+                              </svg>
+                              <span className="truncate">{job.location}</span>
+                            </span>
+                            <span className="inline-flex shrink-0 items-center gap-1 font-semibold text-slate-800">
+                              <StarIcon filled />
+                              {job.rating}
+                            </span>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="homeowner-testimonials" aria-labelledby="homeowner-testimonials-heading" className="scroll-mt-20 bg-sky-50/60 py-16">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="mb-9 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-700">
+                  What homeowners say
+                </p>
+                <h2 id="homeowner-testimonials-heading" className="mt-3 text-3xl font-black tracking-[-0.06em] text-slate-900 sm:text-4xl">
+                  Local help, trusted by locals
+                </h2>
+              </div>
+              <p className="text-xs font-medium text-slate-500">
+                Illustrative sample testimonials · Not verified customer reviews
+              </p>
+            </div>
+
+            <div className="grid gap-5 md:grid-cols-3">
+              {homeownerTestimonials.map((testimonial) => (
+                <article
+                  key={testimonial.name}
+                  className="flex h-full flex-col rounded-[1.6rem] border border-sky-100 bg-white p-6 shadow-[0_18px_55px_rgba(15,23,42,0.06)]"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-1 text-amber-500" aria-label="5 out of 5 stars">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <StarIcon key={star} filled />
+                      ))}
+                      <span className="ml-1 text-xs font-bold text-slate-800">5.0</span>
+                    </div>
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="h-7 w-7 text-sky-100" aria-hidden="true">
+                      <path d="M10 11H5.5C5.8 8.4 7.2 7 10 6.4V4C5.5 4.7 3 7.6 3 12v7h7v-8Zm11 0h-4.5c.3-2.6 1.7-4 4.5-4.6V4c-4.5.7-7 3.6-7 8v7h7v-8Z" />
+                    </svg>
+                  </div>
+
+                  <blockquote className="mt-5 flex-1 text-sm leading-7 text-slate-700">
+                    “{testimonial.quote}”
+                  </blockquote>
+
+                  <div className="mt-6 flex items-center gap-3 border-t border-slate-100 pt-5">
+                    <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-bold ${testimonial.avatarTone}`} aria-hidden="true">
+                      {testimonial.initials}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-slate-900">{testimonial.name}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {testimonial.role} · {testimonial.location}
+                      </p>
+                    </div>
+                  </div>
+                </article>
               ))}
             </div>
           </div>

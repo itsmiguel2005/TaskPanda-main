@@ -608,12 +608,12 @@ export default function Explore() {
 
   return (
     <div className={`dashboard-page ${isLoggedIn ? "" : "pt-0"}`}>
-      <Header showNav activeTab="Explore" />
+      <Header showNav activeTab="Explore" showReviewsLink />
 
       <div className={`dashboard-shell mt-6 grid grid-cols-1 gap-6 ${!isLoggedIn && showGuestVoucherAd ? "pb-28" : "pb-10"} lg:grid-cols-[16rem_minmax(0,1fr)]`}>
         {/* Hero Search Section */}
         <div className="relative lg:col-start-2 lg:row-start-1">
-          <div className="dashboard-panel grid gap-5 px-5 py-6 sm:px-8 sm:py-8">
+          <div className="dashboard-panel grid gap-5 px-5 py-5 sm:px-8 sm:py-7">
             <div className="grid min-w-0 items-center gap-x-6 gap-y-5 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,21rem)]">
               <div className="min-w-0 max-w-2xl">
                 <p className="dashboard-kicker">Local services, matched to you</p>
@@ -636,7 +636,7 @@ export default function Explore() {
               </div>
             </div>
             <div className="min-w-0">
-              <div className="mt-5 flex min-w-0 items-center overflow-hidden rounded-xl border border-sky-100 bg-sky-50/60 p-1.5 shadow-sm">
+              <div className="mt-4 flex min-w-0 items-center overflow-hidden rounded-xl border border-sky-100 bg-sky-50/60 p-1.5 shadow-sm">
                 <input
                   type="text"
                   value={searchQuery}

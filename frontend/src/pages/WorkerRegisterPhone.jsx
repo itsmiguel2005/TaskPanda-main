@@ -5,7 +5,7 @@ import Layout from "../components/Layout.jsx";
 import PhilippineMobileInput from "../components/PhilippineMobileInput.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { getSafeInternalPath } from "../utils/safeRedirect.js";
-import { clearRegistrationDraft, readRegistrationDraft, saveRegistrationDraft } from "../utils/registrationDraft.js";
+import { clearRegistrationAttemptDrafts, readRegistrationDraft, saveRegistrationDraft } from "../utils/registrationDraft.js";
 import { getPhilippineMobileInputValue, normalizePhilippineMobile } from "../utils/registrationValidation.js";
 
 export default function WorkerRegisterPhone() {
@@ -57,12 +57,20 @@ export default function WorkerRegisterPhone() {
     if (verifiedPhone !== normalizedMobileNumber && !/^\d{6}$/.test(otpCode)) return setError("Enter the 6-digit SMS verification code.");
     const onboardingToken = sessionStorage.getItem("taskpanda_onboarding_token");
     if (!onboardingToken) return setError("Your registration session expired. Sign in again to continue.");
-    const keys = ["workerStep1", "workerNameStep", "workerProfessionStep", "workerLocationStep", "workerDobStep"];
-    const stored = keys.map((key) => sessionStorage.getItem(key) || localStorage.getItem(key));
-    if (stored.some((value) => !value)) return setError("Registration data is missing. Please start again.");
+    const step1Raw = sessionStorage.getItem("workerStep1") || localStorage.getItem("workerStep1");
+    if (!step1Raw) return setError("Registration data is missing. Please start again.");
 
     try {
-      const [step1, name, profession, location, dob] = stored.map((value) => JSON.parse(value));
+      const step1 = JSON.parse(step1Raw);
+      const name = readRegistrationDraft("workerNameStep", {});
+      const profession = readRegistrationDraft("workerProfessionStep", {});
+      const location = readRegistrationDraft("workerLocationStep", {});
+      const dob = readRegistrationDraft("workerDobStep", {});
+      if (!name.firstName || !name.lastName || !profession.professions?.length
+        || !location.geoLocation?.coordinates || !dob.dateOfBirth) {
+        setError("Registration data is missing. Please start again.");
+        return;
+      }
       setIsSubmitting(true);
       if (verifiedPhone !== normalizedMobileNumber) {
         const verificationResponse = await apiFetch("/api/auth/verify-phone-otp", {
@@ -80,7 +88,7 @@ export default function WorkerRegisterPhone() {
         }
         setVerifiedPhone(normalizedMobileNumber);
       }
-      const { password, ...accountData } = step1;
+      const { password, draftId, ...accountData } = step1;
       const response = await apiFetch("/api/auth/complete-registration", {
         method: "POST",
         headers: {
@@ -95,8 +103,11 @@ export default function WorkerRegisterPhone() {
         if (response.status === 401) sessionStorage.removeItem("taskpanda_onboarding_token");
         return;
       }
-      keys.forEach((key) => { sessionStorage.removeItem(key); localStorage.removeItem(key); });
-      clearRegistrationDraft("workerPhoneStep");
+      clearRegistrationAttemptDrafts("worker");
+      ["workerStep1", "workerNameStep", "workerProfessionStep", "workerLocationStep", "workerDobStep"].forEach((key) => {
+        sessionStorage.removeItem(key);
+        localStorage.removeItem(key);
+      });
       sessionStorage.removeItem("taskpanda_onboarding_token");
       login(data.user, data.token, false);
       const redirectTo = getSafeInternalPath(sessionStorage.getItem("taskpanda_post_auth_redirect"));

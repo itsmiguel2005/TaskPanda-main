@@ -45,8 +45,7 @@ export default function ClientRegisterName() {
       middleName: formData.middleName.trim(),
       lastName,
     };
-    sessionStorage.setItem("clientNameStep", JSON.stringify(nameData));
-    localStorage.setItem("clientNameStep", JSON.stringify(nameData));
+    saveRegistrationDraft("clientNameStep", nameData);
     navigate("/client-register/location");
   };
 

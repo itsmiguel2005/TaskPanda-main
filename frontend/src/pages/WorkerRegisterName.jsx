@@ -28,8 +28,7 @@ export default function WorkerRegisterName() {
       return;
     }
     const data = { firstName, middleName: formData.middleName.trim(), lastName };
-    sessionStorage.setItem("workerNameStep", JSON.stringify(data));
-    localStorage.setItem("workerNameStep", JSON.stringify(data));
+    saveRegistrationDraft("workerNameStep", data);
     navigate("/worker-register/profession");
   };
 

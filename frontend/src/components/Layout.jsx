@@ -26,7 +26,7 @@ const accentClasses = {
   },
 };
 
-export default function Layout({ theme = "primary", focusContent = false, children }) {
+export default function Layout({ theme = "primary", focusContent = false, showReviewsLink = true, children }) {
   const a = accentClasses[theme];
   return (
     <div className="auth-shell bg-white text-gray-800 antialiased">
@@ -76,7 +76,7 @@ export default function Layout({ theme = "primary", focusContent = false, childr
           .auth-form-area .auth-back-link:hover svg { transform: none; }
         }
       `}</style>
-      <Header logoColor={theme === "green" ? "text-emerald-700" : "text-sky-700"} />
+      <Header logoColor={theme === "green" ? "text-emerald-700" : "text-sky-700"} showReviewsLink={showReviewsLink} />
       <main
         className={`auth-main grid min-h-screen grid-cols-1 bg-white ${focusContent ? "" : "gap-6 lg:h-screen lg:grid-cols-2 lg:gap-0"}`}
         data-theme={theme}

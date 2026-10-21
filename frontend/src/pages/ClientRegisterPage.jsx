@@ -7,6 +7,7 @@ import PasswordStrengthMeter from "../components/PasswordStrengthMeter.jsx";
 import RecaptchaDisclosure from "../components/RecaptchaDisclosure.jsx";
 import { getPasswordStrength, getUsernameError } from "../utils/registrationValidation.js";
 import { executeRecaptcha } from "../utils/recaptcha.js";
+import { startRegistrationAttempt } from "../utils/registrationDraft.js";
 
 export default function ClientRegisterPage() {
   console.log("[ClientRegisterPage] MOUNTED");
@@ -171,8 +172,7 @@ export default function ClientRegisterPage() {
         email: formData.email.trim().toLowerCase(),
         referralCode: formData.referralCode.trim().toUpperCase(),
       };
-      sessionStorage.setItem("clientStep1", JSON.stringify(step1));
-      localStorage.removeItem("clientStep1");
+      startRegistrationAttempt("client", step1);
       navigate(`/verify-email?email=${encodeURIComponent(formData.email.trim().toLowerCase())}`);
     } catch (registerError) {
       setError(registerError.message?.startsWith("reCAPTCHA")

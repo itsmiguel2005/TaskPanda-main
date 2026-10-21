@@ -4,6 +4,7 @@ import { useNavigate, useLocation, Link } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { getSafeInternalPath } from "../utils/safeRedirect.js";
+import { resumeRegistrationAttempt } from "../utils/registrationDraft.js";
 
 function formatWaitTime(totalSeconds) {
   const minutes = Math.floor(totalSeconds / 60);
@@ -166,15 +167,15 @@ export default function LoginPage() {
         logout();
         const incompleteUser = data.user || {};
         const role = incompleteUser.role || data.role || "client";
-        const stepKey = role === "provider" ? "workerStep1" : "clientStep1";
         const stepData = {
           email: incompleteUser.email || formData.email,
-          username: incompleteUser.username || "",
-          ...(role === "provider" ? { professions: incompleteUser.professions || [] } : {}),
+          ...(incompleteUser.username ? { username: incompleteUser.username } : {}),
+          ...(role === "provider" && Array.isArray(incompleteUser.professions)
+            ? { professions: incompleteUser.professions }
+            : {}),
         };
         sessionStorage.setItem("taskpanda_onboarding_token", data.onboardingToken || "");
-        sessionStorage.setItem(stepKey, JSON.stringify(stepData));
-        localStorage.removeItem(stepKey);
+        resumeRegistrationAttempt(role === "provider" ? "worker" : "client", stepData);
         navigate(role === "provider" ? "/worker-register/name" : "/client-register/name", { replace: true });
         return;
       }
@@ -384,7 +385,7 @@ export default function LoginPage() {
   };
 
   return (
-    <Layout theme={loginOtpToken && loginOtpRole === "provider" ? "green" : "primary"}>
+    <Layout theme={loginOtpToken && loginOtpRole === "provider" ? "green" : "primary"} showReviewsLink>
       {(a) => (
         <>
         <section className="flex items-center justify-center bg-white px-6 py-8 sm:px-8 lg:h-[calc(100svh-4rem)] lg:py-6">

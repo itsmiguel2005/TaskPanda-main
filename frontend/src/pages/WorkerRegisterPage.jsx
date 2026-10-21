@@ -7,6 +7,7 @@ import PasswordStrengthMeter from "../components/PasswordStrengthMeter.jsx";
 import RecaptchaDisclosure from "../components/RecaptchaDisclosure.jsx";
 import { getPasswordStrength, getUsernameError } from "../utils/registrationValidation.js";
 import { executeRecaptcha } from "../utils/recaptcha.js";
+import { startRegistrationAttempt } from "../utils/registrationDraft.js";
 
 export default function WorkerRegisterPage() {
   console.log("[WorkerRegisterPage] MOUNTED");
@@ -163,8 +164,7 @@ export default function WorkerRegisterPage() {
       }
 
       const step1 = { username: formData.username.trim(), email: formData.email.trim().toLowerCase() };
-      sessionStorage.setItem("workerStep1", JSON.stringify(step1));
-      localStorage.removeItem("workerStep1");
+      startRegistrationAttempt("worker", step1);
       navigate(`/verify-email?email=${encodeURIComponent(formData.email.trim().toLowerCase())}`);
     } catch (registerError) {
       setError(registerError.message?.startsWith("reCAPTCHA")
