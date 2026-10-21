@@ -26,6 +26,24 @@ function formatPhpAmount(value, fixed = false) {
   return `₱${(Number.isFinite(amount) ? amount : 0).toLocaleString("en-PH", { minimumFractionDigits: fixed ? 2 : 0, maximumFractionDigits: 2 })}`;
 }
 
+function isCurrentPhilippineMonth(value, now = new Date()) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return false;
+
+  const monthKey = (value) => {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "numeric",
+    }).formatToParts(value);
+    const year = parts.find((part) => part.type === "year")?.value;
+    const month = parts.find((part) => part.type === "month")?.value;
+    return `${year}-${month}`;
+  };
+
+  return monthKey(date) === monthKey(now);
+}
+
 function fmtDate(raw) {
   if (!raw) return "";
   const d = new Date(raw);
@@ -159,6 +177,17 @@ const ACTIVE_SCHEDULE_STATUSES = new Set([
   "On the Way",
   "In Progress",
   "Cancellation Requested",
+]);
+const ACTIVE_JOB_STATUSES = new Set(["in_progress", "In Progress"]);
+const EARNING_STATUSES = new Set([
+  "Completed",
+  "Settled",
+  "Refund Under Review",
+  "Repayment Pending",
+  "Repayment Reported",
+  "Repayment Overdue",
+  "Refunded",
+  "Partially Refunded",
 ]);
 
 // ─── Incoming Request card ───────────────────────────────────────────────────
@@ -835,15 +864,17 @@ export default function ProviderDashboard() {
   );
 
   const stats = useMemo(() => {
-    const activeJobs = jobs.filter((j) => !["Completed", "Settled", "Cancelled", "Declined by Provider", "Expired"].includes(j.status)).length;
+    const activeJobs = jobs.filter((j) => ACTIVE_JOB_STATUSES.has(j.status)).length;
     const completedJobs = providerBookingStats?.completedJobs
       ?? jobs.filter((j) => ["Completed", "Settled"].includes(j.status)).length;
     const earnings = providerBookingStats?.earnings
       ?? jobs
-        .filter((j) => ["Completed", "Settled"].includes(j.status))
+        .filter((j) => EARNING_STATUSES.has(j.status)
+          && isCurrentPhilippineMonth(j.settledAt || j.workCompletedAt || j.completionSubmittedAt || j.updatedAt || j.createdAt))
         .reduce((sum, j) => {
           const total = Number(j.totalPrice);
-          return sum + (Number.isFinite(total) ? total : parsePrice(j.price));
+          const gross = Number.isFinite(total) ? total : parsePrice(j.price);
+          return sum + Math.max(0, gross - Number(j.refundAmount || 0));
         }, 0);
     return { rating: ratingData.rating, reviews: ratingData.reviews, activeJobs, completedJobs, earnings };
   }, [jobs, providerBookingStats, ratingData]);
@@ -1021,9 +1052,9 @@ export default function ProviderDashboard() {
 
           {/* Total Earnings */}
           <div data-onboarding-target="provider-earnings" className="dashboard-stat">
-            <p className="dashboard-kicker">Total earnings</p>
+            <p className="dashboard-kicker">Net earnings this month</p>
             <p className="mt-2 text-3xl font-extrabold tabular-nums text-slate-900">{formatPhpAmount(stats.earnings)}</p>
-            <p className="mt-1 text-xs text-slate-500">From completed jobs</p>
+            <p className="mt-1 text-xs text-slate-500">After refunds</p>
           </div>
         </div>
 

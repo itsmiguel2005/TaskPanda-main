@@ -141,6 +141,22 @@ function normalizeBookingStatus(value) {
   return STATUS_ALIASES[normalizedStatus] || normalizedStatus;
 }
 
+function getCurrentPhilippineMonthBounds(now = new Date()) {
+  const monthParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "numeric",
+  }).formatToParts(now);
+  const year = Number(monthParts.find((part) => part.type === "year")?.value);
+  const month = Number(monthParts.find((part) => part.type === "month")?.value);
+  const offsetMs = PH_TIMEZONE_OFFSET_HOURS * 60 * 60 * 1000;
+
+  return {
+    from: new Date(Date.UTC(year, month - 1, 1) - offsetMs),
+    until: new Date(Date.UTC(year, month, 1) - offsetMs),
+  };
+}
+
 function cancellationResponseWindow(serviceDate, timeSlot) {
   const appointmentTime = new Date(serviceDate);
   const match = String(timeSlot || "").match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
@@ -432,6 +448,33 @@ async function handleListBookings(req, res) {
     let reviewStats = null;
     let bookingStats = null;
     if (dashboardMode && req.user.role === "provider") {
+      const earningMonth = getCurrentPhilippineMonthBounds();
+      const completedStatuses = ["complete", "closed", "settled", "Completed", "Settled"];
+      const earningStatuses = [
+        ...completedStatuses,
+        "refund_pending",
+        "refund_repayment_pending",
+        "refund_repayment_reported",
+        "refund_repayment_overdue",
+        "refunded",
+        "partially_refunded",
+      ];
+      const earningDate = {
+        $ifNull: [
+          "$settledAt",
+          {
+            $ifNull: [
+              "$workCompletedAt",
+              {
+                $ifNull: [
+                  "$completionSubmittedAt",
+                  { $ifNull: ["$updatedAt", "$createdAt"] },
+                ],
+              },
+            ],
+          },
+        ],
+      };
       const [reviewAggregate, completedAggregate] = await Promise.all([
         Booking.aggregate([
           { $match: { providerId: req.user._id, clientRating: { $type: "number" } } },
@@ -441,19 +484,44 @@ async function handleListBookings(req, res) {
           {
             $match: {
               providerId: req.user._id,
-              status: { $in: ["complete", "closed", "settled", "Completed", "Settled"] },
+              status: { $in: earningStatuses },
             },
           },
           {
             $group: {
               _id: null,
-              completedJobs: { $sum: 1 },
+              completedJobs: {
+                $sum: {
+                  $cond: [{ $in: ["$status", completedStatuses] }, 1, 0],
+                },
+              },
               earnings: {
                 $sum: {
-                  $add: [
-                    { $ifNull: ["$offeredPrice", 0] },
-                    { $ifNull: ["$travelFee", 0] },
-                    { $ifNull: ["$tipAmount", 0] },
+                  $cond: [
+                    {
+                      $and: [
+                        { $gte: [earningDate, earningMonth.from] },
+                        { $lt: [earningDate, earningMonth.until] },
+                      ],
+                    },
+                    {
+                      $max: [
+                        0,
+                        {
+                          $subtract: [
+                            {
+                              $add: [
+                                { $ifNull: ["$offeredPrice", 0] },
+                                { $ifNull: ["$travelFee", 0] },
+                                { $ifNull: ["$tipAmount", 0] },
+                              ],
+                            },
+                            { $ifNull: ["$refundAmount", 0] },
+                          ],
+                        },
+                      ],
+                    },
+                    0,
                   ],
                 },
               },
