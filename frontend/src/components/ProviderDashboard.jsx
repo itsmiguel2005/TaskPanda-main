@@ -454,6 +454,99 @@ function JobProgressTracker({ status, onAdvanceStatus, compact = false }) {
   );
 }
 
+function GetDirectionsButton({ booking, compact = false }) {
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [error, setError] = useState("");
+  const coordinates = booking.serviceGeoLocation?.coordinates;
+  const destination = Array.isArray(coordinates) && coordinates.length === 2
+    && coordinates.every((coordinate) => (
+      (typeof coordinate === "number" || typeof coordinate === "string")
+      && String(coordinate).trim() !== ""
+      && Number.isFinite(Number(coordinate))
+    ))
+    ? { longitude: Number(coordinates[0]), latitude: Number(coordinates[1]) }
+    : null;
+  const hasDestination = destination
+    && Number.isFinite(destination.longitude)
+    && Math.abs(destination.longitude) <= 180
+    && Number.isFinite(destination.latitude)
+    && Math.abs(destination.latitude) <= 90;
+
+  const getDirections = () => {
+    setError("");
+    if (!hasDestination) return;
+
+    const mapsWindow = window.open("", "_blank");
+    if (!mapsWindow) {
+      setError("Your browser blocked the directions tab. Allow pop-ups and try again.");
+      return;
+    }
+    mapsWindow.opener = null;
+    mapsWindow.document.title = "Getting directions";
+    mapsWindow.document.body.textContent = "Waiting for your current location…";
+
+    const fail = (message) => {
+      mapsWindow.close();
+      setIsGettingLocation(false);
+      setError(message);
+    };
+
+    if (!navigator.geolocation) {
+      fail("Location is not available in this browser. Try again on a device with location services.");
+      return;
+    }
+
+    setIsGettingLocation(true);
+    try {
+      navigator.geolocation.getCurrentPosition(
+        ({ coords: current }) => {
+          if (mapsWindow.closed) {
+            setIsGettingLocation(false);
+            return;
+          }
+          const origin = `${current.latitude},${current.longitude}`;
+          const target = `${destination.latitude},${destination.longitude}`;
+          const url = new URL("https://www.google.com/maps/dir/");
+          url.searchParams.set("api", "1");
+          url.searchParams.set("origin", origin);
+          url.searchParams.set("destination", target);
+          url.searchParams.set("travelmode", "driving");
+          mapsWindow.location.href = url.toString();
+          setIsGettingLocation(false);
+        },
+        (locationError) => {
+          if (locationError.code === locationError.PERMISSION_DENIED) {
+            fail("Location permission was denied. Allow location access in your browser settings, then try again.");
+          } else if (locationError.code === locationError.POSITION_UNAVAILABLE) {
+            fail("Your current location could not be determined. Check location services and try again.");
+          } else {
+            fail("Could not get your current location in time. Please try again.");
+          }
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    } catch {
+      fail("Could not get your current location. Check location services and try again.");
+    }
+  };
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={getDirections}
+        disabled={!hasDestination || isGettingLocation}
+        className={`dashboard-secondary-button dashboard-focus w-full disabled:cursor-not-allowed disabled:opacity-50 ${compact ? "px-3 py-2 text-xs" : "py-2.5 text-center text-sm"}`}
+      >
+        {isGettingLocation ? "Getting location…" : "Get directions"}
+      </button>
+      {hasDestination
+        ? error && <p role="alert" className="mt-1.5 text-xs leading-5 text-rose-700">{error}</p>
+        : <p className="mt-1.5 text-xs leading-5 text-slate-600">Directions aren’t available because this booking has no pinned service location.</p>}
+    </div>
+  );
+}
+
 function JobCard({
   booking,
   providerProfession,
@@ -566,6 +659,7 @@ function JobCard({
             <div className="flex min-w-0 flex-col items-stretch gap-2">
               <button type="button" onClick={() => onNavigate(`/provider/messages?bookingId=${booking.id}`)} className="dashboard-secondary-button dashboard-focus w-full px-3 py-2 text-xs">Open conversation</button>
               <button type="button" onClick={() => onViewDetails(booking)} className="dashboard-secondary-button dashboard-focus w-full px-3 py-2 text-xs">View details</button>
+              <GetDirectionsButton booking={booking} compact />
               <JobProgressTracker
                 status={booking.status}
                 compact
@@ -683,6 +777,7 @@ function JobCard({
           >
             View details
           </button>
+          <GetDirectionsButton booking={booking} />
           {actionButton && (
             <button
               type="button"
