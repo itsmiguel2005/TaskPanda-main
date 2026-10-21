@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useId, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
@@ -455,8 +455,12 @@ function JobProgressTracker({ status, onAdvanceStatus, compact = false }) {
 }
 
 function GetDirectionsButton({ booking, compact = false }) {
-  const [isGettingLocation, setIsGettingLocation] = useState(false);
-  const [error, setError] = useState("");
+  const [locationDialog, setLocationDialog] = useState(null);
+  const requestIdRef = useRef(0);
+  const timeoutRef = useRef(null);
+  const triggerRef = useRef(null);
+  const dialogRef = useRef(null);
+  const dialogId = useId();
   const coordinates = booking.serviceGeoLocation?.coordinates;
   const destination = Array.isArray(coordinates) && coordinates.length === 2
     && coordinates.every((coordinate) => (
@@ -472,38 +476,112 @@ function GetDirectionsButton({ booking, compact = false }) {
     && Number.isFinite(destination.latitude)
     && Math.abs(destination.latitude) <= 90;
 
-  const getDirections = () => {
-    setError("");
-    if (!hasDestination) return;
+  useEffect(() => () => {
+    requestIdRef.current += 1;
+    if (timeoutRef.current != null) window.clearTimeout(timeoutRef.current);
+  }, []);
 
-    const mapsWindow = window.open("", "_blank");
-    if (!mapsWindow) {
-      setError("Your browser blocked the directions tab. Allow pop-ups and try again.");
-      return;
+  const stopWaiting = () => {
+    requestIdRef.current += 1;
+    if (timeoutRef.current != null) {
+      window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
     }
-    mapsWindow.opener = null;
-    mapsWindow.document.title = "Getting directions";
-    mapsWindow.document.body.textContent = "Waiting for your current location…";
+  };
 
-    const fail = (message) => {
-      mapsWindow.close();
-      setIsGettingLocation(false);
-      setError(message);
+  const isDialogOpen = locationDialog !== null;
+  useEffect(() => {
+    if (!isDialogOpen) return undefined;
+    const previouslyFocused = document.activeElement;
+    dialogRef.current?.focus();
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        stopWaiting();
+        setLocationDialog(null);
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const buttons = dialogRef.current.querySelectorAll("button:not(:disabled)");
+      const firstButton = buttons[0];
+      const lastButton = buttons[buttons.length - 1];
+      if (!firstButton || !lastButton) return;
+      if (event.shiftKey && document.activeElement === firstButton) {
+        event.preventDefault();
+        lastButton.focus();
+      } else if (!event.shiftKey && document.activeElement === lastButton) {
+        event.preventDefault();
+        firstButton.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      if (triggerRef.current?.isConnected) triggerRef.current.focus();
+      else previouslyFocused?.focus?.();
+    };
+  }, [isDialogOpen]);
+
+  const requestLocation = () => {
+    if (!hasDestination) return;
+    stopWaiting();
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    setLocationDialog({ status: "loading" });
+    dialogRef.current?.focus();
+
+    const showError = (title, message) => {
+      if (requestId !== requestIdRef.current) return;
+      if (timeoutRef.current != null) {
+        window.clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      setLocationDialog({ status: "error", title, message });
     };
 
+    if (!window.isSecureContext) {
+      showError(
+        "Secure connection required",
+        "Location access only works on a secure connection. Open TaskPanda using its HTTPS address, then try again."
+      );
+      return;
+    }
     if (!navigator.geolocation) {
-      fail("Location is not available in this browser. Try again on a device with location services.");
+      showError(
+        "Location isn’t available",
+        "This browser doesn’t support location access. Try a current browser with device Location Services turned on."
+      );
       return;
     }
 
-    setIsGettingLocation(true);
+    timeoutRef.current = window.setTimeout(() => {
+      if (requestId !== requestIdRef.current) return;
+      requestIdRef.current += 1;
+      timeoutRef.current = null;
+      setLocationDialog({
+        status: "error",
+        title: "Still waiting for your location",
+        message: "The browser hasn’t returned a location yet. Allow location access for TaskPanda in your browser’s site settings and turn on Location Services in your device or system settings, then retry.",
+      });
+    }, 20000);
+
     try {
       navigator.geolocation.getCurrentPosition(
         ({ coords: current }) => {
-          if (mapsWindow.closed) {
-            setIsGettingLocation(false);
+          if (requestId !== requestIdRef.current) return;
+          if (timeoutRef.current != null) {
+            window.clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+          }
+          if (!Number.isFinite(current.latitude) || Math.abs(current.latitude) > 90
+            || !Number.isFinite(current.longitude) || Math.abs(current.longitude) > 180) {
+            setLocationDialog({
+              status: "error",
+              title: "Couldn’t read your location",
+              message: "Your device returned an invalid location. Check that Location Services are turned on, then try again.",
+            });
             return;
           }
+
           const origin = `${current.latitude},${current.longitude}`;
           const target = `${destination.latitude},${destination.longitude}`;
           const url = new URL("https://www.google.com/maps/dir/");
@@ -511,38 +589,140 @@ function GetDirectionsButton({ booking, compact = false }) {
           url.searchParams.set("origin", origin);
           url.searchParams.set("destination", target);
           url.searchParams.set("travelmode", "driving");
-          mapsWindow.location.href = url.toString();
-          setIsGettingLocation(false);
+          setLocationDialog({ status: "success", mapsUrl: url.toString() });
         },
         (locationError) => {
+          if (requestId !== requestIdRef.current) return;
           if (locationError.code === locationError.PERMISSION_DENIED) {
-            fail("Location permission was denied. Allow location access in your browser settings, then try again.");
+            showError(
+              "Turn on location access",
+              "Location access is blocked for TaskPanda. In your browser’s site settings, allow Location. Also turn on Location Services in your device or system settings, then tap Try again."
+            );
           } else if (locationError.code === locationError.POSITION_UNAVAILABLE) {
-            fail("Your current location could not be determined. Check location services and try again.");
+            showError(
+              "Your location can’t be determined",
+              "Turn on your device’s Location Services and Wi-Fi/location accuracy, then tap Try again."
+            );
           } else {
-            fail("Could not get your current location in time. Please try again.");
+            showError(
+              "Location request timed out",
+              "Make sure Location Services are turned on and that your browser allows TaskPanda to use your location, then tap Try again."
+            );
           }
         },
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     } catch {
-      fail("Could not get your current location. Check location services and try again.");
+      showError(
+        "Couldn’t access your location",
+        "Check that your browser and device allow location access for TaskPanda, then tap Try again."
+      );
     }
   };
 
   return (
     <div>
       <button
+        ref={triggerRef}
         type="button"
-        onClick={getDirections}
-        disabled={!hasDestination || isGettingLocation}
+        onClick={requestLocation}
+        disabled={!hasDestination || locationDialog?.status === "loading"}
         className={`dashboard-secondary-button dashboard-focus w-full disabled:cursor-not-allowed disabled:opacity-50 ${compact ? "px-3 py-2 text-xs" : "py-2.5 text-center text-sm"}`}
       >
-        {isGettingLocation ? "Getting location…" : "Get directions"}
+        Get directions
       </button>
-      {hasDestination
-        ? error && <p role="alert" className="mt-1.5 text-xs leading-5 text-rose-700">{error}</p>
-        : <p className="mt-1.5 text-xs leading-5 text-slate-600">Directions aren’t available because this booking has no pinned service location.</p>}
+      {!hasDestination && <p className="mt-1.5 text-xs leading-5 text-slate-600">Directions aren’t available because this booking has no pinned service location.</p>}
+      {locationDialog && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && locationDialog.status === "error") {
+            stopWaiting();
+            setLocationDialog(null);
+          }
+        }}>
+          <section
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`${dialogId}-title`}
+            aria-describedby={`${dialogId}-description`}
+            tabIndex={-1}
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl sm:p-6"
+          >
+            {locationDialog.status === "loading" ? (
+              <>
+                <div className="flex items-center gap-3">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-6 w-6 shrink-0 animate-spin text-sky-700">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity=".2" strokeWidth="3" />
+                    <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                  <h2 id={`${dialogId}-title`} className="text-base font-semibold text-slate-900">Waiting for your current location</h2>
+                </div>
+                <p id={`${dialogId}-description`} role="status" aria-live="polite" className="mt-3 text-sm leading-6 text-slate-700">
+                  Allow location access if your browser asks. Make sure Location Services are on. Your location is only used to open this route and isn’t saved in TaskPanda.
+                </p>
+                <div className="mt-5 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      stopWaiting();
+                      setLocationDialog(null);
+                    }}
+                    className="dashboard-secondary-button dashboard-focus px-4 py-2 text-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : locationDialog.status === "success" ? (
+              <>
+                <h2 id={`${dialogId}-title`} className="text-base font-semibold text-slate-900">Directions are ready</h2>
+                <p id={`${dialogId}-description`} className="mt-2 text-sm leading-6 text-slate-700">
+                  Your current location is ready to use. Google Maps will open in a new tab, and TaskPanda will stay open here.
+                </p>
+                <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setLocationDialog(null)}
+                    className="dashboard-secondary-button dashboard-focus px-4 py-2 text-sm"
+                  >
+                    Close
+                  </button>
+                  <a
+                    href={locationDialog.mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setLocationDialog(null)}
+                    className="dashboard-primary-button dashboard-focus px-4 py-2 text-center text-sm"
+                  >
+                    Open Google Maps
+                  </a>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 id={`${dialogId}-title`} className="text-base font-semibold text-slate-900">{locationDialog.title}</h2>
+                <p id={`${dialogId}-description`} role="alert" className="mt-2 text-sm leading-6 text-slate-700">{locationDialog.message}</p>
+                <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setLocationDialog(null)}
+                    className="dashboard-secondary-button dashboard-focus px-4 py-2 text-sm"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={requestLocation}
+                    className="dashboard-primary-button dashboard-focus px-4 py-2 text-sm"
+                  >
+                    Try again
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 }
