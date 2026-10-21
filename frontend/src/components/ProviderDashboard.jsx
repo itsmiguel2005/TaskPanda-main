@@ -552,8 +552,15 @@ function JobCard({
           <div id={`job-details-${booking.id}`} className="grid gap-4 border-t border-slate-100 px-4 py-4 transition-all duration-200 ease-in-out md:grid-cols-[minmax(0,1fr)_minmax(15rem,.8fr)]">
             <div className="space-y-3">
               <div className="grid gap-3 text-xs sm:grid-cols-2">
-                <p><span className="font-semibold text-slate-500">Location:</span> <span className="text-slate-700">{address || "Not specified"}</span></p>
                 <p><span className="font-semibold text-slate-500">Schedule:</span> <span className="text-slate-700">{schedule || "Flexible schedule"}</span></p>
+              </div>
+              <div>
+                <p className="dashboard-kicker mb-1">Service location</p>
+                <BookingLocationMap
+                  address={address}
+                  serviceGeoLocation={booking.serviceGeoLocation}
+                  className="h-32 sm:h-36"
+                />
               </div>
               <BookingPriceBreakdown booking={booking} className="mt-0 p-3" />
             </div>
@@ -631,10 +638,6 @@ function JobCard({
           {/* Details grid below progress tracker */}
           <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3">
             <div>
-              <p className="dashboard-kicker">Location</p>
-              <p className="mt-1 text-sm text-slate-700">{address || "Not specified"}</p>
-            </div>
-            <div>
               <p className="dashboard-kicker">Schedule</p>
               <p className="mt-1 text-sm text-slate-700">{schedule || "Flexible schedule"}</p>
             </div>
@@ -642,6 +645,14 @@ function JobCard({
               <p className="dashboard-kicker">Service category</p>
               <p className="mt-1 text-sm text-slate-700">{category || "General Service"}</p>
             </div>
+          </div>
+          <div className="mt-4">
+            <p className="dashboard-kicker mb-1">Service location</p>
+            <BookingLocationMap
+              address={address}
+              serviceGeoLocation={booking.serviceGeoLocation}
+              className="h-32 sm:h-36"
+            />
           </div>
           <BookingPriceBreakdown booking={booking} className="mt-4" />
         </div>
