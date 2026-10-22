@@ -59,7 +59,7 @@ export default function AdminHeaderActions() {
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
   const [notificationError, setNotificationError] = useState("");
 
-  const displayName = user?.fullName || user?.username || "Administrator";
+  const displayName = String(user?.fullName || user?.username || "Administrator").split("@", 1)[0].trim() || "Administrator";
   const firstName = displayName.split(/\s+/)[0] || "Administrator";
   const initials = displayName
     .split(/\s+/)

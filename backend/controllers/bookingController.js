@@ -571,7 +571,7 @@ async function handleDismissDashboardBookings(req, res) {
 
   try {
     const statuses = req.user.role === "provider"
-      ? ["settled", "canceled", "declined", "expired", "provider_no_show", "Settled", "Cancelled", "Declined by Provider", "Expired"]
+      ? ["settled", "canceled", "declined", "expired", "provider_no_show", "refunded", "partially_refunded", "Settled", "Cancelled", "Declined by Provider", "Expired", "Refunded", "Partially Refunded"]
       : ["complete", "closed", "settled", "canceled", "declined", "provider_no_show", "expired", "refunded", "partially_refunded", "Completed", "Closed", "Settled", "Cancelled", "Declined by Provider", "Expired", "Refunded", "Partially Refunded"];
     const ownerField = req.user.role === "provider" ? "providerId" : "clientId";
     const eligibleBookings = await Booking.find({

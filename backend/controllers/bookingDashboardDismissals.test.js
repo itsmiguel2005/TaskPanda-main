@@ -64,6 +64,52 @@ test("clients can dismiss expired and refunded bookings from their dashboard", a
   }
 });
 
+test("providers can dismiss refunded bookings from their dashboard", async () => {
+  const bookingId = "507f1f77bcf86cd799439011";
+  let query;
+
+  Booking.find = (filter) => {
+    query = filter;
+    return {
+      select() {
+        return {
+          lean: async () => [{ _id: bookingId }],
+        };
+      },
+    };
+  };
+  UserDashboardDismissal.bulkWrite = async () => {};
+
+  try {
+    const response = {
+      statusCode: 200,
+      status(statusCode) {
+        this.statusCode = statusCode;
+        return this;
+      },
+      json(body) {
+        this.body = body;
+        return this;
+      },
+    };
+
+    await handleDismissDashboardBookings({
+      body: { bookingIds: [bookingId] },
+      user: { _id: "provider-id", role: "provider" },
+    }, response);
+
+    const eligibleStatuses = query.status.$in;
+    for (const status of ["refunded", "Refunded", "partially_refunded", "Partially Refunded"]) {
+      assert.ok(eligibleStatuses.includes(status), `${status} should be dismissible by providers`);
+    }
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body.dismissedBookingIds, [bookingId]);
+  } finally {
+    Booking.find = originalFind;
+    UserDashboardDismissal.bulkWrite = originalBulkWrite;
+  }
+});
+
 test.after(() => {
   Booking.find = originalFind;
   UserDashboardDismissal.bulkWrite = originalBulkWrite;

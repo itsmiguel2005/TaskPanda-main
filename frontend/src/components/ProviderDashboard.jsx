@@ -282,6 +282,12 @@ function RequestCard({ booking, allBookings, onAccept, onDecline, onOpenConversa
               {booking.description && <p><span className="font-semibold text-slate-500">Details:</span> {booking.description}</p>}
               <p><span className="font-semibold text-slate-500">Location:</span> {address || "Address to be confirmed"}</p>
               <p><span className="font-semibold text-slate-500">Schedule:</span> {requestedTime || "Flexible schedule"}</p>
+              <BookingLocationMap
+                address={address}
+                serviceGeoLocation={booking.serviceGeoLocation}
+                className="h-28"
+                showAddress={false}
+              />
               {!arrivalFeasible && <p className="font-medium text-amber-800">Arrival time has passed; request a schedule adjustment.</p>}
               {scheduleConflict && <p className="font-medium text-amber-800">This task overlaps another booking.</p>}
             </div>
