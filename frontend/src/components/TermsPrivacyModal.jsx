@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 const termsSections = [
   {
@@ -128,7 +129,7 @@ export default function TermsPrivacyModal({
 
   const sections = activeTab === "terms" ? termsSections : privacySections;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
@@ -242,6 +243,7 @@ export default function TermsPrivacyModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
