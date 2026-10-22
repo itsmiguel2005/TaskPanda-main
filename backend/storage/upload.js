@@ -1,30 +1,13 @@
-const path = require("path");
-const fs = require("fs");
 const multer = require("multer");
-const uploadDirectory = path.join(__dirname, "../../uploads");
+const { BOOKING_PHOTO_MAX_BYTES } = require("../services/cloudinaryMedia");
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => fs.mkdir(uploadDirectory, { recursive: true }, (error) => cb(error, uploadDirectory)),
-  filename: (req, file, cb) => {
-    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, unique + "-" + path.basename(file.originalname));
+const allowedMimeTypes = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]);
+
+module.exports = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: BOOKING_PHOTO_MAX_BYTES, files: 1, fields: 0, parts: 1 },
+  fileFilter: (_req, file, callback) => {
+    const accepted = allowedMimeTypes.has(file.mimetype);
+    callback(accepted ? null : new Error("Only JPEG, PNG, WebP, or GIF photos are allowed."), accepted);
   },
 });
-
-const upload = multer({
-  storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024,
-    files: 5,
-    fields: 40,
-    fieldSize: 10 * 1024,
-    parts: 45,
-  },
-  fileFilter: (req, file, cb) => {
-    const allowed = /jpeg|jpg|png|webp|gif/;
-    const ok = allowed.test(file.mimetype);
-    cb(ok ? null : new Error("Only image files are allowed"), ok);
-  },
-});
-
-module.exports = upload;

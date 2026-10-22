@@ -3,19 +3,30 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { SkeletonBlock } from "./Skeletons.jsx";
 
+function isPublicCloudinaryImage(photo) {
+  try {
+    const url = new URL(photo);
+    return url.protocol === "https:"
+      && url.hostname === "res.cloudinary.com"
+      && /^\/[^/]+\/image\/upload\//.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 export default function MessagePhoto({
   photo,
   requestHeaders,
   alt = "Message photo",
   imageClassName = "max-h-52 max-w-full rounded-lg object-cover",
 }) {
-  const [source, setSource] = useState(photo.startsWith("/uploads/") ? photo : "");
+  const [source, setSource] = useState(photo.startsWith("/uploads/") || isPublicCloudinaryImage(photo) ? photo : "");
   const [loadError, setLoadError] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const closeButtonRef = useRef(null);
 
   useEffect(() => {
-    if (photo.startsWith("/uploads/")) {
+    if (photo.startsWith("/uploads/") || isPublicCloudinaryImage(photo)) {
       setSource(photo);
       setLoadError(false);
       return undefined;

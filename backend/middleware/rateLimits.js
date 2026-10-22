@@ -79,7 +79,13 @@ const limitTesdaCertificateUploads = createRateLimiter(
   },
 );
 const limitChatPhotoUploads = createRateLimiter(30, 15 * 60 * 1000);
+const limitBookingPhotoUploads = createRateLimiter(30, 15 * 60 * 1000, "Booking photo upload limit reached. Please try again later.", {
+  identifier: "booking-photo-uploads",
+  keyGenerator: (req) => req.user?._id
+    ? `user:${String(req.user._id)}`
+    : `ip:${ipKeyGenerator(req.ip)}`,
+});
 const limitTypingUpdates = createRateLimiter(60, 60 * 1000);
 const limitProfilePhotoUploads = createRateLimiter(30, 15 * 60 * 1000);
 
-module.exports = { createRateLimiter, limitAuthAttempts, limitRegistrationChecks, limitLocationLookups, limitPublicProviderSearch, limitBookingCreation, limitPhoneVerificationSends, limitVerificationUploads, limitTesdaCertificateUploads, limitChatPhotoUploads, limitTypingUpdates, limitProfilePhotoUploads };
+module.exports = { createRateLimiter, limitAuthAttempts, limitRegistrationChecks, limitLocationLookups, limitPublicProviderSearch, limitBookingCreation, limitPhoneVerificationSends, limitVerificationUploads, limitTesdaCertificateUploads, limitChatPhotoUploads, limitBookingPhotoUploads, limitTypingUpdates, limitProfilePhotoUploads };

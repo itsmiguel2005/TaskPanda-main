@@ -3,7 +3,7 @@ const { body, param, query } = require("express-validator");
 const { requireAuth, requireRole } = require("../middleware/requireAuth");
 const upload = require("../storage/upload");
 const { sanitizeMongoInput } = require("../middleware/sanitizeMongoInput");
-const { limitBookingCreation } = require("../middleware/rateLimits");
+const { limitBookingCreation, limitBookingPhotoUploads } = require("../middleware/rateLimits");
 const { validateRequest } = require("../middleware/validateRequest");
 const { getGlobalSettings } = require("../services/systemSettings");
 const {
@@ -22,6 +22,7 @@ const {
   handleRespondToLateNotice,
   handleServiceLocationSearch,
   handleServiceLocationReverseLookup,
+  handleUploadBookingPhoto,
   handleCreateBooking,
   handleUpdateBookingStatus,
   handleCancellation,
@@ -43,6 +44,24 @@ const {
 const { handleProviderCashConfirmationByBooking } = require("../controllers/messageController");
 
 const router = express.Router();
+const receiveBookingPhoto = upload.single("photo");
+
+function handleBookingPhotoUpload(req, res, next) {
+  receiveBookingPhoto(req, res, (error) => {
+    if (!error) return next();
+    if (error.code === "LIMIT_FILE_SIZE") {
+      return res.status(413).json({ message: "Booking photos must be 4 MB or smaller." });
+    }
+    if (error.message === "Only JPEG, PNG, WebP, or GIF photos are allowed.") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.code?.startsWith("LIMIT_")) {
+      return res.status(400).json({ message: "Upload one photo at a time." });
+    }
+    console.error("Booking photo upload parsing error:", error);
+    return res.status(500).json({ message: "Could not receive this photo." });
+  });
+}
 
 async function checkBookingMaintenance(req, res, next) {
   try {
@@ -59,6 +78,8 @@ async function checkBookingMaintenance(req, res, next) {
 }
 
 const validateBookingCreation = [
+  body("photoPublicIds").optional().isArray({ max: 5 }),
+  body("photoPublicIds.*").optional().isString().isLength({ min: 1, max: 100 }),
   body("providerId").optional().isMongoId(),
   body("provider").optional().isMongoId(),
   body("repairDescription").optional().isString().isLength({ min: 1, max: 2000 }),
@@ -150,11 +171,12 @@ router.get("/service-location/reverse", query("latitude").isFloat({ min: -90, ma
 router.get("/availability/:providerId", handleProviderAvailability);
 router.post("/dashboard-dismissals", handleDismissDashboardBookings);
 router.post("/dashboard-dismissals/restore", handleRestoreDashboardBookings);
+router.post("/photos", limitBookingPhotoUploads, handleBookingPhotoUpload, handleUploadBookingPhoto);
 router.get("/", handleListBookings);
 router.post("/", (req, _res, next) => {
   req.bookingRequestReceivedAt = new Date();
   next();
-}, limitBookingCreation, checkBookingMaintenance, upload.array("photos", 5), sanitizeMongoInput, validateBookingCreation, validateRequest, handleCreateBooking);
+}, limitBookingCreation, checkBookingMaintenance, sanitizeMongoInput, validateBookingCreation, validateRequest, handleCreateBooking);
 router.post("/:id/confirm-cash-received", requireRole("provider"), handleProviderCashConfirmationByBooking);
 router.post("/refunds/:refundId/repayment-sent", param("refundId").isMongoId(), validateRequest, requireRole("provider"), handleMarkProviderRepaymentSent);
 router.post("/refunds/:refundId/confirm-received", param("refundId").isMongoId(), validateRequest, requireRole("client"), handleConfirmRefundReceived);
@@ -164,14 +186,15 @@ router.post("/:id/running-late", body("delayMinutes").isInt({ min: 1, max: 720 }
 router.post("/:id/provider-no-show", handleReportProviderNoShow);
 router.post("/:id/provider-no-show-response", body("note").isString().trim().isLength({ min: 1, max: 1000 }), validateRequest, handleRespondToProviderNoShow);
 router.patch("/:id/late-notice", body("action").isIn(["wait", "reschedule"]), validateRequest, handleRespondToLateNotice);
-router.post("/:id/completion", upload.array("photos", 5), sanitizeMongoInput, body("completionNote").optional().isString().isLength({ max: 2000 }), validateRequest, handleSubmitCompletion);
-router.post("/:id/revisions", upload.array("photos", 5), sanitizeMongoInput, body("note").isString().isLength({ min: 1, max: 1000 }), validateRequest, handleCreateRevisionRequest);
+router.post("/:id/completion", sanitizeMongoInput, body("photoPublicIds").optional().isArray({ max: 5 }), body("photoPublicIds.*").optional().isString().isLength({ min: 1, max: 100 }), body("completionNote").optional().isString().isLength({ max: 2000 }), validateRequest, handleSubmitCompletion);
+router.post("/:id/revisions", sanitizeMongoInput, body("photoPublicIds").optional().isArray({ max: 5 }), body("photoPublicIds.*").optional().isString().isLength({ min: 1, max: 100 }), body("note").isString().isLength({ min: 1, max: 1000 }), validateRequest, handleCreateRevisionRequest);
 router.patch("/:id/revisions/:revisionId", validateRevisionResponse, validateRequest, handleRespondToRevision);
 router.patch("/:id/cancel", validateCancellation, validateRequest, handleCancellation);
 router.post(
   "/:id/request-refund",
-  upload.array("photos", 5),
   sanitizeMongoInput,
+  body("photoPublicIds").optional().isArray({ max: 5 }),
+  body("photoPublicIds.*").optional().isString().isLength({ min: 1, max: 100 }),
   [
     body("reason").isIn(["INCOMPLETE_WORK", "POOR_QUALITY", "OVERCHARGED", "OTHER"]),
     body("requestedAmount").isFloat({ min: 0 }),
@@ -180,8 +203,8 @@ router.post(
   validateRequest,
   handleRequestRefund
 );
-router.patch("/:id/review", upload.array("photos", 5), sanitizeMongoInput, body("rating").isFloat({ min: 1, max: 5 }), body("review").optional().isString().isLength({ max: 1000 }), validateRequest, handleBookingReview);
-router.post("/:id/rate", upload.array("photos", 5), sanitizeMongoInput, body("rating").isFloat({ min: 1, max: 5 }), body("review").optional().isString().isLength({ max: 1000 }), validateRequest, handleBookingReview);
+router.patch("/:id/review", sanitizeMongoInput, body("photoPublicIds").optional().isArray({ max: 5 }), body("photoPublicIds.*").optional().isString().isLength({ min: 1, max: 100 }), body("rating").isFloat({ min: 1, max: 5 }), body("review").optional().isString().isLength({ max: 1000 }), validateRequest, handleBookingReview);
+router.post("/:id/rate", sanitizeMongoInput, body("photoPublicIds").optional().isArray({ max: 5 }), body("photoPublicIds.*").optional().isString().isLength({ min: 1, max: 100 }), body("rating").isFloat({ min: 1, max: 5 }), body("review").optional().isString().isLength({ max: 1000 }), validateRequest, handleBookingReview);
 router.post("/:id/provider-updates", validateProviderUpdate, validateRequest, handleProviderUpdate);
 router.patch("/:id/provider-updates", validateProviderUpdateResponse, validateRequest, handleProviderUpdateResponse);
 router.post("/:id/counter-offers", validateCounterOffer, validateRequest, handleCreateCounterOffer);

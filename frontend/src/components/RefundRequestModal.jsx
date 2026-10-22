@@ -110,7 +110,7 @@ export default function RefundRequestModal({ booking, onSubmit, onClose }) {
             className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-xs file:font-semibold disabled:opacity-60"
           />
           <p className="mt-1 text-xs text-slate-500">
-            {photos.length} of 5 photos selected. You can add more or remove any before submitting.
+            {photos.length} of 5 photos selected (4 MB each). You can add more or remove any before submitting.
           </p>
           {photoPreviews.length > 0 && (
             <ul aria-label="Selected photo proof" className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-5">

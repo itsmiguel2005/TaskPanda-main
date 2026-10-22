@@ -37,7 +37,7 @@ export default function RevisionRequestModal({ booking, revisionCount, onSubmit,
           <textarea id="client-revision-note" required maxLength={1000} rows={4} value={note} onChange={(event) => setNote(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30" />
           <label htmlFor="client-revision-photos" className="mt-4 block text-sm font-medium text-gray-700">Issue photos (optional)</label>
           <input id="client-revision-photos" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onChange={(event) => setPhotos(Array.from(event.target.files || []).slice(0, 5))} className="mt-1 block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-xs file:font-semibold" />
-          <p className="mt-1 text-xs text-gray-500">Up to five photos, 5 MB each.</p>
+          <p className="mt-1 text-xs text-gray-500">Up to five photos, 4 MB each.</p>
           {photos.length > 0 && <p className="mt-1 text-xs text-gray-600">{photos.length} photo{photos.length === 1 ? "" : "s"} selected.</p>}
           {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
           <div className="mt-6 flex justify-end gap-2">

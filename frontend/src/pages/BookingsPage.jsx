@@ -822,7 +822,7 @@ export default function BookingsPage() {
               <textarea id="client-review-text" value={reviewText} onChange={(event) => setReviewText(event.target.value)} maxLength={1000} rows={4} placeholder="Share a few details about the service" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30" />
               <label htmlFor="client-review-photos" className="mt-4 block text-sm font-medium text-gray-700">Photos (up to 5)</label>
               <input id="client-review-photos" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple onChange={(event) => setReviewPhotos(Array.from(event.target.files || []).slice(0, 5))} className="mt-1 block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-xs file:font-semibold" />
-              {reviewPhotos.length > 0 && <p className="mt-1 text-xs text-gray-500">{reviewPhotos.length} photo{reviewPhotos.length === 1 ? "" : "s"} selected (5 MB maximum each).</p>}
+              {reviewPhotos.length > 0 && <p className="mt-1 text-xs text-gray-500">{reviewPhotos.length} photo{reviewPhotos.length === 1 ? "" : "s"} selected (4 MB maximum each).</p>}
               <div className="mt-6 flex gap-3">
                 <button type="button" onClick={() => setReviewingId(null)} className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-semibold text-gray-700">Not now</button>
                 <button type="submit" className="flex-1 rounded-lg bg-primary-600 py-2.5 text-sm font-semibold text-white">Submit Review</button>

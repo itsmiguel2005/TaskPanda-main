@@ -41,6 +41,7 @@ const {
   isValidEstimatedDurationMinutes,
 } = require("../services/bookingLifecycle");
 const { wasCashPaidManuallyConfirmed } = require("../services/refundPolicy");
+const { uploadBookingPhoto, verifyBookingPhotoUploads } = require("../services/cloudinaryMedia");
 const { minEstimatedDurationMinutes: MIN_ESTIMATED_DURATION_MINUTES } = require("../../shared/bookingLimits.json");
 
 const TIME_SLOTS = new Set(["7:30 AM", "9:00 AM", "10:30 AM", "1:30 PM", "3:00 PM", "4:30 PM", "6:00 PM"]);
@@ -1114,6 +1115,18 @@ async function getBookingTravelQuote(client, providerId, settings, serviceGeoLoc
   };
 }
 
+async function handleUploadBookingPhoto(req, res) {
+  if (!req.file?.buffer?.length) return res.status(400).json({ message: "Choose a photo to upload." });
+  try {
+    const photo = await uploadBookingPhoto(req.file.buffer, String(req.user._id));
+    return res.status(201).json({ publicId: photo.publicId });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
+    console.error("Booking photo upload error:", error);
+    return res.status(502).json({ message: "Could not upload this photo. Check the Cloudinary configuration and try again." });
+  }
+}
+
 async function handleCreateBooking(req, res) {
   if (req.user.role !== "client") return res.status(403).json({ message: "Only clients can create bookings." });
 
@@ -1168,6 +1181,10 @@ async function handleCreateBooking(req, res) {
   if (!termsAccepted) return res.status(400).json({ message: "Accept the terms and cancellation policy before submitting." });
 
   try {
+    const photoUrls = await verifyBookingPhotoUploads(
+      req.body.photoPublicIds === undefined ? [] : req.body.photoPublicIds,
+      String(req.user._id)
+    );
     await processExpiredBookingRequests();
     const travelQuote = await getBookingTravelQuote(req.user, providerId, settings, serviceGeoLocation);
     if (travelQuote.errorStatus) return res.status(travelQuote.errorStatus).json({ message: travelQuote.message });
@@ -1285,7 +1302,7 @@ async function handleCreateBooking(req, res) {
         tipAmount,
         urgency,
         paymentMethod,
-        photoUrl: req.files?.[0] ? `/uploads/${req.files[0].filename}` : "",
+        photoUrl: photoUrls[0] || "",
         status: safeStatus,
         requestExpiresAt: requestExpiresAt || undefined,
         requestExpiryType,
@@ -1387,6 +1404,7 @@ async function handleCreateBooking(req, res) {
     await booking.populate(populatePaths);
     return res.status(201).json({ booking: serializeBooking(booking, req.user.role) });
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
     if (error?.code === 11000) {
       return res.status(409).json({ message: "That time slot is already booked." });
     }
@@ -1627,14 +1645,12 @@ async function handleUpdateBookingStatus(req, res) {
 async function handleSubmitCompletion(req, res) {
   const bookingId = String(req.params.id || "");
   const completionNote = String(req.body.completionNote || "").trim();
-  const files = Array.isArray(req.files) ? req.files : [];
   if (!mongoose.isValidObjectId(bookingId)) return res.status(400).json({ message: "Choose a valid booking." });
   if (req.user.role !== "provider") return res.status(403).json({ message: "Only the provider can submit completion proof." });
   if (!completionNote || completionNote.length > 2000) return res.status(400).json({ message: "Add a completion note of up to 2,000 characters." });
 
   try {
     const submittedAt = new Date();
-    const completionPhotos = files.map((file) => `/uploads/${file.filename}`);
     const currentBooking = await Booking.findOne({
       _id: bookingId,
       providerId: req.user._id,
@@ -1647,6 +1663,10 @@ async function handleSubmitCompletion(req, res) {
     if (currentBooking.status === "in_revision" && !acceptedRevision) {
       return res.status(409).json({ message: "The provider must accept the revision request before resubmitting the work." });
     }
+    const completionPhotos = await verifyBookingPhotoUploads(
+      req.body.photoPublicIds === undefined ? [] : req.body.photoPublicIds,
+      String(req.user._id)
+    );
     const bookingFilter = {
       _id: bookingId,
       providerId: req.user._id,
@@ -1688,6 +1708,7 @@ async function handleSubmitCompletion(req, res) {
     }
     return res.json({ booking: serializeBooking(booking, req.user.role) });
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
     console.error("Submit completion proof error:", error);
     return res.status(500).json({ message: "Could not submit completion proof." });
   }
@@ -1696,7 +1717,6 @@ async function handleSubmitCompletion(req, res) {
 async function handleCreateRevisionRequest(req, res) {
   const bookingId = String(req.params.id || "");
   const note = String(req.body.note || "").trim();
-  const photos = (Array.isArray(req.files) ? req.files : []).map((file) => `/uploads/${file.filename}`);
   if (!mongoose.isValidObjectId(bookingId)) return res.status(400).json({ message: "Choose a valid booking." });
   if (req.user.role !== "client") return res.status(403).json({ message: "Only the client can request a revision." });
   if (!note || note.length > 1000) return res.status(400).json({ message: "Describe the revision needed in up to 1,000 characters." });
@@ -1709,6 +1729,10 @@ async function handleCreateRevisionRequest(req, res) {
     if (booking.revisionRequests.length >= 2) return res.status(409).json({ message: "The two-revision limit has been reached. Please use chat or contact support to resolve the remaining concern." });
     if (booking.revisionRequests.some((request) => ["open", "accepted"].includes(request.status))) return res.status(409).json({ message: "The current revision must be resolved before requesting another." });
 
+    const photos = await verifyBookingPhotoUploads(
+      req.body.photoPublicIds === undefined ? [] : req.body.photoPublicIds,
+      String(req.user._id)
+    );
     const createdAt = new Date();
     booking.revisionRequests.push({ requestedBy: req.user._id, note, photos, status: "open", createdAt });
     booking.status = "in_revision";
@@ -1739,6 +1763,7 @@ async function handleCreateRevisionRequest(req, res) {
     await booking.populate(populatePaths);
     return res.status(201).json({ booking: serializeBooking(booking, req.user.role) });
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
     console.error("Create revision request error:", error);
     return res.status(500).json({ message: "Could not submit the revision request." });
   }
@@ -1950,9 +1975,13 @@ async function handleBookingReview(req, res) {
     const canReviewBooking = booking.status === "settled" || Boolean((booking.cashPaidConfirmedAt && booking.cashReceivedConfirmedAt) || (booking.clientConfirmedCash && booking.providerConfirmedCash));
     if (!canReviewBooking) return res.status(409).json({ message: "The booking must be fully settled before a review can be submitted." });
     if (booking.clientRating != null) return res.status(409).json({ message: "This booking already has a review." });
+    const reviewPhotos = await verifyBookingPhotoUploads(
+      req.body.photoPublicIds === undefined ? [] : req.body.photoPublicIds,
+      String(req.user._id)
+    );
     booking.clientRating = rating;
     booking.clientReview = review;
-    booking.clientReviewPhotos = (req.files || []).map((file) => `/uploads/${file.filename}`);
+    booking.clientReviewPhotos = reviewPhotos;
     booking.reviewedAt = new Date();
     await booking.save();
     await recalculateProviderRatingSummary(booking.providerId);
@@ -1978,6 +2007,7 @@ async function handleBookingReview(req, res) {
     await booking.populate(populatePaths);
     return res.json({ booking: serializeBooking(booking, req.user.role) });
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
     console.error("Booking review error:", error);
     return res.status(500).json({ message: "Could not save the booking review." });
   }
@@ -2617,4 +2647,4 @@ async function processBookingNoShowCheckIns() {
   }
 }
 
-module.exports = { handleListBookings, handleDismissDashboardBookings, handleRestoreDashboardBookings, handleProviderAvailability, handleReportRunningLate, handleRespondToLateNotice, handleReportProviderNoShow, handleRespondToProviderNoShow, handleServiceLocationSearch, handleServiceLocationReverseLookup, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks, processExpiredBookingRequests, processBookingNoShowCheckIns };
+module.exports = { handleListBookings, handleDismissDashboardBookings, handleRestoreDashboardBookings, handleProviderAvailability, handleReportRunningLate, handleRespondToLateNotice, handleReportProviderNoShow, handleRespondToProviderNoShow, handleServiceLocationSearch, handleServiceLocationReverseLookup, handleUploadBookingPhoto, handleCreateBooking, handleUpdateBookingStatus, handleSubmitCompletion, handleCreateRevisionRequest, handleRespondToRevision, handleCancellation, handleBookingReview, handleProviderUpdate, handleProviderUpdateResponse, handleCreateCounterOffer, handleRespondToCounterOffer, processCashSettlementFallbacks, processExpiredBookingRequests, processBookingNoShowCheckIns };

@@ -3,6 +3,8 @@ const cloudinary = require("cloudinary").v2;
 
 const CHAT_PHOTO_MAX_BYTES = 4 * 1024 * 1024;
 const CHAT_PHOTO_FORMATS = ["jpg", "jpeg", "png", "webp", "gif"];
+const BOOKING_PHOTO_MAX_BYTES = 4 * 1024 * 1024;
+const BOOKING_PHOTO_FORMATS = ["jpg", "jpeg", "png", "webp", "gif"];
 const PROFILE_PHOTO_MAX_BYTES = 4 * 1024 * 1024;
 const VERIFICATION_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 const VERIFICATION_IMAGE_FORMATS = ["jpg", "jpeg", "png", "webp"];
@@ -39,6 +41,98 @@ async function uploadProfileImage(buffer, userId) {
     throw error;
   }
   return { publicId, secureUrl: result.secure_url };
+}
+
+async function uploadBookingPhoto(buffer, userId) {
+  if (!Buffer.isBuffer(buffer) || buffer.length > BOOKING_PHOTO_MAX_BYTES) {
+    const error = new Error("Booking photos must be 4 MB or smaller.");
+    error.statusCode = 400;
+    throw error;
+  }
+  getCredentials();
+  const publicId = `taskpanda_booking_${userId}_${randomUUID().replace(/-/g, "")}`;
+  const result = await new Promise((resolve, reject) => {
+    cloudinary.uploader.upload_stream({
+      allowed_formats: BOOKING_PHOTO_FORMATS,
+      overwrite: false,
+      public_id: publicId,
+      resource_type: "image",
+      type: "upload",
+    }, (error, uploadedResource) => error ? reject(error) : resolve(uploadedResource)).end(buffer);
+  });
+  if (!BOOKING_PHOTO_FORMATS.includes(String(result.format || "").toLowerCase()) ||
+    result.bytes > BOOKING_PHOTO_MAX_BYTES || !result.public_id || !result.secure_url) {
+    await deleteBookingPhoto(result.public_id || publicId);
+    const error = new Error("Booking photos must be 4 MB or smaller and use JPEG, PNG, WebP, or GIF format.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return { publicId: result.public_id };
+}
+
+function isOwnedBookingPhotoPublicId(publicId, userId) {
+  const prefix = `taskpanda_booking_${userId}_`;
+  return typeof publicId === "string"
+    && publicId.startsWith(prefix)
+    && /^[a-f\d]{32}$/i.test(publicId.slice(prefix.length));
+}
+
+async function verifyBookingPhotoUploads(publicIds, userId) {
+  if (!Array.isArray(publicIds) || publicIds.length > 5 ||
+    publicIds.some((publicId) => !isOwnedBookingPhotoPublicId(publicId, userId))) {
+    const error = new Error("One or more booking photos are invalid. Upload them again.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!publicIds.length) return [];
+
+  getCredentials();
+  try {
+    return await Promise.all(publicIds.map(async (publicId) => {
+      const resource = await cloudinary.api.resource(publicId, {
+        resource_type: "image",
+        type: "upload",
+      });
+      let imageUrl;
+      try {
+        imageUrl = new URL(resource.secure_url || "");
+      } catch {
+        const error = new Error("One or more booking photos could not be verified. Upload them again.");
+        error.statusCode = 400;
+        throw error;
+      }
+      const cloudName = String(process.env.CLOUDINARY_CLOUD_NAME || "").trim();
+      if (resource.public_id !== publicId ||
+        !BOOKING_PHOTO_FORMATS.includes(String(resource.format || "").toLowerCase()) ||
+        resource.bytes > BOOKING_PHOTO_MAX_BYTES ||
+        imageUrl.protocol !== "https:" ||
+        imageUrl.hostname !== "res.cloudinary.com" ||
+        !imageUrl.pathname.startsWith(`/${cloudName}/image/upload/`)) {
+        const error = new Error("One or more booking photos could not be verified. Upload them again.");
+        error.statusCode = 400;
+        throw error;
+      }
+      return imageUrl.href;
+    }));
+  } catch (error) {
+    if (error.statusCode) throw error;
+    if (error.http_code === 404 || error.error?.http_code === 404) {
+      const invalidPhotoError = new Error("One or more booking photos could not be verified. Upload them again.");
+      invalidPhotoError.statusCode = 400;
+      throw invalidPhotoError;
+    }
+    throw error;
+  }
+}
+
+async function deleteBookingPhoto(publicId) {
+  if (!publicId) return null;
+  getCredentials();
+  return cloudinary.uploader.destroy(publicId, {
+    resource_type: "image",
+    type: "upload",
+    invalidate: true,
+  });
 }
 
 async function uploadVerificationImage(buffer, userId, side) {
@@ -214,14 +308,19 @@ async function deleteChatPhoto(publicId) {
 }
 
 module.exports = {
+  BOOKING_PHOTO_MAX_BYTES,
   CHAT_PHOTO_MAX_BYTES,
+  deleteBookingPhoto,
   deleteChatPhoto,
   deleteVerificationImage,
   fetchAuthenticatedVerificationImage,
   fetchAuthenticatedChatPhoto,
   isOwnedChatPhotoPublicId,
+  isOwnedBookingPhotoPublicId,
+  uploadBookingPhoto,
   uploadProfileImage,
   uploadVerificationImage,
   uploadChatPhoto,
+  verifyBookingPhotoUploads,
   verifyChatPhotoUploads,
 };

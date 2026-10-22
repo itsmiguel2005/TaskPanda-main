@@ -106,7 +106,7 @@ export default function AdminDashboardPage() {
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
             <div className="flex justify-between gap-4"><dt className="text-slate-600">Server</dt><dd className="font-semibold text-emerald-800">Running</dd></div>
             <div className="flex justify-between gap-4"><dt className="text-slate-600">Build</dt><dd className="font-semibold text-slate-900">v1.0.0</dd></div>
-            <div className="flex justify-between gap-4"><dt className="text-slate-600">Uploads</dt><dd className="font-semibold text-slate-900">5 MB limit</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-slate-600">Booking photos</dt><dd className="font-semibold text-slate-900">4 MB each</dd></div>
             <div className="flex justify-between gap-4"><dt className="text-slate-600">Current role</dt><dd className="font-semibold text-sky-800">admin</dd></div>
           </dl>
         </section>

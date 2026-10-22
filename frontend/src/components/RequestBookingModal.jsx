@@ -669,8 +669,9 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files);
     if (files.length > 0) {
-      setSelectedFiles((prev) => [...prev, ...files]);
+      setSelectedFiles((prev) => [...prev, ...files].slice(0, 5));
     }
+    e.target.value = "";
   };
 
   const removeFile = (index) => {
@@ -884,7 +885,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
               <div>
                 <p className="text-sm font-medium text-gray-800">Add photos <span className="font-normal text-gray-500">(optional)</span></p>
-                <p className="mt-0.5 text-xs text-gray-500">PNG or JPG · Up to five photos</p>
+                <p className="mt-0.5 text-xs text-gray-500">PNG or JPG · Up to five photos, 4 MB each</p>
               </div>
               <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-white px-3.5 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-100">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4 4 4" /><path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" /></svg>

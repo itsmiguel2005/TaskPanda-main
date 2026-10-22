@@ -5,6 +5,7 @@ import { useAuth } from "./AuthContext.jsx";
 import { DEFAULT_ESTIMATED_DURATION_MINUTES } from "../utils/bookingDuration.js";
 
 const BookingContext = createContext(null);
+const MAX_BOOKING_PHOTO_BYTES = 4 * 1024 * 1024;
 
 function validBookings(value) {
   return Array.isArray(value) ? value.filter((booking) => booking && booking.id && booking.status) : [];
@@ -31,6 +32,32 @@ export function BookingProvider({ children }) {
       },
     }));
   }, []);
+
+  const uploadBookingPhotos = useCallback(async (photos = []) => {
+    const files = Array.isArray(photos) ? photos : [];
+    if (files.length > 5) throw new Error("You can upload up to five photos at a time.");
+    return Promise.all(files.map(async (photo) => {
+      if (!photo || typeof photo.size !== "number" || photo.size <= 0) {
+        throw new Error("Choose a valid photo to upload.");
+      }
+      if (photo.size > MAX_BOOKING_PHOTO_BYTES) {
+        throw new Error("Each photo must be 4 MB or smaller.");
+      }
+      const formData = new FormData();
+      formData.append("photo", photo);
+      const response = await apiFetch("/api/bookings/photos", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "Could not upload a photo.");
+      if (typeof data.publicId !== "string" || !data.publicId) {
+        throw new Error("The photo upload returned an invalid response.");
+      }
+      return data.publicId;
+    }));
+  }, [token]);
 
   const fetchBookings = useCallback(async (signal, silent = false) => {
     if (!isLoggedIn || !token) {
@@ -191,51 +218,24 @@ export function BookingProvider({ children }) {
       voucherId: normalizedDetails.voucherId || "",
       urgency: normalizedDetails.urgency || "Flexible",
       paymentMethod: normalizedDetails.paymentMethod || "cash",
-      termsAccepted: normalizedDetails.termsAccepted ?? true,
-      photoCount: (normalizedDetails.photos || []).length,
+      termsAccepted: String(Boolean(normalizedDetails.termsAccepted ?? true)),
     };
     console.log("[BookingContext] createBooking payload:", payload);
 
-    const formData = new FormData();
-    const providerId = normalizedDetails.providerId || normalizedDetails.provider_id || normalizedDetails.provider || "";
-    const description = normalizedDetails.description || normalizedDetails.repairDescription || normalizedDetails.task || "";
-    const serviceDate = normalizedDetails.serviceDate || normalizedDetails.date || "";
-    const timeSlot = normalizedDetails.timeSlot || normalizedDetails.time || "";
-    const offerPrice = normalizedDetails.offeredPrice ?? normalizedDetails.offerPrice ?? normalizedDetails.offer ?? 0;
-    const estimatedDurationMinutes = normalizedDetails.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES;
-    const tipAmount = normalizedDetails.tipAmount ?? 0;
-    const paymentMethod = normalizedDetails.paymentMethod || "cash";
-    const termsAccepted = normalizedDetails.termsAccepted ?? true;
-
-    formData.append("providerId", String(providerId));
-    formData.append("repairDescription", description);
-    formData.append("description", description);
-    formData.append("address", normalizedDetails.address || "");
-    if (normalizedDetails.serviceGeoLocation) {
-      formData.append("serviceGeoLocation", JSON.stringify(normalizedDetails.serviceGeoLocation));
-    }
-    formData.append("serviceDate", String(serviceDate));
-    formData.append("date", String(serviceDate));
-    formData.append("timeSlot", String(timeSlot));
-    formData.append("time", String(timeSlot));
-    formData.append("offeredPrice", String(offerPrice));
-    formData.append("estimatedDurationMinutes", String(estimatedDurationMinutes));
-    formData.append("tipAmount", String(tipAmount));
-    if (normalizedDetails.voucherId) formData.append("voucherId", String(normalizedDetails.voucherId));
-    formData.append("offer", String(offerPrice));
-    formData.append("price", String(offerPrice));
-    formData.append("paymentMethod", paymentMethod);
-    formData.append("urgency", normalizedDetails.urgency || "Flexible");
-    formData.append("termsAccepted", String(Boolean(termsAccepted)));
-    (normalizedDetails.photos || []).forEach((photo) => formData.append("photos", photo));
+    const photoPublicIds = await uploadBookingPhotos(normalizedDetails.photos);
 
     try {
       const response = await apiFetch("/api/bookings", {
         method: "POST",
         headers: {
+          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: formData,
+        body: JSON.stringify({
+          ...payload,
+          serviceGeoLocation: normalizedDetails.serviceGeoLocation || null,
+          photoPublicIds,
+        }),
       });
       const data = await response.json().catch(() => ({}));
       console.log("[BookingContext] booking response:", { status: response.status, data });
@@ -253,7 +253,7 @@ export function BookingProvider({ children }) {
       const message = requestError instanceof Error ? requestError.message : "Could not submit the booking.";
       throw new Error(message || "Could not submit the booking.");
     }
-  }, [notifySync, token]);
+  }, [notifySync, token, uploadBookingPhotos]);
 
   const updateBookingStatus = useCallback(async (id, status) => {
     const response = await apiFetch(`/api/bookings/${id}/status`, {
@@ -273,13 +273,11 @@ export function BookingProvider({ children }) {
   }, [notifySync, token]);
 
   const submitCompletionProof = useCallback(async (id, completionNote, photos = []) => {
-    const formData = new FormData();
-    formData.append("completionNote", completionNote);
-    (Array.isArray(photos) ? photos : []).forEach((photo) => formData.append("photos", photo));
+    const photoPublicIds = await uploadBookingPhotos(photos);
     const response = await apiFetch(`/api/bookings/${id}/completion`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ completionNote, photoPublicIds }),
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.message || "Could not submit completion proof.");
@@ -287,16 +285,14 @@ export function BookingProvider({ children }) {
     setBookings((current) => validBookings(current.map((booking) => booking.id === id ? data.booking : booking)));
     notifySync({ type: "booking-updated", bookingId: id });
     return data.booking;
-  }, [notifySync, token]);
+  }, [notifySync, token, uploadBookingPhotos]);
 
   const requestRevision = useCallback(async (id, note, photos = []) => {
-    const formData = new FormData();
-    formData.append("note", note);
-    (Array.isArray(photos) ? photos : []).forEach((photo) => formData.append("photos", photo));
+    const photoPublicIds = await uploadBookingPhotos(photos);
     const response = await apiFetch(`/api/bookings/${id}/revisions`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ note, photoPublicIds }),
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.message || "Could not submit the revision request.");
@@ -304,18 +300,14 @@ export function BookingProvider({ children }) {
     setBookings((current) => validBookings(current.map((booking) => booking.id === id ? data.booking : booking)));
     notifySync({ type: "booking-updated", bookingId: id });
     return data.booking;
-  }, [notifySync, token]);
+  }, [notifySync, token, uploadBookingPhotos]);
 
   const requestRefund = useCallback(async (id, reason, requestedAmount, description, photos = []) => {
-    const formData = new FormData();
-    formData.append("reason", reason);
-    formData.append("requestedAmount", String(requestedAmount));
-    formData.append("description", description);
-    (Array.isArray(photos) ? photos : []).forEach((photo) => formData.append("photos", photo));
+    const photoPublicIds = await uploadBookingPhotos(photos);
     const response = await apiFetch(`/api/bookings/${id}/request-refund`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ reason, requestedAmount, description, photoPublicIds }),
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.message || "Could not submit the refund request.");
@@ -323,7 +315,7 @@ export function BookingProvider({ children }) {
     await fetchBookings(undefined, true);
     notifySync({ type: "booking-updated", bookingId: id });
     return data.refund;
-  }, [fetchBookings, notifySync, token]);
+  }, [fetchBookings, notifySync, token, uploadBookingPhotos]);
 
   const sendRefundRepayment = useCallback(async (refundId) => {
     const response = await apiFetch(`/api/bookings/refunds/${refundId}/repayment-sent`, {
@@ -406,14 +398,11 @@ export function BookingProvider({ children }) {
       }
     }
 
-    const formData = new FormData();
-    formData.append("rating", String(normalizedRating));
-    formData.append("review", normalizedReview);
-    normalizedPhotos.forEach((photo) => formData.append("photos", photo));
+    const photoPublicIds = await uploadBookingPhotos(normalizedPhotos);
     const response = await apiFetch(`/api/bookings/${bookingId}/rate`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ rating: normalizedRating, review: normalizedReview, photoPublicIds }),
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.message || "Could not save the booking review.");
@@ -429,7 +418,7 @@ export function BookingProvider({ children }) {
       // Ignore storage failures.
     }
     return data.booking;
-  }, [token]);
+  }, [token, uploadBookingPhotos]);
 
   const sendProviderUpdate = useCallback(async (id, update) => {
     const response = await apiFetch(`/api/bookings/${id}/provider-updates`, {

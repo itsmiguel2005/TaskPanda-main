@@ -16,6 +16,7 @@ const {
   wasCashPaidManuallyConfirmed,
   resolveRefundDecision,
 } = require("../services/refundPolicy");
+const { verifyBookingPhotoUploads } = require("../services/cloudinaryMedia");
 
 const REFUND_PAGE_SIZE = 25;
 const RESOLUTION_LOCK_MS = 5 * 60 * 1000;
@@ -125,7 +126,6 @@ async function handleRequestRefund(req, res) {
   const reason = String(req.body.reason || "");
   const description = String(req.body.description || "").trim();
   const requestedCashAmount = Number(req.body.requestedAmount);
-  const proofPhotos = (Array.isArray(req.files) ? req.files : []).map((file) => `/uploads/${file.filename}`);
   if (!mongoose.isValidObjectId(bookingId)) return res.status(400).json({ message: "Choose a valid booking." });
   if (!["INCOMPLETE_WORK", "POOR_QUALITY", "OVERCHARGED", "OTHER"].includes(reason)) {
     return res.status(400).json({ message: "Choose a valid refund reason." });
@@ -168,6 +168,10 @@ async function handleRequestRefund(req, res) {
       return res.status(400).json({ message: "Enter a cash amount greater than zero unless this booking used a travel-fee voucher." });
     }
 
+    const proofPhotos = await verifyBookingPhotoUploads(
+      req.body.photoPublicIds === undefined ? [] : req.body.photoPublicIds,
+      String(req.user._id)
+    );
     const refund = await RefundRequest.create({
       bookingId: booking._id,
       clientId: booking.clientId,
@@ -242,6 +246,7 @@ async function handleRequestRefund(req, res) {
       bookingStatus: "refund_pending",
     });
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
     if (createdRefundId && !bookingMovedToPending) {
       try {
         await RefundRequest.deleteOne({ _id: createdRefundId, status: "PENDING" });
