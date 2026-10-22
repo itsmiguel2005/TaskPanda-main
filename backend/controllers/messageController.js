@@ -353,7 +353,7 @@ async function handleUploadChatPhoto(req, res) {
     if (isConversationArchivedForRole(conversation, req.user.role)) {
       return res.status(409).json({ message: "Restore this conversation before sending a message." });
     }
-    const photo = await uploadChatPhoto(req.file.buffer, conversationId, String(req.user._id));
+    const photo = await uploadChatPhoto(req.file.buffer, conversationId, String(req.user._id), req.file.mimetype);
     return res.status(201).json({ photo });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
@@ -381,7 +381,7 @@ async function handleReadChatPhoto(req, res) {
     const publicId = photo.publicId;
     if (!isOwnedChatPhotoPublicId(publicId, conversationId, String(message.sender))) return res.status(404).json({ message: "Chat photo not found." });
 
-    const image = await fetchAuthenticatedChatPhoto(publicId, photo.format);
+    const image = await fetchAuthenticatedChatPhoto(publicId, photo.format, photo.version);
     res.set({
       "Cache-Control": "private, no-store",
       "Content-Type": image.contentType,

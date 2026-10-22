@@ -3,6 +3,13 @@ const cloudinary = require("cloudinary").v2;
 
 const CHAT_PHOTO_MAX_BYTES = 4 * 1024 * 1024;
 const CHAT_PHOTO_FORMATS = ["jpg", "jpeg", "png", "webp", "gif"];
+const CHAT_PHOTO_MIME_TYPES = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+};
 const BOOKING_PHOTO_MAX_BYTES = 4 * 1024 * 1024;
 const BOOKING_PHOTO_FORMATS = ["jpg", "jpeg", "png", "webp", "gif"];
 const PROFILE_PHOTO_MAX_BYTES = 4 * 1024 * 1024;
@@ -20,6 +27,36 @@ function getCredentials() {
   }
   cloudinary.config({ cloud_name: cloudName, api_key: apiKey, api_secret: apiSecret, secure: true });
   return { cloudName, apiKey, apiSecret };
+}
+
+function getChatPhotoFormat(buffer) {
+  if (!Buffer.isBuffer(buffer)) return "";
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "jpg";
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "png";
+  if (buffer.length >= 12 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") return "webp";
+  if (buffer.length >= 6 && ["GIF87a", "GIF89a"].includes(buffer.toString("ascii", 0, 6))) return "gif";
+  return "";
+}
+
+function normalizeChatPhotoFormat(format) {
+  const normalized = String(format || "").toLowerCase();
+  return normalized === "jpeg" ? "jpg" : normalized;
+}
+
+function assertChatPhotoBuffer(buffer, mimeType) {
+  if (!Buffer.isBuffer(buffer) || buffer.length > CHAT_PHOTO_MAX_BYTES) {
+    const error = new Error("Chat photos must be 4 MB or smaller.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const format = getChatPhotoFormat(buffer);
+  const expectedMimeType = CHAT_PHOTO_MIME_TYPES[format];
+  if (!expectedMimeType || expectedMimeType !== mimeType) {
+    const error = new Error("Only valid JPEG, PNG, WebP, or GIF photos are allowed.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return format;
 }
 
 async function uploadProfileImage(buffer, userId) {
@@ -207,7 +244,8 @@ async function deleteVerificationImage(publicId) {
   });
 }
 
-async function uploadChatPhoto(buffer, conversationId, userId) {
+async function uploadChatPhoto(buffer, conversationId, userId, mimeType) {
+  const format = assertChatPhotoBuffer(buffer, mimeType);
   getCredentials();
   const publicId = `taskpanda_chat_${conversationId}_${userId}_${randomUUID().replace(/-/g, "")}`;
   const result = await new Promise((resolve, reject) => {
@@ -219,13 +257,13 @@ async function uploadChatPhoto(buffer, conversationId, userId) {
       type: "authenticated",
     }, (error, uploadedResource) => error ? reject(error) : resolve(uploadedResource)).end(buffer);
   });
-  if (!CHAT_PHOTO_FORMATS.includes(String(result.format || "").toLowerCase()) || result.bytes > CHAT_PHOTO_MAX_BYTES) {
+  if (normalizeChatPhotoFormat(result.format) !== format || result.bytes > CHAT_PHOTO_MAX_BYTES) {
     await deleteChatPhoto(publicId);
-    const error = new Error("The photo must be 4 MB or smaller and use JPEG, PNG, WebP, or GIF format.");
+    const error = new Error("Only valid JPEG, PNG, WebP, or GIF photos up to 4 MB are allowed.");
     error.statusCode = 400;
     throw error;
   }
-  return { publicId, format: result.format, bytes: result.bytes };
+  return { publicId, format: result.format, bytes: result.bytes, version: result.version };
 }
 
 function isOwnedChatPhotoPublicId(publicId, conversationId, userId) {
@@ -258,7 +296,7 @@ async function verifyChatPhotoUploads(publicIds, conversationId, userId) {
   try {
     return await Promise.all(publicIds.map(async ({ publicId }) => {
       const resource = await getChatPhotoResource(publicId);
-      return { publicId, format: resource.format, bytes: resource.bytes };
+      return { publicId, format: resource.format, bytes: resource.bytes, version: resource.version };
     }));
   } catch (error) {
     if (error.http_code === 404 || error.error?.http_code === 404) {
@@ -270,9 +308,19 @@ async function verifyChatPhotoUploads(publicIds, conversationId, userId) {
   }
 }
 
-async function fetchAuthenticatedChatPhoto(publicId, format) {
+async function fetchAuthenticatedChatPhoto(publicId, format, version) {
+  if (!Number.isSafeInteger(Number(version)) || Number(version) <= 0) {
+    const resource = await getChatPhotoResource(publicId);
+    format = resource.format;
+    version = resource.version;
+  }
   if (!CHAT_PHOTO_FORMATS.includes(String(format || "").toLowerCase())) {
     const error = new Error("Chat photo format is invalid.");
+    error.statusCode = 404;
+    throw error;
+  }
+  if (!Number.isSafeInteger(Number(version)) || Number(version) <= 0) {
+    const error = new Error("Chat photo version is invalid.");
     error.statusCode = 404;
     throw error;
   }
@@ -282,6 +330,7 @@ async function fetchAuthenticatedChatPhoto(publicId, format) {
     sign_url: true,
     secure: true,
     format,
+    version: Number(version),
   });
   const response = await fetch(deliveryUrl);
   if (!response.ok) {
@@ -289,13 +338,14 @@ async function fetchAuthenticatedChatPhoto(publicId, format) {
     error.statusCode = 502;
     throw error;
   }
-  const contentType = response.headers.get("content-type") || "";
-  if (!contentType.toLowerCase().startsWith("image/")) {
+  const body = Buffer.from(await response.arrayBuffer());
+  const actualFormat = getChatPhotoFormat(body);
+  if (body.length > CHAT_PHOTO_MAX_BYTES || actualFormat !== normalizeChatPhotoFormat(format)) {
     const error = new Error("Cloudinary returned an invalid chat photo.");
     error.statusCode = 502;
     throw error;
   }
-  return { body: Buffer.from(await response.arrayBuffer()), contentType };
+  return { body, contentType: CHAT_PHOTO_MIME_TYPES[actualFormat] };
 }
 
 async function deleteChatPhoto(publicId) {
@@ -315,12 +365,14 @@ module.exports = {
   deleteVerificationImage,
   fetchAuthenticatedVerificationImage,
   fetchAuthenticatedChatPhoto,
+  getChatPhotoFormat,
   isOwnedChatPhotoPublicId,
   isOwnedBookingPhotoPublicId,
   uploadBookingPhoto,
   uploadProfileImage,
   uploadVerificationImage,
   uploadChatPhoto,
+  assertChatPhotoBuffer,
   verifyBookingPhotoUploads,
   verifyChatPhotoUploads,
 };

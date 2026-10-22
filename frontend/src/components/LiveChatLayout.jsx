@@ -15,6 +15,7 @@ import UserOnlineStatus, { UserLastActive } from "./UserOnlineStatus.jsx";
 import bookingLimits from "../../../shared/bookingLimits.json";
 
 const MAX_MESSAGE_INPUT_HEIGHT = 144;
+const CHAT_PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const MAX_TASK_OFFER_PHP = bookingLimits.maxTaskOfferPhp;
 const MAX_TIP_PHP = bookingLimits.maxTipPhp;
 const CONVERSATION_READ_EVENT = "taskpanda:conversation-read";
@@ -1729,6 +1730,10 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                     <input ref={chatPhotoInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple className="sr-only" onChange={(event) => {
                       const pickedPhotos = Array.from(event.target.files || []);
                       event.target.value = "";
+                      if (pickedPhotos.some((photo) => !CHAT_PHOTO_MIME_TYPES.has(photo.type))) {
+                        setError("Choose JPEG, PNG, WebP, or GIF image files only.");
+                        return;
+                      }
                       if (pickedPhotos.some((photo) => photo.size > 4 * 1024 * 1024)) {
                         setError("Each photo must be 4 MB or smaller.");
                         return;

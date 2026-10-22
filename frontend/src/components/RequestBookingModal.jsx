@@ -428,6 +428,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const [tipFeedback, setTipFeedback] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [formError, setFormError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submittedBooking, setSubmittedBooking] = useState(null);
   const [countdownNow, setCountdownNow] = useState(() => new Date());
@@ -435,6 +436,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [photoPreviews, setPhotoPreviews] = useState([]);
   const fileInputRef = useRef(null);
+  const isSubmittingRef = useRef(false);
   useEffect(() => {
     setSelectedDate(initialDate);
     setSelectedTime(initialTime);
@@ -479,7 +481,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   useEffect(() => {
     if (!provider) return undefined;
     const handleKeyDown = (event) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !isSubmittingRef.current) onClose();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -742,7 +744,10 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   };
 
   const handleSubmit = async () => {
+    if (isSubmittingRef.current) return;
     if (!validateRequestDetails()) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
     try {
       const booking = await onSubmit?.({
         providerId: provider._id,
@@ -768,6 +773,9 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
     } catch (error) {
       setFormError(error.message || "Could not submit the booking.");
       if (selectedVoucherId) setRewardsRetry((retry) => retry + 1);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -783,8 +791,9 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
         <div className="flex items-center justify-between px-6 pt-5 pb-4">
           <h2 className="text-lg font-bold text-gray-900">Request Booking</h2>
           <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
+            onClick={() => !isSubmitting && onClose()}
+            disabled={isSubmitting}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 disabled:cursor-wait disabled:opacity-50"
             aria-label="Close"
           >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5 w-5">
@@ -1186,9 +1195,28 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
               </fieldset>
 
               {formError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>}
-              <div className="flex gap-3 border-t border-gray-100 pt-4">
-                <button type="button" onClick={handlePreviousStep} className="flex-1 rounded-full border border-gray-300 bg-white py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50">Back</button>
-                <button type="button" onClick={handleSubmit} className="flex-1 rounded-full bg-gray-900 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800">Confirm request</button>
+              <div className="border-t border-gray-100 pt-4">
+                {isSubmitting && (
+                  <p role="status" aria-live="polite" className="mb-3 flex items-center justify-center gap-2 text-sm font-medium text-gray-600">
+                    <svg className="h-4 w-4 animate-spin text-primary-600" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    {selectedFiles.length > 0 ? "Uploading photos and submitting your request…" : "Submitting your booking request…"}
+                  </p>
+                )}
+                <div className="flex gap-3">
+                  <button type="button" onClick={handlePreviousStep} disabled={isSubmitting} className="flex-1 rounded-full border border-gray-300 bg-white py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-wait disabled:opacity-50">Back</button>
+                  <button type="button" onClick={handleSubmit} disabled={isSubmitting} aria-busy={isSubmitting} className="flex flex-1 items-center justify-center gap-2 rounded-full bg-gray-900 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:cursor-wait disabled:opacity-70">
+                    {isSubmitting && (
+                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                    )}
+                    {isSubmitting ? "Submitting…" : "Confirm request"}
+                  </button>
+                </div>
               </div>
             </div>
           )}
