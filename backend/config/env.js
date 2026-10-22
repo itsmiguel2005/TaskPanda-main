@@ -24,7 +24,7 @@ const corsOrigins = [
 
 const configuredProxyHops = Number(process.env.TRUST_PROXY);
 const configuredMongoMaxPoolSize = Number.parseInt(process.env.MONGO_MAX_POOL_SIZE, 10);
-const maxMongoPoolSize = 10;
+const maxMongoPoolSize = process.env.VERCEL ? 2 : 10;
 const trustProxy = process.env.VERCEL
   ? 1
   : Number.isInteger(configuredProxyHops) && configuredProxyHops > 0

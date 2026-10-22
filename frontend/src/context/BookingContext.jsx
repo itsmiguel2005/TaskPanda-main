@@ -36,7 +36,8 @@ export function BookingProvider({ children }) {
   const uploadBookingPhotos = useCallback(async (photos = []) => {
     const files = Array.isArray(photos) ? photos : [];
     if (files.length > 5) throw new Error("You can upload up to five photos at a time.");
-    return Promise.all(files.map(async (photo) => {
+    const publicIds = [];
+    for (const photo of files) {
       if (!photo || typeof photo.size !== "number" || photo.size <= 0) {
         throw new Error("Choose a valid photo to upload.");
       }
@@ -55,8 +56,9 @@ export function BookingProvider({ children }) {
       if (typeof data.publicId !== "string" || !data.publicId) {
         throw new Error("The photo upload returned an invalid response.");
       }
-      return data.publicId;
-    }));
+      publicIds.push(data.publicId);
+    }
+    return publicIds;
   }, [token]);
 
   const fetchBookings = useCallback(async (signal, silent = false) => {

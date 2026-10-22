@@ -64,6 +64,7 @@ async function connectDB() {
     mongooseCache.promise = mongoose.connect(mongoUri, {
       dbName: mongoDbName,
       maxPoolSize: mongoMaxPoolSize,
+      ...(process.env.VERCEL ? { maxConnecting: 1, maxIdleTimeMS: 10_000 } : {}),
     }).then(async () => {
       await migrateIdentityIdentifierIndex();
       mongooseCache.connection = mongoose.connection;
