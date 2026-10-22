@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { adminRequest } from "../services/adminApi.js";
@@ -52,9 +53,11 @@ function AdminSystemSettings() {
   const [broadcastTitle, setBroadcastTitle] = useState("");
   const [broadcastMessage, setBroadcastMessage] = useState("");
   const [broadcastTemplateSearch, setBroadcastTemplateSearch] = useState("");
+  const [isBroadcastConfirmationOpen, setIsBroadcastConfirmationOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [broadcastError, setBroadcastError] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -106,6 +109,15 @@ function AdminSystemSettings() {
     template.title === broadcastTitle && template.message === broadcastMessage
   ));
 
+  useEffect(() => {
+    if (!isBroadcastConfirmationOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape" && !isBroadcasting) setIsBroadcastConfirmationOpen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isBroadcastConfirmationOpen, isBroadcasting]);
+
   const selectBroadcastTemplate = (template) => {
     setBroadcastTitle(template.title);
     setBroadcastMessage(template.message);
@@ -154,9 +166,13 @@ function AdminSystemSettings() {
 
   const sendBroadcast = async (event) => {
     event.preventDefault();
-    if (!window.confirm("Send this urgent notification to all clients and providers now?")) return;
+    setBroadcastError("");
+    setIsBroadcastConfirmationOpen(true);
+  };
+
+  const confirmSendBroadcast = async () => {
+    if (isBroadcasting) return;
     setIsBroadcasting(true);
-    setError("");
     setNotice("");
     try {
       const result = await adminRequest("/api/admin/broadcast", token, {
@@ -165,6 +181,7 @@ function AdminSystemSettings() {
       });
       setBroadcastTitle("");
       setBroadcastMessage("");
+      setIsBroadcastConfirmationOpen(false);
       setNotice(result.message || "Urgent broadcast sent.");
     } catch (requestError) {
       if (requestError.status === 401) {
@@ -172,7 +189,7 @@ function AdminSystemSettings() {
         navigate("/login", { replace: true });
         return;
       }
-      setError(requestError.message || "Could not send the urgent broadcast.");
+      setBroadcastError(requestError.message || "Could not send the urgent broadcast.");
     } finally {
       setIsBroadcasting(false);
     }
@@ -308,6 +325,68 @@ function AdminSystemSettings() {
           </div>
         </div>
       </form>
+      {isBroadcastConfirmationOpen && createPortal(
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-[2px]"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isBroadcasting) setIsBroadcastConfirmationOpen(false);
+          }}
+        >
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="urgent-broadcast-confirmation-title"
+            aria-describedby="urgent-broadcast-confirmation-description"
+            className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.24)]"
+          >
+            <div className="flex items-start gap-3 border-b border-rose-100 bg-rose-50 px-5 py-4 sm:px-6">
+              <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-800" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                  <path d="M12 3 2.8 19a1.4 1.4 0 0 0 1.2 2.1h16a1.4 1.4 0 0 0 1.2-2.1L12 3Z" />
+                  <path d="M12 9v4m0 3h.01" />
+                </svg>
+              </span>
+              <div>
+                <h2 id="urgent-broadcast-confirmation-title" className="text-base font-bold text-rose-950">Review urgent broadcast</h2>
+                <p id="urgent-broadcast-confirmation-description" className="mt-1 text-sm leading-5 text-rose-900">
+                  This announcement will be sent immediately to every registered client and provider.
+                </p>
+              </div>
+            </div>
+            <div className="space-y-4 px-5 py-5 sm:px-6">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">Notification preview</p>
+                <h3 className="mt-2 break-words text-sm font-bold text-slate-950">{broadcastTitle.trim()}</h3>
+                <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{broadcastMessage.trim()}</p>
+              </div>
+              <p className="text-xs leading-5 text-slate-600">
+                Recipients: all registered clients and providers. {broadcastConfigured ? "In-app and browser push notifications may be delivered." : "The alert will appear in the in-app notification bell."}
+              </p>
+              {broadcastError && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800">{broadcastError}</p>}
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  autoFocus
+                  disabled={isBroadcasting}
+                  onClick={() => setIsBroadcastConfirmationOpen(false)}
+                  className="dashboard-focus min-h-11 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+                >
+                  Review message
+                </button>
+                <button
+                  type="button"
+                  disabled={isBroadcasting}
+                  onClick={() => void confirmSendBroadcast()}
+                  className="dashboard-focus min-h-11 rounded-xl bg-rose-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-800 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {isBroadcasting ? "Sending broadcast…" : "Send to everyone"}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>,
+        document.body,
+      )}
     </section>
   );
 }
