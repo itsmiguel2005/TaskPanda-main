@@ -2,10 +2,20 @@
 
 ## How it works
 
-- **Same-day requests:** The server starts a 15-minute expiry when the booking request is received. If the provider does not accept in time, the request is marked **Expired** and cannot be accepted. The expiry job checks every 10 seconds.
-- **Future bookings:** Requests scheduled for a later calendar day do not get the 15-minute expiry.
+- **Advance same-day and future requests:** Requests made more than 30 minutes before the same-day appointment, and all future-day requests, stay pending until 30 minutes before the appointment. They do not receive a 15-minute creation timer.
+- **Urgent same-day requests:** Requests made within 30 minutes of the appointment receive a 15-minute provider response timer. They may be accepted inside the usual 30-minute cutoff, but the timer ends at the appointment time if that comes first. Existing travel-time and schedule-conflict checks still apply.
+- **Expiry records:** The server records the expiry time and reason, and the expiry job checks every 10 seconds.
+- **Voucher restoration:** When an unaccepted request expires, any redeemed travel-fee voucher is restored to the client's wallet. This is safe to retry if restoration was interrupted.
+- **Read and accept checks:** Booking list retrieval processes overdue pending requests before returning them. Provider acceptance is checked against the applicable urgent-response timer or appointment cutoff.
 - **Arrival check:** For same-day requests, the server estimates travel time from the provider-to-client distance at 30 km/h, adds a 15-minute buffer, and requires that much notice before creating the request. The same check runs again before acceptance. Requests that are too close to the appointment are rejected so the provider has time to travel.
-- **Provider interface:** The incoming request shows its countdown and disables **Accept** when the request has expired or the arrival window has passed. The server remains authoritative for both checks.
+- **Provider interface:** The incoming request shows its expiry countdown and disables **Accept** when the request has expired or the arrival window has passed. The server remains authoritative for both checks.
+
+## Cancellation behavior
+
+- **Provider cancels a confirmed booking:** Always creates a cancellation request, even during the first 10 minutes after booking creation. A reason is required, and the client must approve it before the booking is canceled.
+- **Provider cancels a pending request:** The existing 10-minute-from-creation grace remains: cancellation is immediate during that period; afterward, the provider must give a reason and request client approval.
+- **Client cancellation:** Existing behavior is unchanged, including the 10-minute-from-creation immediate-cancellation grace.
+- **Cancellation request response window:** The existing schedule-based response window remains unchanged.
 
 ## Global travel controls
 

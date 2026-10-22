@@ -1,4 +1,5 @@
 const SAME_DAY_REQUEST_TTL_MS = 15 * 60 * 1000;
+const APPOINTMENT_REQUEST_EXPIRY_BUFFER_MS = 30 * 60 * 1000;
 const PH_TIMEZONE_OFFSET_MINUTES = 8 * 60;
 const ESTIMATED_TRAVEL_SPEED_KMH = 30;
 const TRAVEL_BUFFER_MINUTES = 15;
@@ -132,12 +133,42 @@ function canArriveForSameDayBooking(serviceDate, timeSlot, distanceKm, now = new
   return now.getTime() + travelDurationMinutes * 60 * 1000 <= scheduledTime.getTime();
 }
 
-function getBookingRequestExpiration(serviceDate, submittedAt = new Date()) {
-  if (!isSamePhilippineCalendarDay(serviceDate, submittedAt)) return null;
-  return new Date(submittedAt.getTime() + SAME_DAY_REQUEST_TTL_MS);
+function getBookingAppointmentExpiryCutoff(serviceDate, timeSlot) {
+  const scheduledTime = getScheduledServiceTime(serviceDate, timeSlot);
+  return scheduledTime
+    ? new Date(scheduledTime.getTime() - APPOINTMENT_REQUEST_EXPIRY_BUFFER_MS)
+    : null;
+}
+
+function isBookingAppointmentExpiryDue(serviceDate, timeSlot, now = new Date()) {
+  const cutoff = getBookingAppointmentExpiryCutoff(serviceDate, timeSlot);
+  return Boolean(cutoff && new Date(now).getTime() >= cutoff.getTime());
+}
+
+function getBookingRequestExpiryType(serviceDate, timeSlot, submittedAt = new Date()) {
+  const scheduledTime = getScheduledServiceTime(serviceDate, timeSlot);
+  const submittedTime = new Date(submittedAt);
+  if (!scheduledTime || Number.isNaN(submittedTime.getTime())) return "appointment_cutoff";
+  const timeUntilAppointment = scheduledTime.getTime() - submittedTime.getTime();
+  return isSamePhilippineCalendarDay(serviceDate, submittedTime)
+    && timeUntilAppointment > 0
+    && timeUntilAppointment <= APPOINTMENT_REQUEST_EXPIRY_BUFFER_MS
+    ? "urgent_same_day"
+    : "appointment_cutoff";
+}
+
+function getBookingRequestExpiration(serviceDate, submittedAt = new Date(), timeSlot) {
+  const scheduledTime = getScheduledServiceTime(serviceDate, timeSlot);
+  if (getBookingRequestExpiryType(serviceDate, timeSlot, submittedAt) === "urgent_same_day") {
+    const responseDeadline = new Date(new Date(submittedAt).getTime() + SAME_DAY_REQUEST_TTL_MS);
+    return scheduledTime < responseDeadline ? scheduledTime : responseDeadline;
+  }
+  const appointmentCutoff = getBookingAppointmentExpiryCutoff(serviceDate, timeSlot);
+  return appointmentCutoff;
 }
 
 module.exports = {
+  APPOINTMENT_REQUEST_EXPIRY_BUFFER_MS,
   SAME_DAY_REQUEST_TTL_MS,
   DEFAULT_ESTIMATED_DURATION_MINUTES,
   MAX_ESTIMATED_DURATION_MINUTES,
@@ -149,6 +180,9 @@ module.exports = {
   getInterBookingTravelDurationMinutes,
   getEstimatedDurationMinutes,
   getBookingRequestExpiration,
+  getBookingRequestExpiryType,
+  getBookingAppointmentExpiryCutoff,
+  isBookingAppointmentExpiryDue,
   getEstimatedTravelDurationMinutes,
   getScheduledServiceTime,
   getBookingNoShowGraceDeadline,

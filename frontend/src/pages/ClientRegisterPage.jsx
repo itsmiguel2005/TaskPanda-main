@@ -192,7 +192,7 @@ export default function ClientRegisterPage() {
             <div className="mb-1 flex items-center">
               <button
                 type="button"
-                onClick={() => navigate("/register")}
+                onClick={() => navigate("/register", { viewTransition: true })}
                 className="auth-back-link group inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-sky-500 focus-visible:outline-offset-4"
                 aria-label="Back to role selection"
               >

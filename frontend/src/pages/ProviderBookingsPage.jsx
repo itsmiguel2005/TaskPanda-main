@@ -17,6 +17,7 @@ import ProviderNoShowReportNotice from "../components/ProviderNoShowReportNotice
 import PandaSwipeRefresh from "../components/PandaSwipeRefresh.jsx";
 import OnboardingTour from "../components/OnboardingTour.jsx";
 import { canRequestCancellation, getCancellationLockMessage, requiresCancellationApproval } from "../utils/bookingCancellation.js";
+import { formatBookingRequestCountdown, getBookingRequestExpiryDetails } from "../utils/bookingExpiry.mjs";
 import { BookingCardSkeletonList, SkeletonBlock } from "../components/Skeletons.jsx";
 import { compareBookingsByLatestActivity, sortBookingsWithOngoingFirst } from "../utils/bookingActivity.js";
 
@@ -94,6 +95,49 @@ function formatPhpAmount(value) {
   return `₱${(Number.isFinite(amount) ? amount : 0).toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
 }
 
+function CancellationResponseActions({ booking, onRespond, submitting }) {
+  if (booking.status !== "Cancellation Requested" || booking.cancellationRequestedBy !== "client") return null;
+
+  return (
+    <>
+      <button
+        type="button"
+        disabled={submitting}
+        onClick={() => onRespond(booking.id, "reject")}
+        className="dashboard-focus rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60"
+      >
+        {submitting ? "Updating…" : "Reject"}
+      </button>
+      <button
+        type="button"
+        disabled={submitting}
+        onClick={() => onRespond(booking.id, "approve")}
+        className="dashboard-focus rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-wait disabled:opacity-60"
+      >
+        {submitting ? "Updating…" : "Approve"}
+      </button>
+    </>
+  );
+}
+
+function BookingRequestCountdown({ booking, currentTime, compact = false }) {
+  const expiry = getBookingRequestExpiryDetails(booking);
+  if (!expiry.deadline) return null;
+
+  const secondsRemaining = Math.max(0, Math.ceil((expiry.deadline.getTime() - currentTime.getTime()) / 1000));
+  const expired = secondsRemaining === 0;
+  const description = expiry.type === "urgent_same_day"
+    ? "Urgent same-day request"
+    : expiry.sameDay ? "Advance same-day request" : "Advance booking";
+  const countdown = expired ? "Request expired" : compact
+    ? `${formatBookingRequestCountdown(secondsRemaining)} left`
+    : `${description} · expires in ${formatBookingRequestCountdown(secondsRemaining)}`;
+
+  return compact
+    ? <span className={`text-[10px] font-semibold tabular-nums ${expired ? "text-rose-700" : "text-amber-800"}`} role="timer" aria-live="off">{countdown}</span>
+    : <p className={`mt-3 text-sm font-semibold tabular-nums ${expired ? "text-rose-700" : "text-amber-800"}`} role="timer" aria-live="off">{countdown}</p>;
+}
+
 export default function ProviderBookingsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -139,9 +183,16 @@ export default function ProviderBookingsPage() {
   const [isReportingLate, setIsReportingLate] = useState(false);
   const [repaymentActionId, setRepaymentActionId] = useState("");
   const [repaymentError, setRepaymentError] = useState("");
+  const [cancellationResponseId, setCancellationResponseId] = useState("");
+  const [bookingClock, setBookingClock] = useState(() => new Date());
 
   useLayoutEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, []);
+
+  useEffect(() => {
+    const timerId = window.setInterval(() => setBookingClock(new Date()), 1000);
+    return () => window.clearInterval(timerId);
   }, []);
 
   const safeBookings = Array.isArray(bookings) ? bookings : [];
@@ -240,10 +291,13 @@ export default function ProviderBookingsPage() {
   }
 
   async function handleCancellationResponse(id, action) {
+    setCancellationResponseId(id);
     try {
       await requestCancellation(id, action);
     } catch (error) {
       window.alert(error.message);
+    } finally {
+      setCancellationResponseId("");
     }
   }
 
@@ -435,7 +489,10 @@ export default function ProviderBookingsPage() {
                               <span className="block truncate text-sm font-semibold text-slate-900">{req.client} <span className="font-normal text-slate-500">· {req.task}</span></span>
                               <span className="block truncate text-xs text-slate-500">{req.date} · {req.time} · {formatPhpAmount(parsePrice(req.price))}</span>
                             </span>
-                            <BookingStatusBadge status="Pending Request" density="compact" />
+                            <span className="flex flex-wrap items-center gap-1.5">
+                              <BookingStatusBadge status="Pending Request" density="compact" />
+                              <BookingRequestCountdown booking={req} currentTime={bookingClock} compact />
+                            </span>
                             <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 ${compactExpandedId === req.id ? "rotate-180" : ""}`}><path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                           </button>
                           <div className="flex shrink-0 items-center gap-1.5 pl-10 sm:pl-0">
@@ -457,6 +514,7 @@ export default function ProviderBookingsPage() {
                               <p className="text-sm text-slate-600">
                                 New booking request
                               </p>
+                              <BookingRequestCountdown booking={req} currentTime={bookingClock} />
                             </div>
                           </div>
                           <BookingStatusBadge status="Pending Request" />
@@ -585,6 +643,11 @@ export default function ProviderBookingsPage() {
                               Running late
                             </button>
                           )}
+                          <CancellationResponseActions
+                            booking={booking}
+                            onRespond={handleCancellationResponse}
+                            submitting={cancellationResponseId === booking.id}
+                          />
                           <button type="button" onClick={() => navigate(`/provider/messages?bookingId=${booking.id}`)} className="dashboard-secondary-button dashboard-focus ml-10 px-2.5 py-1.5 text-xs sm:ml-0">Chat</button>
                         </div>
                       )}
@@ -788,22 +851,11 @@ export default function ProviderBookingsPage() {
                             ) : getCancellationLockMessage(booking) && (
                               <button type="button" disabled title={getCancellationLockMessage(booking)} className="cursor-not-allowed rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-500">Cancellation locked</button>
                             )}
-                            {booking.status === "Cancellation Requested" && booking.cancellationRequestedBy === "client" && (
-                              <>
-                                <button
-                                  onClick={() => handleCancellationResponse(booking.id, "reject")}
-                                  className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
-                                >
-                                  Reject Cancellation
-                                </button>
-                                <button
-                                  onClick={() => handleCancellationResponse(booking.id, "approve")}
-                                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
-                                >
-                                  Approve Cancellation
-                                </button>
-                              </>
-                            )}
+                            <CancellationResponseActions
+                              booking={booking}
+                              onRespond={handleCancellationResponse}
+                              submitting={cancellationResponseId === booking.id}
+                            />
                           </div>
                         </div>
                       </div>
@@ -903,7 +955,7 @@ export default function ProviderBookingsPage() {
         >
           <p className="mt-2 text-sm text-gray-600">{cancelBooking.task} for {cancelBooking.client}</p>
           {requiresCancellationApproval(cancelBooking) && (
-            <label className="mt-4 block text-sm font-medium text-gray-700">Reason for cancellation
+            <label className="mt-4 block text-sm font-medium text-gray-700">Reason for cancellation request
               <textarea value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} maxLength={500} rows={3} required placeholder="Explain why you need to cancel" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
             </label>
           )}

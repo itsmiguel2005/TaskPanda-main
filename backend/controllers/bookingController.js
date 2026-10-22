@@ -33,6 +33,9 @@ const {
   getBookingOccupiedWindow,
   getBookingNoShowGraceDeadline,
   getBookingRequestExpiration,
+  getBookingRequestExpiryType,
+  getBookingAppointmentExpiryCutoff,
+  isBookingAppointmentExpiryDue,
   getScheduledServiceTime,
   hasScheduleConflict,
   isValidEstimatedDurationMinutes,
@@ -93,6 +96,11 @@ const ACTIVE_BOOKING_STATUSES = [
   "pending", "approved", "en_route", "in_progress", "cancel_requested",
   "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested",
 ];
+
+function getBookingRequestExpiryTypeForRecord(booking) {
+  return booking?.requestExpiryType
+    || getBookingRequestExpiryType(booking?.serviceDate, booking?.timeSlot, booking?.createdAt);
+}
 
 async function notifyBooking(options) {
   if (options.roles?.includes("admin")) {
@@ -280,6 +288,9 @@ function serializeBooking(booking, viewerRole = "") {
     status: STATUS_LABELS[statusCode] || "Pending Request",
     statusCode,
     requestExpiresAt: booking.requestExpiresAt || null,
+    requestExpiryType: booking.requestExpiryType || "",
+    expiredAt: booking.expiredAt || null,
+    expirationReason: booking.expirationReason || "",
     cancellationReason: booking.cancellationReason || "",
     cancellationRequestedBy: booking.cancellationRequestedBy || "",
     cancellationRequestedAt: booking.cancellationRequestedAt || null,
@@ -409,6 +420,7 @@ async function recalculateProviderRatingSummary(providerId) {
 
 async function handleListBookings(req, res) {
   try {
+    await processExpiredBookingRequests();
     await processBookingNoShowCheckIns();
     const requestedClientId = req.query.clientId ? String(req.query.clientId) : "";
     const requestedProviderId = req.query.providerId ? String(req.query.providerId) : "";
@@ -1250,7 +1262,8 @@ async function handleCreateBooking(req, res) {
     let booking;
     try {
       const submittedAt = req.bookingRequestReceivedAt || new Date();
-      const requestExpiresAt = getBookingRequestExpiration(serviceDate, submittedAt);
+      const requestExpiryType = getBookingRequestExpiryType(serviceDate, timeSlot, submittedAt);
+      const requestExpiresAt = getBookingRequestExpiration(serviceDate, submittedAt, timeSlot);
       booking = await Booking.create({
         clientId: req.user._id,
         providerId: provider._id,
@@ -1275,6 +1288,7 @@ async function handleCreateBooking(req, res) {
         photoUrl: req.files?.[0] ? `/uploads/${req.files[0].filename}` : "",
         status: safeStatus,
         requestExpiresAt: requestExpiresAt || undefined,
+        requestExpiryType,
         statusHistory: [{ status: "pending", at: submittedAt }],
       });
       if (selectedVoucher) {
@@ -1408,24 +1422,34 @@ async function handleUpdateBookingStatus(req, res) {
   if (status === "complete") return res.status(400).json({ message: "Submit a completion note through the completion proof form." });
     if (status === "settled") return res.status(400).json({ message: "Settled bookings are managed automatically after cash confirmation." });
   try {
-    if (status === "approved" || status === "declined") {
+    if (status === "declined") {
       const now = new Date();
-      const expiredBooking = await Booking.findOneAndUpdate(
-        {
-          _id: bookingId,
-          providerId: req.user._id,
-          status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
-          requestExpiresAt: mongoose.trusted({ $lte: now }),
-        },
-        {
-          $set: { status: "expired" },
-          $push: { statusHistory: { status: "expired", at: now } },
-        },
-        { new: true }
-      );
-      if (expiredBooking) {
-        await restoreExpiredBookingVoucher(expiredBooking);
-        return res.status(409).json({ message: "This booking request has expired." });
+      const pendingBooking = await Booking.findOne({
+        _id: bookingId,
+        providerId: req.user._id,
+        status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
+      }).select("serviceDate timeSlot requestExpiresAt requestExpiryType createdAt");
+      const requestExpiryType = getBookingRequestExpiryTypeForRecord(pendingBooking);
+      const appointmentExpiryDue = requestExpiryType === "appointment_cutoff" && pendingBooking
+        && isBookingAppointmentExpiryDue(pendingBooking.serviceDate, pendingBooking.timeSlot, now);
+      const requestDeadline = pendingBooking?.requestExpiresAt
+        || getBookingRequestExpiration(pendingBooking?.serviceDate, pendingBooking?.createdAt, pendingBooking?.timeSlot);
+      const requestExpiryDue = requestExpiryType === "urgent_same_day"
+        && requestDeadline
+        && requestDeadline <= now;
+      if (appointmentExpiryDue || requestExpiryDue) {
+        const expiredBooking = await expirePendingBookingRequest(
+          bookingId,
+          req.user._id,
+          now,
+          appointmentExpiryDue
+            ? "Auto-expired 30 minutes prior to appointment time due to lack of provider confirmation."
+            : "Auto-expired because the provider did not confirm within 15 minutes of the urgent same-day booking request."
+        );
+        if (expiredBooking) {
+          await restoreExpiredBookingVoucher(expiredBooking);
+          return res.status(409).json({ message: "This booking request has expired." });
+        }
       }
     }
     if (status === "en_route") {
@@ -1453,21 +1477,35 @@ async function handleUpdateBookingStatus(req, res) {
         _id: bookingId,
         providerId: req.user._id,
         status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
-      }).select("serviceDate timeSlot travelDistanceKm requestExpiresAt estimatedDurationMinutes serviceGeoLocation");
+      }).select("serviceDate timeSlot travelDistanceKm requestExpiresAt requestExpiryType createdAt estimatedDurationMinutes serviceGeoLocation");
       if (!pendingBooking) return res.status(404).json({ message: "Booking not found or it has already been updated." });
       now = new Date();
-      if (pendingBooking.requestExpiresAt && pendingBooking.requestExpiresAt <= now) {
-        const expiredBooking = await Booking.findOneAndUpdate(
-          {
-            _id: bookingId,
-            providerId: req.user._id,
-            status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
-            requestExpiresAt: mongoose.trusted({ $lte: now }),
-          },
-          {
-            $set: { status: "expired" },
-            $push: { statusHistory: { status: "expired", at: now } },
-          }
+      const requestExpiryType = getBookingRequestExpiryTypeForRecord(pendingBooking);
+      const appointmentCutoff = getBookingAppointmentExpiryCutoff(pendingBooking.serviceDate, pendingBooking.timeSlot);
+      const requestDeadline = pendingBooking.requestExpiresAt
+        || getBookingRequestExpiration(pendingBooking.serviceDate, pendingBooking.createdAt, pendingBooking.timeSlot);
+      if (requestExpiryType === "appointment_cutoff"
+        && isBookingAppointmentExpiryDue(pendingBooking.serviceDate, pendingBooking.timeSlot, now)) {
+        const expiredBooking = await expirePendingBookingRequest(
+          bookingId,
+          req.user._id,
+          now,
+          "Auto-expired 30 minutes prior to appointment time due to lack of provider confirmation."
+        );
+        if (expiredBooking) {
+          await restoreExpiredBookingVoucher(expiredBooking);
+          return res.status(400).json({
+            message: "This booking request has expired because it is within 30 minutes of the scheduled time, leaving insufficient travel time.",
+          });
+        }
+        return res.status(409).json({ message: "This booking request has already been updated." });
+      }
+      if (requestExpiryType === "urgent_same_day" && requestDeadline && requestDeadline <= now) {
+        const expiredBooking = await expirePendingBookingRequest(
+          bookingId,
+          req.user._id,
+          now,
+          "Auto-expired because the provider did not confirm within 15 minutes of the urgent same-day booking request."
         );
         if (expiredBooking) await restoreExpiredBookingVoucher(expiredBooking);
         return res.status(409).json({ message: "This booking request has expired." });
@@ -1484,18 +1522,46 @@ async function handleUpdateBookingStatus(req, res) {
       if (hasScheduleConflict(pendingBooking, scheduleBookings, pendingBooking._id)) {
         return res.status(409).json({ message: "This request does not leave enough room for task duration, travel between pinned client locations, and the 30-minute safety buffer." });
       }
-      filter.$or = mongoose.trusted([
-        { requestExpiresAt: mongoose.trusted({ $exists: false }) },
-        { requestExpiresAt: null },
-        { requestExpiresAt: mongoose.trusted({ $gt: now }) },
-      ]);
+      now = new Date();
+      if (requestExpiryType === "appointment_cutoff"
+        && isBookingAppointmentExpiryDue(pendingBooking.serviceDate, pendingBooking.timeSlot, now)) {
+        const expiredBooking = await expirePendingBookingRequest(
+          bookingId,
+          req.user._id,
+          now,
+          "Auto-expired 30 minutes prior to appointment time due to lack of provider confirmation."
+        );
+        if (expiredBooking) {
+          await restoreExpiredBookingVoucher(expiredBooking);
+          return res.status(400).json({
+            message: "This booking request has expired because it is within 30 minutes of the scheduled time, leaving insufficient travel time.",
+          });
+        }
+        return res.status(409).json({ message: "This booking request has already been updated." });
+      }
+      if (requestExpiryType === "urgent_same_day" && requestDeadline && requestDeadline <= now) {
+        const expiredBooking = await expirePendingBookingRequest(
+          bookingId,
+          req.user._id,
+          now,
+          "Auto-expired because the provider did not confirm within 15 minutes of the urgent same-day booking request."
+        );
+        if (expiredBooking) await restoreExpiredBookingVoucher(expiredBooking);
+        return res.status(409).json({ message: "This booking request has expired." });
+      }
+      if (pendingBooking.requestExpiryType) {
+        filter.requestExpiresAt = mongoose.trusted({ $gt: now });
+      }
     } else if (status === "declined") {
       now = new Date();
-      filter.$or = mongoose.trusted([
-        { requestExpiresAt: mongoose.trusted({ $exists: false }) },
-        { requestExpiresAt: null },
-        { requestExpiresAt: mongoose.trusted({ $gt: now }) },
-      ]);
+      const pendingBooking = await Booking.findOne({
+        _id: bookingId,
+        providerId: req.user._id,
+        status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
+      }).select("requestExpiryType requestExpiresAt");
+      if (pendingBooking?.requestExpiryType) {
+        filter.requestExpiresAt = mongoose.trusted({ $gt: now });
+      }
     }
     const booking = await Booking.findOneAndUpdate(
       filter,
@@ -1765,17 +1831,20 @@ async function handleCancellation(req, res) {
     }
 
     if (action === "request") {
-      if (!["pending", "approved"].includes(normalizeBookingStatus(booking.status))) {
+      const bookingStatus = normalizeBookingStatus(booking.status);
+      if (!["pending", "approved"].includes(bookingStatus)) {
         return res.status(400).json({ message: "Cannot cancel a booking once the provider is on the way or work has started." });
       }
       const withinGracePeriod = Date.now() - new Date(booking.createdAt).getTime() < GRACE_PERIOD_MS;
-      if (!withinGracePeriod && !reason) return res.status(400).json({ message: "Add a brief reason for the cancellation request." });
+      const requiresCancellationApproval = !withinGracePeriod
+        || (role === "provider" && bookingStatus === "approved");
+      if (requiresCancellationApproval && !reason) return res.status(400).json({ message: "Add a brief reason for the cancellation request." });
       booking.cancellationReason = reason;
       booking.cancellationRequestedBy = role;
       booking.cancellationRequestedAt = new Date();
       booking.cancellationPreviousStatus = booking.status;
       booking.cancellationOutcome = undefined;
-      if (withinGracePeriod) {
+      if (!requiresCancellationApproval) {
         booking.status = "canceled";
         booking.cancellationResolvedAt = new Date();
         booking.cancellationExpiresAt = undefined;
@@ -2452,14 +2521,37 @@ async function restoreExpiredBookingVoucher(booking) {
   return restored;
 }
 
-async function processExpiredBookingRequests() {
-  const now = new Date();
+async function expirePendingBookingRequest(bookingId, providerId, expiredAt, expirationReason) {
+  return Booking.findOneAndUpdate(
+    {
+      _id: bookingId,
+      ...(providerId ? { providerId } : {}),
+      status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
+    },
+    {
+      $set: { status: "expired", expiredAt, expirationReason },
+      $push: { statusHistory: { status: "expired", at: expiredAt } },
+    },
+    { new: true }
+  );
+}
+
+async function processExpiredBookingRequests(now = new Date()) {
+  const philippinesNow = new Date(now.getTime() + PH_TIMEZONE_OFFSET_HOURS * 60 * 60 * 1000);
+  const serviceDateCutoff = new Date(Date.UTC(
+    philippinesNow.getUTCFullYear(),
+    philippinesNow.getUTCMonth(),
+    philippinesNow.getUTCDate()
+  ));
   const expiredCandidates = await Booking.find(
     {
       $or: [
         {
           status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
-          requestExpiresAt: mongoose.trusted({ $lte: now }),
+          $or: [
+            { requestExpiresAt: mongoose.trusted({ $lte: now }) },
+            { serviceDate: mongoose.trusted({ $lte: serviceDateCutoff }) },
+          ],
         },
         {
           status: "expired",
@@ -2468,22 +2560,29 @@ async function processExpiredBookingRequests() {
         },
       ],
     }
-  ).select("_id clientId voucherId status");
+  ).select("_id clientId voucherId status serviceDate timeSlot requestExpiresAt requestExpiryType createdAt");
   let expiredCount = 0;
   for (const candidate of expiredCandidates) {
     let expiredBooking = candidate;
     if (candidate.status !== "expired") {
-      expiredBooking = await Booking.findOneAndUpdate(
-        {
-          _id: candidate._id,
-          status: mongoose.trusted({ $in: ["pending", "Pending Request"] }),
-          requestExpiresAt: mongoose.trusted({ $lte: now }),
-        },
-        {
-          $set: { status: "expired" },
-          $push: { statusHistory: { status: "expired", at: now } },
-        },
-        { new: true }
+      const requestExpiryType = getBookingRequestExpiryTypeForRecord(candidate);
+      const requestExpiresAt = candidate.requestExpiresAt
+        ? new Date(candidate.requestExpiresAt)
+        : getBookingRequestExpiration(candidate.serviceDate, candidate.createdAt, candidate.timeSlot);
+      const appointmentExpiryDue = requestExpiryType === "appointment_cutoff"
+        && isBookingAppointmentExpiryDue(candidate.serviceDate, candidate.timeSlot, now);
+      const requestExpiryDue = requestExpiryType === "urgent_same_day"
+        && requestExpiresAt
+        && requestExpiresAt <= now;
+      if (!appointmentExpiryDue && !requestExpiryDue) continue;
+
+      expiredBooking = await expirePendingBookingRequest(
+        candidate._id,
+        null,
+        now,
+        appointmentExpiryDue
+          ? "Auto-expired 30 minutes prior to appointment time due to lack of provider confirmation."
+          : "Auto-expired because the provider did not confirm within 15 minutes of the urgent same-day booking request."
       );
       if (!expiredBooking) continue;
       expiredCount += 1;

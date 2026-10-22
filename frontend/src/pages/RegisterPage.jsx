@@ -15,12 +15,12 @@ export default function RegisterPage() {
     const origin = sessionStorage.getItem("registerOrigin");
     if (origin === "login") {
       sessionStorage.removeItem("registerOrigin");
-      navigate("/login");
+      navigate("/login", { viewTransition: true });
       return;
     }
 
     sessionStorage.removeItem("registerOrigin");
-    navigate("/");
+    navigate("/", { viewTransition: true });
   };
 
   const handleSubmit = async (e) => {
@@ -33,13 +33,13 @@ export default function RegisterPage() {
 
     if (selectedRole === "client") {
       console.log("[RegisterPage] navigating to /client-register");
-      navigate("/client-register");
+      navigate("/client-register", { viewTransition: true });
       return;
     }
 
     if (selectedRole === "provider") {
       console.log("[RegisterPage] navigating to /worker-register");
-      navigate("/worker-register");
+      navigate("/worker-register", { viewTransition: true });
       return;
     }
   };
@@ -116,7 +116,7 @@ export default function RegisterPage() {
 
             <div className="text-center text-sm text-gray-600">
               Already registered?
-              <Link to="/login" className={`font-medium ${a.link}`}>
+              <Link to="/login" viewTransition className={`font-medium ${a.link}`}>
                 Log in here
               </Link>
             </div>

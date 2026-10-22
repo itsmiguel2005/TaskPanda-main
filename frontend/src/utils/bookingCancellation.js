@@ -19,6 +19,7 @@ export function canRequestCancellation(bookingOrStatus) {
 }
 
 export function requiresCancellationApproval(booking) {
+  if (getStatus(booking) === "approved") return true;
   const createdAt = new Date(booking?.createdAt || 0).getTime();
   return Number.isFinite(createdAt) && Date.now() - createdAt >= 10 * 60 * 1000;
 }

@@ -57,6 +57,9 @@ function serializeConversation(conversation, role) {
     task: booking?.repairDescription || "Service booking",
     bookingStatus: booking?.status || "",
     bookingCreatedAt: booking?.createdAt || null,
+    cancellationReason: booking?.cancellationReason || "",
+    cancellationRequestedBy: booking?.cancellationRequestedBy || "",
+    cancellationExpiresAt: booking?.cancellationExpiresAt || null,
     serviceDate: booking?.serviceDate || null,
     timeSlot: booking?.timeSlot || "",
     estimatedDurationMinutes: booking?.estimatedDurationMinutes ?? DEFAULT_ESTIMATED_DURATION_MINUTES,
@@ -177,6 +180,7 @@ async function handleListConversations(req, res) {
       : [];
     const senderByConversation = new Map(latestMessageSenders.map(({ _id, sender }) => [String(_id), String(sender)]));
     const currentUserId = String(req.user._id);
+    res.set("Cache-Control", "private, no-store");
     return res.json({ conversations: tabConversations.map((conversation) => ({
       ...serializeConversation(conversation, req.user.role),
       lastMessageIsMine: senderByConversation.get(String(conversation._id)) === currentUserId,
@@ -254,6 +258,7 @@ async function handleListMessages(req, res) {
         _id: conversation._id,
         ...mongoose.trusted({
           $or: [
+            { [unreadCountField]: mongoose.trusted({ $gt: 0 }) },
             { [readAtField]: mongoose.trusted({ $exists: false }) },
             { [readAtField]: mongoose.trusted({ $lt: readAtThrottle }) },
           ],
@@ -286,6 +291,7 @@ async function handleListMessages(req, res) {
     const hasMore = page.length > MESSAGE_PAGE_SIZE;
     const messages = page.slice(0, MESSAGE_PAGE_SIZE);
     if (!isDeltaRequest) messages.reverse();
+    res.set("Cache-Control", "private, no-store");
     return res.json({
       hasMore,
       serverTime: serverTime.toISOString(),

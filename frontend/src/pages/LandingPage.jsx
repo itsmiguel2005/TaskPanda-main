@@ -271,10 +271,10 @@ export default function LandingPage() {
         .landing-enter-2 { animation-delay: 140ms; }
         .landing-enter-3 { animation-delay: 210ms; }
         .landing-interactive {
-          transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+          transition: background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
         }
-        .landing-interactive:hover { transform: translateY(-1px) scale(1.02); }
-        .landing-interactive:active { transform: scale(0.98); }
+        .landing-interactive:hover { transform: translateY(-1px); }
+        .landing-interactive:active { transform: translateY(0); }
         @keyframes completedJobsMarquee {
           to { transform: translateX(-50%); }
         }
@@ -308,18 +308,13 @@ export default function LandingPage() {
       <Header showNav={false} showReviewsLink />
 
       <main className="pb-20">
-        <section className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(186,230,253,0.42),transparent_32%),radial-gradient(circle_at_bottom_right,rgba(207,250,254,0.36),transparent_26%)]" />
+        <section className="relative overflow-hidden bg-slate-50">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_15%_0%,rgba(219,239,250,0.55),transparent_42%)]" />
           <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="grid items-center gap-10 py-10 lg:grid-cols-[1.08fr_0.92fr] lg:gap-12 lg:py-16">
-              <div className="max-w-xl">
-                <div className="landing-enter inline-flex items-center gap-2 rounded-full border border-sky-100 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
-                  <span>✨</span>
-                  Trusted local home help
-                </div>
-
-                <h1 className="landing-enter landing-enter-1 mt-6 text-[clamp(2.8rem,4vw,5rem)] font-black leading-[0.96] tracking-[-0.07em] text-slate-900">
-                  Find trusted local
+            <div className="grid items-center gap-10 py-12 sm:py-14 lg:grid-cols-[1.08fr_0.92fr] lg:gap-12 lg:py-20">
+              <div className="max-w-2xl">
+                <h1 className="landing-enter landing-enter-1 text-[clamp(2rem,4vw,5rem)] font-black leading-[0.98] tracking-[-0.045em] text-slate-900 sm:text-[clamp(2.8rem,4vw,5rem)]">
+                  <span className="whitespace-nowrap">Find trusted local</span>
                   <span className="block text-blue-600">
                     pros for your home
                   </span>
@@ -329,33 +324,43 @@ export default function LandingPage() {
                   TaskPanda connects homeowners with verified local specialists for repairs, upkeep, and everyday essentials—without the stress, guesswork, or risky off-platform deals.
                 </p>
 
-                <div className="landing-enter landing-enter-3 mt-7 rounded-[1.6rem] border border-sky-100 bg-white p-2.5 shadow-[0_18px_60px_rgba(15,23,42,0.06)]">
-                  <div className="grid gap-2.5 lg:grid-cols-[1.2fr_1fr_auto]">
-                    <div className="min-h-16 min-w-0 rounded-full border border-sky-100 bg-sky-50/60 px-4 py-2.5">
-                      <label className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                <div className="landing-enter landing-enter-3 mt-7 rounded-xl border border-slate-200/80 bg-white p-2 shadow-[0_4px_16px_rgba(15,23,42,0.06)]">
+                  <div className="grid gap-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-stretch">
+                    <div className="min-h-16 min-w-0 px-3 py-2.5 sm:px-4">
+                      <label className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                         Service
                       </label>
                       <div className="mt-1 flex min-w-0 items-center gap-2 text-sm font-medium text-slate-900">
-                        <span className="shrink-0">🔧</span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true">
+                          <path d="m14.7 6.3 3 3M4 20l5.1-1.1L20 8a2.1 2.1 0 0 0-3-3L6.1 15.9 5 21" />
+                          <path d="m13 8 3 3" />
+                        </svg>
                         <span className="truncate">Aircon Repair</span>
                       </div>
                     </div>
 
-                    <div className="min-h-16 min-w-0 rounded-full border border-sky-100 bg-sky-50/60 px-4 py-2.5">
-                      <label className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    <div className="min-h-16 min-w-0 border-t border-slate-200 px-3 py-2.5 sm:border-l sm:border-t-0 sm:px-4">
+                      <label className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                         Location
                       </label>
                       <div className="mt-1 flex min-w-0 items-center gap-2 text-sm font-medium text-slate-900">
-                        <span className="shrink-0">📍</span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true">
+                          <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
+                          <circle cx="12" cy="10" r="2.5" />
+                        </svg>
                         <span className="truncate">Pantal, Dagupan City</span>
                       </div>
                     </div>
 
                     <button
-                      onClick={() => navigate("/explore")}
-                      className="landing-interactive flex min-h-16 items-center justify-center rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-600"
+                      type="button"
+                      onClick={() => navigate("/explore", { viewTransition: true })}
+                      className="landing-interactive dashboard-focus flex min-h-12 items-center justify-center gap-2 rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_2px_4px_rgba(15,23,42,0.16)] hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 sm:min-h-16"
                     >
                       Explore
+                      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+                        <path d="M4 10h12m-5-5 5 5-5 5" />
+                      </svg>
                     </button>
                   </div>
                 </div>
@@ -363,9 +368,9 @@ export default function LandingPage() {
                 <div className="mt-6 flex flex-wrap items-center gap-4 text-sm text-slate-600">
                   <div className="flex -space-x-2">
                     {[
-                      { bg: "bg-sky-100 text-slate-700", letter: "J" },
+                      { bg: "bg-sky-100 text-sky-950", letter: "J" },
                       { bg: "bg-blue-100 text-blue-700", letter: "M" },
-                      { bg: "bg-sky-50 text-slate-700", letter: "A" },
+                      { bg: "bg-sky-50 text-sky-950", letter: "A" },
                     ].map((avatar) => (
                       <div
                         key={avatar.letter}
@@ -382,61 +387,53 @@ export default function LandingPage() {
               </div>
 
               <div className="relative">
-                <div className="landing-enter landing-enter-2 relative overflow-hidden rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_32px_90px_rgba(15,23,42,0.08)] sm:p-7">
-                  <div className="absolute left-2 top-2 h-32 w-32 rounded-full bg-sky-100/70 blur-3xl" />
-                  <div className="absolute bottom-0 right-0 h-40 w-40 rounded-full bg-cyan-100/70 blur-3xl" />
+                <div className="landing-enter landing-enter-2 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_8px_28px_rgba(15,23,42,0.06)] sm:p-7">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        Verified jobs nearby
+                      </p>
+                      <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-slate-900">
+                        18 this week
+                      </h2>
+                    </div>
+                    <span className="rounded-md bg-blue-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-800">
+                      Open
+                    </span>
+                  </div>
 
-                  <div className="relative rounded-[1.5rem] border border-sky-100 bg-white p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+                  <div className="mt-6 border-t border-slate-200 pt-5">
                     <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                          Verified jobs nearby
-                        </p>
-                        <h2 className="mt-2 text-2xl font-black tracking-[-0.06em] text-slate-900">
-                          18 this week
-                        </h2>
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-50">
+                          <img src="/assets/taskpanda-logo-transparent.png" alt="" aria-hidden="true" className="h-8 w-8 object-contain" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                            Panda match
+                          </p>
+                          <p className="text-base font-bold text-slate-900">
+                            Trusted & ready
+                          </p>
+                        </div>
                       </div>
-                      <span className="rounded-full bg-blue-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-blue-700">
-                        Open
-                      </span>
+                      <div className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-bold text-blue-800">
+                        96% match
+                      </div>
                     </div>
 
-                    <div className="mt-6 rounded-[1.35rem] border border-sky-100 bg-white p-4 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-2xl">
-                            🐼
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                              Panda match
-                            </p>
-                            <p className="text-base font-bold text-slate-900">
-                              Trusted & ready
-                            </p>
-                          </div>
+                    <div className="mt-4 divide-y divide-slate-200 border-y border-slate-200">
+                      {pricingSummary.map((item) => (
+                        <div
+                          key={item.label}
+                          className="flex items-center justify-between gap-3 py-3"
+                        >
+                          <p className="text-sm font-medium text-slate-700">{item.label}</p>
+                          <span className="shrink-0 text-sm font-bold tabular-nums text-slate-900">
+                            {item.value}
+                          </span>
                         </div>
-                        <div className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-700">
-                          96% match
-                        </div>
-                      </div>
-
-                      <div className="mt-5 space-y-3">
-                        {pricingSummary.map((item) => (
-                          <div
-                            key={item.label}
-                            className="flex items-center justify-between rounded-2xl border border-sky-100 bg-sky-50/60 px-3 py-2.5"
-                          >
-                            <div>
-                              <p className="text-xs text-slate-600">{item.label}</p>
-                              <p className="text-sm font-semibold text-slate-900">{item.value}</p>
-                            </div>
-                            <span className="rounded-full bg-sky-100 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-700">
-                              Ready
-                            </span>
-                          </div>
-                        ))}
-                      </div>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -445,19 +442,18 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="py-12 sm:py-16">
+        <section className="bg-white py-8 sm:py-10">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid grid-cols-2 border border-slate-200/80 bg-white sm:grid-cols-4">
               {stats.map((item, index) => (
                 <div
                   key={item.label}
-                  className="rounded-[1.5rem] border border-sky-100 bg-white px-4 py-5 text-center shadow-[0_8px_30px_rgba(15,23,42,0.05)]"
-                  style={{ animationDelay: `${0.08 * index}s` }}
+                  className={`px-4 py-4 sm:px-6 sm:py-5 ${index % 2 === 1 ? "border-l border-slate-200/80" : ""} ${index > 1 ? "border-t border-slate-200/80 sm:border-t-0" : ""} ${index > 0 ? "sm:border-l sm:border-slate-200/80" : ""}`}
                 >
-                  <div className="text-3xl font-black tracking-[-0.06em] text-slate-900 sm:text-4xl">
+                  <div className="text-3xl font-extrabold tabular-nums tracking-[-0.04em] text-slate-900 sm:text-4xl">
                     {item.value}
                   </div>
-                  <div className="mt-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
+                  <div className="mt-1.5 text-xs font-medium text-slate-600 sm:text-sm">
                     {item.label}
                   </div>
                 </div>
@@ -513,7 +509,7 @@ export default function LandingPage() {
               {categoryCards.map((card) => (
                 <button
                   key={card.name}
-                  onClick={() => navigate(`/explore?category=${encodeURIComponent(card.name)}`)}
+                  onClick={() => navigate(`/explore?category=${encodeURIComponent(card.name)}`, { viewTransition: true })}
                   className={`landing-interactive rounded-[1.6rem] border bg-linear-to-br p-5 text-left shadow-[0_16px_48px_rgba(15,23,42,0.05)] ${card.tone}`}
                 >
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/80 text-2xl shadow-sm">
@@ -789,7 +785,7 @@ export default function LandingPage() {
                 </ul>
 
                 <button
-                  onClick={() => navigate("/signup?role=client")}
+                  onClick={() => navigate("/signup?role=client", { viewTransition: true })}
                   className="landing-interactive mt-8 rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800"
                 >
                   Book a service
@@ -809,13 +805,13 @@ export default function LandingPage() {
             </h2>
             <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
               <button
-                onClick={() => navigate("/signup?role=client")}
+                onClick={() => navigate("/signup?role=client", { viewTransition: true })}
                 className="landing-interactive rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-900 hover:bg-sky-50"
               >
                 Book a service
               </button>
               <button
-                onClick={() => navigate("/signup?role=provider")}
+                onClick={() => navigate("/signup?role=provider", { viewTransition: true })}
                 className="landing-interactive rounded-full border border-white/30 bg-transparent px-6 py-3 text-sm font-semibold text-white hover:bg-white/5"
               >
                 Sign up as a provider

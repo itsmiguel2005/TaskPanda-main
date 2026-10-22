@@ -32,6 +32,140 @@
   }
 }
 
+@keyframes routePageEnter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes authRouteEnter {
+  from {
+    opacity: 0;
+    transform: translate3d(22px, 0, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes authRouteBack {
+  from {
+    opacity: 0;
+    transform: translate3d(22px, 0, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes registrationStepForward {
+  from {
+    opacity: 0;
+    transform: translate3d(24px, 0, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes registrationStepBack {
+  from {
+    opacity: 0;
+    transform: translate3d(24px, 0, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.route-transition {
+  min-width: 0;
+  animation: routePageEnter 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.route-transition[data-route-kind="app"] {
+  animation: none;
+}
+
+.taskpanda-app-header {
+  view-transition-name: taskpanda-app-header;
+}
+
+::view-transition-group(taskpanda-app-header) {
+  animation: none;
+}
+
+.route-transition[data-route-kind="auth"],
+.route-transition[data-route-kind="registration"] {
+  animation: none;
+  overflow-x: clip;
+}
+
+.route-transition[data-route-kind="auth"] > .auth-shell > .auth-main > .auth-form-area {
+  animation: authRouteEnter 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.route-transition[data-route-kind="registration"][data-route-direction="forward"] > .auth-shell > .auth-main > .auth-form-area {
+  animation: registrationStepForward 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.route-transition[data-route-kind="registration"][data-route-direction="back"] > .auth-shell > .auth-main > .auth-form-area {
+  animation: registrationStepBack 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.route-transition[data-native-transition="true"] {
+  animation: none;
+}
+
+.route-transition[data-native-transition="true"] > .auth-shell > .auth-main > .auth-form-area {
+  animation: none;
+}
+
+.auth-step-transition[data-step-transition="true"] {
+  animation: authRouteEnter 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.auth-step-transition[data-step-transition="true"][data-route-direction="back"] {
+  animation: authRouteBack 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes routeViewExit {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes routeViewEnter {
+  from {
+    opacity: 0;
+  }
+}
+
+::view-transition-group(root) {
+  animation-duration: 300ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+::view-transition-old(root) {
+  animation: routeViewExit 180ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+::view-transition-new(root) {
+  animation: routeViewEnter 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 .dashboard-mascot-float {
   animation: dashboardMascotFloat 3.6s ease-in-out infinite;
 }
@@ -584,6 +718,36 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .route-transition[data-native-transition="true"] {
+    animation: none;
+  }
+
+  ::view-transition-old(root) {
+    animation: routePageEnter 180ms ease-out both;
+  }
+
+  ::view-transition-new(root) {
+    animation: routePageEnter 180ms ease-out both;
+  }
+
+  .route-transition {
+    animation: contentArriveReduced 180ms ease-out both;
+  }
+
+  .route-transition[data-route-kind="auth"],
+  .route-transition[data-route-kind="registration"][data-route-direction] {
+    animation: none;
+  }
+
+  .route-transition[data-route-kind="auth"] > .auth-shell > .auth-main > .auth-form-area,
+  .route-transition[data-route-kind="registration"][data-route-direction] > .auth-shell > .auth-main > .auth-form-area {
+    animation: contentArriveReduced 180ms ease-out both;
+  }
+
+  .auth-step-transition[data-step-transition="true"] {
+    animation: contentArriveReduced 160ms ease-out both;
+  }
+
   .skeleton-block {
     animation: none;
     opacity: 0.78;

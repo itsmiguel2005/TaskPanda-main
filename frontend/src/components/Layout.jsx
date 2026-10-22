@@ -78,7 +78,7 @@ export default function Layout({ theme = "primary", focusContent = false, showRe
       `}</style>
       <Header logoColor={theme === "green" ? "text-emerald-700" : "text-sky-700"} showReviewsLink={showReviewsLink} />
       <main
-        className={`auth-main grid min-h-screen grid-cols-1 bg-white ${focusContent ? "" : "gap-6 lg:h-screen lg:grid-cols-2 lg:gap-0"}`}
+        className={`auth-main grid min-h-screen grid-cols-1 bg-white ${focusContent ? "" : "gap-6 lg:min-h-0 lg:h-[calc(100svh-4rem-1px)] lg:grid-cols-2 lg:gap-0"}`}
         data-theme={theme}
       >
         {!focusContent && (

@@ -24,6 +24,8 @@ export default function ForgotPasswordPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [step, setStep] = useState(1);
+  const [stepDirection, setStepDirection] = useState("forward");
+  const [hasStepChanged, setHasStepChanged] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -33,6 +35,12 @@ export default function ForgotPasswordPage() {
   const [adminSetupToken, setAdminSetupToken] = useState("");
   const codeInputs = useRef([]);
 
+  const changeStep = (nextStep) => {
+    setStepDirection(nextStep < step ? "back" : "forward");
+    setHasStepChanged(true);
+    setStep(nextStep);
+  };
+
   useEffect(() => {
     const linkedEmail = String(searchParams.get("email") || "").trim().toLowerCase();
     const linkedCode = String(searchParams.get("code") || "").trim();
@@ -40,7 +48,7 @@ export default function ForgotPasswordPage() {
     if (/^\S+@\S+\.\S+$/.test(linkedEmail) && /^[a-f\d]{64}$/i.test(linkedSetupToken)) {
       setEmail(linkedEmail);
       setAdminSetupToken(linkedSetupToken);
-      setStep(3);
+      changeStep(3);
       setError("");
       setMessage("");
       navigate("/forgot-password", { replace: true });
@@ -50,7 +58,7 @@ export default function ForgotPasswordPage() {
 
     setEmail(linkedEmail);
     setCode(linkedCode);
-    setStep(2);
+    changeStep(2);
     setError("");
     setMessage("Reset code loaded. Verify it to choose a new password.");
     navigate("/forgot-password", { replace: true });
@@ -93,7 +101,7 @@ export default function ForgotPasswordPage() {
       setMessage(data.debugCode ? `Use this code for testing: ${data.debugCode}` : "");
       setError("");
       setCode("");
-      setStep(2);
+      changeStep(2);
       setResendCooldown(60);
     } catch (submitError) {
       setError(submitError.message?.startsWith("reCAPTCHA")
@@ -151,7 +159,7 @@ export default function ForgotPasswordPage() {
         setError(data.message || "Unable to verify the reset code.");
         return;
       }
-      setStep(3);
+      changeStep(3);
       setMessage(data.message || "Reset code verified. Choose a new password.");
     } catch {
       setError("Network error. Please try again.");
@@ -240,6 +248,12 @@ export default function ForgotPasswordPage() {
               </Link>
             </div>
 
+            <div
+              key={step}
+              className="auth-step-transition"
+              data-route-direction={stepDirection}
+              data-step-transition={hasStepChanged}
+            >
             <div className="space-y-1 text-center">
               <h2 className="text-2xl font-bold text-gray-900">{adminSetupToken ? "Set your admin password" : "Reset your password"}</h2>
               <p className="text-sm text-gray-600">
@@ -312,7 +326,7 @@ export default function ForgotPasswordPage() {
                   <button type="button" onClick={resendCode} disabled={resendCooldown > 0 || isSubmitting} className="font-semibold text-primary-700 hover:text-primary-900 disabled:cursor-not-allowed disabled:text-gray-400">
                     {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Resend code"}
                   </button>
-                  <button type="button" onClick={() => { setStep(1); setError(""); setMessage(""); }} className="font-medium text-slate-600 hover:text-slate-900">
+                  <button type="button" onClick={() => { changeStep(1); setError(""); setMessage(""); }} className="font-medium text-slate-600 hover:text-slate-900">
                     Change email address
                   </button>
                 </div>
@@ -362,6 +376,7 @@ export default function ForgotPasswordPage() {
               </form>
             )}
             {!adminSetupToken && <RecaptchaDisclosure />}
+            </div>
           </div>
         </section>
       )}

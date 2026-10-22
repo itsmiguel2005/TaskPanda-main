@@ -10,6 +10,7 @@ import CompletionProofModal from "./CompletionProofModal.jsx";
 import BookingLocationMap from "./BookingLocationMap.jsx";
 import DashboardDensityToggle from "./DashboardDensityToggle.jsx";
 import { canRequestCancellation, requiresCancellationApproval } from "../utils/bookingCancellation.js";
+import { formatBookingRequestCountdown, getBookingRequestExpiryDetails } from "../utils/bookingExpiry.mjs";
 import { canArriveForSameDayBooking, hasScheduleConflict } from "../utils/bookingArrival.js";
 import { compareBookingsByLatestActivity } from "../utils/bookingActivity.js";
 import { apiFetch } from "../services/api.js";
@@ -200,7 +201,8 @@ function RequestCard({ booking, allBookings, onAccept, onDecline, onOpenConversa
   const requestedTime = [requestedDate, booking.time || booking.timeSlot].filter(Boolean).join(", ");
   const address = booking.address || booking.location || "";
   const totalPrice = booking.totalPrice ?? booking.offeredPrice ?? booking.offer ?? 0;
-  const requestExpiresAt = booking.requestExpiresAt ? new Date(booking.requestExpiresAt).getTime() : null;
+  const requestExpiryDetails = getBookingRequestExpiryDetails(booking);
+  const requestExpiresAt = requestExpiryDetails.deadline?.getTime() ?? null;
   const secondsRemaining = requestExpiresAt == null ? null : Math.max(0, Math.ceil((requestExpiresAt - currentTime.getTime()) / 1000));
   const requestExpired = secondsRemaining === 0;
   const arrivalFeasible = canArriveForSameDayBooking(booking, currentTime);
@@ -221,7 +223,7 @@ function RequestCard({ booking, allBookings, onAccept, onDecline, onOpenConversa
                 <StatusBadge status="Pending Request" compact />
                 {secondsRemaining != null && (
                   <span className={`truncate text-[10px] font-medium ${requestExpired ? "text-rose-700" : "text-amber-800"}`}>
-                    {requestExpired ? "Expired" : `${Math.floor(secondsRemaining / 60)}:${String(secondsRemaining % 60).padStart(2, "0")} left`}
+                    {requestExpired ? "Expired" : `${formatBookingRequestCountdown(secondsRemaining)} left`}
                   </span>
                 )}
               </div>
@@ -348,7 +350,7 @@ function RequestCard({ booking, allBookings, onAccept, onDecline, onOpenConversa
         <p className={`mt-3 text-sm font-semibold tabular-nums ${requestExpired ? "text-rose-700" : "text-amber-800"}`} role="timer" aria-live="off">
           {requestExpired
             ? "Request expired"
-            : `Same-day request · expires in ${Math.floor(secondsRemaining / 60)}:${String(secondsRemaining % 60).padStart(2, "0")}`}
+            : `${requestExpiryDetails.type === "urgent_same_day" ? "Urgent same-day request" : requestExpiryDetails.sameDay ? "Advance same-day request" : "Advance booking"} · expires in ${formatBookingRequestCountdown(secondsRemaining)}`}
         </p>
       )}
       {!arrivalFeasible && (
@@ -1221,8 +1223,9 @@ export default function ProviderDashboard() {
   }, [acceptingId, updateBookingStatus]);
 
   const pendingRequest = requests.find((r) => r.id === acceptingId);
-  const pendingRequestExpired = !pendingRequest || Boolean(pendingRequest.requestExpiresAt
-    && new Date(pendingRequest.requestExpiresAt).getTime() <= currentTime.getTime());
+  const pendingRequestDeadline = getBookingRequestExpiryDetails(pendingRequest).deadline;
+  const pendingRequestExpired = !pendingRequest || Boolean(pendingRequestDeadline
+    && pendingRequestDeadline.getTime() <= currentTime.getTime());
   const pendingScheduleConflict = pendingRequest
     ? hasScheduleConflict(pendingRequest, scheduleBookings, pendingRequest.id)
     : false;
@@ -1665,7 +1668,7 @@ export default function ProviderDashboard() {
           </p>
           {requiresCancellationApproval(cancelingBooking) && (
             <label className="mt-4 block text-sm font-medium text-gray-700">
-              Reason for cancellation
+              Reason for cancellation request
               <textarea
                 value={cancellationReason}
                 onChange={(event) => setCancellationReason(event.target.value)}

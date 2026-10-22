@@ -32,6 +32,10 @@ export default function LoginPage() {
   const [adminOtpDestination, setAdminOtpDestination] = useState("");
   const [adminOtp, setAdminOtp] = useState("");
   const adminOtpInputs = useRef([]);
+  const activeAuthStep = loginOtpToken ? "login-otp" : adminChallengeToken ? "admin-otp" : "credentials";
+  const previousAuthStep = useRef(activeAuthStep);
+  const [authStepDirection, setAuthStepDirection] = useState("forward");
+  const [hasAuthStepChanged, setHasAuthStepChanged] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [capsLockOn, setCapsLockOn] = useState(false);
@@ -44,6 +48,13 @@ export default function LoginPage() {
   const [isRegistrationToastFading, setIsRegistrationToastFading] = useState(false);
   const [showPasswordResetSuccess, setShowPasswordResetSuccess] = useState(false);
   const [isPasswordResetToastFading, setIsPasswordResetToastFading] = useState(false);
+
+  useEffect(() => {
+    if (previousAuthStep.current === activeAuthStep) return;
+    setAuthStepDirection(activeAuthStep === "credentials" ? "back" : "forward");
+    setHasAuthStepChanged(true);
+    previousAuthStep.current = activeAuthStep;
+  }, [activeAuthStep]);
 
   useEffect(() => {
     if (!location.state?.registrationSuccess) return;
@@ -174,7 +185,7 @@ export default function LoginPage() {
         };
         sessionStorage.setItem("taskpanda_onboarding_token", data.onboardingToken || "");
         resumeRegistrationAttempt(role === "provider" ? "worker" : "client", stepData);
-        navigate(role === "provider" ? "/worker-register/name" : "/client-register/name", { replace: true });
+        navigate(role === "provider" ? "/worker-register/name" : "/client-register/name", { replace: true, viewTransition: true });
         return;
       }
       if (response.ok && data.requiresAdminOtp) {
@@ -378,8 +389,14 @@ export default function LoginPage() {
     <Layout theme={loginOtpToken && loginOtpRole === "provider" ? "green" : "primary"} showReviewsLink>
       {(a) => (
         <>
-        <section className="flex items-center justify-center bg-white px-6 py-8 sm:px-8 lg:h-[calc(100svh-4rem)] lg:py-6">
+        <section className="flex items-center justify-center bg-white px-6 py-8 sm:px-8 lg:h-full lg:py-6">
           <div className="w-full max-w-sm space-y-6">
+            <div
+              key={activeAuthStep}
+              className="auth-step-transition"
+              data-route-direction={authStepDirection}
+              data-step-transition={hasAuthStepChanged}
+            >
             {loginOtpToken ? (
               <div className="space-y-6">
                 <div className="space-y-2 text-center">
@@ -560,7 +577,7 @@ export default function LoginPage() {
               </div>
             ) : (
               <>
-            <div className="space-y-1 text-center">
+            <div className="mb-5 space-y-1 text-center">
               <h2 className="font-bold text-2xl text-gray-900">Welcome Back</h2>
               <p className="text-sm text-gray-600">
                 Sign in to continue to your TaskPanda account
@@ -723,10 +740,11 @@ export default function LoginPage() {
               </button>
             </form>
 
-            <div className="text-center text-sm text-gray-600">
+            <div className="mt-4 text-center text-sm text-gray-600">
               Don&apos;t have an account?{' '}
               <Link
                 to="/register"
+                viewTransition
                 onClick={() => sessionStorage.setItem("registerOrigin", "login")}
                 className={`font-medium ${a.link}`}
               >
@@ -735,6 +753,7 @@ export default function LoginPage() {
             </div>
               </>
             )}
+            </div>
           </div>
         </section>
         {showRegistrationSuccess && (

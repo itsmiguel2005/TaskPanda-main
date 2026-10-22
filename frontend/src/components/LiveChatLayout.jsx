@@ -1085,9 +1085,14 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   };
 
   const handleCancellationResponse = async (bookingId, action) => {
-    if (!selectedConversation || role !== "provider") return;
+    if (
+      !selectedConversation
+      || !["client", "provider"].includes(role)
+      || selectedConversation.bookingStatus !== "cancel_requested"
+      || selectedConversation.cancellationRequestedBy === role
+    ) return;
     setIsActionSubmitting(true);
-    setError("");
+    setActionError("");
     try {
       const response = await apiFetch(`/api/bookings/${bookingId}/cancel`, {
         method: "PATCH",
@@ -1101,8 +1106,9 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
       const messagesData = await messagesResponse.json().catch(() => ({}));
       if (!messagesResponse.ok) throw new Error(messagesData.message || "Cancellation updated, but the chat could not be refreshed.");
       setMessages((current) => mergeMessages(current, messagesData.messages || []));
+      setActionError("");
     } catch (requestError) {
-      setError(requestError.message || "Could not respond to the cancellation request.");
+      setActionError(requestError.message || "Could not respond to the cancellation request.");
     } finally {
       setIsActionSubmitting(false);
     }
@@ -1858,6 +1864,39 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                   <div><dt className="dashboard-kicker">Appointment</dt><dd className="mt-1 font-semibold text-slate-900">{selectedConversation.serviceDate ? new Date(selectedConversation.serviceDate).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "long", day: "numeric", year: "numeric" }) : "Date pending"} {selectedConversation.timeSlot}</dd></div>
                   <div><dt className="dashboard-kicker">Payment</dt><dd className="mt-1 font-semibold text-slate-900">Cash on Completion</dd></div>
                 </dl>
+                {selectedConversation.bookingStatus === "cancel_requested" && (
+                  <section className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <h3 className="text-sm font-semibold text-amber-950">Cancellation request</h3>
+                    <p className="mt-1 text-xs leading-relaxed text-amber-900">
+                      {selectedConversation.cancellationRequestedBy === role
+                        ? "Waiting for the other participant to respond."
+                        : `${selectedConversation.cancellationRequestedBy === "provider" ? "The provider" : "The client"} asked to cancel this booking.`}
+                    </p>
+                    {selectedConversation.cancellationReason && (
+                      <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">{selectedConversation.cancellationReason}</p>
+                    )}
+                    {selectedConversation.cancellationRequestedBy !== role && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={isActionSubmitting}
+                          onClick={() => handleCancellationResponse(selectedConversation.bookingId, "reject")}
+                          className="dashboard-focus min-h-10 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isActionSubmitting ? "Updating…" : "Reject cancellation"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isActionSubmitting}
+                          onClick={() => handleCancellationResponse(selectedConversation.bookingId, "approve")}
+                          className="dashboard-focus min-h-10 rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isActionSubmitting ? "Updating…" : "Approve cancellation"}
+                        </button>
+                      </div>
+                    )}
+                  </section>
+                )}
                 {role === "provider" && selectedConversation.bookingStatus === "in_revision" && latestRevision && (
                   <section className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
                     <p className="font-semibold">Revision request · Cycle {revisionRequests.length} of 2</p>

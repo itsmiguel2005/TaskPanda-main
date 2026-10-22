@@ -3,7 +3,11 @@ const ExcelJS = require("exceljs");
 const { logAuditAction } = require("../utils/logAuditAction");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
-const { DEFAULT_ESTIMATED_DURATION_MINUTES, getBookingRequestExpiration } = require("../services/bookingLifecycle");
+const {
+  DEFAULT_ESTIMATED_DURATION_MINUTES,
+  getBookingRequestExpiration,
+  getBookingRequestExpiryType,
+} = require("../services/bookingLifecycle");
 const {
   MAX_TASK_OFFER_PHP,
   MAX_TIP_PHP,
@@ -108,6 +112,9 @@ function serializeAdminBooking(booking) {
     updatedAt: booking.updatedAt || null,
     photoUrl: booking.photoUrl || "",
     requestExpiresAt: booking.requestExpiresAt || null,
+    requestExpiryType: booking.requestExpiryType || "",
+    expiredAt: booking.expiredAt || null,
+    expirationReason: booking.expirationReason || "",
     urgency: booking.urgency || "Flexible",
     paymentMethod: booking.paymentMethod || "cash",
     offeredPrice: Number(booking.offeredPrice || 0),
@@ -355,11 +362,23 @@ async function handleOverrideAdminBooking(req, res) {
       unset.settledAt = 1;
     }
     if (targetStatus === "pending") {
-      const requestExpiresAt = getBookingRequestExpiration(current.serviceDate, now);
+      const requestExpiresAt = getBookingRequestExpiration(current.serviceDate, now, current.timeSlot);
+      const requestExpiryType = getBookingRequestExpiryType(current.serviceDate, current.timeSlot, now);
       if (requestExpiresAt) update.$set.requestExpiresAt = requestExpiresAt;
       else unset.requestExpiresAt = 1;
+      update.$set.requestExpiryType = requestExpiryType;
+      unset.expiredAt = 1;
+      unset.expirationReason = 1;
     } else {
       unset.requestExpiresAt = 1;
+      unset.requestExpiryType = 1;
+    }
+    if (targetStatus === "expired") {
+      update.$set.expiredAt = now;
+      update.$set.expirationReason = reason;
+    } else if (targetStatus !== "pending") {
+      unset.expiredAt = 1;
+      unset.expirationReason = 1;
     }
     if (targetStatus !== "canceled") unset.cancellationReason = 1;
     if (Object.keys(unset).length) update.$unset = unset;

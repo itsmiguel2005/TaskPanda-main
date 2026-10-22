@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   SAME_DAY_REQUEST_TTL_MS,
+  APPOINTMENT_REQUEST_EXPIRY_BUFFER_MS,
   NO_SHOW_GRACE_PERIOD_MS,
   canArriveForSameDayBooking,
   DEFAULT_ESTIMATED_DURATION_MINUTES,
@@ -9,6 +10,9 @@ const {
   getBookingNoShowGraceDeadline,
   getInterBookingTravelDurationMinutes,
   getBookingRequestExpiration,
+  getBookingRequestExpiryType,
+  getBookingAppointmentExpiryCutoff,
+  isBookingAppointmentExpiryDue,
   getEstimatedTravelDurationMinutes,
   getScheduledServiceTime,
   hasScheduleConflict,
@@ -24,10 +28,53 @@ test("same-day detection follows the Philippine calendar day", () => {
   assert.equal(isSamePhilippineCalendarDay(serviceDate, new Date("2026-10-03T16:00:00.000Z")), false);
 });
 
-test("only same-day requests receive the strict 15-minute expiration", () => {
+test("advance same-day bookings use only the appointment cutoff", () => {
+  const submittedAt = new Date("2026-10-03T00:00:00.000Z");
+  assert.equal(getBookingRequestExpiryType(serviceDate, "9:00 AM", submittedAt), "appointment_cutoff");
+  assert.equal(
+    getBookingRequestExpiration(serviceDate, submittedAt, "9:00 AM").getTime(),
+    getBookingAppointmentExpiryCutoff(serviceDate, "9:00 AM").getTime()
+  );
+});
+
+test("urgent same-day requests use a 15-minute timer capped at the appointment time", () => {
+  const appointment = getScheduledServiceTime(serviceDate, "3:00 PM");
+  const submittedAt = new Date(appointment.getTime() - 15 * 60 * 1000);
+  assert.equal(getBookingRequestExpiryType(serviceDate, "3:00 PM", submittedAt), "urgent_same_day");
+  assert.equal(
+    getBookingRequestExpiration(serviceDate, submittedAt, "3:00 PM").getTime(),
+    appointment.getTime()
+  );
+  const earlierUrgentRequest = new Date(appointment.getTime() - 25 * 60 * 1000);
+  assert.equal(
+    getBookingRequestExpiration(serviceDate, earlierUrgentRequest, "3:00 PM").getTime(),
+    earlierUrgentRequest.getTime() + SAME_DAY_REQUEST_TTL_MS
+  );
+});
+
+test("the 30-minute boundary is urgent only on the appointment day", () => {
+  const appointment = getScheduledServiceTime(serviceDate, "3:00 PM");
+  const exactlyThirtyMinutesBefore = new Date(appointment.getTime() - APPOINTMENT_REQUEST_EXPIRY_BUFFER_MS);
+  assert.equal(getBookingRequestExpiryType(serviceDate, "3:00 PM", exactlyThirtyMinutesBefore), "urgent_same_day");
+  assert.equal(getBookingRequestExpiryType("2026-10-04T00:00:00.000Z", "3:00 PM", exactlyThirtyMinutesBefore), "appointment_cutoff");
+});
+
+test("future-day requests expire 30 minutes before their Philippine appointment time", () => {
   const submittedAt = new Date("2026-10-03T01:00:00.000Z");
-  assert.equal(getBookingRequestExpiration(serviceDate, submittedAt).getTime(), submittedAt.getTime() + SAME_DAY_REQUEST_TTL_MS);
-  assert.equal(getBookingRequestExpiration("2026-10-04T00:00:00.000Z", submittedAt), null);
+  const appointmentCutoff = getBookingAppointmentExpiryCutoff("2026-10-04T00:00:00.000Z", "9:00 AM");
+  assert.equal(appointmentCutoff.getTime(), getScheduledServiceTime("2026-10-04T00:00:00.000Z", "9:00 AM").getTime() - APPOINTMENT_REQUEST_EXPIRY_BUFFER_MS);
+  assert.equal(
+    getBookingRequestExpiration("2026-10-04T00:00:00.000Z", submittedAt, "9:00 AM").getTime(),
+    appointmentCutoff.getTime()
+  );
+});
+
+test("appointment cutoff boundary is exactly 30 minutes before the scheduled start", () => {
+  const cutoff = getBookingAppointmentExpiryCutoff(serviceDate, "9:00 AM");
+  assert.equal(cutoff.toISOString(), "2026-10-03T00:30:00.000Z");
+  assert.equal(isBookingAppointmentExpiryDue(serviceDate, "9:00 AM", new Date(cutoff.getTime() - 1)), false);
+  assert.equal(isBookingAppointmentExpiryDue(serviceDate, "9:00 AM", cutoff), true);
+  assert.equal(isBookingAppointmentExpiryDue(serviceDate, "9:00 AM", new Date(cutoff.getTime() + 1)), true);
 });
 
 test("appointment slots are translated from Philippine time to UTC", () => {

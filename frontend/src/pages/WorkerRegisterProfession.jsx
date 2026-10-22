@@ -30,7 +30,7 @@ export default function WorkerRegisterProfession() {
     }
 
     saveRegistrationDraft("workerProfessionStep", { professions });
-    navigate("/worker-register/location");
+    navigate("/worker-register/location", { viewTransition: true });
   };
 
   return (
@@ -41,6 +41,7 @@ export default function WorkerRegisterProfession() {
             <div className="flex items-center">
               <Link
                 to="/worker-register/name"
+                viewTransition
                 className="auth-back-link group inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-500"
                 aria-label="Back to name"
               >

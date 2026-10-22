@@ -1,5 +1,5 @@
 import { apiFetch } from "../services/api.js";
-import { useState, useEffect, useRef } from "react";
+import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { promptForPushPermission } from "../services/oneSignal.js";
@@ -7,6 +7,7 @@ import UserOnlineStatus from "./UserOnlineStatus.jsx";
 import usePhilippineGreeting from "../hooks/usePhilippineGreeting.js";
 
 const CONVERSATION_READ_EVENT = "taskpanda:conversation-read";
+export const PersistentHeaderContext = createContext(false);
 
 function MenuIcon({ children, className = "h-4 w-4" }) {
   return (
@@ -45,7 +46,7 @@ function GuestNavigationHeader({ logoColor, showReviewsLink }) {
   });
 
   const links = [
-    { label: "Explore Services", to: "/explore" },
+    { label: "Explore Services", to: "/explore", viewTransition: true },
     { label: "Why Us", ...sectionLink("built-for-trust") },
     ...(showReviewsLink ? [{ label: "Reviews", ...sectionLink("homeowner-testimonials") }] : []),
     { label: "How It Works", ...sectionLink("how-it-works") },
@@ -68,10 +69,10 @@ function GuestNavigationHeader({ logoColor, showReviewsLink }) {
         </nav>
 
         <div className="hidden shrink-0 items-center gap-2 md:flex">
-          <Link to="/login" className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
+          <Link to="/login" viewTransition className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
             Log In
           </Link>
-          <Link to="/signup" className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
+          <Link to="/signup" viewTransition className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700">
             Sign Up
           </Link>
         </div>
@@ -103,8 +104,8 @@ function GuestNavigationHeader({ logoColor, showReviewsLink }) {
             ))}
           </nav>
           <div className="mt-3 grid grid-cols-2 gap-2 border-t border-gray-100 pt-3">
-            <Link to="/login" onClick={() => setMobileOpen(false)} className="rounded-lg border border-slate-200 px-4 py-3 text-center text-sm font-semibold text-slate-700">Log In</Link>
-            <Link to="/signup" onClick={() => setMobileOpen(false)} className="rounded-lg bg-blue-700 px-4 py-3 text-center text-sm font-semibold text-white">Sign Up</Link>
+            <Link to="/login" viewTransition onClick={() => setMobileOpen(false)} className="rounded-lg border border-slate-200 px-4 py-3 text-center text-sm font-semibold text-slate-700">Log In</Link>
+            <Link to="/signup" viewTransition onClick={() => setMobileOpen(false)} className="rounded-lg bg-blue-700 px-4 py-3 text-center text-sm font-semibold text-white">Sign Up</Link>
           </div>
         </div>
       )}
@@ -112,7 +113,13 @@ function GuestNavigationHeader({ logoColor, showReviewsLink }) {
   );
 }
 
-export default function Header({ logoColor = "text-primary-700", showNav = false, showReviewsLink = false, activeTab = "Home", role = "client" }) {
+export default function Header(props) {
+  const isPersistentHeaderRoute = useContext(PersistentHeaderContext);
+  if (isPersistentHeaderRoute && props.showNav) return null;
+  return <HeaderContent {...props} />;
+}
+
+function HeaderContent({ logoColor = "text-primary-700", showNav = false, showReviewsLink = false, activeTab = "Home", role = "client" }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -305,6 +312,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
             detail: conversation.lastMessage || "You have a new message.",
             from: conversation.name || "TaskPanda",
             unreadCount: Math.max(0, Number(conversation.unreadCount) || 0),
+            conversationId: conversation.id,
             href: authRole === "provider" ? `/provider/messages?conversation=${conversation.id}` : `/client/messages?conversation=${conversation.id}`,
           }));
         if (active) {
@@ -325,6 +333,10 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
     const handleConversationRead = (event) => {
       const count = Math.max(0, Number(event.detail?.unreadCount) || 0);
       if (count > 0) setUnreadMessageCount((current) => Math.max(0, current - count));
+      const conversationId = String(event.detail?.conversationId || "");
+      if (conversationId) {
+        setNotificationItems((current) => current.filter((item) => item.conversationId !== conversationId));
+      }
       if (event.detail?.refresh) void loadUnreadMessageCount();
     };
 
@@ -725,7 +737,7 @@ export default function Header({ logoColor = "text-primary-700", showNav = false
   if (!isLoggedIn) return <GuestNavigationHeader logoColor={logoColor} showReviewsLink={showReviewsLink} />;
 
   return (
-    <header className="fixed inset-x-0 top-0 z-30 bg-white/80 backdrop-blur-md shadow-sm">
+    <header className={`fixed inset-x-0 top-0 z-30 bg-white/80 backdrop-blur-md shadow-sm ${showNav ? "taskpanda-app-header" : ""}`}>
       <div className="container mx-auto flex h-16 items-center justify-between gap-2 px-4 sm:px-6 lg:px-8">
         <div className="flex min-w-0 shrink-0 items-center justify-start gap-3">
           <Link to="/" className={`flex items-center gap-2 text-2xl font-extrabold tracking-tight ${logoColor}`} aria-label="TaskPanda home">

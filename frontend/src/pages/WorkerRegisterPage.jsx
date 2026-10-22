@@ -184,6 +184,7 @@ export default function WorkerRegisterPage() {
             <div className="flex items-center">
               <Link
                 to="/register"
+                viewTransition
                 className="auth-back-link group inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-500"
                 aria-label="Back to role selection"
               >

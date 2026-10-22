@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { canArriveForSameDayBooking, hasScheduleConflict, isSamePhilippineCalendarDay } from "../utils/bookingArrival.js";
 import { DEFAULT_ESTIMATED_DURATION_MINUTES, formatEstimatedDuration } from "../utils/bookingDuration.js";
+import { formatBookingRequestCountdown, formatBookingRequestDeadline, getBookingRequestExpiryDetails } from "../utils/bookingExpiry.mjs";
 import BambooStamp from "./BambooStamp.jsx";
 import ServiceLocationPicker from "./ServiceLocationPicker.jsx";
 import bookingLimits from "../../../shared/bookingLimits.json";
@@ -454,8 +455,10 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
     timeSlot: time,
     travelDistanceKm: travelQuote?.travelDistanceKm,
   }, currentTime);
-  const requestExpiresInSeconds = submittedBooking?.requestExpiresAt
-    ? Math.max(0, Math.ceil((new Date(submittedBooking.requestExpiresAt).getTime() - countdownNow.getTime()) / 1000))
+  const requestExpiryDetails = getBookingRequestExpiryDetails(submittedBooking);
+  const requestExpiryDeadline = requestExpiryDetails.deadline;
+  const requestExpiresInSeconds = requestExpiryDeadline
+    ? Math.max(0, Math.ceil((requestExpiryDeadline.getTime() - countdownNow.getTime()) / 1000))
     : null;
   const savedDurationMinutes = Number(submittedBooking?.estimatedDurationMinutes);
   const durationWasSaved = Number.isInteger(savedDurationMinutes)
@@ -468,10 +471,10 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   }, [selectedFiles]);
 
   useEffect(() => {
-    if (!isSubmitted || !submittedBooking?.requestExpiresAt) return undefined;
+    if (!isSubmitted || !getBookingRequestExpiryDetails(submittedBooking).deadline) return undefined;
     const timer = window.setInterval(() => setCountdownNow(new Date()), 1000);
     return () => window.clearInterval(timer);
-  }, [isSubmitted, submittedBooking?.requestExpiresAt]);
+  }, [isSubmitted, submittedBooking]);
 
   useEffect(() => {
     if (!provider) return undefined;
@@ -814,12 +817,14 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
               {requestExpiresInSeconds != null ? (
                 <p className={`mt-4 rounded-xl border px-4 py-3 text-sm font-medium ${requestExpiresInSeconds === 0 ? "border-rose-200 bg-rose-50 text-rose-800" : "border-amber-200 bg-amber-50 text-amber-900"}`} role="timer" aria-live="off">
                   {requestExpiresInSeconds === 0
-                    ? "This same-day request has expired."
-                    : <>Same-day request · provider must accept within <span className="font-bold tabular-nums">{Math.floor(requestExpiresInSeconds / 60)}:{String(requestExpiresInSeconds % 60).padStart(2, "0")}</span>.</>}
+                    ? "This booking request has expired."
+                    : requestExpiryDetails.type === "urgent_same_day"
+                      ? <>Urgent same-day request · provider must respond by <span className="font-bold">{formatBookingRequestDeadline(requestExpiryDeadline)}</span> (<span className="font-bold tabular-nums">{formatBookingRequestCountdown(requestExpiresInSeconds)}</span> remaining).</>
+                      : <>{requestExpiryDetails.sameDay ? "Advance same-day request" : "Advance booking"} · provider must accept by <span className="font-bold">{formatBookingRequestDeadline(requestExpiryDeadline, !requestExpiryDetails.sameDay)}</span> (<span className="font-bold tabular-nums">{formatBookingRequestCountdown(requestExpiresInSeconds)}</span> remaining).</>}
                 </p>
               ) : (
                 <p className="mt-4 rounded-xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm font-medium text-blue-950">
-                  Future-dated request · no 15-minute expiry applies.
+                  Provider response deadline could not be calculated. Check the booking status for the current deadline.
                 </p>
               )}
               {submittedBooking && !durationWasSaved && (

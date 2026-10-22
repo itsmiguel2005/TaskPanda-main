@@ -11,6 +11,10 @@ function clearApiGetCache() {
   apiGetCache.clear();
 }
 
+function isMessagingEndpoint(pathname) {
+  return /^\/api\/(?:conversations|messages)(?:\/|$)/.test(pathname);
+}
+
 function isCacheableGet(pathname, method, options, input) {
   const cacheMode = options.cache || (input instanceof Request ? input.cache : "default");
   const credentials = options.credentials || (input instanceof Request ? input.credentials : "same-origin");
@@ -21,6 +25,7 @@ function isCacheableGet(pathname, method, options, input) {
     && cacheMode === "default"
     && credentials !== "include"
     && !isAuthEndpoint
+    && !isMessagingEndpoint(pathname)
     && !pathname.startsWith("/api/cron/");
 }
 
@@ -91,7 +96,9 @@ export async function apiFetch(input, options = {}) {
 
   if (isApiRequest && method !== "GET" && method !== "HEAD") clearApiGetCache();
   if (!isApiRequest || !isCacheableGet(parsedUrl.pathname, method, options, input)) {
-    return fetch(requestInput, { ...options, headers });
+    const fetchOptions = { ...options, headers };
+    if (method === "GET" && isMessagingEndpoint(parsedUrl.pathname)) fetchOptions.cache = "no-store";
+    return fetch(requestInput, fetchOptions);
   }
   if (options.signal?.aborted) throw new DOMException("The request was aborted.", "AbortError");
 
