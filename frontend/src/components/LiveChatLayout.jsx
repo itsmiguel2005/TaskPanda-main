@@ -262,7 +262,7 @@ async function uploadChatPhoto(file, conversationId, requestHeaders) {
 export default function LiveChatLayout({ role, otherRoleLabel }) {
   const navigate = useNavigate();
   const { token, role: authenticatedRole } = useAuth();
-  const { requestRevision, submitCompletionProof } = useBookings();
+  const { requestRevision, submitCompletionProof, submitReview } = useBookings();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
   const showArchived = tabParam === "archived";
@@ -975,30 +975,24 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
     setIsSubmittingChatReview(true);
     setError("");
     try {
-      const formData = new FormData();
-      formData.append("rating", String(chatReviewRating));
-      formData.append("review", chatReviewText.trim());
-      chatReviewPhotos.forEach((photo) => formData.append("photos", photo));
-      const response = await apiFetch(`/api/bookings/${selectedConversation.bookingId}/rate`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || "Could not save the booking review.");
-      if (!data.booking?.id) throw new Error("The server returned an invalid review response.");
-      const savedRating = data.booking.clientRating ?? selectedConversation.clientRating ?? null;
-      const savedReview = data.booking.clientReview ?? chatReviewText.trim() ?? "";
-      const savedReviewPhotos = Array.isArray(data.booking.clientReviewPhotos) && data.booking.clientReviewPhotos.length > 0
-        ? data.booking.clientReviewPhotos
-        : (Array.isArray(chatReviewPhotos) ? chatReviewPhotos : []);
+      const booking = await submitReview(
+        selectedConversation.bookingId,
+        chatReviewRating,
+        chatReviewText.trim(),
+        chatReviewPhotos
+      );
+      const savedRating = booking.clientRating ?? selectedConversation.clientRating ?? null;
+      const savedReview = booking.clientReview ?? chatReviewText.trim() ?? "";
+      const savedReviewPhotos = Array.isArray(booking.clientReviewPhotos)
+        ? booking.clientReviewPhotos
+        : [];
       setConversations((current) => current.map((conversation) => conversation.id === selectedConversation.id ? {
         ...conversation,
         clientRating: savedRating,
         clientReview: savedReview,
         clientReviewPhotos: savedReviewPhotos,
-        reviewedAt: data.booking.reviewedAt ?? new Date().toISOString(),
-        bookingStatus: data.booking.statusCode ? normalizeBookingStatus(data.booking.statusCode) : conversation.bookingStatus,
+        reviewedAt: booking.reviewedAt ?? new Date().toISOString(),
+        bookingStatus: booking.statusCode ? normalizeBookingStatus(booking.statusCode) : conversation.bookingStatus,
       } : conversation));
       setReviewedBookingIds((current) => ({ ...current, [String(selectedConversation.bookingId)]: true }));
       setChatReviewText("");
