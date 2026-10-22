@@ -14,6 +14,8 @@ import { PROFESSIONS } from "../utils/professions.js";
 import UserOnlineStatus from "./UserOnlineStatus.jsx";
 import ActionToast from "./ActionToast.jsx";
 import DashboardDensityToggle from "./DashboardDensityToggle.jsx";
+import BookingMaintenanceNotice from "./BookingMaintenanceNotice.jsx";
+import useBookingAvailability from "../hooks/useBookingAvailability.js";
 
 const filterCategories = PROFESSIONS.map((name) => ({ name }));
 
@@ -115,6 +117,7 @@ function CheckBox({ label, count, checked, onChange }) {
 }
 
 export default function Explore() {
+  const bookingAvailability = useBookingAvailability();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -609,6 +612,11 @@ export default function Explore() {
   return (
     <div className={`dashboard-page ${isLoggedIn ? "" : "pt-0"}`}>
       <Header showNav activeTab="Explore" showReviewsLink />
+      {(bookingAvailability.isPaused || bookingAvailability.isUnavailable) && (
+        <div className="dashboard-shell mt-4 max-w-7xl">
+          <BookingMaintenanceNotice availability={bookingAvailability} />
+        </div>
+      )}
 
       <div className={`dashboard-shell mt-6 grid grid-cols-1 gap-6 ${!isLoggedIn && showGuestVoucherAd ? "pb-28" : "pb-10"} lg:grid-cols-[16rem_minmax(0,1fr)]`}>
         {/* Hero Search Section */}
@@ -1063,6 +1071,7 @@ export default function Explore() {
         />
         <RequestBookingModal
           provider={bookingProvider}
+          bookingPaused={bookingAvailability.isPaused}
           onClose={() => setBookingProvider(null)}
           onSubmit={(...args) => isLoggedIn
             ? createBooking(...args)

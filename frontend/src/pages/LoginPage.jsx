@@ -2,8 +2,10 @@ import { apiFetch } from "../services/api.js";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
+import BookingMaintenanceNotice from "../components/BookingMaintenanceNotice.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { resumeRegistrationAttempt } from "../utils/registrationDraft.js";
+import useBookingAvailability from "../hooks/useBookingAvailability.js";
 
 function formatWaitTime(totalSeconds) {
   const minutes = Math.floor(totalSeconds / 60);
@@ -21,6 +23,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { login, logout } = useAuth();
+  const bookingAvailability = useBookingAvailability();
   const [formData, setFormData] = useState({ email: "", password: "", remember: true });
   const [loginOtpToken, setLoginOtpToken] = useState("");
   const [loginOtpRole, setLoginOtpRole] = useState("client");
@@ -391,6 +394,7 @@ export default function LoginPage() {
         <>
         <section className="flex items-center justify-center bg-white px-6 py-8 sm:px-8 lg:h-full lg:py-6">
           <div className="w-full max-w-sm space-y-6">
+            <BookingMaintenanceNotice availability={bookingAvailability} />
             <div
               key={activeAuthStep}
               className="auth-step-transition"

@@ -394,7 +394,7 @@ function CalendarPicker({ selectedDate, onSelect, onClose }) {
   );
 }
 
-export default function RequestBookingModal({ provider, onClose, onSubmit, initialValues = {} }) {
+export default function RequestBookingModal({ provider, onClose, onSubmit, initialValues = {}, bookingPaused = false }) {
   const navigate = useNavigate();
   const { token, user } = useAuth();
   const initialDate = initialValues.date || "";
@@ -744,6 +744,10 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
   };
 
   const handleSubmit = async () => {
+    if (bookingPaused) {
+      setFormError("New booking requests are temporarily paused for maintenance. Please check back soon.");
+      return;
+    }
     if (isSubmittingRef.current) return;
     if (!validateRequestDetails()) return;
     isSubmittingRef.current = true;
@@ -813,6 +817,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
 
         {/* Form */}
         <div className="px-6 pb-6 space-y-4">
+          {bookingPaused && !isSubmitted && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-5 text-amber-950">New booking requests are temporarily paused for maintenance. You can still browse providers and manage existing bookings.</p>}
           {isSubmitted ? (
             <div className="py-8 text-center">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-100 text-green-700">
@@ -1207,7 +1212,7 @@ export default function RequestBookingModal({ provider, onClose, onSubmit, initi
                 )}
                 <div className="flex gap-3">
                   <button type="button" onClick={handlePreviousStep} disabled={isSubmitting} className="flex-1 rounded-full border border-gray-300 bg-white py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-wait disabled:opacity-50">Back</button>
-                  <button type="button" onClick={handleSubmit} disabled={isSubmitting} aria-busy={isSubmitting} className="flex flex-1 items-center justify-center gap-2 rounded-full bg-gray-900 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:cursor-wait disabled:opacity-70">
+                  <button type="button" onClick={handleSubmit} disabled={isSubmitting || bookingPaused} aria-busy={isSubmitting} className="flex flex-1 items-center justify-center gap-2 rounded-full bg-gray-900 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50">
                     {isSubmitting && (
                       <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />

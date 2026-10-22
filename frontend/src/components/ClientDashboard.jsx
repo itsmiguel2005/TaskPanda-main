@@ -5,9 +5,11 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { useBookings } from "../context/BookingContext.jsx";
 import Header from "./Header.jsx";
 import BookingPriceBreakdown from "./BookingPriceBreakdown.jsx";
+import BookingRequestCountdown from "./BookingRequestCountdown.jsx";
 import BookingProgress from "./BookingProgress.jsx";
 import BookingHistory from "./BookingHistory.jsx";
 import BookingLocationMap from "./BookingLocationMap.jsx";
+import BookingMaintenanceNotice from "./BookingMaintenanceNotice.jsx";
 import ProviderStreak from "./ProviderStreak.jsx";
 import { canRequestCancellation, getCancellationLockMessage } from "../utils/bookingCancellation.js";
 import StatusChangeConfirmation from "./StatusChangeConfirmation.jsx";
@@ -19,6 +21,7 @@ import { PROFESSIONS } from "../utils/professions.js";
 import ActionToast from "./ActionToast.jsx";
 import DashboardDensityToggle from "./DashboardDensityToggle.jsx";
 import { compareBookingsByLatestActivity } from "../utils/bookingActivity.js";
+import useBookingAvailability from "../hooks/useBookingAvailability.js";
 
 export const categories = [
   {
@@ -323,6 +326,7 @@ function getDashboardServiceArea(user) {
 export default function Dashboard() {
   const navigate = useNavigate();
   const { isLoggedIn, user, token } = useAuth();
+  const bookingAvailability = useBookingAvailability();
   const serviceArea = getDashboardServiceArea(user);
   const { bookings: bookingList, dismissedBookingIds, isLoading, error, dismissDashboardBooking, requestCancellation, respondToProviderUpdate, createBooking } = useBookings();
   const isInitialBookingsLoading = isLoading && bookingList.length === 0;
@@ -723,6 +727,11 @@ export default function Dashboard() {
   return (
     <div className="dashboard-page">
       <Header showNav activeTab="Home" />
+      {(bookingAvailability.isPaused || bookingAvailability.isUnavailable) && (
+        <div className="dashboard-shell max-w-7xl pt-4">
+          <BookingMaintenanceNotice availability={bookingAvailability} />
+        </div>
+      )}
 
       {enRouteBooking && (
         <div role="status" className="border-b border-cyan-200 bg-cyan-50 px-4 py-3 text-cyan-950 sm:px-6 lg:px-8">
@@ -1100,6 +1109,7 @@ export default function Dashboard() {
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-sm font-semibold text-slate-900">{booking.worker}</span>
                             <span className="block truncate text-xs text-slate-500">{booking.task}</span>
+                            {booking.status === "Pending Request" && expandedCompactBookingId !== booking.id && <span className="mt-1 block"><BookingRequestCountdown booking={booking} compact /></span>}
                           </span>
                           <StatusBadge status={booking.status} compact />
                           <span className="shrink-0 text-xs font-bold tabular-nums text-slate-800">{formatPhpAmount(booking.totalPrice ?? booking.offeredPrice ?? booking.offer, true)}</span>
@@ -1175,6 +1185,7 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <div className="mt-3 border-t border-sky-100 pt-2.5">
+                        {booking.status === "Pending Request" && <BookingRequestCountdown booking={booking} />}
                         <p className="wrap-break-word text-sm font-medium leading-relaxed text-gray-800">
                           {booking.task}
                         </p>
@@ -1314,6 +1325,7 @@ export default function Dashboard() {
       />
       <RequestBookingModal
         provider={bookingProvider}
+        bookingPaused={bookingAvailability.isPaused}
         onClose={() => setBookingProvider(null)}
         onSubmit={createBooking}
       />

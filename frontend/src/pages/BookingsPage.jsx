@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header.jsx";
 import BookingStatusBadge from "../components/BookingStatusBadge.jsx";
+import BookingRequestCountdown from "../components/BookingRequestCountdown.jsx";
 import DashboardDensityToggle from "../components/DashboardDensityToggle.jsx";
 import BookingPriceBreakdown from "../components/BookingPriceBreakdown.jsx";
 import MessagePhoto from "../components/MessagePhoto.jsx";
@@ -16,11 +17,13 @@ import RevisionRequestModal from "../components/RevisionRequestModal.jsx";
 import RefundRequestModal from "../components/RefundRequestModal.jsx";
 import RequestBookingModal from "../components/RequestBookingModal.jsx";
 import ProviderNoShowConfirmationModal from "../components/ProviderNoShowConfirmationModal.jsx";
+import BookingMaintenanceNotice from "../components/BookingMaintenanceNotice.jsx";
 import PandaSwipeRefresh from "../components/PandaSwipeRefresh.jsx";
 import { BookingCardSkeletonList, SkeletonBlock } from "../components/Skeletons.jsx";
 import { DEFAULT_ESTIMATED_DURATION_MINUTES } from "../utils/bookingDuration.js";
 import { getBookingNoShowGraceDeadline } from "../utils/bookingArrival.js";
 import { compareBookingsByLatestActivity, sortBookingsWithOngoingFirst } from "../utils/bookingActivity.js";
+import useBookingAvailability from "../hooks/useBookingAvailability.js";
 
 const tabs = ["All", "Pending", "Active", "Completed", "Cancelled", "Declined", "Expired"];
 
@@ -69,6 +72,7 @@ function formatPhpAmount(value) {
 }
 
 export default function BookingsPage() {
+  const bookingAvailability = useBookingAvailability();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const requestedBookingId = searchParams.get("bookingId");
@@ -222,11 +226,11 @@ export default function BookingsPage() {
   }, []);
 
   useEffect(() => {
-    const hasUpcomingNoShowDeadline = bookings.some((booking) =>
-      booking.status === "Confirmed"
-      && getNoShowDeadlineTimestamp(booking) > Date.now()
+    const hasActiveBookingTimer = bookings.some((booking) =>
+      (booking.status === "Confirmed" && getNoShowDeadlineTimestamp(booking) > Date.now())
+      || booking.status === "Pending Request"
     );
-    if (!hasUpcomingNoShowDeadline) return undefined;
+    if (!hasActiveBookingTimer) return undefined;
     const timerId = window.setInterval(() => setBookingClock(Date.now()), 1000);
     return () => window.clearInterval(timerId);
   }, [bookings]);
@@ -313,6 +317,7 @@ export default function BookingsPage() {
     <div className="dashboard-page text-slate-800">
       <Header showNav activeTab="Bookings" />
       <div className="dashboard-shell max-w-6xl">
+        <BookingMaintenanceNotice availability={bookingAvailability} className="mb-5" />
         <div className="mb-6">
           <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">My bookings</h1>
           <p className="mt-2 text-sm text-slate-600">
@@ -406,6 +411,7 @@ export default function BookingsPage() {
                         <span className="block truncate text-xs text-slate-500">{booking.date} · {booking.time} · {formatPhpAmount(booking.totalPrice ?? booking.offeredPrice)}</span>
                       </span>
                       <BookingStatusBadge status={booking.status} density="compact" />
+                      {dashboardDensity === "compact" && booking.status === "Pending Request" && <BookingRequestCountdown booking={booking} currentTime={bookingClock} compact />}
                       <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 ${compactExpandedId === booking.id ? "rotate-180" : ""}`}><path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                     </button>
                     <div className="flex shrink-0 items-center gap-1.5 pl-10 sm:pl-0">
@@ -437,6 +443,7 @@ export default function BookingsPage() {
                   <div className="mt-4">
                     <BookingProgress status={booking.status} />
                   </div>
+                  {booking.status === "Pending Request" && <BookingRequestCountdown booking={booking} currentTime={bookingClock} />}
 
                   <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.5fr)_minmax(15rem,1fr)]">
                     <div className="min-w-0">
@@ -862,6 +869,7 @@ export default function BookingsPage() {
           }}
           onClose={() => setRebookingBooking(null)}
           onSubmit={createBooking}
+          bookingPaused={bookingAvailability.isPaused}
         />
       )}
 

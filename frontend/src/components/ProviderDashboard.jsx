@@ -9,11 +9,13 @@ import { BookingCardSkeletonList } from "./Skeletons.jsx";
 import CompletionProofModal from "./CompletionProofModal.jsx";
 import BookingLocationMap from "./BookingLocationMap.jsx";
 import DashboardDensityToggle from "./DashboardDensityToggle.jsx";
+import BookingMaintenanceNotice from "./BookingMaintenanceNotice.jsx";
 import { canRequestCancellation, requiresCancellationApproval } from "../utils/bookingCancellation.js";
 import { formatBookingRequestCountdown, getBookingRequestExpiryDetails } from "../utils/bookingExpiry.mjs";
 import { canArriveForSameDayBooking, hasScheduleConflict } from "../utils/bookingArrival.js";
 import { compareBookingsByLatestActivity } from "../utils/bookingActivity.js";
 import { apiFetch } from "../services/api.js";
+import useBookingAvailability from "../hooks/useBookingAvailability.js";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -993,6 +995,7 @@ function JobCard({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ProviderDashboard() {
+  const bookingAvailability = useBookingAvailability();
   const navigate = useNavigate();
   const { user, token, refreshProfile, updateUser } = useAuth();
   const { bookings, dismissedBookingIds, bookingReviewStats, providerBookingStats, isLoading, error, dismissDashboardBooking, updateBookingStatus, requestCancellation, submitCompletionProof, refreshBookings } = useBookings();
@@ -1236,6 +1239,11 @@ export default function ProviderDashboard() {
   return (
     <div className="dashboard-page provider-page-background">
       <Header showNav activeTab="Home" role="provider" notifCount={requests.length} />
+      {(bookingAvailability.isPaused || bookingAvailability.isUnavailable) && (
+        <div className="dashboard-shell max-w-7xl pt-4">
+          <BookingMaintenanceNotice availability={bookingAvailability} />
+        </div>
+      )}
 
       <div className="dashboard-shell max-w-7xl">
 
