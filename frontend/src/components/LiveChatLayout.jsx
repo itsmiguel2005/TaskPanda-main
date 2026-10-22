@@ -2,6 +2,7 @@ import { apiFetch } from "../services/api.js";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { useBookings } from "../context/BookingContext.jsx";
 import Header from "./Header.jsx";
 import SystemMessageCard from "./SystemMessageCard.jsx";
 import StatusChangeConfirmation from "./StatusChangeConfirmation.jsx";
@@ -261,6 +262,7 @@ async function uploadChatPhoto(file, conversationId, requestHeaders) {
 export default function LiveChatLayout({ role, otherRoleLabel }) {
   const navigate = useNavigate();
   const { token, role: authenticatedRole } = useAuth();
+  const { requestRevision, submitCompletionProof } = useBookings();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
   const showArchived = tabParam === "archived";
@@ -1129,20 +1131,10 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
   const handleRevisionRequest = async (event) => {
     event.preventDefault();
     if (!selectedConversation || !revisionNote.trim()) return;
-    const formData = new FormData();
-    formData.append("note", revisionNote.trim());
-    revisionPhotos.forEach((photo) => formData.append("photos", photo));
     setIsActionSubmitting(true);
     setActionError("");
     try {
-      const response = await apiFetch(`/api/bookings/${selectedConversation.bookingId}/revisions`, {
-        method: "POST",
-        headers: requestHeaders,
-        body: formData,
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || "Could not submit the revision request.");
-      if (!data.booking?.id) throw new Error("The server returned an invalid revision response.");
+      await requestRevision(selectedConversation.bookingId, revisionNote.trim(), revisionPhotos);
       await loadConversations();
       setRevisionNote("");
       setRevisionPhotos([]);
@@ -1181,17 +1173,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
 
   const handleCompleteBookingInChat = async (completionNote, photos) => {
     if (!selectedConversation || role !== "provider") throw new Error("Only the provider can mark a task complete.");
-    const formData = new FormData();
-    formData.append("completionNote", completionNote);
-    (photos || []).forEach((photo) => formData.append("photos", photo));
-    const response = await apiFetch(`/api/bookings/${selectedConversation.bookingId}/completion`, {
-      method: "POST",
-      headers: requestHeaders,
-      body: formData,
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.message || "Could not submit the completion summary.");
-    if (!data.booking?.id) throw new Error("The server returned an invalid completion response.");
+    await submitCompletionProof(selectedConversation.bookingId, completionNote, photos);
     await loadConversations();
     setActionMessage(null);
     setRevisionProofOpen(false);
@@ -1200,17 +1182,7 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
 
   const handleRevisionResubmission = async (completionNote, photos) => {
     if (!selectedConversation || role !== "provider") throw new Error("Only the provider can resubmit completed work.");
-    const formData = new FormData();
-    formData.append("completionNote", completionNote);
-    (photos || []).forEach((photo) => formData.append("photos", photo));
-    const response = await apiFetch(`/api/bookings/${selectedConversation.bookingId}/completion`, {
-      method: "POST",
-      headers: requestHeaders,
-      body: formData,
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.message || "Could not resubmit the completed work.");
-    if (!data.booking?.id) throw new Error("The server returned an invalid completion response.");
+    await submitCompletionProof(selectedConversation.bookingId, completionNote, photos);
     await loadConversations();
     setActionMessage(null);
     setRevisionProofOpen(false);
