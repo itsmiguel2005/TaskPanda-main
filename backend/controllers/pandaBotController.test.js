@@ -8,6 +8,7 @@ const {
   findBookingSelectionMatches,
   getFirstName,
   getRequestedDateRangeFromMessage,
+  isCapabilitiesQuestion,
   hasRecentAssistantIntroduction,
   isBookingTrackingFollowUp,
   isBookingTrackingRequest,
@@ -27,6 +28,14 @@ test("responds to greetings and open help requests naturally with the caller's f
   assert.equal(isSimpleGreeting("good morning"), true);
   assert.equal(isCasualAcknowledgment("thanks!"), true);
   assert.equal(isGreetingOrOpenQuestion("Can you help me with something?"), true);
+  assert.equal(isGreetingOrOpenQuestion("What can I ask you?"), true);
+  assert.equal(isCapabilitiesQuestion("What can I ask you?"), true);
+  assert.equal(isCapabilitiesQuestion("Show me some commands"), true);
+  assert.equal(isCapabilitiesQuestion("What can you help me with?"), true);
+  assert.equal(isCapabilitiesQuestion("What are some possible commands?"), true);
+  assert.equal(isCapabilitiesQuestion("Can you help me?"), false);
+  assert.equal(isGreetingOrOpenQuestion("Can you help me with my booking?"), false);
+  assert.equal(isGreetingOrOpenQuestion("Can you help me book a plumber tomorrow?"), false);
   assert.equal(isGreetingOrOpenQuestion("Where is my provider?"), false);
   assert.equal(hasRecentAssistantIntroduction([
     { role: "assistant", text: "I can help you check your schedule or earnings." },
@@ -62,6 +71,15 @@ test("responds to greetings and open help requests naturally with the caller's f
     buildFriendlyOpening(client, "Thanks!"),
     "You’re welcome, Mariel! Want me to check anything else?",
   );
+  const clientCapabilities = buildFriendlyOpening(client, "What can you do?");
+  assert.match(clientCapabilities, /nearby pros, check availability/);
+  assert.match(clientCapabilities, /Track my booking/);
+  assert.match(clientCapabilities, /can’t submit it for you/);
+
+  const providerCapabilities = buildFriendlyOpening(provider, "Show me your commands", "provider");
+  assert.match(providerCapabilities, /pending requests/);
+  assert.match(providerCapabilities, /Show my earnings this week/);
+  assert.match(providerCapabilities, /can’t mark a job completed/);
 });
 
 test("recognizes caller booking and provider tracking requests", () => {
@@ -97,7 +115,6 @@ test("parses client booking follow-up date ranges using the Philippine current d
   assert.equal(tomorrow.serviceDateUntil.toISOString(), "2026-10-17T00:00:00.000Z");
   const bookingFilter = buildUserRelevantBookingsFilter(
     new mongoose.Types.ObjectId(),
-    now,
     tomorrow,
   );
   assert.equal(bookingFilter.serviceDate.$gte, tomorrow.serviceDateFrom);
@@ -125,26 +142,22 @@ test("sanitizes and retains complete user/assistant conversation context", () =>
   ]);
 });
 
-test("booking lookup is scoped to the client and includes only allowed states", () => {
+test("booking lookup is scoped to the client and includes only active booking states", () => {
   const clientId = new mongoose.Types.ObjectId();
-  const now = new Date("2026-10-14T10:00:00.000Z");
-  const filter = buildUserRelevantBookingsFilter(clientId, now);
+  const filter = buildUserRelevantBookingsFilter(clientId);
 
   assert.equal(filter.clientId, clientId);
-  assert.deepEqual(filter.$or[0].status.$in, [
-    "PENDING", "APPROVED", "ON_THE_WAY", "IN_PROGRESS",
-    "pending", "approved", "en_route", "in_progress",
-    "Pending Request", "Confirmed", "On the Way", "In Progress",
+  assert.deepEqual(filter.status.$in, [
+    "PENDING", "APPROVED", "ON_THE_WAY", "IN_PROGRESS", "CANCEL_REQUESTED",
+    "pending", "approved", "en_route", "in_progress", "cancel_requested",
+    "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested",
   ]);
-  assert.deepEqual(filter.$or[1].status.$in, [
-    "REFUND_PENDING", "DISPUTED", "refund_pending", "disputed", "Disputed",
-  ]);
-  assert.deepEqual(filter.$or[2].status.$in, ["CANCELLED", "canceled", "cancelled", "Cancelled"]);
-  assert.equal(filter.$or[2].updatedAt.$gte.toISOString(), "2026-10-13T10:00:00.000Z");
+  assert.equal(filter.$or, undefined);
+  assert.equal(filter.serviceDate, undefined);
 });
 
 test("booking tracking response handles zero and one matching booking", () => {
-  assert.match(buildBookingTrackingResponse([]), /couldn’t find any current bookings, including active, pending, refund-pending, disputed, or recently canceled ones/i);
+  assert.match(buildBookingTrackingResponse([]), /couldn’t find any active bookings/i);
 
   const booking = {
     providerId: { fullName: "Alex Rivera", professions: ["Plumber"] },

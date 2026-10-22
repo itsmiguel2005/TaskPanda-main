@@ -96,6 +96,8 @@ test("parses booking dates using Philippine local time", () => {
   assert.equal(getPhilippineDateOffset(0, now), "2026-10-09");
   assert.equal(getPhilippineDateOffset(1, now), "2026-10-10");
   assert.equal(parseRequestedServiceDate("Can Mariel come tomorrow?", now), "2026-10-10");
+  assert.equal(parseRequestedServiceDate("bukas?", now), "2026-10-10");
+  assert.equal(parseRequestedServiceDate("ngayon po", now), "2026-10-09");
   assert.equal(parseRequestedServiceDate("Check his availability tommrow", now), "2026-10-10");
   assert.equal(parseRequestedServiceDate("Check availability tommorow", now), "2026-10-10");
   assert.equal(parseRequestedServiceDate("how about for october 10?", now), "2026-10-10");
@@ -161,6 +163,9 @@ test("uses the most recent provider card as context for pronoun availability fol
   assert.equal(getRecentContextRequestedDate([{ role: "assistant", contextRequestedDate: "2026-99-99" }]), "");
   assert.deepEqual(getRecentContextProviderIds([{ role: "assistant", providerIds: [] }]), []);
   assert.equal(isAvailabilityDateFollowUp("how about for October 10?", true, new Date("2026-10-08T16:00:00.000Z")), true);
+  assert.equal(isAvailabilityDateFollowUp("tomorrow?", true, new Date("2026-10-08T16:00:00.000Z")), true);
+  assert.equal(isAvailabilityDateFollowUp("bukas po", true, new Date("2026-10-08T16:00:00.000Z")), true);
+  assert.equal(isAvailabilityDateFollowUp("tomorrow?", false, new Date("2026-10-08T16:00:00.000Z")), false);
   assert.equal(isAvailabilityDateFollowUp("how about for October 10?", false, new Date("2026-10-08T16:00:00.000Z")), false);
   assert.equal(isAvailabilityDateFollowUp("tell me about October 10", true, new Date("2026-10-08T16:00:00.000Z")), false);
   assert.equal(isProviderChoiceFollowUp("the aerospace engineer", true), true);
@@ -172,9 +177,15 @@ test("disambiguates provider choices by profession or location", () => {
   const providers = [
     { _id: "painter", fullName: "Mariel Estrada Calilim", professions: ["Painter"], city: "Dagupan" },
     { _id: "engineer", fullName: "Mariel Estrada Estrada Calilim", professions: ["Aerospace Engineer"], city: "Calasiao" },
+    { _id: "plumber", fullName: "Alex Rivera", professions: ["Plumber"], city: "Urdaneta" },
   ];
   assert.deepEqual(findProviderChoiceMatches(providers, "the aerospace engineer").map(({ _id }) => _id), ["engineer"]);
   assert.deepEqual(findProviderChoiceMatches(providers, "the Dagupan provider").map(({ _id }) => _id), ["painter"]);
+  assert.deepEqual(findProviderChoiceMatches(providers, "the second one").map(({ _id }) => _id), ["engineer"]);
+  assert.deepEqual(findProviderChoiceMatches(providers, "pangalawa").map(({ _id }) => _id), ["engineer"]);
+  assert.deepEqual(findProviderChoiceMatches(providers, "the third one").map(({ _id }) => _id), ["plumber"]);
+  assert.deepEqual(findProviderChoiceMatches(providers.slice(0, 2), "the other one").map(({ _id }) => _id), ["engineer"]);
+  assert.deepEqual(findProviderChoiceMatches(providers.slice(0, 2), "the fourth one"), []);
 });
 
 test("recognizes favorite-list questions and builds cards from the caller's saved providers", () => {
@@ -309,6 +320,14 @@ test("recognizes top-rated requests for a named service and ordinary provider se
   assert.equal(isProviderRecommendationRequest("Who are the top plumbers?", providers), true);
   assert.equal(isProviderRecommendationRequest("Find an aircon tech near me", providers), true);
   assert.equal(isProviderRecommendationRequest("Find electricians near me"), true);
+  assert.equal(findRequestedProfession([], "ac fix"), "Aircon Tech");
+  assert.equal(isProviderRecommendationRequest("ac fix"), true);
+  assert.equal(findRequestedProfession([], "leak kitchen"), "Plumber");
+  assert.equal(isProviderRecommendationRequest("leak kitchen"), true);
+  assert.equal(findRequestedProfession([], "need plumber tmrw 3pm"), "Plumber");
+  assert.equal(isProviderRecommendationRequest("need plumber tmrw 3pm"), true);
+  assert.equal(isProviderAvailabilityRequest("sched AC Dagupan"), true);
+  assert.equal(findRequestedProfession([], "need a cleaner"), "Housekeeper");
   assert.equal(isProviderRecommendationRequest("Can you check Mariel in my favourites available time for tomorrow?"), true);
   assert.equal(isProviderRecommendationRequest("What times can I book Mariel tomorrow?"), true);
   assert.equal(isProviderRecommendationRequest("How do bamboo stamps work?", providers), false);
@@ -326,17 +345,23 @@ test("maps issue descriptions to trade categories for provider matching", () => 
 
 test("PandaBot rules ground diagnostics, fare estimates, payment, and safety in supplied facts", () => {
   const { systemInstruction } = require("./pandaBot");
-  assert.match(systemInstruction, /non-definitive service triage/);
+  assert.match(systemInstruction, /non-definitive matching/);
   assert.match(systemInstruction, /final amount is confirmed in booking/);
   assert.match(systemInstruction, /After both confirmations/);
   assert.match(systemInstruction, /submits an open report for administrator review/);
   assert.match(systemInstruction, /Use the caller's first name only in the initial opening greeting/);
   assert.match(systemInstruction, /never repeat the feature pitch/);
   assert.match(systemInstruction, /simple greeting or acknowledgment/);
-  assert.match(systemInstruction, /Use the supplied conversation history to resolve incomplete follow-up questions/);
+  assert.match(systemInstruction, /Interpret short turns such as/);
+  assert.match(systemInstruction, /Do not require complete or grammatical sentences/);
+  assert.match(systemInstruction, /"tomorrow\?", "bukas\?", "the second one"/);
+  assert.match(systemInstruction, /"ac fix", "leak kitchen", "need plumber tmrw 3pm", and "sched AC Dagupan"/);
+  assert.match(systemInstruction, /future\/advance pending requests expire 30 minutes before appointment/);
+  assert.match(systemInstruction, /urgent same-day requests inside that 30-minute window have a 15-minute response timer/);
+  assert.match(systemInstruction, /Do not assume the caller is in Pangasinan/);
   assert.match(systemInstruction, /query the exact requested date or date range/);
   assert.match(systemInstruction, /ask a gentle clarifying question instead of presenting a command menu/);
-  assert.match(systemInstruction, /unless the caller explicitly asks what you can do/);
+  assert.match(systemInstruction, /unless the caller asks what you can do/);
 });
 
 test("builds structured top-three cards from the highest-rated nearby providers", () => {

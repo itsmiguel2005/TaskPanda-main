@@ -60,6 +60,10 @@ test("schedule follow-ups inherit schedule intent and resolve exact date windows
   assert.equal(tomorrow.range.serviceDateFrom.toISOString(), "2026-10-16T00:00:00.000Z");
   assert.equal(tomorrow.range.serviceDateUntil.toISOString(), "2026-10-17T00:00:00.000Z");
 
+  const shortReply = getProviderScheduleRequest("bukas?", scheduleHistory, bounds, now);
+  assert.equal(shortReply.label, "tomorrow");
+  assert.equal(shortReply.range.serviceDateFrom.toISOString(), tomorrow.range.serviceDateFrom.toISOString());
+
   const nextWeek = getProviderScheduleRequest("what about next week?", scheduleHistory, bounds, now);
   assert.equal(nextWeek.label, "next week");
   assert.equal(nextWeek.range.serviceDateFrom.toISOString(), "2026-10-19T00:00:00.000Z");

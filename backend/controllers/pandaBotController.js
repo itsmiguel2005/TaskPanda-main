@@ -7,14 +7,10 @@ const {
 } = require("../services/pandaBot");
 
 const ACTIVE_BOOKING_STATUSES = [
-  "PENDING", "APPROVED", "ON_THE_WAY", "IN_PROGRESS",
-  "pending", "approved", "en_route", "in_progress",
-  "Pending Request", "Confirmed", "On the Way", "In Progress",
+  "PENDING", "APPROVED", "ON_THE_WAY", "IN_PROGRESS", "CANCEL_REQUESTED",
+  "pending", "approved", "en_route", "in_progress", "cancel_requested",
+  "Pending Request", "Confirmed", "On the Way", "In Progress", "Cancellation Requested",
 ];
-const REFUND_OR_DISPUTE_STATUSES = [
-  "REFUND_PENDING", "DISPUTED", "refund_pending", "disputed", "Disputed",
-];
-const CANCELLATION_STATUSES = ["CANCELLED", "canceled", "cancelled", "Cancelled"];
 
 const BOOKING_STATUS_LABELS = {
   pending: "Pending approval",
@@ -26,6 +22,8 @@ const BOOKING_STATUS_LABELS = {
   "on the way": "On the way",
   in_progress: "In progress",
   "in progress": "In progress",
+  cancel_requested: "Cancellation requested",
+  "cancellation requested": "Cancellation requested",
   refund_pending: "Refund pending",
   disputed: "Disputed",
   canceled: "Cancelled",
@@ -106,7 +104,12 @@ function isGreetingOrOpenQuestion(message) {
 }
 
 function isOpenHelpQuestion(message) {
-  return /\b(?:can you help(?: me)?(?: with something)?|could you help me|i need some help|what can you help me with|what can you do)\b/i.test(message);
+  return isCapabilitiesQuestion(message) ||
+    /^\s*(?:can you help(?: me)?(?: with (?:something|anything))?|could you help me(?: with (?:something|anything))?|i need some help)\s*[?.!]*$/i.test(message);
+}
+
+function isCapabilitiesQuestion(message) {
+  return /^\s*(?:what can you do|what can you help me with|what (?:questions )?can i ask(?: you)?|what should i ask|what are (?:some )?(?:possible )?(?:commands|examples|options)|(?:show|list) (?:me )?(?:(?:some|your|available|possible) )?(?:commands|examples|options)|(?:commands|examples|options) (?:you support|can i use))\s*[?.!]*$/i.test(message);
 }
 
 function isSimpleGreeting(message) {
@@ -171,6 +174,11 @@ function buildFriendlyOpening(user, message, role = "client", conversationHistor
   const firstName = getFirstName(user);
   const name = firstName && !hasPriorAssistantMessage(conversationHistory) ? ` ${firstName}` : "";
   const alreadyIntroduced = hasRecentAssistantIntroduction(conversationHistory);
+  if (isCapabilitiesQuestion(message)) {
+    return role === "provider"
+      ? `${name ? `Of course,${name}` : "Of course"}! I can show pending requests, list your active jobs by date, check cash earnings and payment confirmations, and show your rating or verification status. Try “Show my pending requests,” “What jobs do I have tomorrow?” or “Show my earnings this week.” I can also move an eligible job to On the Way or In Progress when you identify the client; I can’t mark a job completed for you.`
+      : `${name ? `Of course,${name}` : "Of course"}! I can find nearby pros, check availability, show your active bookings or favourites, and explain rewards, payments, and receipts. Try “Find a plumber near me,” “Is my plumber available tomorrow?” or “Track my booking.” I can guide you through reporting an issue, but I can’t submit it for you.`;
+  }
   if (isCasualAcknowledgment(message)) {
     if (/^(?:thanks?|thank you)/i.test(message.trim())) {
       return `You’re welcome${name ? `,${name}` : ""}! Want me to check anything else?`;
@@ -185,7 +193,7 @@ function buildFriendlyOpening(user, message, role = "client", conversationHistor
   if (alreadyIntroduced) {
     return `Of course${name ? `,${name}` : ""}—what are you trying to sort out?`;
   }
-  if (/\b(?:what can you do|what can you help me with)\b/i.test(message)) {
+  if (/\bwhat can you help me with\b/i.test(message)) {
     const examples = role === "provider"
       ? "I can check your schedule or earnings"
       : "I can check a booking or help find a local pro";
@@ -198,18 +206,10 @@ function buildFriendlyOpening(user, message, role = "client", conversationHistor
   return `${greeting}—${helpOffer}; what do you need a hand with?`;
 }
 
-function buildUserRelevantBookingsFilter(clientId, now = new Date(), dateRange = null) {
-  const cancelledSince = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+function buildUserRelevantBookingsFilter(clientId, dateRange = null) {
   const filter = {
     clientId,
-    $or: [
-      { status: mongoose.trusted({ $in: ACTIVE_BOOKING_STATUSES }) },
-      { status: mongoose.trusted({ $in: REFUND_OR_DISPUTE_STATUSES }) },
-      {
-        status: mongoose.trusted({ $in: CANCELLATION_STATUSES }),
-        updatedAt: mongoose.trusted({ $gte: cancelledSince }),
-      },
-    ],
+    status: mongoose.trusted({ $in: ACTIVE_BOOKING_STATUSES }),
   };
   if (dateRange) {
     filter.serviceDate = mongoose.trusted({
@@ -221,7 +221,7 @@ function buildUserRelevantBookingsFilter(clientId, now = new Date(), dateRange =
 }
 
 async function fetchUserRelevantBookings(clientId, dateRange = null) {
-  return Booking.find(buildUserRelevantBookingsFilter(clientId, new Date(), dateRange))
+  return Booking.find(buildUserRelevantBookingsFilter(clientId, dateRange))
     .select("_id providerId status serviceDate timeSlot repairDescription")
     .populate({ path: "providerId", select: "fullName username professions" })
     .sort({ serviceDate: 1, createdAt: -1 })
@@ -286,12 +286,12 @@ function buildBookingTrackingResponse(bookings, message = "", user = null, conve
   const greeting = firstName ? `Hey, ${firstName} — ` : "";
   if (!bookings.length) {
     if (/\btomorrow\b/i.test(message)) {
-      return `${greeting}No bookings scheduled for tomorrow either! You're all clear.`;
+      return `${greeting}No active bookings are scheduled for tomorrow either! You're all clear.`;
     }
     if (/\btoday\b/i.test(message)) {
-      return `${greeting}No bookings are scheduled for today.`;
+      return `${greeting}No active bookings are scheduled for today.`;
     }
-    return `${greeting}I couldn’t find any current bookings, including active, pending, refund-pending, disputed, or recently canceled ones.`;
+    return `${greeting}I couldn’t find any active bookings.`;
   }
   if (bookings.length === 1) {
     return buildBookingDetails(bookings[0], user, conversationHistory);
@@ -343,6 +343,7 @@ module.exports = {
   isBookingTrackingFollowUp,
   isBookingTrackingRequest,
   isCasualAcknowledgment,
+  isCapabilitiesQuestion,
   isGreetingOrOpenQuestion,
   isOpenHelpQuestion,
   sanitizeConversationHistory,

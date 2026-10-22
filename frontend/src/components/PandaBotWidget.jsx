@@ -5,14 +5,21 @@ import { apiFetch } from "../services/api.js";
 import PandaBotProfileCard from "./PandaBotProfileCard.jsx";
 
 const clientQuickActions = [
-  "Find top pros near me",
-  "How do bamboo stamps work?",
+  "What can you do?",
+  "Find a plumber near me",
+  "Check a pro’s availability tomorrow",
+  "Show my favourites",
   "Track my booking",
+  "How do bamboo stamps work?",
+  "How does cash payment work?",
 ];
 const providerQuickActions = [
+  "What can you do?",
   "Show my pending requests",
   "What jobs do I have today?",
+  "Show my jobs this week",
   "Show my earnings this week",
+  "Show my unconfirmed cash payments",
   "What’s my rating and verification status?",
 ];
 
@@ -24,8 +31,8 @@ function createWelcomeMessage(role, user) {
     role: "assistant",
     contextIntroduction: true,
     text: role === "provider"
-      ? `${greeting} I can help you keep tabs on incoming jobs, your schedule, or earnings. What do you need a hand with?`
-      : `${greeting} I can help with your bookings, rewards, or finding a local pro. What do you need a hand with?`,
+      ? `${greeting} I can check pending requests, your job schedule, cash earnings, and your provider profile. Ask “What can you do?” for examples.`
+      : `${greeting} I can help find local pros, check your active bookings, and answer questions about rewards or payments. Ask “What can you do?” for examples.`,
   };
 }
 
@@ -516,7 +523,7 @@ export default function PandaBotWidget({ initiallyOpen = false }) {
               id="pandabot-message"
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder={role === "provider" ? "Ask about your jobs, earnings, or profile..." : "Ask about a booking or service..."}
+              placeholder={role === "provider" ? "Ask about jobs, schedule, earnings, or profile..." : "Ask about bookings, local pros, rewards, or payments..."}
               rows={1}
               maxLength={4000}
               disabled={isSending}

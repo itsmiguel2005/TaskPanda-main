@@ -294,11 +294,11 @@ function isIncomingJobsRequest(message) {
 }
 
 function isActiveJobsRequest(message) {
-  if (/^\s*(?:(?:and|then)\s+)?(?:how|what) about\s+(?:today|tomorrow|this week|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(message) ||
-    /^\s*any for\s+(?:today|tomorrow|this week|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(message)) {
+  if (/^\s*(?:(?:and|then)\s+)?(?:how|what) about\s+(?:today|tomorrow|bukas|ngayon|this week|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(message) ||
+    /^\s*any for\s+(?:today|tomorrow|bukas|ngayon|this week|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(message)) {
     return false;
   }
-  return /\b(?:active jobs?|my jobs?|my bookings?|schedule|scheduled jobs?|upcoming jobs?|today|tomorrow|this week|next week|week ahead|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(message);
+  return /\b(?:active jobs?|my jobs?|my bookings?|schedule|scheduled jobs?|upcoming jobs?|today|tomorrow|bukas|ngayon|this week|next week|week ahead|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(message);
 }
 
 function getProviderScheduleRequest(message, conversationHistory, bounds, now = new Date()) {
@@ -308,7 +308,7 @@ function getProviderScheduleRequest(message, conversationHistory, bounds, now = 
   const isContextFollowUp = latestAssistant?.contextIntent === "provider_schedule" ||
     /\b(?:schedule for|schedule today|active jobs scheduled)\b/i.test(latestAssistant?.text || "");
   const isDateFollowUp = isContextFollowUp &&
-    /\b(?:today|tomorrow|this week|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(message);
+    /\b(?:today|tomorrow|bukas|ngayon|this week|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(message);
   if (!isActiveJobsRequest(message) && !isDateFollowUp) return null;
 
   const normalized = message.toLowerCase();
@@ -333,10 +333,10 @@ function getProviderScheduleRequest(message, conversationHistory, bounds, now = 
       label: "this week",
     };
   }
-  if (/\btomorrow\b/.test(normalized)) {
+  if (/\b(?:tomorrow|bukas)\b/.test(normalized)) {
     return { range: bounds.tomorrow, label: "tomorrow" };
   }
-  if (/\btoday\b/.test(normalized)) {
+  if (/\b(?:today|ngayon)\b/.test(normalized)) {
     return { range: bounds.today, label: "today" };
   }
   const requestedDate = parseRequestedServiceDate(message, now);
