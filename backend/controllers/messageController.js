@@ -29,7 +29,7 @@ const MESSAGE_PAGE_SIZE = 50;
 const conversationPopulate = [
   { path: "clientId", select: "fullName username email profileImage +lastActive +lastOfflineAt +isOnline" },
   { path: "providerId", select: "fullName username email professions profileImage +lastActive +lastOfflineAt +isOnline" },
-  { path: "bookingId", select: "repairDescription status serviceDate timeSlot estimatedDurationMinutes offeredPrice travelDistanceKm travelFee travelFeeBeforeDiscount travelFeeDiscount tipAmount paymentMethod cashPaidConfirmedAt cashReceivedConfirmedAt clientConfirmedCash providerConfirmedCash workCompletedAt settledAt cashReceipt completionNote completionPhotos completionSubmittedAt revisionRequests createdAt counterOffers clientRating clientReview clientReviewPhotos reviewedAt" },
+  { path: "bookingId", select: "repairDescription photoUrl photoUrls status serviceDate timeSlot estimatedDurationMinutes offeredPrice travelDistanceKm travelFee travelFeeBeforeDiscount travelFeeDiscount tipAmount paymentMethod cashPaidConfirmedAt cashReceivedConfirmedAt clientConfirmedCash providerConfirmedCash workCompletedAt settledAt cashReceipt completionNote completionPhotos completionSubmittedAt revisionRequests createdAt counterOffers clientRating clientReview clientReviewPhotos reviewedAt" },
 ];
 
 function serializeConversation(conversation, role) {
@@ -55,6 +55,10 @@ function serializeConversation(conversation, role) {
     isOnline: other?.isOnline === true,
     cred: provider?.professions?.join(" · ") || "Service provider",
     task: booking?.repairDescription || "Service booking",
+    photoUrl: booking?.photoUrl || "",
+    photoUrls: Array.isArray(booking?.photoUrls) && booking.photoUrls.length
+      ? booking.photoUrls
+      : booking?.photoUrl ? [booking.photoUrl] : [],
     bookingStatus: booking?.status || "",
     bookingCreatedAt: booking?.createdAt || null,
     cancellationReason: booking?.cancellationReason || "",

@@ -1863,6 +1863,16 @@ export default function LiveChatLayout({ role, otherRoleLabel }) {
                   </div>
                   <button type="button" onClick={() => { setActionMessage(null); setActionModalView("DETAILS"); setActionError(""); setCounterFormOpen(false); }} className="dashboard-focus rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900" aria-label="Close booking actions">×</button>
                 </div>
+                {selectedConversation.photoUrls?.length > 0 && (
+                  <section className="mt-4">
+                    <h3 className="text-sm font-semibold text-slate-900">Photos from the booking request</h3>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {selectedConversation.photoUrls.map((photo) => (
+                        <MessagePhoto key={photo} photo={photo} requestHeaders={requestHeaders} alt="Requested repair item" imageClassName="h-24 w-24 rounded-lg border border-sky-100 object-cover" />
+                      ))}
+                    </div>
+                  </section>
+                )}
                 <BookingPriceBreakdown booking={selectedConversation} className="mt-4" />
                 <dl className="mt-3 grid grid-cols-1 gap-3 rounded-xl border border-sky-100 bg-white p-4 text-sm sm:grid-cols-2">
                   <div><dt className="dashboard-kicker">Booking status</dt><dd className="mt-1 font-semibold text-slate-900">{getStatusLabel(selectedConversation.bookingStatus)}</dd></div>

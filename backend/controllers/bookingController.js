@@ -212,7 +212,9 @@ function serializeBooking(booking, viewerRole = "") {
   const travelFee = booking.travelFee ?? 0;
   const tipAmount = booking.tipAmount ?? 0;
   const totalPrice = calculateTotalPrice(offeredPrice, travelFee, tipAmount);
-  const photoUrls = booking.photoUrl ? [booking.photoUrl] : [];
+  const photoUrls = Array.isArray(booking.photoUrls) && booking.photoUrls.length
+    ? booking.photoUrls
+    : booking.photoUrl ? [booking.photoUrl] : [];
   const statusHistory = booking.statusHistory?.length
     ? booking.statusHistory.map((event) => ({ status: STATUS_LABELS[event.status] || event.status, at: event.at }))
     : [{ status: STATUS_LABELS.pending, at: booking.createdAt }];
@@ -284,7 +286,7 @@ function serializeBooking(booking, viewerRole = "") {
       addressedAt: request.addressedAt || null,
     })),
     urgency: booking.urgency,
-    photoUrl: booking.photoUrl || "",
+    photoUrl: booking.photoUrl || photoUrls[0] || "",
     photoUrls,
     status: STATUS_LABELS[statusCode] || "Pending Request",
     statusCode,
@@ -1303,6 +1305,7 @@ async function handleCreateBooking(req, res) {
         urgency,
         paymentMethod,
         photoUrl: photoUrls[0] || "",
+        photoUrls,
         status: safeStatus,
         requestExpiresAt: requestExpiresAt || undefined,
         requestExpiryType,

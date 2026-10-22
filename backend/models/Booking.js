@@ -28,6 +28,7 @@ const bookingSchema = new mongoose.Schema(
       },
     },
     photoUrl: { type: String, default: "", trim: true, maxlength: 500 },
+    photoUrls: { type: [String], default: [] },
     urgency: { type: String, enum: ["Emergency", "Flexible"], default: "Flexible" },
     serviceDate: { type: Date, required: true },
     timeSlot: {

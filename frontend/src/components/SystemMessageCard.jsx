@@ -303,6 +303,16 @@ export default function SystemMessageCard({ message, role, actorName, bookingPri
             <span className="rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-amber-800">Task offer · {formatPrice(event.offeredPrice)}</span>
           </div>
           <p className="mt-2 text-sm font-bold leading-relaxed text-amber-950">{event.repairDescription || message.text}</p>
+          {bookingPricing?.photoUrls?.length > 0 && (
+            <div className="mt-3">
+              <p className="mb-2 text-[11px] font-semibold text-amber-950">{role === "client" ? "Your request photos" : "Photos from the client"}</p>
+              <div className="flex flex-wrap gap-2">
+                {bookingPricing.photoUrls.map((photo) => (
+                  <MessagePhoto key={photo} photo={photo} requestHeaders={requestHeaders} alt="Requested repair item" imageClassName="h-20 w-20 rounded-lg border border-amber-200 object-cover" />
+                ))}
+              </div>
+            </div>
+          )}
           <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-medium text-amber-800">
             {event.serviceDate && <span className="rounded-full bg-white px-2 py-1 ring-1 ring-amber-200">{formatAppointment(event.serviceDate, event.timeSlot)}</span>}
             <span className="rounded-full bg-white px-2 py-1 ring-1 ring-amber-200">Estimated duration · {formatEstimatedDuration(requestDuration)}</span>
