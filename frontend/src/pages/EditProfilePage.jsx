@@ -9,25 +9,22 @@ import ProfessionSelector from "../components/ProfessionSelector.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { getPhilippineMobileInputValue } from "../utils/registrationValidation.js";
 import { getProviderDateOfBirthBounds, isProviderDateOfBirthInRange } from "../utils/providerDateOfBirth.js";
+import { getProfileNameFields } from "../utils/profileName.mjs";
 
 const buildFullName = ({ firstName = "", middleName = "", lastName = "" } = {}) => [firstName, middleName, lastName].filter(Boolean).join(" ").trim();
 
 const getFormFromUser = (user = {}) => {
-  const rawFullName = (user.fullName || "").trim();
-  const parsedParts = rawFullName ? rawFullName.split(/\s+/).filter(Boolean) : [];
-  const inferredFirstName = user.firstName || parsedParts[0] || "";
-  const inferredMiddleName = user.middleName || (parsedParts.length > 2 ? parsedParts.slice(1, -1).join(" ") : "");
-  const inferredLastName = user.lastName || (parsedParts.length > 1 ? parsedParts.at(-1) : "");
+  const { firstName, middleName, lastName } = getProfileNameFields(user);
 
   return {
     fullName: user.fullName || buildFullName({
-      firstName: inferredFirstName,
-      middleName: inferredMiddleName,
-      lastName: inferredLastName,
+      firstName,
+      middleName,
+      lastName,
     }),
-    firstName: inferredFirstName,
-    middleName: inferredMiddleName,
-    lastName: inferredLastName,
+    firstName,
+    middleName,
+    lastName,
     username: user.username || "",
     email: user.email || "",
     phone: getPhilippineMobileInputValue(user.mobileNumber || ""),
