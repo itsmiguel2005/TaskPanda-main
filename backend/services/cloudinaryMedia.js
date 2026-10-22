@@ -314,6 +314,7 @@ async function fetchAuthenticatedChatPhoto(publicId, format) {
     error.statusCode = 404;
     throw error;
   }
+  getCredentials();
   const downloadUrl = cloudinary.utils.private_download_url(publicId, format, {
     resource_type: "image",
     type: "authenticated",

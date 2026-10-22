@@ -97,3 +97,14 @@ test("chat photo delivery rejects a Cloudinary response that is not the stored i
     { statusCode: 502, message: "Cloudinary returned an invalid chat photo." }
   );
 });
+
+test("chat photo delivery initializes Cloudinary credentials in a separate serverless instance", async () => {
+  delete process.env.CLOUDINARY_CLOUD_NAME;
+  delete process.env.CLOUDINARY_API_KEY;
+  delete process.env.CLOUDINARY_API_SECRET;
+
+  await assert.rejects(
+    fetchAuthenticatedChatPhoto("taskpanda-chat-photo", "jpg"),
+    { statusCode: 503, message: "Image uploads are not configured. Set the Cloudinary environment variables." }
+  );
+});
