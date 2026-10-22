@@ -263,7 +263,7 @@ async function uploadChatPhoto(buffer, conversationId, userId, mimeType) {
     error.statusCode = 400;
     throw error;
   }
-  return { publicId, format: result.format, bytes: result.bytes, version: result.version };
+  return { publicId, format: result.format, bytes: result.bytes };
 }
 
 function isOwnedChatPhotoPublicId(publicId, conversationId, userId) {
@@ -296,7 +296,7 @@ async function verifyChatPhotoUploads(publicIds, conversationId, userId) {
   try {
     return await Promise.all(publicIds.map(async ({ publicId }) => {
       const resource = await getChatPhotoResource(publicId);
-      return { publicId, format: resource.format, bytes: resource.bytes, version: resource.version };
+      return { publicId, format: resource.format, bytes: resource.bytes };
     }));
   } catch (error) {
     if (error.http_code === 404 || error.error?.http_code === 404) {
@@ -308,34 +308,21 @@ async function verifyChatPhotoUploads(publicIds, conversationId, userId) {
   }
 }
 
-async function fetchAuthenticatedChatPhoto(publicId, format, version) {
-  if (!Number.isSafeInteger(Number(version)) || Number(version) <= 0) {
-    const resource = await getChatPhotoResource(publicId);
-    format = resource.format;
-    version = resource.version;
-  }
+async function fetchAuthenticatedChatPhoto(publicId, format) {
   if (!CHAT_PHOTO_FORMATS.includes(String(format || "").toLowerCase())) {
     const error = new Error("Chat photo format is invalid.");
     error.statusCode = 404;
     throw error;
   }
-  if (!Number.isSafeInteger(Number(version)) || Number(version) <= 0) {
-    const error = new Error("Chat photo version is invalid.");
-    error.statusCode = 404;
-    throw error;
-  }
-  const deliveryUrl = cloudinary.url(publicId, {
+  const downloadUrl = cloudinary.utils.private_download_url(publicId, format, {
     resource_type: "image",
     type: "authenticated",
-    sign_url: true,
-    secure: true,
-    format,
-    version: Number(version),
   });
-  const response = await fetch(deliveryUrl);
+  const response = await fetch(downloadUrl);
   if (!response.ok) {
     const error = new Error("Could not retrieve this chat photo from Cloudinary.");
     error.statusCode = 502;
+    error.upstreamStatusCode = response.status;
     throw error;
   }
   const body = Buffer.from(await response.arrayBuffer());

@@ -5,12 +5,11 @@ const {
   CHAT_PHOTO_MAX_BYTES,
   fetchAuthenticatedChatPhoto,
   uploadChatPhoto,
-  verifyChatPhotoUploads,
 } = require("./cloudinaryMedia");
 
 const originalResource = cloudinary.api.resource;
 const originalUploadStream = cloudinary.uploader.upload_stream;
-const originalCloudinaryUrl = cloudinary.url;
+const originalPrivateDownloadUrl = cloudinary.utils.private_download_url;
 const originalFetch = global.fetch;
 const originalEnvironment = {
   cloudName: process.env.CLOUDINARY_CLOUD_NAME,
@@ -28,7 +27,7 @@ function configureTestCloudinary() {
 test.afterEach(() => {
   cloudinary.api.resource = originalResource;
   cloudinary.uploader.upload_stream = originalUploadStream;
-  cloudinary.url = originalCloudinaryUrl;
+  cloudinary.utils.private_download_url = originalPrivateDownloadUrl;
   global.fetch = originalFetch;
   if (originalEnvironment.cloudName === undefined) delete process.env.CLOUDINARY_CLOUD_NAME;
   else process.env.CLOUDINARY_CLOUD_NAME = originalEnvironment.cloudName;
@@ -60,11 +59,11 @@ test("chat photo uploads reject data that does not match an allowed image signat
   assert.equal(uploadStarted, false);
 });
 
-test("chat photo delivery signs the Cloudinary URL with its saved version and verifies returned bytes", async () => {
+test("chat photo delivery uses Cloudinary's authenticated private-download URL and verifies returned bytes", async () => {
   configureTestCloudinary();
-  let deliveryOptions;
-  cloudinary.url = (_publicId, options) => {
-    deliveryOptions = options;
+  let requestedResource;
+  cloudinary.utils.private_download_url = (publicId, format, options) => {
+    requestedResource = { publicId, format, options };
     return "https://cloudinary.test/private-photo";
   };
   global.fetch = async () => ({
@@ -73,43 +72,28 @@ test("chat photo delivery signs the Cloudinary URL with its saved version and ve
     arrayBuffer: async () => Uint8Array.from(jpegBuffer).buffer,
   });
 
-  const image = await fetchAuthenticatedChatPhoto("taskpanda-chat-photo", "jpg", 123456);
+  const image = await fetchAuthenticatedChatPhoto("taskpanda-chat-photo", "jpg");
 
-  assert.equal(deliveryOptions.type, "authenticated");
-  assert.equal(deliveryOptions.version, 123456);
-  assert.equal(deliveryOptions.sign_url, true);
+  assert.deepEqual(requestedResource, {
+    publicId: "taskpanda-chat-photo",
+    format: "jpg",
+    options: { resource_type: "image", type: "authenticated" },
+  });
   assert.deepEqual(image.body, jpegBuffer);
   assert.equal(image.contentType, "image/jpeg");
 });
 
-test("chat photo delivery resolves the Cloudinary version for older stored photos", async () => {
+test("chat photo delivery rejects a Cloudinary response that is not the stored image format", async () => {
   configureTestCloudinary();
-  let deliveryOptions;
-  cloudinary.api.resource = async () => ({ format: "jpeg", bytes: jpegBuffer.length, version: 654321 });
-  cloudinary.url = (_publicId, options) => {
-    deliveryOptions = options;
-    return "https://cloudinary.test/private-photo";
-  };
+  cloudinary.utils.private_download_url = () => "https://cloudinary.test/private-photo";
   global.fetch = async () => ({
     ok: true,
-    headers: { get: () => "image/jpeg" },
-    arrayBuffer: async () => Uint8Array.from(jpegBuffer).buffer,
+    headers: { get: () => "image/png" },
+    arrayBuffer: async () => Uint8Array.from(Buffer.from("not an image")).buffer,
   });
 
-  await fetchAuthenticatedChatPhoto("taskpanda-chat-photo", undefined, undefined);
-
-  assert.equal(deliveryOptions.version, 654321);
-  assert.equal(deliveryOptions.format, "jpeg");
-});
-
-test("verified chat photos persist the Cloudinary version for later delivery", async () => {
-  configureTestCloudinary();
-  const conversationId = "64b000000000000000000001";
-  const userId = "64b000000000000000000002";
-  const publicId = `taskpanda_chat_${conversationId}_${userId}_${"a".repeat(32)}`;
-  cloudinary.api.resource = async () => ({ format: "jpg", bytes: jpegBuffer.length, version: 123456 });
-
-  assert.deepEqual(await verifyChatPhotoUploads([{ publicId }], conversationId, userId), [
-    { publicId, format: "jpg", bytes: jpegBuffer.length, version: 123456 },
-  ]);
+  await assert.rejects(
+    fetchAuthenticatedChatPhoto("taskpanda-chat-photo", "jpg"),
+    { statusCode: 502, message: "Cloudinary returned an invalid chat photo." }
+  );
 });

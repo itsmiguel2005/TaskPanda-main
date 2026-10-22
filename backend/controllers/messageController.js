@@ -381,7 +381,7 @@ async function handleReadChatPhoto(req, res) {
     const publicId = photo.publicId;
     if (!isOwnedChatPhotoPublicId(publicId, conversationId, String(message.sender))) return res.status(404).json({ message: "Chat photo not found." });
 
-    const image = await fetchAuthenticatedChatPhoto(publicId, photo.format, photo.version);
+    const image = await fetchAuthenticatedChatPhoto(publicId, photo.format);
     res.set({
       "Cache-Control": "private, no-store",
       "Content-Type": image.contentType,
@@ -389,6 +389,9 @@ async function handleReadChatPhoto(req, res) {
     });
     return res.status(200).send(image.body);
   } catch (error) {
+    if (error.upstreamStatusCode) {
+      console.error("Read chat photo upstream error:", { statusCode: error.upstreamStatusCode });
+    }
     if (error.statusCode) return res.status(error.statusCode).json({ message: error.message });
     console.error("Read chat photo error:", error.message);
     return res.status(502).json({ message: "Could not load this chat photo." });
