@@ -685,9 +685,9 @@ export default function LoginPage() {
                   )}
                   {serverError && !errors.email && !errors.password && (
                     <div className="space-y-1" role="alert">
-                      <p className="text-xs text-red-600">
+                      <p className="text-[11px] leading-5 text-red-600">
                         {lockoutSeconds > 0
-                          ? `Too many failed login attempts. Please wait ${formatWaitTime(lockoutSeconds)} before trying again.`
+                          ? `Too many failed login attempts. Retry in ${formatWaitTime(lockoutSeconds)}.`
                           : serverError}
                       </p>
                       {requiresPasswordReset && (
